@@ -1,0 +1,130 @@
+{
+    "$schema": "./node_modules/nx/schemas/nx-schema.json",
+    "workspaceLayout": {
+        "appsDir": "apps"
+    },
+    "targetDefaults": {
+        "build": {
+            "dependsOn": [
+                "^build"
+            ],
+            "inputs": [
+                "production",
+                "^production"
+            ],
+            "cache": true
+        },
+        "build-storybook": {
+            "inputs": [
+                "default",
+                "^production",
+                "{workspaceRoot}/.storybook/**/*",
+                "{projectRoot}/.storybook/**/*",
+                "{projectRoot}/tsconfig.storybook.json"
+            ],
+            "cache": true
+        },
+        "@nx/jest:jest": {
+            "inputs": [
+                "default",
+                "^production",
+                "{workspaceRoot}/jest.preset.cjs"
+            ],
+            "cache": true,
+            "options": {
+                "passWithNoTests": true
+            },
+            "configurations": {
+                "ci": {
+                    "ci": true,
+                    "codeCoverage": true
+                }
+            }
+        },
+        "@nx/eslint:lint": {
+            "inputs": [
+                "default",
+                "{workspaceRoot}/.eslintrc.json",
+                "{workspaceRoot}/.eslintrc.js"
+            ],
+            "cache": true
+        },
+        "build-upstream": {
+            "cache": true
+        },
+        "dockerize": {
+            "cache": true
+        },
+        "test": {
+            "cache": true
+        },
+        "lint": {
+            "cache": true
+        },
+        "e2e": {
+            "cache": true
+        },
+        "@nx/vite:test": {
+            "cache": true,
+            "inputs": [
+                "default",
+                "^production"
+            ]
+        },
+        "@nx/vite:build": {
+            "cache": true,
+            "dependsOn": [
+                "^build"
+            ],
+            "inputs": [
+                "production",
+                "^production"
+            ]
+        }
+    },
+    "namedInputs": {
+        "default": [
+            "{projectRoot}/**/*",
+            "sharedGlobals"
+        ],
+        "production": [
+            "default",
+            "!{projectRoot}/**/?(*.)+(spec|test).[jt]s?(x)?(.snap)",
+            "!{projectRoot}/tsconfig.spec.json",
+            "!{projectRoot}/jest.config.[jt]s",
+            "!{projectRoot}/.eslintrc.json",
+            "!{projectRoot}/.storybook/**/*",
+            "!{projectRoot}/**/*.stories.@(js|jsx|ts|tsx|mdx)",
+            "!{projectRoot}/tsconfig.storybook.json",
+            "!{projectRoot}/src/test-setup.[jt]s"
+        ],
+        "sharedGlobals": [
+            "{workspaceRoot}/babel.config.json"
+        ]
+    },
+    "generators": {
+        "@nx/react": {
+            "application": {
+                "babel": true
+            },
+            "library": {
+                "unitTestRunner": "none"
+            }
+        },
+        "@nx/next": {
+            "application": {
+                "style": "css",
+                "linter": "eslint"
+            }
+        }
+    },
+    "useInferencePlugins": false,
+    "defaultProject": "privasys.org",
+    "defaultBase": "main",
+    "s3": {
+        "endpoint": "https://s3.uk.io.cloud.ovh.net/",
+        "bucket": "nx-build-cache",
+        "region": "uk",
+        "forcePathStyle": false
+    }
+}

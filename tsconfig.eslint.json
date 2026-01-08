@@ -1,0 +1,18 @@
+{
+    "extends": "./tsconfig.base.json",
+    "compilerOptions": {
+        "noEmit": true
+    },
+    "include": [
+        ".eslintrc.js",
+        "*.js*",
+        "*.ts*",
+        "apps/**/*.js*",
+        "apps/**/*.ts*",
+        "libs/**/*.js*",
+        "libs/**/*.ts*",
+        "tools/**/*.js",
+        "libs/shared/ui/.storybook/main.js",
+        "libs/shared/ui/.storybook/preview.js"
+    ]
+}

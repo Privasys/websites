@@ -1,0 +1,49 @@
+{
+    "extends": "../../../tsconfig.base.json",
+    "compilerOptions": {
+        "jsx": "preserve",
+        "allowJs": true,
+        "esModuleInterop": true,
+        "allowSyntheticDefaultImports": true,
+        "noEmit": true,
+        "resolveJsonModule": true,
+        "isolatedModules": true,
+        "incremental": true,
+        "baseUrl": ".",
+        "types": [
+            "jest",
+            "node"
+        ],
+        "paths": {
+            "~/*": [
+                "./*"
+            ],
+            "@privasys/shared/ui": [
+                "../../../libs/shared/ui/src"
+            ],
+            "@payload-config": [
+                "./payload.config.ts"
+            ]
+        },
+        "plugins": [
+            {
+                "name": "next"
+            }
+        ]
+    },
+    "include": [
+        "**/*.js",
+        "**/*.jsx",
+        "**/*.ts",
+        "**/*.tsx",
+        ".next/types/**/*.ts",
+        "next-env.d.ts",
+        "next-sitemap.config.cjs",
+        "next.config.cjs",
+        "../../../dist/apps/fronts/privasys.org/.next/types/**/*.ts"
+    ],
+    "exclude": [
+        "node_modules",
+        "jest.config.ts"
+    ]
+}

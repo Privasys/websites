@@ -1,0 +1,11 @@
+{
+    "name": "privasys.org",
+    "version": "0.0.1",
+    "license": "MIT",
+    "scripts": {
+        "generate:importmap": "cross-env NODE_OPTIONS=--no-deprecation payload generate:importmap",
+        "generate:types": "cross-env NODE_OPTIONS=--no-deprecation payload generate:types",
+        "next-sitemap": "next-sitemap",
+        "payload": "cross-env NODE_OPTIONS=--no-deprecation payload"
+    }
+}

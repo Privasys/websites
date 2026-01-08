@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" height="128" width="128" version="1.1" viewBox="0 0 128 128">
+  <path d="M 64 7 A 57 57 0 0 1 119.31 50.21" stroke="#34495E" stroke-width="14" stroke-linecap="round" fill="none"/>
+  <path d="M 64 7 A 57 57 0 0 1 119.31 50.21" stroke="#95A5A6" stroke-width="14" stroke-linecap="round" fill="none" transform="rotate(180 64 64)"/>
+
+  <path d="M 64 7 A 57 57 0 0 1 115.23 39.01" stroke="#5D707E" stroke-width="14" stroke-linecap="round" fill="none" transform="rotate(96 64 64)"/>
+  <path d="M 64 7 A 57 57 0 0 1 115.23 39.01" stroke="#D6D6C2" stroke-width="14" stroke-linecap="round" fill="none" transform="rotate(276 64 64)"/>
+
+  <path d="M 64 28 A 36 36 0 0 1 82 95.18" stroke="#FFC300" stroke-width="11" stroke-linecap="round" fill="none" transform="rotate(40 64 64)"/>
+  <path d="M 64 28 A 36 36 0 0 1 82 95.18" stroke="#F5E7B2" stroke-width="11" stroke-linecap="round" fill="none" transform="rotate(220 64 64)"/>
+
+  <circle cx="64" cy="64" r="23" fill="#ffe57f"/>
+
+  <line stroke="white" stroke-width="1" x1="75" y1="53" x2="68" y2="63"/>
+  <line stroke="white" stroke-width="1" x1="75" y1="53" x2="64" y2="45"/>
+  <line stroke="white" stroke-width="1" x1="65" y1="75" x2="79" y2="73"/>
+  <line stroke="white" stroke-width="1" x1="65" y1="75" x2="68" y2="63"/>
+  <line stroke="white" stroke-width="1" x1="65" y1="75" x2="56" y2="81"/>
+  <line stroke="white" stroke-width="1" x1="65" y1="75" x2="51" y2="69"/>
+  <line stroke="white" stroke-width="1" x1="54" y1="58" x2="64" y2="45"/>
+  <line stroke="white" stroke-width="1" x1="54" y1="58" x2="51" y2="69"/>
+  <line stroke="white" stroke-width="1" x1="54" y1="58" x2="68" y2="63"/>
+  <line stroke="white" stroke-width="1" x1="79" y1="73" x2="68" y2="63"/>
+  <line stroke="white" stroke-width="1" x1="68" y1="63" x2="51" y2="69"/>
+  <line stroke="white" stroke-width="1" x1="68" y1="63" x2="64" y2="45"/>
+  
+  <line stroke="white" stroke-width="1" stroke-linecap="round" x1="75" y1="53" x2="75" y2="44.95"/>
+  <line stroke="white" stroke-width="1" stroke-linecap="round" x1="75" y1="53" x2="83.05" y2="53"/>
+  <line stroke="white" stroke-width="1" stroke-linecap="round" x1="75" y1="53" x2="86" y2="64"/>
+  <line stroke="white" stroke-width="1" stroke-linecap="round" x1="79" y1="73" x2="85.67" y2="67.82"/>
+  <line stroke="white" stroke-width="1" stroke-linecap="round" x1="79" y1="73" x2="78.14" y2="80.85"/>
+  <line stroke="white" stroke-width="1" stroke-linecap="round" x1="65" y1="75" x2="76.62" y2="82.02"/>
+  <line stroke="white" stroke-width="1" stroke-linecap="round" x1="56" y1="81" x2="60.18" y2="85.67"/>
+  <line stroke="white" stroke-width="1" stroke-linecap="round" x1="56" y1="81" x2="45.98" y2="76.62"/>
+  <line stroke="white" stroke-width="1" stroke-linecap="round" x1="51" y1="69" x2="44.95" y2="75"/>
+  <line stroke="white" stroke-width="1" stroke-linecap="round" x1="51" y1="69" x2="42.33" y2="60.18"/>
+  <line stroke="white" stroke-width="1" stroke-linecap="round" x1="54" y1="58" x2="42.75" y2="58.31"/>
+  <line stroke="white" stroke-width="1" stroke-linecap="round" x1="54" y1="58" x2="54.7" y2="44.06"/>
+  <line stroke="white" stroke-width="1" stroke-linecap="round" x1="64" y1="45" x2="58.31" y2="42.75"/>
+  <line stroke="white" stroke-width="1" stroke-linecap="round" x1="64" y1="45" x2="73.3" y2="44.06"/>
+
+  <circle r="3" fill="white" cx="75" cy="53"/>
+  <circle r="3" fill="white" cx="65" cy="75"/>
+  <circle r="3" fill="white" cx="54" cy="58"/>
+  <circle r="2" fill="white" cx="79" cy="73"/>
+  <circle r="2" fill="white" cx="51" cy="69"/>
+  <circle r="2" fill="white" cx="64" cy="45"/>
+  <circle r="2" fill="white" cx="68" cy="63"/>
+  <circle r="2" fill="white" cx="56" cy="81"/>
+</svg>

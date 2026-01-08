@@ -1,0 +1,33 @@
+name: Node.js Mutation Testing
+
+on:
+  push:
+    branches:
+    #   - main
+      - test/**
+
+jobs:
+
+  test:
+    name: Mutating tests
+    runs-on: ubuntu-latest
+
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.NX_CACHE_AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.NX_CACHE_AWS_SECRET_ACCESS_KEY }}
+
+    strategy:
+      matrix:
+        node-version: [24.x]
+
+    steps:
+    - uses: actions/checkout@v5
+    - name: Use Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+    - run: yarn install
+    - run: yarn test:mutation
+      env:
+        CI: true
+        STRYKER_DASHBOARD_API_KEY: ${{ secrets.stryker_token }}

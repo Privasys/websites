@@ -1,0 +1,87 @@
+{
+    "name": "privasys.org",
+    "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+    "sourceRoot": "apps/fronts/privasys.org",
+    "projectType": "application",
+    "tags": [],
+    "targets": {
+        "build": {
+            "executor": "@nx/next:build",
+            "outputs": [
+                "{options.outputPath}"
+            ],
+            "defaultConfiguration": "production",
+            "options": {
+                "outputPath": "dist/apps/fronts/privasys.org"
+            },
+            "configurations": {
+                "development": {
+                    "outputPath": "apps/fronts/privasys.org"
+                },
+                "production": {}
+            }
+        },
+        "postbuild": {
+            "dependsOn": [
+                "build"
+            ],
+            "executor": "nx:run-commands",
+            "options": {
+                "command": "yarn next-sitemap --config next-sitemap.config.cjs",
+                "cwd": "apps/fronts/privasys.org"
+            }
+        },
+        "serve": {
+            "executor": "nx:run-commands",
+            "options": {
+                "command": "npx next dev -p 4208",
+                "cwd": "apps/fronts/privasys.org"
+            }
+        },
+        "preview-email": {
+            "executor": "nx:run-commands",
+            "options": {
+                "command": "yarn email dev --dir='components/emails'",
+                "cwd": "apps/fronts/privasys.org"
+            }
+        },
+        "generate-types": {
+            "executor": "nx:run-commands",
+            "options": {
+                "command": "yarn run payload generate:types",
+                "cwd": "apps/fronts/privasys.org"
+            }
+        },
+        "generate-importmap": {
+            "executor": "nx:run-commands",
+            "options": {
+                "command": "yarn run payload generate:importmap",
+                "cwd": "apps/fronts/privasys.org"
+            }
+        },
+        "test": {
+            "executor": "@nx/jest:jest",
+            "outputs": [
+                "{workspaceRoot}/coverage/{projectRoot}"
+            ],
+            "options": {
+                "jestConfig": "apps/fronts/privasys.org/jest.config.ts"
+            }
+        },
+        "lint": {
+            "executor": "@nx/eslint:lint",
+            "outputs": [
+                "{options.outputFile}"
+            ]
+        },
+        "dockerize": {
+            "executor": "nx:run-commands",
+            "options": {
+                "command": "docker build --platform linux/amd64 -t privasys/privasys.org:latest -f apps/fronts/privasys.org/Dockerfile dist/apps/fronts/privasys.org"
+            },
+            "dependsOn": [
+                "postbuild"
+            ]
+        }
+    }
+}

@@ -1,0 +1,29 @@
+{
+    "compileOnSave": false,
+    "compilerOptions": {
+        "rootDir": ".",
+        "sourceMap": true,
+        "declaration": false,
+        "moduleResolution": "bundler",
+        "emitDecoratorMetadata": true,
+        "experimentalDecorators": true,
+        "forceConsistentCasingInFileNames": true,
+        "importHelpers": true,
+        "target": "ES2022",
+        "module": "esnext",
+        "lib": [
+            "DOM",
+            "DOM.Iterable",
+            "ES2022"
+        ],
+        "skipLibCheck": true,
+        "baseUrl": ".",
+        "strict": true,
+        "verbatimModuleSyntax": null,
+        "ignoreDeprecations": "5.0"
+    },
+    "exclude": [
+        "node_modules",
+        "tmp"
+    ]
+}
