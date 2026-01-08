@@ -1,6 +1,7 @@
 import { FlatCompat } from '@eslint/eslintrc';
 // Note: avoid importing plugin objects here to prevent circular references
 import tsEslint from '@typescript-eslint/eslint-plugin';
+import tsParser from '@typescript-eslint/parser';
 import jsoncParser from 'jsonc-eslint-parser';
 import stylisticPlugin from '@stylistic/eslint-plugin';
 import nxEslintPlugin from '@nx/eslint-plugin';
@@ -77,7 +78,7 @@ const baseConfig = [
         },
         languageOptions: {
             ecmaVersion: 'latest',
-            parser: tsEslint.parser,
+            parser: tsParser,
             parserOptions: { ecmaFeatures: { jsx: true }, sourceType: 'module' },
             globals: {
                 ...globals.browser,
@@ -88,7 +89,7 @@ const baseConfig = [
     {
         files: ['**/*.ts', '**/*.tsx'],
         languageOptions: {
-            parser: tsEslint.parser,
+            parser: tsParser,
             parserOptions: { ecmaFeatures: { jsx: true }, sourceType: 'module' }
         },
         rules: typescriptRules

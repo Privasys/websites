@@ -1,6 +1,6 @@
 import { compat } from '../../../eslint.config.js';
 import baseConfig from '../../../eslint.config.js';
-import tsEslint from '@typescript-eslint/eslint-plugin';
+import tsParser from '@typescript-eslint/parser';
 import jsoncParser from 'jsonc-eslint-parser';
 
 const eslintConfig = [
@@ -25,7 +25,7 @@ const eslintConfig = [
     ,
     {
         files: ['**/*.ts', '**/*.tsx'],
-        languageOptions: { parser: tsEslint.parser, parserOptions: { ecmaFeatures: { jsx: true }, sourceType: 'module' } }
+        languageOptions: { parser: tsParser, parserOptions: { ecmaFeatures: { jsx: true }, sourceType: 'module' } }
     }
 ];
 
