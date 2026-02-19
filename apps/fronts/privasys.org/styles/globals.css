@@ -199,3 +199,146 @@ ul {
         font-size: 0.8rem;
     }
 }
+
+ol {
+    display: block;
+    list-style-type: decimal;
+    margin-block-start: 0;
+    margin-block-end: 0;
+    padding-inline-start: 1.5rem;
+
+    & li {
+        padding-left: 0.25rem;
+    }
+}
+
+.prose pre {
+    background-color: #eee;
+    color: #1d1d1f;
+    padding: 1.25rem;
+    border-radius: 0.5rem;
+    overflow-x: auto;
+    font-size: 0.9rem;
+    line-height: 1.6;
+    margin-top: 1.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.prose code {
+    color: #1d1d1f;
+    font-weight: 500;
+    font-size: 0.9em;
+    background-color: #eee;
+    padding: 0.2em 0.3em;
+    border-radius: 0.3em
+}
+
+.prose pre code {
+    color: inherit;
+    font-weight: 400;
+    background: none;
+    padding: 0;
+}
+
+.prose .katex {
+    text-align: center;
+    width: 100%;
+    display: inline-block;
+    overflow-x: auto;
+}
+
+.prose h2 {
+    margin-top: 2.5rem;
+    margin-bottom: 1rem;
+    font-size: 1.75rem;
+}
+
+.prose h3 {
+    margin-top: 2rem;
+    margin-bottom: 0.75rem;
+    font-size: 1.35rem;
+}
+
+.prose h4 {
+    margin-top: 1.5rem;
+    margin-bottom: 0.5rem;
+    font-size: 1.15rem;
+}
+
+.prose p {
+    margin-top: 1rem;
+    margin-bottom: 1rem;
+}
+
+.prose ul, .prose ol {
+    margin-top: 1rem;
+    margin-bottom: 1rem;
+    padding-inline-start: 1.5rem;
+}
+
+.prose li {
+    margin-top: 0.35rem;
+    margin-bottom: 0.35rem;
+}
+
+.prose blockquote {
+    margin-top: 1.5rem;
+    margin-bottom: 1.5rem;
+    padding-left: 1rem;
+    border-left: 3px solid #d1d5db;
+    color: #4b5563;
+    font-style: italic;
+}
+
+.prose hr {
+    margin-top: 2rem;
+    margin-bottom: 2rem;
+    border-color: #e5e7eb;
+}
+
+.prose a {
+    color: #06c;
+
+    &:hover {
+        text-decoration: underline;
+    }
+}
+
+.prose strong {
+    font-weight: 600;
+    color: #000;
+}
+
+.prose table {
+    width: 100%;
+    margin-top: 1.5rem;
+    margin-bottom: 1.5rem;
+    border-collapse: collapse;
+    font-size: 0.95rem;
+}
+
+.prose thead {
+    border-bottom: 2px solid #1d1d1f;
+}
+
+.prose th {
+    padding: 0.6rem 1rem;
+    text-align: left;
+    font-weight: 600;
+    color: #000;
+}
+
+.prose td {
+    padding: 0.6rem 1rem;
+    border-bottom: 1px solid #e5e7eb;
+    font-weight: 400;
+    color: #1d1d1f;
+}
+
+.prose tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.prose tbody tr:hover {
+    background-color: #f9fafb;
+}

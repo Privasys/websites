@@ -1,33 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import Balancer from 'react-wrap-balancer';
+import { PageShell } from '~/app/components/page-shell';
 
 export default function Home() {
-
-    const [scrolled, setScrolled] = useState(false);
-    useEffect(() => {
-        window.addEventListener('scroll', () => {
-            setScrolled(window.scrollY > 0);
-        });
-    }, []);
-
     return (
-        <div className={scrolled ? 'scrolled' : ''}>
-            <header>
-                <nav className='mx-auto w-full lg:w-[60rem] px-6 lg:px-0 flex items-center justify-between py-5'>
-                    <a href='#' className='title text-xl -m-1.5 py-1.5'>
-                        <span>Privasys</span>
-                    </a>
-                    <div className='hidden text-sm lg:flex lg:gap-8'>
-                        <span className='menu-item selected'>Overview</span>
-                        <a href='mailto:contact@privasys.org?subject=Privasys%20website%20contact' className='menu-item'>Contact Us</a>
-                    </div>
-                </nav>
-                <div className='border-t border-gray-300' />
-            </header>
-
-            <main className='m-auto w-full lg:w-[60rem] px-6 lg:px-0'>
+        <PageShell activePage='home'>
 
                 <section className='mt-24 lg:mt-60 w-full lg:w-3/4'>
                     <h1 className='text-6xl lg:text-[4.6rem] pr-20 lg:pr-0'>We’re committed to&nbsp;protecting your&nbsp;data.</h1>
@@ -231,16 +209,6 @@ export default function Home() {
                         </a>
                     </div>
                 </section>
-            </main>
-
-            <footer className='m-auto w-full lg:w-[60rem] px-6 lg:px-0'>
-                <div className='mt-30 border-t border-gray-300' />
-
-                <div className='my-3 text-[#767e88] text-sm'>
-                    Privasys Ltd. Registered Company UK-16866500.<br />
-                    <span className='text-[#abaeb3] text-xs'>© {new Date().getFullYear()} Privasys Ltd. All rights reserved.</span>
-                </div>
-            </footer>
-        </div >
+        </PageShell>
     );
 }

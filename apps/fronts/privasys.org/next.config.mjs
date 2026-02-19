@@ -13,6 +13,7 @@ const nextConfig = {
         reactCompiler: true
     },
     output: 'export',
+    trailingSlash: true,
     poweredByHeader: false,
     basePath: process.env.NX_NEXTJS_BASEPATH,
     images: {
