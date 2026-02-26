@@ -1,0 +1,13 @@
+{
+  "title": "Enclave OS (Mini)",
+  "defaultOpen": true,
+  "pages": [
+    "architecture",
+    "ra-tls",
+    "rust-and-teaclave",
+    "rpc-and-circular-buffers",
+    "sealing-and-kv-store",
+    "wasm-runtime",
+    "config-and-merkle-tree"
+  ]
+}

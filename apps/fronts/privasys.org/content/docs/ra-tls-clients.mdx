@@ -1,0 +1,231 @@
+---
+title: RA-TLS Clients
+description: Multi-language RA-TLS verification clients for Python, Go, Rust, TypeScript, and C#.
+---
+
+# RA-TLS Clients
+
+The **RA-TLS Clients** repository provides verification libraries in five languages, enabling any application to connect to an RA-TLS server and verify its attestation — whether it's an Enclave OS instance (SGX) or a Caddy RA-TLS server (TDX).
+
+**Repository**: [github.com/nicbk/ra-tls-clients](https://github.com/nicbk/ra-tls-clients)
+
+## Available Clients
+
+| Language | Package | Status |
+|----------|---------|--------|
+| **Python** | `ra-tls-verify` | ✅ Full verification |
+| **Go** | `ratls` | ✅ Full verification |
+| **Rust** | `ra-tls-verify` | ✅ Full verification |
+| **TypeScript** | `@privasys/ra-tls` | ✅ Full verification |
+| **C#** | `Privasys.RaTls` | ✅ Full verification |
+
+## Verification Flow
+
+All clients follow the same verification logic:
+
+```
+1. Connect to the RA-TLS server via TLS
+         │
+         ▼
+2. Extract the server's X.509 certificate
+         │
+         ▼
+3. Parse the SGX/TDX Quote from extension
+   OID 1.2.840.113741.1.13.1.0
+         │
+         ▼
+4. Verify the quote signature against
+   Intel's DCAP root of trust
+         │
+         ▼
+5. Check MRENCLAVE (SGX) or MRTD (TDX)
+   against expected value
+         │
+         ▼
+6. Recompute ReportData:
+   SHA-512(SHA-256(cert_pubkey) || binding)
+   and compare with quote's ReportData
+         │
+         ▼
+7. (Optional) Extract and verify the
+   Config Merkle Root from OID 1337.1.1
+         │
+         ▼
+8. (Optional) Extract WASM module hashes
+   from OID 1337.2.* extensions
+         │
+         ▼
+9. Connection is attested ✓
+```
+
+## Usage Examples
+
+### Python
+
+```python
+from ra_tls_verify import RaTlsVerifier, SgxPolicy
+
+policy = SgxPolicy(
+    mrenclave="a1b2c3d4...",  # Expected MRENCLAVE (hex)
+    allow_debug=False,
+)
+
+verifier = RaTlsVerifier(policy)
+session = verifier.connect("enclave.example.com", 8443)
+
+# session is now a verified TLS connection
+response = session.get("/api/secrets")
+```
+
+### Go
+
+```go
+import "github.com/nicbk/ra-tls-clients/go/ratls"
+
+policy := ratls.SgxPolicy{
+    MrEnclave: "a1b2c3d4...",
+    AllowDebug: false,
+}
+
+conn, err := ratls.Dial("enclave.example.com:8443", policy)
+if err != nil {
+    log.Fatal("Attestation failed:", err)
+}
+defer conn.Close()
+
+// conn is a verified *tls.Conn
+```
+
+### Rust
+
+```rust
+use ra_tls_verify::{RaTlsVerifier, SgxPolicy};
+
+let policy = SgxPolicy {
+    mrenclave: hex::decode("a1b2c3d4...")?,
+    allow_debug: false,
+};
+
+let verifier = RaTlsVerifier::new(policy);
+let stream = verifier.connect("enclave.example.com:8443")?;
+
+// stream is a verified TLS stream
+```
+
+### TypeScript
+
+```typescript
+import { RaTlsVerifier, SgxPolicy } from '@privasys/ra-tls';
+
+const policy: SgxPolicy = {
+  mrenclave: 'a1b2c3d4...',
+  allowDebug: false,
+};
+
+const verifier = new RaTlsVerifier(policy);
+const response = await verifier.fetch('https://enclave.example.com:8443/api/secrets');
+```
+
+### C\#
+
+```csharp
+using Privasys.RaTls;
+
+var policy = new SgxPolicy
+{
+    MrEnclave = "a1b2c3d4...",
+    AllowDebug = false
+};
+
+var verifier = new RaTlsVerifier(policy);
+using var client = verifier.CreateHttpClient();
+
+var response = await client.GetAsync("https://enclave.example.com:8443/api/secrets");
+```
+
+## Verification Policies
+
+Each client supports configurable verification policies:
+
+### SGX Policy
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `mrenclave` | `string` (hex) | Expected MRENCLAVE measurement. If set, the quote's MRENCLAVE must match exactly. |
+| `mrsigner` | `string` (hex) | Expected MRSIGNER measurement. Alternative to MRENCLAVE — allows any enclave signed by a specific key. |
+| `allow_debug` | `bool` | Whether to accept quotes from debug-mode enclaves. **Must be `false` in production.** |
+| `min_isv_svn` | `u16` | Minimum ISV Security Version Number. Used for rollback protection. |
+
+### TDX Policy
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `mrtd` | `string` (hex) | Expected MRTD (Trust Domain measurement). |
+| `rtmr` | `string[]` (hex) | Expected Runtime Measurement Registers (RTMR0–3). |
+
+### Merkle Root Policy (Optional)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `expected_root` | `string` (hex) | Expected Merkle root hash. If set, the certificate's Merkle root extension must match. |
+
+## Challenge Mode
+
+For clients that need freshness guarantees, the clients support **challenge-response** attestation:
+
+1. The client generates a random nonce.
+2. The client sends the nonce in a custom TLS `ClientHello` extension (`0xFFBB`).
+3. The server generates a fresh certificate using the nonce as the binding value.
+4. The client verifies that the quote's `ReportData` contains a hash of both the public key and the nonce.
+
+This proves the certificate was generated **in response to this specific connection**, preventing replay attacks.
+
+```python
+# Python challenge mode example
+session = verifier.connect(
+    "enclave.example.com", 8443,
+    mode="challenge"  # Sends random nonce in ClientHello
+)
+```
+
+Challenge mode requires server support (both Enclave OS and the Caddy RA-TLS module support it).
+
+## Test Certificates
+
+The repository includes **test certificates** with pre-generated SGX quotes for development and testing without SGX hardware. These certificates have a known MRENCLAVE and are signed with a debug key.
+
+```python
+# Load test certificate for offline verification testing
+from ra_tls_verify.testing import load_test_cert
+
+cert = load_test_cert("sgx_debug")
+result = verifier.verify_certificate(cert)
+assert result.mrenclave == "expected_test_mrenclave..."
+```
+
+## Architecture
+
+```
+ra-tls-clients/
+├── python/           # Python package (ra-tls-verify)
+│   ├── ra_tls_verify/
+│   │   ├── verifier.py
+│   │   ├── quote_parser.py
+│   │   └── policy.py
+│   └── tests/
+├── go/               # Go module (ratls)
+│   ├── ratls/
+│   │   ├── verifier.go
+│   │   ├── quote.go
+│   │   └── policy.go
+│   └── ratls_test.go
+├── rust/             # Rust crate (ra-tls-verify)
+│   └── src/
+├── typescript/       # npm package (@privasys/ra-tls)
+│   └── src/
+├── csharp/           # NuGet package (Privasys.RaTls)
+│   └── src/
+└── test-certs/       # Shared test certificates
+```
+
+Each client is independently packaged and published to the respective language's package registry. They share the same verification logic and test certificates, ensuring consistent behavior across languages.

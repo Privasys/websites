@@ -1,0 +1,34 @@
+{
+    "name": "docs.privasys.org",
+    "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+    "sourceRoot": "apps/fronts/docs.privasys.org",
+    "projectType": "application",
+    "tags": [],
+    "targets": {
+        "build": {
+            "executor": "@nx/next:build",
+            "outputs": ["{options.outputPath}"],
+            "defaultConfiguration": "production",
+            "options": {
+                "outputPath": "dist/apps/fronts/docs.privasys.org"
+            },
+            "configurations": {
+                "development": {
+                    "outputPath": "apps/fronts/docs.privasys.org"
+                },
+                "production": {}
+            }
+        },
+        "serve": {
+            "executor": "nx:run-commands",
+            "options": {
+                "command": "npx next dev -p 4209",
+                "cwd": "apps/fronts/docs.privasys.org"
+            }
+        },
+        "lint": {
+            "executor": "@nx/eslint:lint",
+            "outputs": ["{options.outputFile}"]
+        }
+    }
+}

@@ -17,12 +17,6 @@
         "paths": {
             "~/*": [
                 "./*"
-            ],
-            "@privasys/shared/ui": [
-                "../../../libs/shared/ui/src"
-            ],
-            "@payload-config": [
-                "./payload.config.ts"
             ]
         },
         "plugins": [

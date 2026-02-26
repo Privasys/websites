@@ -1,0 +1,33 @@
+{
+    "extends": "../../../tsconfig.base.json",
+    "compilerOptions": {
+        "jsx": "preserve",
+        "allowJs": true,
+        "esModuleInterop": true,
+        "allowSyntheticDefaultImports": true,
+        "noEmit": true,
+        "resolveJsonModule": true,
+        "isolatedModules": true,
+        "incremental": true,
+        "baseUrl": ".",
+        "types": ["node"],
+        "paths": {
+            "@/*": ["./*"],
+            "@/.source": ["./.source/index"]
+        },
+        "plugins": [
+            {
+                "name": "next"
+            }
+        ]
+    },
+    "include": [
+        "**/*.ts",
+        "**/*.tsx",
+        "**/*.mdx",
+        ".next/types/**/*.ts",
+        "next-env.d.ts",
+        ".source/**/*.ts"
+    ],
+    "exclude": ["node_modules", ".next", "dist"]
+}

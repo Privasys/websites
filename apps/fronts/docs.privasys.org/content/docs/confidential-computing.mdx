@@ -1,0 +1,90 @@
+---
+title: Confidential Computing
+description: An introduction to Trusted Execution Environments, Intel SGX, Intel TDX, and remote attestation.
+---
+
+Confidential Computing is a set of hardware technologies that protect data **while it is being processed**. Combined with encryption at rest and in transit, it closes the last remaining gap in the data protection lifecycle.
+
+## Trusted Execution Environments
+
+A Trusted Execution Environment (TEE) is a hardware-enforced isolated region where code and data are protected from all other software on the system — including the operating system, hypervisor, and firmware.
+
+TEEs provide three guarantees:
+
+| Guarantee | Description |
+|-----------|-------------|
+| **Confidentiality** | Memory inside the TEE is encrypted by the CPU. No software outside can read it. |
+| **Integrity** | Code and data inside the TEE cannot be tampered with by external software. |
+| **Attestation** | The TEE can produce a cryptographic proof of its identity and state, verifiable by remote parties. |
+
+## Intel SGX
+
+Intel Software Guard Extensions (SGX) provides **application-level** enclaves. An enclave is a protected region of memory within a user-mode process. The CPU encrypts enclave memory with keys that never leave the processor package.
+
+Key properties:
+
+- **Small TCB.** Only the code loaded into the enclave is trusted. The OS, hypervisor, and other applications are excluded.
+- **MRENCLAVE.** A SHA-256 measurement of the enclave's initial code and data. Two enclaves with the same MRENCLAVE are running identical code.
+- **Sealing.** Enclaves can encrypt data bound to their MRENCLAVE identity. Only the same enclave binary on the same platform can decrypt it.
+- **EPID / DCAP attestation.** The enclave can generate a cryptographic quote signed by the platform, provable to remote verifiers.
+
+SGX is available on select Intel Xeon processors (Ice Lake, Sapphire Rapids, and later) and is the foundation for Privasys's **Enclave OS (Mini)**.
+
+## Intel TDX
+
+Intel Trust Domain Extensions (TDX) provides **VM-level** isolation. Instead of protecting a single application, TDX protects an entire virtual machine (called a Trust Domain) from the hypervisor and host OS.
+
+Key properties:
+
+- **Whole-VM protection.** Run unmodified Linux inside a TDX VM with encrypted memory.
+- **MRTD / RTMR.** Measurement registers capture the identity of the VM firmware and runtime.
+- **configfs-tsm.** Quote generation via the kernel's `/sys/kernel/config/tsm/report` interface — no special SDK needed.
+- **Available on major clouds.** Google Cloud, Azure, and others offer TDX Confidential VMs.
+
+TDX is the foundation for Privasys's **Caddy RA-TLS Module**, which runs Caddy inside a TDX VM and generates RA-TLS certificates using TDX quotes.
+
+## SGX vs TDX
+
+| | Intel SGX | Intel TDX |
+|--|-----------|-----------|
+| **Isolation level** | Application (enclave) | Virtual machine |
+| **TCB size** | Minimal (enclave code only) | Larger (full OS + application) |
+| **Deployment** | Custom build toolchain, EDL interface | Unmodified Linux applications |
+| **Attestation** | EPID / DCAP quotes | TDX quotes via configfs-tsm |
+| **Memory limit** | EPC size (128–512 MB typical) | Full VM memory |
+| **Use case** | High-security workloads with minimal TCB | General-purpose confidential VMs |
+
+Privasys supports both: SGX for the Enclave OS (maximum security, minimal TCB) and TDX for the Caddy module (ease of deployment, standard Linux stack).
+
+## Remote Attestation
+
+Remote attestation is the mechanism by which a TEE proves its identity to a remote party.
+
+### The Flow
+
+1. The TEE generates a **report** containing its measurements (MRENCLAVE or MRTD) and a user-supplied **ReportData** field (up to 64 bytes).
+2. The platform's quoting enclave (SGX) or firmware (TDX) signs this report, producing a **quote**.
+3. The remote verifier checks the quote's signature against the chip vendor's root of trust (Intel's attestation service or DCAP).
+4. If valid, the verifier knows: (a) the code identity, (b) the platform authenticity, and (c) that the `ReportData` was produced inside that TEE.
+
+### The Problem with Traditional Attestation
+
+Traditional attestation requires a custom protocol between client and server — a separate "attestation channel" before the real communication can begin. This is:
+
+- **Incompatible with browsers.** Web clients cannot run custom attestation code.
+- **Complex to integrate.** Every client language needs an attestation SDK.
+- **Fragile.** An out-of-band attestation step adds latency and failure modes.
+
+### RA-TLS: Attestation Meets TLS
+
+RA-TLS solves this by embedding the attestation quote inside a standard **X.509 certificate extension**. The TEE:
+
+1. Generates a TLS key pair inside the enclave.
+2. Computes `ReportData = SHA-512( SHA-256(DER public key) || binding )`, cryptographically tying the key to the attestation.
+3. Obtains a hardware quote over this `ReportData`.
+4. Builds an X.509 certificate with the quote in a custom extension OID.
+5. Serves this certificate over standard TLS.
+
+The result is a **normal HTTPS connection**. The attestation evidence rides along inside the certificate for any verifier that wants to inspect it, while clients that don't care simply see a valid TLS handshake.
+
+Read more in our blog post: [A Practical Guide for an Attested Web](https://privasys.org/blog/a-practical-guide-for-an-attested-web/).

@@ -1,0 +1,224 @@
+---
+title: Caddy RA-TLS Module
+description: A Caddy TLS issuance module that produces RA-TLS certificates for Confidential Computing (Intel TDX, AMD SEV-SNP).
+---
+
+The **Caddy RA-TLS Module** is a [Caddy](https://caddyserver.com/) `tls.issuance` module (`ra_tls`) that produces RA-TLS certificates for **Confidential Computing**. It turns any Caddy instance running inside a Confidential VM into an attested HTTPS server — no custom client-side code required.
+
+**Repository**: [github.com/Privasys/caddy-ra-tls-module](https://github.com/Privasys/caddy-ra-tls-module)
+
+## Supported Backends
+
+| Backend | TEE | Status |
+|---------|-----|--------|
+| `tdx` | Intel TDX | Supported |
+| `sev-snp` | AMD SEV-SNP | Planned |
+
+The hardware-specific logic is abstracted behind the `Attester` interface ([attester.go](https://github.com/Privasys/caddy-ra-tls-module/blob/main/attester.go)). Each backend lives in its own file (e.g. [attester_tdx.go](https://github.com/Privasys/caddy-ra-tls-module/blob/main/attester_tdx.go)) and registers itself via `init()`.
+
+## Why Caddy + Confidential VMs
+
+| Benefit | Description |
+|---------|-------------|
+| **Ease of deployment** | Caddy is a mature, production-grade web server. Adding RA-TLS is a single module — no code changes to your application. |
+| **Unmodified Linux** | TDX/SEV protect an entire VM, so your application runs as a normal Linux process. No SGX SDK, no special build toolchain. |
+| **Standard Caddyfile** | Configure RA-TLS with a few lines in the Caddyfile, just like any other TLS issuer. |
+| **Reverse proxy** | Caddy can reverse-proxy to any backend service running in the same Confidential VM, adding RA-TLS attestation to existing applications. |
+
+## Extended Certificate
+
+The module serves an X.509 certificate extended with an attribute containing the TEE quote. For Intel TDX the attestation evidence is embedded in extension OID `1.2.840.113741.1.5.5.1.6`:
+
+```
+X509v3 extensions:
+    ...
+    1.2.840.113741.1.5.5.1.6:
+        <hex dump of the TDX quote — ~8000 bytes of attestation evidence>
+```
+
+## Architecture
+
+```
+┌──────────────────────────────────────────────┐
+│          Confidential VM (TDX / SEV)         │
+│                                              │
+│  ┌────────────────────────────────────────┐  │
+│  │           Caddy Server                 │  │
+│  │                                        │  │
+│  │  ┌──────────────┐  ┌───────────────┐   │  │
+│  │  │ RA-TLS       │  │ Reverse Proxy │   │  │
+│  │  │ Issuance     │  │ / File Server │   │  │
+│  │  │ Module       │  │ / Application │   │  │
+│  │  └──────┬───────┘  └───────────────┘   │  │
+│  │         │                              │  │
+│  │         ▼                              │  │
+│  │  ┌──────────────────────┐              │  │
+│  │  │ configfs-tsm         │              │  │
+│  │  │ /sys/kernel/config/  │              │  │
+│  │  │   tsm/report         │              │  │
+│  │  └──────────────────────┘              │  │
+│  └────────────────────────────────────────┘  │
+│                                              │
+│        Hardware Memory Encryption            │
+└──────────────────────────────────────────────┘
+```
+
+The TDX backend uses the Linux kernel's **configfs-tsm** interface (`/sys/kernel/config/tsm/report`) to request quotes — no special SDK or library needed.
+
+## How It Works
+
+The module supports two attestation paths:
+
+### Deterministic (Issue Path)
+
+1. **Key Generation** — An ECDSA P-256 key pair is generated inside the TEE.
+2. **Attestation** — `ReportData = SHA-512( SHA-256(DER public key) || creation_time )`, where `creation_time` is `NotBefore` truncated to 1-minute precision (`"2006-01-02T15:04Z"`). The quote is obtained from the configured backend.
+3. **Certificate** — An X.509 certificate is signed by a user-provided intermediary CA (private PKI), embedding the attestation evidence in a backend-specific extension OID. The PEM output includes the full chain (leaf + CA cert).
+
+Certificates are cached by CertMagic and auto-renewed. A verifier reproduces the ReportData from the certificate alone.
+
+### Challenge-Response (GetCertificate Path)
+
+When a TLS client sends a RATS-TLS nonce in its ClientHello (per `draft-ietf-rats-tls-attestation`):
+
+1. **Ephemeral Key** — A fresh ECDSA P-256 key pair is generated.
+2. **Attestation** — `ReportData = SHA-512( SHA-256(DER public key) || nonce )`, binding the quote to the client's challenge.
+3. **Certificate** — A very short-lived (5 min) certificate is signed by the same CA, with the quote embedded.
+
+This certificate is not cached — each challenge produces a unique response.
+
+> **Note:** Go 1.25's `tls.ClientHelloInfo.Extensions` exposes the extension type IDs present in the ClientHello, so the module can detect that a RATS-TLS extension was sent. However, the raw extension payloads are not available yet, so the nonce cannot be extracted. When the extension is detected without a readable nonce, the module logs a warning and falls back to the deterministic certificate. We are working on a Go `crypto/tls` fork and plan to submit an upstream PR to expose raw extension data.
+
+## Requirements
+
+- Linux host running inside a Confidential VM.
+- Backend-specific support:
+  - `tdx` — Kernel configfs-tsm (`/sys/kernel/config/tsm/report`).
+- An intermediary CA certificate and private key (private PKI).
+- Go 1.25+ and [xcaddy](https://github.com/caddyserver/xcaddy).
+
+## Building
+
+```bash
+# Install xcaddy
+go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
+
+# Clone the module and build from the local directory
+git clone https://github.com/Privasys/caddy-ra-tls-module.git
+cd caddy-ra-tls-module
+xcaddy build --with github.com/Privasys/caddy-ra-tls-module=.
+```
+
+> **Note:** The `=.` suffix tells xcaddy to use the local directory as the module source. The import path before `=` must match the `module` directive in `go.mod`. If you are working from a fork, update `go.mod` accordingly.
+
+## Configuration
+
+### Caddyfile
+
+```txt
+example.com {
+    tls {
+        issuer ra_tls {
+            backend tdx
+            ca_cert /path/to/intermediate-ca.crt
+            ca_key  /path/to/intermediate-ca.key
+        }
+    }
+    respond "Hello from a Confidential VM!"
+}
+```
+
+### JSON Configuration
+
+```json
+{
+  "apps": {
+    "tls": {
+      "automation": {
+        "policies": [
+          {
+            "subjects": ["example.com"],
+            "issuers": [
+              {
+                "module": "ra_tls",
+                "backend": "tdx",
+                "ca_cert_path": "/path/to/intermediate-ca.crt",
+                "ca_key_path": "/path/to/intermediate-ca.key"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}
+```
+
+## Inspecting the Certificate
+
+Once Caddy is running, inspect the RA-TLS certificate with standard tools:
+
+```bash
+# Retrieve and display the full certificate
+echo | openssl s_client -connect example.com:443 -servername example.com 2>/dev/null \
+  | openssl x509 -noout -text
+```
+
+To save the certificate for programmatic verification:
+
+```bash
+echo | openssl s_client -connect example.com:443 -servername example.com 2>/dev/null \
+  | openssl x509 -outform PEM > ratls-cert.pem
+
+openssl asn1parse -in ratls-cert.pem
+```
+
+## Key Sensitivity
+
+The ECDSA private key is generated inside the TEE and protected by hardware memory encryption at runtime. However, CertMagic will PEM-encode and persist it via its storage backend. To prevent writing it to unencrypted disk:
+
+- Use an encrypted filesystem or volume for Caddy's data directory.
+- Or configure a secrets-manager storage module.
+
+## Verification
+
+A relying party verifying an RA-TLS certificate should:
+
+### Deterministic Path
+
+1. Validate the certificate chain back to the trusted root CA.
+2. Extract the attestation evidence from the backend-specific extension OID (e.g. `1.2.840.113741.1.5.5.1.6` for TDX).
+3. Verify the evidence against the hardware vendor's attestation infrastructure.
+4. Read the certificate's `NotBefore` field, format it as `"2006-01-02T15:04Z"` (UTC, minute precision).
+5. Compute `SHA-512( SHA-256(DER public key) || formatted_time_string )` and confirm it matches the quote's `ReportData`.
+6. Check the quote's measurement registers against expected values.
+
+### Challenge-Response Path
+
+1. Validate the certificate chain back to the trusted root CA.
+2. Extract the attestation evidence from the backend-specific extension OID.
+3. Verify the evidence against the hardware vendor's attestation infrastructure.
+4. Compute `SHA-512( SHA-256(DER public key) || original_nonce )` using the nonce sent in the ClientHello.
+5. Confirm the result matches the quote's `ReportData` — this proves freshness.
+6. Check the quote's measurement registers against expected values.
+
+## Comparison with Enclave OS
+
+| | Enclave OS (Mini) | Caddy RA-TLS Module |
+|--|-------------------|---------------------|
+| **TEE** | Intel SGX (application enclave) | Intel TDX / AMD SEV-SNP (Confidential VM) |
+| **Language** | Rust | Go |
+| **TCB size** | ~4 MB enclave binary | Full Linux VM + Caddy |
+| **Deployment** | Custom build, SGX SDK, signed enclave | Standard Linux binary, xcaddy, no special SDK |
+| **Application model** | WASM modules loaded into the enclave | Any process in the VM, Caddy as reverse proxy |
+| **Quote source** | SGX DCAP quoting enclave | Linux configfs-tsm |
+| **RA-TLS cert** | Self-signed, enclave-generated | CA-signed, TEE-generated |
+| **Use case** | Maximum security, minimal TCB | Ease of deployment, existing applications |
+
+Choose **Enclave OS** when you need the smallest possible TCB and per-application WASM isolation. Choose the **Caddy module** when you want to add attestation to an existing application with minimal changes, or when you're running on TDX/SEV infrastructure.
+
+## Adding a New Backend
+
+1. Create `attester_<name>.go` implementing the `Attester` interface.
+2. Register it in an `init()` function: `RegisterAttester("<name>", func() Attester { return new(MyAttester) })`
+3. The new backend is immediately available via `backend <name>` in the Caddyfile.

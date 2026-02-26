@@ -1,0 +1,14 @@
+{
+    "title": "Documentation",
+    "root": true,
+    "pages": [
+        "introduction",
+        "---Technology---",
+        "why-privasys",
+        "confidential-computing",
+        "---Solutions---",
+        "enclave-os",
+        "caddy-ra-tls",
+        "ra-tls-clients"
+    ]
+}

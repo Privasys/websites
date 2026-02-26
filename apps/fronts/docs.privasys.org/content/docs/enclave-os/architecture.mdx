@@ -1,0 +1,143 @@
+---
+title: Architecture
+description: The host/enclave split, ECALL/OCALL interface, and data flow of Enclave OS (Mini).
+---
+
+Enclave OS (Mini) is a lightweight SGX enclave runtime that exposes an RA-TLS HTTPS server from inside an Intel SGX enclave. It is written in Rust, built with a fork of the Teaclave SGX SDK, and provides a minimal, auditable Trusted Computing Base.
+
+## Design Principles
+
+| Principle | How it's applied |
+|-----------|------------------|
+| **Minimal TCB** | Only the enclave binary runs inside SGX. The host is untrusted. |
+| **Standard protocols** | Uses TLS 1.3, X.509, HTTPS — no proprietary attestation channels. |
+| **Defence in depth** | MRENCLAVE sealing, AES-256-GCM KV encryption, per-app namespace isolation, config Merkle tree for integrity. |
+| **No vendor lock-in** | Open source (AGPL-3.0), self-hostable on any SGX-capable hardware. |
+
+## High-Level Topology
+
+```
+┌─────────────────────────────────────────────────────┐
+│                   Host Process                      │
+│                                                     │
+│  ┌────────────┐    ┌────────────────┐               │
+│  │ TCP        │    │ KV Storage     │               │
+│  │ Listener   │    │ (Filesystem)   │               │
+│  │ :8443      │    └───────┬────────┘               │
+│  └─────┬──────┘            │                        │
+│        │              OCALL (notify)                │
+│        │                   │                        │
+│  ══════╪═══════════════════╪══════════════════════  │
+│  ║     │   ECALL           │  Shared SPSC Queues ║  │
+│  ║     ▼  (run)            ▼                     ║  │
+│  ║  ┌─────────────────────────────────────┐      ║  │
+│  ║  │            SGX Enclave              │      ║  │
+│  ║  │                                     │      ║  │
+│  ║  │  ┌──────────┐   ┌───────────────┐   │      ║  │
+│  ║  │  │ RA-TLS   │   │ Sealed        │   │      ║  │
+│  ║  │  │ Server   │   │ KV Store      │   │      ║  │
+│  ║  │  │ (TLS 1.3)│   │ (AES-256-GCM) │   │      ║  │
+│  ║  │  └────┬─────┘   └───────────────┘   │      ║  │
+│  ║  │       │                             │      ║  │
+│  ║  │  ┌────▼──────────────────────┐      │      ║  │
+│  ║  │  │ WASM Runtime (wasmtime)   │      │      ║  │
+│  ║  │  │ ┌─────────┐  ┌─────────┐  │      │      ║  │
+│  ║  │  │ │ App A   │  │ App B   │  │      │      ║  │
+│  ║  │  │ │ /app-a/*│  │ /app-b/*│  │      │      ║  │
+│  ║  │  │ └─────────┘  └─────────┘  │      │      ║  │
+│  ║  │  └───────────────────────────┘      │      ║  │
+│  ║  └─────────────────────────────────────┘      ║  │
+│  ═════════════════════════════════════════════════  │
+└─────────────────────────────────────────────────────┘
+```
+
+## The Two Processes
+
+### Host (untrusted)
+
+The **host process** is a standard Linux binary that:
+
+1. **Creates the enclave.** Loads the signed enclave binary via the SGX SDK's `SgxEnclave::create` API.
+2. **Listens for TCP connections** on the configured port (default `0.0.0.0:8443`).
+3. **Forwards raw bytes** into the enclave via shared SPSC (Single-Producer Single-Consumer) circular buffers.
+4. **Persists encrypted KV data** to the filesystem on behalf of the enclave. The host never sees plaintext — only AES-256-GCM ciphertexts.
+
+The host has **no access** to TLS keys, plaintext application data, or the master sealing key.
+
+### Enclave (trusted)
+
+The **enclave** runs inside SGX-protected memory. It:
+
+1. **Generates or unseals its master key.** On first boot, generates a 256-bit master key via SGX's hardware random number generator and seals it to MRENCLAVE. On subsequent boots, unseals the existing key.
+2. **Generates the RA-TLS certificate.** An ECDSA P-256 key pair is generated inside the enclave, bound to an SGX quote via `ReportData`, and wrapped in an X.509 certificate.
+3. **Runs the TLS 1.3 server.** Raw TCP bytes arrive from the host; the enclave performs the TLS handshake, decrypts HTTPS requests, and routes them to WASM modules.
+4. **Manages the WASM runtime.** Loads wasmtime Component Model modules, enforcing per-app namespace isolation for KV storage and filesystem access.
+5. **Maintains the Merkle tree.** All configuration (CA cert, CA key, WASM app hashes) is captured in a Merkle tree whose root is embedded in the RA-TLS certificate.
+
+## ECALL / OCALL Interface
+
+Enclave OS uses a deliberately narrow EDL (Enclave Definition Language) interface — only **3 ECALLs** and **1 OCALL**:
+
+### ECALLs (Host → Enclave)
+
+| ECALL | Purpose |
+|-------|---------|
+| `ecall_init_channel` | Sets up shared memory SPSC queues between host and enclave for a given connection. |
+| `ecall_run` | Starts the enclave's main event loop. The enclave reads from request queues, processes HTTPS requests, and writes responses to response queues. |
+| `ecall_shutdown` | Gracefully shuts down the enclave, flushing sealed state. |
+
+### OCALLs (Enclave → Host)
+
+| OCALL | Purpose |
+|-------|---------|
+| `ocall_notify` | A single notification OCALL that the enclave uses to signal the host. All rich communication happens through the shared SPSC queues and RPC protocol, not through OCALL parameters. |
+
+This minimal interface is a key security property: the attack surface between trusted and untrusted code is just **four functions**.
+
+## Data Flow: An HTTPS Request
+
+Here's how a client HTTPS request flows through the system:
+
+1. **Client connects** to port 8443. The host TCP listener accepts the connection.
+2. **Host** allocates a channel (a pair of SPSC queues) and calls `ecall_init_channel`.
+3. **Host** writes raw TCP bytes into the request queue.
+4. **Enclave** reads the bytes, performs the **TLS 1.3 handshake** (sending the RA-TLS certificate), and decrypts the HTTP request.
+5. **Enclave** routes the request (e.g., `/app-a/endpoint`) to the appropriate **WASM module**.
+6. **WASM module** processes the request, possibly reading/writing to its isolated KV namespace via WASI.
+7. **Enclave** encrypts the HTTP response under TLS and writes the ciphertext to the response queue.
+8. **Host** reads from the response queue and sends the bytes back to the client over TCP.
+
+At no point does the host see plaintext HTTP payloads or TLS session keys.
+
+## Source Layout
+
+```
+enclave-os-mini/
+├── common/           # Shared types, RPC protocol, SPSC queue
+│   └── src/
+│       ├── protocol.rs   # RPC method enum and serialization
+│       ├── queue.rs      # Lock-free SPSC circular buffer
+│       ├── rpc.rs        # RPC request/response framing
+│       └── types.rs      # Shared data types
+├── enclave/          # SGX enclave code (trusted)
+│   └── src/
+│       ├── ecall.rs      # ECALL entry points
+│       ├── ocall.rs      # OCALL wrappers
+│       ├── rpc_client.rs # RPC client (enclave → host)
+│       ├── crypto/       # AEAD, sealing, key derivation
+│       ├── https/        # RA-TLS HTTPS server
+│       ├── kvstore/      # Encrypted KV store
+│       ├── ratls/        # RA-TLS cert generation & session mgmt
+│       └── secrets/      # Secret management & JWT
+├── host/             # Host process (untrusted)
+│   └── src/
+│       ├── main.rs       # Entry point
+│       ├── dispatcher.rs # Connection dispatching
+│       ├── enclave.rs    # Enclave lifecycle management
+│       ├── kvstore/      # Filesystem-backed KV persistence
+│       └── net/          # TCP listener & networking
+├── edl/              # Enclave Definition Language
+│   └── enclave_os.edl
+└── config/           # Enclave configuration
+    └── enclave.config.xml
+```
