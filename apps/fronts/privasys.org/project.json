@@ -38,27 +38,6 @@
                 "cwd": "apps/fronts/privasys.org"
             }
         },
-        "preview-email": {
-            "executor": "nx:run-commands",
-            "options": {
-                "command": "yarn email dev --dir='components/emails'",
-                "cwd": "apps/fronts/privasys.org"
-            }
-        },
-        "generate-types": {
-            "executor": "nx:run-commands",
-            "options": {
-                "command": "yarn run payload generate:types",
-                "cwd": "apps/fronts/privasys.org"
-            }
-        },
-        "generate-importmap": {
-            "executor": "nx:run-commands",
-            "options": {
-                "command": "yarn run payload generate:importmap",
-                "cwd": "apps/fronts/privasys.org"
-            }
-        },
         "test": {
             "executor": "@nx/jest:jest",
             "outputs": [

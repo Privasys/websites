@@ -10,14 +10,10 @@
         "isolatedModules": true,
         "incremental": true,
         "baseUrl": ".",
-        "types": [
-            "jest",
-            "node"
-        ],
+        "types": ["node"],
         "paths": {
-            "~/*": [
-                "./*"
-            ]
+            "@/*": ["./*"],
+            "@/.source": ["./.source/index"]
         },
         "plugins": [
             {
@@ -26,18 +22,12 @@
         ]
     },
     "include": [
-        "**/*.js",
-        "**/*.jsx",
         "**/*.ts",
         "**/*.tsx",
+        "**/*.mdx",
         ".next/types/**/*.ts",
         "next-env.d.ts",
-        "next-sitemap.config.cjs",
-        "next.config.cjs",
-        "../../../dist/apps/fronts/privasys.org/.next/types/**/*.ts"
+        ".source/**/*.ts"
     ],
-    "exclude": [
-        "node_modules",
-        "jest.config.ts"
-    ]
+    "exclude": ["node_modules", ".next", "dist"]
 }

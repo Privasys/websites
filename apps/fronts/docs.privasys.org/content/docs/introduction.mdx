@@ -1,0 +1,48 @@
+---
+title: Introduction
+description: Technical documentation for the Privasys confidential computing platform.
+---
+
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+Welcome to the Privasys technical documentation. Privasys is a confidential computing platform that lets you run workloads inside hardware-enforced Trusted Execution Environments (TEEs) with standard HTTPS connectivity via RA-TLS.
+
+## Platform Components
+
+| Component | Description | Status |
+|-----------|-------------|--------|
+| **Enclave OS Mini** | Lightweight SGX enclave runtime with RA-TLS HTTPS server, sealed KV store, and WASM app hosting. | Production |
+| **Caddy RA-TLS Module** | Caddy TLS issuance module that produces RA-TLS certificates for Confidential VMs (Intel TDX, AMD SEV-SNP). | Production |
+| **RA-TLS Clients** | Client libraries and CLI tools for verifying RA-TLS certificates and extracting SGX quotes. | Production |
+
+## Getting Started
+
+<Cards>
+  <Card title="Why Privasys" href="/why-privasys">
+    Understand the trust problem in cloud computing and how Privasys solves it.
+  </Card>
+  <Card title="Confidential Computing" href="/confidential-computing">
+    Learn about Intel SGX, TEEs, and DCAP attestation.
+  </Card>
+  <Card title="Enclave OS" href="/enclave-os">
+    Dive into the architecture, RA-TLS, sealing, and WASM runtime.
+  </Card>
+  <Card title="Caddy RA-TLS Module" href="/caddy-ra-tls">
+    Add RA-TLS attestation to any application via Caddy on TDX/SEV Confidential VMs.
+  </Card>
+  <Card title="RA-TLS Clients" href="/ra-tls-clients">
+    Verify RA-TLS certificates from Go, Rust, Python, or the CLI.
+  </Card>
+</Cards>
+
+## Open Source
+
+All Privasys components are open source.
+
+| Repository | License |
+|-----------|---------|
+| [enclave-os-mini](https://github.com/Privasys/enclave-os-mini) | AGPL-3.0 |
+| [caddy-ra-tls-module](https://github.com/Privasys/caddy-ra-tls-module) | AGPL-3.0 |
+| [ratls-client-go](https://github.com/Privasys/ratls-client-go) | Apache-2.0 |
+| [ratls-client-rs](https://github.com/Privasys/ratls-client-rs) | Apache-2.0 |
+| [ratls-client-py](https://github.com/Privasys/ratls-client-py) | Apache-2.0 |

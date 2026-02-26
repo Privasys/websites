@@ -1,0 +1,175 @@
+---
+title: RPC & Circular Buffers
+description: The lock-free SPSC queue design and RPC protocol that connect the host and enclave.
+---
+
+Enclave OS uses a custom RPC protocol over shared-memory circular buffers to communicate between the host (untrusted) and the enclave (trusted). This design minimizes the number of expensive ECALL/OCALL transitions while maintaining high throughput.
+
+## Why Not Standard ECALLs/OCALLs?
+
+The SGX SDK provides ECALLs (host → enclave) and OCALLs (enclave → host) as the standard way to cross the enclave boundary. Each call involves:
+
+- A **context switch** costing ~10,000 CPU cycles.
+- **Parameter marshalling** — serializing and copying data across the boundary.
+- **EEXIT/EENTER** instructions that flush the TLB and pipeline.
+
+For a web server handling many requests per second, calling ECALLs/OCALLs for every read/write operation would be prohibitively slow.
+
+Instead, Enclave OS makes **one ECALL** (`ecall_run`) to start the enclave's event loop, then all data flows through **shared memory** — memory regions that both the host and enclave can access. The only OCALL (`ocall_notify`) is a lightweight signal with no data payload.
+
+## SPSC Circular Buffers
+
+The shared memory is organized as **Single-Producer Single-Consumer (SPSC) circular buffers** — a lock-free data structure where one thread writes and one thread reads, without any mutex or atomic compare-and-swap.
+
+### Memory Layout
+
+```
+┌──────────────────────────────────────────────────┐
+│                   2 MB Buffer                    │
+├──────────┬───────────────────────────┬───────────┤
+│ Header   │         Data Region       │  Padding  │
+│ (64B)    │                           │  (align)  │
+└──────────┴───────────────────────────┴───────────┘
+
+Header (64 bytes, cache-line aligned):
+┌──────────┬──────────┬──────────────────────────┐
+│ head: u64│ tail: u64│ padding (48 bytes)       │
+│ (atomic) │ (atomic) │ (to fill cache line)     │
+└──────────┴──────────┴──────────────────────────┘
+```
+
+Each connection gets **two buffers**: one for requests (host → enclave) and one for responses (enclave → host).
+
+### Key Design Decisions
+
+| Decision | Rationale |
+|----------|-----------|
+| **2 MB capacity** | Large enough to buffer complete HTTP requests/responses without blocking, small enough to fit many connections in EPC memory. |
+| **64-byte cache-line alignment** | The `head` and `tail` pointers are on separate cache lines, preventing false sharing between the producer and consumer cores. |
+| **Atomic Acquire/Release ordering** | The weakest memory ordering that guarantees the consumer sees all writes made before the producer advanced the `tail`. No `SeqCst` overhead. |
+| **4 MB max message size** | Messages larger than the buffer wrap around. A 4 MB upper bound prevents denial-of-service from oversized messages. |
+
+### Message Framing
+
+Each message in the buffer is prefixed by a **4-byte header** containing the message length (little-endian `u32`):
+
+```
+┌───────────┬──────────────────────┐
+│ len: u32  │  payload (len bytes) │
+│ (4 bytes) │                      │
+└───────────┴──────────────────────┘
+```
+
+The constant `MSG_HEADER_SIZE = 4` is defined in the shared `common` crate and used by both the host and enclave.
+
+### Write Path (Producer)
+
+```rust
+fn send(&self, data: &[u8]) -> Result<()> {
+    let total = MSG_HEADER_SIZE + data.len();
+    // 1. Read head and tail (atomic Acquire)
+    // 2. Check available space (wrapping arithmetic)
+    // 3. Write length header
+    // 4. Write payload (may wrap around buffer end)
+    // 5. Advance tail (atomic Release)
+}
+```
+
+### Read Path (Consumer)
+
+```rust
+fn recv(&self) -> Result<Vec<u8>> {
+    // 1. Read head and tail (atomic Acquire)
+    // 2. Check if data available
+    // 3. Read length header
+    // 4. Read payload (may wrap around buffer end)
+    // 5. Advance head (atomic Release)
+}
+```
+
+The wrapping logic handles the case where a message spans the end of the circular buffer — the write/read wraps around to the beginning.
+
+## RPC Protocol
+
+On top of the raw circular buffers, Enclave OS implements a **request-response RPC protocol**. This provides multiplexing, method dispatch, and error handling.
+
+### Request Header (14 bytes)
+
+```
+┌──────────────┬───────────────┬─────────────────┐
+│ req_id: u64  │ method: u16   │ payload_len: u32│
+│ (8 bytes)    │ (2 bytes)     │ (4 bytes)       │
+└──────────────┴───────────────┴─────────────────┘
+```
+
+### Response Header (16 bytes)
+
+```
+┌──────────────┬───────────────┬─────────────────┐
+│ req_id: u64  │ status: i32   │ payload_len: u32│
+│ (8 bytes)    │ (4 bytes)     │ (4 bytes)       │
+└──────────────┴───────────────┴─────────────────┘
+```
+
+The `req_id` field allows the enclave to match responses to requests, enabling potential future pipelining.
+
+### RPC Methods
+
+The protocol defines 13 methods across four categories. Method IDs use hex ranges to group related operations:
+
+#### Network Operations
+
+| Method | ID | Direction | Purpose |
+|--------|----|-----------|---------|
+| `NetTcpListen` | `0x0100` | E→H | Start listening on a TCP port |
+| `NetTcpAccept` | `0x0101` | E→H | Accept a new TCP connection |
+| `NetTcpConnect` | `0x0102` | E→H | Open an outbound TCP connection |
+| `NetSend` | `0x0103` | E→H | Send bytes on a TCP socket |
+| `NetRecv` | `0x0104` | E→H | Receive bytes from a TCP socket |
+| `NetClose` | `0x0105` | E→H | Close a TCP connection |
+
+#### Key-Value Store
+
+| Method | ID | Direction | Purpose |
+|--------|----|-----------|---------|
+| `KvPut` | `0x0200` | E→H | Store a key-value pair |
+| `KvGet` | `0x0201` | E→H | Retrieve a value by key |
+| `KvDelete` | `0x0202` | E→H | Delete a key |
+| `KvListKeys` | `0x0203` | E→H | List keys matching a prefix |
+
+#### Utility
+
+| Method | ID | Direction | Purpose |
+|--------|----|-----------|---------|
+| `GetCurrentTime` | `0x0300` | E→H | Get current wall-clock time |
+| `Log` | `0x0301` | E→H | Send a log message to the host |
+
+#### Lifecycle
+
+| Method | ID | Direction | Purpose |
+|--------|----|-----------|---------|
+| `Shutdown` | `0xFF00` | E→H | Shut down the enclave gracefully |
+
+### Serialization
+
+Request and response payloads are serialized using a simple **length-prefixed binary format** (not protobuf, not JSON). This keeps the serialization code minimal and avoids pulling in large dependencies inside the enclave.
+
+For example, a `KvPut` request payload:
+
+```
+┌──────────────┬───────────┬──────────────┬─────────────┐
+│ key_len: u32 │ key bytes │ val_len: u32 │ value bytes │
+└──────────────┴───────────┴──────────────┴─────────────┘
+```
+
+## Performance Characteristics
+
+| Metric | Value |
+|--------|-------|
+| **ECALL/OCALL transitions per request** | 0 (after initial `ecall_run`) |
+| **Memory copies per message** | 2 (write into buffer, read out of buffer) |
+| **Lock contention** | None (lock-free SPSC) |
+| **Memory ordering** | Acquire/Release (minimal overhead) |
+| **Latency** | Dominated by TLS and WASM execution, not by the queue |
+
+The SPSC queue design means that the communication channel itself is essentially **zero-overhead** — the bottleneck is always the useful work (TLS handshake, HTTP parsing, WASM execution) rather than the data transport.

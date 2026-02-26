@@ -1,0 +1,125 @@
+---
+title: RA-TLS Implementation
+description: How Enclave OS generates RA-TLS certificates, binds TLS keys to SGX quotes, and verifies attestation.
+---
+
+RA-TLS (Remote Attestation TLS) is the mechanism that lets Enclave OS prove its identity to any TLS client without requiring a custom attestation protocol. The SGX quote is embedded directly inside the X.509 certificate served during the TLS handshake.
+
+## ReportData Binding
+
+The security of RA-TLS rests on **binding the TLS public key to the SGX quote**. If the key isn't bound, an attacker could intercept traffic with their own key while replaying a legitimate quote.
+
+Enclave OS computes the 64-byte `ReportData` field as:
+
+```
+ReportData = SHA-512( SHA-256(DER_pubkey) || binding )
+```
+
+Where:
+
+- `DER_pubkey` is the DER-encoded ECDSA P-256 public key generated inside the enclave.
+- `binding` is a mode-dependent value:
+  - **Challenge mode**: A nonce received from the client (via TLS `ClientHello` extension `0xFFBB`).
+  - **Deterministic mode**: The creation timestamp, allowing the certificate to be cached and reused.
+
+The double-hash construction (SHA-256 then SHA-512) ensures the full 64 bytes of `ReportData` carry entropy from both the key and the binding value.
+
+## Certificate Structure
+
+Enclave OS generates a self-signed X.509 certificate with the following properties:
+
+| Field | Value |
+|-------|-------|
+| **Subject** | `CN=Enclave OS RA-TLS, O=Privasys` |
+| **Key** | ECDSA P-256 (generated inside SGX) |
+| **Signature** | ECDSA with SHA-256 |
+| **TLS version** | 1.3 only |
+| **Validity** | 5 minutes (challenge mode) or 24 hours (deterministic mode) |
+
+### Custom X.509 Extensions
+
+The certificate includes three custom extensions that carry attestation evidence and configuration:
+
+| OID | Name | Content |
+|-----|------|---------|
+| `1.2.840.113741.1.13.1.0` | SGX Quote | The full DCAP quote, including `ReportData` and platform measurements. |
+| `1.3.6.1.4.1.1337.1.1` | Config Merkle Root | The 32-byte SHA-256 Merkle root covering all enclave configuration (CA cert, CA key, WASM app hashes). |
+| `1.3.6.1.4.1.1337.2.{N}` | WASM Module | Per-application entries. `2.1` = app name, `2.2` = app route prefix, `2.3` = SHA-256 code hash of the WASM binary. |
+
+## Generation Flow
+
+```
+1. Generate ECDSA P-256 key pair (ring crate, inside SGX)
+         │
+         ▼
+2. DER-encode the public key
+         │
+         ▼
+3. Compute ReportData = SHA-512(SHA-256(DER_pubkey) || binding)
+         │
+         ▼
+4. Call sgx_create_report() with ReportData
+         │
+         ▼
+5. Obtain DCAP quote from quoting enclave
+         │
+         ▼
+6. Build X.509 certificate:
+   - Set subject, validity, key usage
+   - Attach SGX Quote extension (OID 1.2.840.113741.1.13.1.0)
+   - Attach Config Merkle Root extension (OID 1.3.6.1.4.1.1337.1.1)
+   - Attach WASM module extensions (OID 1.3.6.1.4.1.1337.2.*)
+   - Self-sign with the ECDSA private key
+         │
+         ▼
+7. Serve the certificate in the TLS 1.3 handshake
+```
+
+## Challenge vs Deterministic Mode
+
+### Challenge Mode
+
+In challenge mode, the client sends a random nonce in a custom TLS `ClientHello` extension (`0xFFBB`). The enclave uses this nonce as the binding value, generating a **fresh certificate per connection**.
+
+This provides **freshness**: the client knows the quote was produced in response to its specific challenge, preventing replay attacks.
+
+### Deterministic Mode
+
+In deterministic mode, the enclave uses the certificate's creation timestamp as the binding value. The certificate is generated once at startup and **reused for all connections**.
+
+This provides:
+
+- **Performance**: No per-connection quote generation (which takes ~100ms on SGX hardware).
+- **Compatibility**: Works with clients that don't support the `0xFFBB` extension (including standard browsers).
+- **Cacheability**: The quote can be verified once and the certificate pinned.
+
+The trade-off is that the quote could theoretically be replayed if the enclave's key is compromised — but since the key never leaves SGX memory, this requires compromising the hardware itself.
+
+Enclave OS defaults to **deterministic mode** for maximum compatibility.
+
+## Session Management
+
+Each TLS session is managed by the enclave's `RaTlsSession` struct, which:
+
+1. Owns the TLS server connection (via `rustls`).
+2. Reads encrypted bytes from the SPSC request queue.
+3. Decrypts them to produce plaintext HTTP requests.
+4. Encrypts HTTP responses and writes ciphertext to the response queue.
+
+The `rustls` configuration enforces:
+
+- **TLS 1.3 only** — TLS 1.2 and below are disabled.
+- **No client certificate required** — the attestation is server-side only.
+- **ECDSA P-256 cipher suites** — matching the key type.
+
+## Verification
+
+A verifier checks an RA-TLS certificate by:
+
+1. **Parsing the SGX Quote** from extension OID `1.2.840.113741.1.13.1.0`.
+2. **Verifying the quote signature** against Intel's DCAP root of trust.
+3. **Checking MRENCLAVE** against a known-good value to confirm the enclave code identity.
+4. **Recomputing `ReportData`**: hash the certificate's public key with the binding value and compare against the `ReportData` in the quote. This confirms the TLS key was generated inside the attested enclave.
+5. **Optionally checking the Merkle root** (OID `1.3.6.1.4.1.1337.1.1`) to verify the enclave's configuration.
+
+The Privasys [RA-TLS clients](/docs/ra-tls-clients) implement this verification flow in Python, Go, Rust, TypeScript, and C#.

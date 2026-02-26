@@ -1,0 +1,154 @@
+---
+title: Sealing & KV Store
+description: MRENCLAVE sealing, the single master key architecture, and the AES-256-GCM encrypted key-value store.
+---
+
+Enclave OS needs to persist data across restarts — the CA certificate, the CA private key, WASM module configurations, and application data. But the enclave's memory is wiped on every restart, and the host filesystem is untrusted. The solution is **sealing** (encrypting data bound to the enclave's identity) combined with an **encrypted key-value store**.
+
+## MRENCLAVE Sealing
+
+Intel SGX provides a sealing primitive that lets an enclave encrypt data with a key derived from its **MRENCLAVE** — the SHA-256 measurement of the enclave's initial code and data.
+
+Properties of MRENCLAVE sealing:
+
+- **Same binary, same key.** If you rebuild the enclave with identical source code and compiler settings, the MRENCLAVE is the same, and the sealed data can be unsealed.
+- **Different binary, different key.** If the code changes (even one byte), the MRENCLAVE changes, and old sealed data is inaccessible.
+- **Platform-bound.** The sealing key also depends on the CPU's hardware key, so sealed data cannot be moved to a different machine.
+
+This means sealed data is bound to a specific (code identity, hardware platform) pair — exactly the right granularity for secrets that should only be accessible to a known enclave binary.
+
+## Single Master Key Architecture
+
+Rather than sealing every piece of data individually (which would require an SGX seal/unseal operation for each read/write), Enclave OS uses a **single master key** architecture:
+
+```
+┌──────────────────────────────────────┐
+│          SGX Seal/Unseal             │
+│  (MRENCLAVE-bound, AES-128-GCM)      │
+│                                      │
+│  Protects ONE blob: SealedConfig     │
+│  which contains the 256-bit          │
+│  master key                          │
+└──────────────────┬───────────────────┘
+                   │
+                   ▼
+┌──────────────────────────────────────┐
+│          Master Key (256-bit)        │
+│  (Generated once via RDRAND,         │
+│   sealed at shutdown, unsealed       │
+│   at startup)                        │
+└──────────────────┬───────────────────┘
+                   │
+          ┌────────┼────────┐
+          ▼        ▼        ▼
+     ┌─────────┬────────┬────────┐
+     │ KV Key  │ KV Key │ KV Key │
+     │ HMAC    │ HMAC   │ HMAC   │
+     │ SHA-256 │ SHA-256│ SHA-256│
+     └────┬────┴───┬────┴───┬────┘
+          ▼        ▼        ▼
+     ┌─────────┬────────┬────────┐
+     │ AES-GCM │AES-GCM │AES-GCM │
+     │ encrypt │encrypt │encrypt │
+     └─────────┴────────┴────────┘
+```
+
+### First Boot
+
+1. No existing sealed data is found on disk.
+2. The enclave generates a **256-bit master key** using `sgx_read_rand` (hardware RDRAND).
+3. The enclave generates a **CA certificate and private key** (ECDSA P-256).
+4. Both are packaged into a `SealedConfig` structure and sealed to MRENCLAVE via the SGX SDK.
+
+### Subsequent Boots
+
+1. The host reads the sealed blob from disk and passes it to the enclave.
+2. The enclave calls `sgx_unseal_data`, recovering the master key and CA material.
+3. All KV encryption/decryption uses the recovered master key.
+
+## SealedConfig Format (v3)
+
+The sealed data follows a versioned binary format:
+
+```
+┌──────────────┬─────────────────────┬─────────────────────┐
+│ version: u32 │ master_key: [u8;32] │ CA certificate      │
+│ (= 3)        │                     │ (length-prefixed)   │
+├──────────────┼─────────────────────┼─────────────────────┤
+│              │                     │ CA private key      │
+│              │                     │ (length-prefixed)   │
+├──────────────┼─────────────────────┼─────────────────────┤
+│              │                     │ Module data map     │
+│              │                     │ (per-app configs)   │
+└──────────────┴─────────────────────┴─────────────────────┘
+
+AAD (Additional Authenticated Data): "enclave_os_sealed_config_v3"
+```
+
+The AAD ensures that a `SealedConfig` blob cannot be confused with data sealed for a different purpose.
+
+## Encrypted Key-Value Store
+
+All application data is stored in an encrypted KV store. The host persists the encrypted values on the filesystem, but **never sees plaintext**.
+
+### Key Derivation
+
+To convert a logical key (e.g., `"app-a:users:alice"`) into a storage key:
+
+```
+storage_key = HMAC-SHA-256(master_key, logical_key)
+```
+
+This serves dual purposes:
+
+1. **Privacy.** The host cannot learn the logical key names — it only sees random-looking 32-byte hashes.
+2. **Fixed-size keys.** Regardless of the logical key length, the storage key is always 32 bytes.
+
+### Value Encryption
+
+Each value is encrypted with **AES-256-GCM**:
+
+| Component | Size | Source |
+|-----------|------|--------|
+| **Key** | 32 bytes | The master key |
+| **Nonce** | 12 bytes | Fresh random via `sgx_read_rand` (RDRAND) |
+| **Plaintext** | Variable | The value to store |
+| **Tag** | 16 bytes | Authentication tag (integrity + authenticity) |
+
+The stored ciphertext format:
+
+```
+┌─────────────┬────────────────────┬───────────┐
+│ nonce (12B) │ ciphertext (var)   │ tag (16B) │
+└─────────────┴────────────────────┴───────────┘
+```
+
+Every write uses a **fresh random nonce**, ensuring that storing the same value twice produces different ciphertexts (preventing the host from detecting whether data changed).
+
+### Per-Application Namespace Isolation
+
+WASM applications are isolated from each other at the KV layer. Each application's keys are automatically prefixed with its app ID:
+
+```
+App "payments" writes key "balance"
+  → logical key = "payments:balance"
+  → storage key = HMAC-SHA-256(master_key, "payments:balance")
+```
+
+An application **cannot read or write** keys outside its namespace — the prefixing is enforced by the enclave, not by the application code.
+
+### System Table
+
+The enclave maintains a reserved `__system__` namespace for its own configuration data (sealed config version, module registry, etc.). Application code cannot access this namespace.
+
+## Threat Model
+
+| Threat | Mitigation |
+|--------|------------|
+| **Host reads plaintext data** | All values are AES-256-GCM encrypted. The master key is inside the enclave. |
+| **Host modifies ciphertext** | GCM authentication tag detects any tampering. |
+| **Host replays old ciphertext** | Partial mitigation: the enclave can detect stale values by including versioning in the plaintext. Full rollback protection requires a monotonic counter (future work). |
+| **Host deletes keys** | Detected if the application expects certain keys to exist. Merkle tree covers configuration keys. |
+| **Host sees key names** | HMAC-SHA-256 hashes the key names, hiding them from the host. |
+| **Host correlates access patterns** | Not mitigated. The host can see which storage keys are accessed and when. ORAM would address this (future work). |
+| **Cross-app data access** | Prevented by automatic namespace prefixing inside the enclave. |

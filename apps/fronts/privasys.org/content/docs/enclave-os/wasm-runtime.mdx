@@ -1,0 +1,134 @@
+---
+title: WASM Runtime
+description: How Enclave OS runs WebAssembly modules inside SGX using wasmtime and the WASI Component Model.
+---
+
+# WASM Runtime
+
+Enclave OS includes a **WebAssembly runtime** (wasmtime) inside the SGX enclave, allowing developers to deploy application logic as WASM modules. Each module runs in a sandboxed environment with controlled access to enclave services via WASI interfaces.
+
+## Why WASM Inside SGX
+
+SGX protects the infrastructure — the TLS keys, the attestation, the sealed storage. But the **application logic** running inside the enclave also needs to be:
+
+1. **Sandboxed.** A bug in one application shouldn't compromise the enclave or other applications.
+2. **Portable.** Developers should be able to write applications in any language that compiles to WASM (Rust, C/C++, Go, Python, JavaScript, etc.).
+3. **Attested.** The exact application code should be included in the attestation, so verifiers know not just *which enclave* is running but *which applications* are deployed.
+
+WASM provides all three: memory isolation by design, language-agnostic compilation, and a deterministic binary format whose SHA-256 hash can be included in the attestation certificate.
+
+## wasmtime Component Model
+
+Enclave OS uses [wasmtime](https://wasmtime.dev/) with the **Component Model** — the next-generation WASM standard that goes beyond flat linear memory to provide:
+
+- **WIT (WebAssembly Interface Types)**: A typed interface definition language. Components declare their imports and exports as structured types (records, variants, lists, strings), not raw bytes.
+- **Capability-based linking**: A component can only call functions that the host explicitly provides. There is no ambient authority.
+- **Composition**: Components can be linked together, with one component's exports satisfying another's imports.
+
+### Why Component Model (not Core WASM)
+
+Core WASM modules communicate through shared linear memory and integer-based function signatures. This works but requires manual serialization for complex types and provides no isolation between modules sharing memory.
+
+The Component Model gives Enclave OS:
+
+- **Type-safe WASI interfaces**: The HTTP handler, KV store, and filesystem APIs are defined as WIT interfaces with proper types.
+- **Memory isolation**: Each component has its own linear memory — no shared memory between applications.
+- **Forward compatibility**: As the WASM ecosystem evolves, new WASI proposals (sockets, crypto, ML) can be added as new WIT interfaces.
+
+## WASI Capabilities
+
+Each WASM module receives a controlled subset of WASI capabilities. The enclave **implements** these interfaces, mediating all access to enclave services:
+
+| WASI Interface | Enclave Implementation |
+|----------------|----------------------|
+| **wasi:http/incoming-handler** | The primary entry point. The enclave routes HTTPS requests to the module based on URL path prefix. |
+| **wasi:keyvalue/store** | Maps to the encrypted KV store with automatic namespace prefixing. App `payments` writing key `balance` actually writes `payments:balance`. |
+| **wasi:filesystem/types** | Routed through the sealed KV store (not a real filesystem). All "files" are encrypted KV entries. |
+| **wasi:clocks/wall-clock** | Returns the current time via the host RPC `GetTime` method. |
+| **wasi:logging/logging** | Streams log messages to the host for display, via the RPC `Log` method. Log messages are forwarded in real-time. |
+| **wasi:random/random** | Uses `sgx_read_rand` (hardware RDRAND) for cryptographic randomness. |
+| **wasi:cli/environment** | Provides controlled environment variables (app name, version). |
+
+### Denied Capabilities
+
+The following WASI capabilities are **not provided**, ensuring the enclave's security invariants:
+
+| Denied | Reason |
+|--------|--------|
+| **wasi:sockets** | Direct outbound sockets would bypass the enclave's controlled network layer. |
+| **wasi:filesystem (direct)** | Direct filesystem access would bypass encryption. All FS operations are routed through the encrypted KV store instead. |
+
+## Per-Application Isolation
+
+Each WASM module is associated with an `AppContext` that defines its sandbox:
+
+```rust
+struct AppContext {
+    app_name: String,           // Unique application identifier
+    route_prefix: String,       // URL path prefix (e.g., "/payments")
+    code_hash: [u8; 32],        // SHA-256 of the WASM binary
+    wasm_module: WasmModule,    // Compiled wasmtime module
+}
+```
+
+### Request Routing
+
+When an HTTPS request arrives:
+
+1. The enclave's HTTP router matches the URL path against registered route prefixes.
+2. The matching `AppContext` is selected.
+3. The request is passed to the WASM module's `wasi:http/incoming-handler` export.
+4. All KV and filesystem operations from this module are automatically scoped to the app's namespace.
+
+### Code Hash Attestation
+
+The SHA-256 hash of each WASM module's binary is:
+
+1. Computed when the module is loaded.
+2. Stored as a leaf in the [configuration Merkle tree](/docs/enclave-os/config-and-merkle-tree).
+3. Embedded in the RA-TLS certificate as a custom X.509 extension (OID `1.3.6.1.4.1.1337.2.3`).
+
+This means a verifier can check not only that the correct enclave binary is running (**MRENCLAVE**) but also which exact application WASM modules are deployed and what code they contain.
+
+## Enclave OS SDK
+
+Developers build WASM modules for Enclave OS using the **Enclave OS SDK**, which provides:
+
+- **WIT interface definitions**: The WASI interfaces that the enclave exposes.
+- **Guest bindings**: Generated Rust (or other language) bindings for the WIT interfaces.
+- **Build tooling**: Cargo configuration for compiling to `wasm32-wasip2` target.
+
+### Example: Hello World
+
+```rust
+use enclave_os_sdk::http::{IncomingRequest, ResponseOutparam};
+
+struct MyApp;
+
+impl enclave_os_sdk::http::IncomingHandler for MyApp {
+    fn handle(request: IncomingRequest, response_out: ResponseOutparam) {
+        let response = enclave_os_sdk::http::Response::new(200);
+        response.set_body(b"Hello from inside SGX!");
+        ResponseOutparam::set(response_out, Ok(response));
+    }
+}
+```
+
+The module is compiled to a WASM Component:
+
+```bash
+cargo build --target wasm32-wasip2 --release
+```
+
+And deployed to the enclave, where its SHA-256 hash is automatically included in the attestation certificate.
+
+## wasmtime Inside SGX: Challenges
+
+Running wasmtime inside an SGX enclave required solving several challenges:
+
+| Challenge | Solution |
+|-----------|----------|
+| **No `mmap` inside SGX** | wasmtime's memory allocation was patched to use the enclave's heap allocator instead of `mmap`. |
+| **No signals** | SGX doesn't support POSIX signals. wasmtime's bounds-checking and stack overflow detection use explicit checks instead of signal handlers. |
+| **Limited stack size** | Enclave stack is configured in `enclave.config.xml`. wasmtime's fuel metering prevents stack overflow from runaway WASM code. |
+| **No JIT** | SGX doesn't allow dynamic code generation (W^X). wasmtime uses **ahead-of-time (AOT) compilation** — WASM modules are compiled to native code before loading into the enclave. |

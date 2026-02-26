@@ -4,6 +4,9 @@
 .DS_Store
 Thumbs.db
 
+# Generated files
+.source
+
 # Logs
 logs
 *.log

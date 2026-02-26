@@ -14,16 +14,6 @@
             ],
             "cache": true
         },
-        "build-storybook": {
-            "inputs": [
-                "default",
-                "^production",
-                "{workspaceRoot}/.storybook/**/*",
-                "{projectRoot}/.storybook/**/*",
-                "{projectRoot}/tsconfig.storybook.json"
-            ],
-            "cache": true
-        },
         "@nx/jest:jest": {
             "inputs": [
                 "default",
@@ -63,23 +53,6 @@
         },
         "e2e": {
             "cache": true
-        },
-        "@nx/vite:test": {
-            "cache": true,
-            "inputs": [
-                "default",
-                "^production"
-            ]
-        },
-        "@nx/vite:build": {
-            "cache": true,
-            "dependsOn": [
-                "^build"
-            ],
-            "inputs": [
-                "production",
-                "^production"
-            ]
         }
     },
     "namedInputs": {
@@ -93,9 +66,6 @@
             "!{projectRoot}/tsconfig.spec.json",
             "!{projectRoot}/jest.config.[jt]s",
             "!{projectRoot}/.eslintrc.json",
-            "!{projectRoot}/.storybook/**/*",
-            "!{projectRoot}/**/*.stories.@(js|jsx|ts|tsx|mdx)",
-            "!{projectRoot}/tsconfig.storybook.json",
             "!{projectRoot}/src/test-setup.[jt]s"
         ],
         "sharedGlobals": [
