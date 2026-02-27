@@ -95,9 +95,9 @@ pub trait EnclaveModule: Send + Sync {
 
 | Module | Crate | Description |
 |--------|-------|-------------|
-| **egress** | `crates/enclave-os-egress` | HTTPS egress client; owns egress root CA store; registers `egress.ca_bundle` config leaf + OID `1.3.6.1.4.1.1337.2.1` |
+| **egress** | `crates/enclave-os-egress` | HTTPS egress client; owns egress root CA store; registers `egress.ca_bundle` config leaf + OID `1.3.6.1.4.1.65230.2.1` |
 | **kvstore** | `crates/enclave-os-kvstore` | Sealed (AES-256-GCM) KV store; owns master key from sealed config |
-| **wasm** | `crates/enclave-os-wasm` | WASM runtime (wasmtime); registers `wasm.code_hash` config leaf + OID `1.3.6.1.4.1.1337.2.3` |
+| **wasm** | `crates/enclave-os-wasm` | WASM runtime (wasmtime); registers `wasm.code_hash` config leaf + OID `1.3.6.1.4.1.65230.2.3` |
 | **vault** | `crates/enclave-os-vault` | JWT-authenticated (ES256) secret store and retrieval |
 | **helloworld** | `enclave/src/modules/helloworld.rs` | Smoke-test module: responds `"world"` to `"hello"` (inline, used by `default-ecall` feature) |
 
@@ -147,9 +147,9 @@ Root CA (privasys.root-ca.crt)
  └── Intermediary CA (sealed inside enclave)
       └── Leaf RA-TLS certificate (generated per-connection)
                ├── Extension: SGX Quote             (OID 1.2.840.113741.1.13.1.0)
-               ├── Extension: Config Merkle Root    (OID 1.3.6.1.4.1.1337.1.1)
-               ├── Extension: Egress CA Hash        (OID 1.3.6.1.4.1.1337.2.1)  ← egress module
-               └── Extension: WASM Code Hash        (OID 1.3.6.1.4.1.1337.2.3)  ← wasm module
+               ├── Extension: Config Merkle Root    (OID 1.3.6.1.4.1.65230.1.1)
+               ├── Extension: Egress CA Hash        (OID 1.3.6.1.4.1.65230.2.1)  ← egress module
+               └── Extension: WASM Code Hash        (OID 1.3.6.1.4.1.65230.2.3)  ← wasm module
 ```
 
 The intermediary CA cert + key are passed to the enclave at init time, sealed to disk as part of the unified `SealedConfig` (MRENCLAVE policy), and kept only in encrypted enclave memory. The leaf certificate is generated per-connection with an embedded SGX quote and signed by the intermediary CA. Module OIDs are registered by each module via `custom_oids()` and embedded as non-critical X.509 extensions.
