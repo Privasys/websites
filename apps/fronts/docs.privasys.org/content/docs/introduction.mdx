@@ -41,11 +41,11 @@ Both paths produce standard RA-TLS certificates that can be verified by the same
 
 All Privasys components are open source.
 
-| Component | Description | Status | License |
-|-----------|-------------|--------|---------|
-| **Enclave OS Mini** | Lightweight Intel SGX enclave runtime with RA-TLS HTTPS server, sealed KV store, and WASM app hosting. | Production | AGPL-3.0 |
-| **RA-TLS for Caddy** | Caddy TLS issuance module that produces RA-TLS certificates for Confidential VMs (Intel TDX, AMD SEV-SNP). | Production | AGPL-3.0 |
-| **RA-TLS Clients** | Client libraries and CLI tools for verifying RA-TLS certificates and extracting SGX quotes. | Production | AGPL-3.0 |
+| Component | Description | License |
+|-----------|-------------|---------|
+| **Enclave&nbsp;OS&nbsp;Mini** | Lightweight Intel SGX enclave runtime with RA-TLS HTTPS server, sealed KV store, and WASM app hosting. | AGPL&#8209;3.0 |
+| **RA&#8209;TLS&nbsp;for&nbsp;Caddy** | Caddy TLS issuance module that produces RA-TLS certificates for Confidential VMs (Intel TDX, AMD SEV-SNP). Requires the [Privasys/go fork](https://github.com/Privasys/go/tree/ratls) for challenge-response attestation. | AGPL&#8209;3.0 |
+| **RA&#8209;TLS&nbsp;Clients** | Client libraries and CLI tools for verifying RA-TLS certificates and extracting SGX quotes. | AGPL&#8209;3.0 |
 
 ## Getting Started
 
