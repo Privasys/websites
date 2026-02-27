@@ -42,13 +42,38 @@ export default async function Page(props: {
     const data = page.data as unknown as MdxPageData;
     const MDX = data.body;
 
+    const filePath = `apps/fronts/docs.privasys.org/content/docs/${slugKey}.mdx`;
+    const githubUrl = `https://github.com/Privasys/websites/blob/main/${filePath}`;
+
     return (
-        <DocsPage toc={data.toc}>
+        <DocsPage toc={data.toc} tableOfContent={{ style: 'clerk' }}>
             <DocsTitle>{page.data.title}</DocsTitle>
             <DocsDescription>{page.data.description}</DocsDescription>
             <DocsBody>
                 <MDX components={{ ...defaultMdxComponents }} />
             </DocsBody>
+            <a
+                href={githubUrl}
+                rel="noreferrer noopener"
+                target="_blank"
+                className="inline-flex items-center gap-1.5 w-fit border rounded-xl p-2 font-medium text-sm text-fd-secondary-foreground bg-fd-secondary transition-colors hover:text-fd-accent-foreground hover:bg-fd-accent"
+            >
+                <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                >
+                    <path d="M12 20h9" />
+                    <path d="M16.376 3.622a1 1 0 0 1 3.002 3.002L7.368 18.635a2 2 0 0 1-.855.506l-2.872.838a.5.5 0 0 1-.62-.62l.838-2.872a2 2 0 0 1 .506-.854z" />
+                    <path d="m15 5 3 3" />
+                </svg>
+                Edit on GitHub
+            </a>
         </DocsPage>
     );
 }

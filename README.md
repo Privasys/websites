@@ -1,16 +1,51 @@
-# Introduction
-This is an [nx](https://nx.dev/) monorepo where you can find all of the websites developed and maintained by [Privasys](https://privasys.org/).
+# Privasys Websites
 
-# Project Layout
-The repo is separated into `fronts` (for our websites' UI) and `server` (for some of our backend services).
-- [`apps/fronts/privasys.org`](https://github.com/privasys/websites/tree/main/apps/fronts/privasys.org) source code for [privasys.org](https://privasys.org/)
+[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 
-# Usage
-To run any app in development mode run:
+This is an [Nx](https://nx.dev/) monorepo containing all public websites developed and maintained by [Privasys](https://privasys.org/).
+
+## Websites
+
+| Site | Path | URL |
+|------|------|-----|
+| Main website | [`apps/fronts/privasys.org`](apps/fronts/privasys.org) | [privasys.org](https://privasys.org/) |
+| Documentation | [`apps/fronts/docs.privasys.org`](apps/fronts/docs.privasys.org) | [docs.privasys.org](https://docs.privasys.org/) |
+
+## Getting Started
+
+Install dependencies:
+
+```bash
+yarn install
 ```
-yarn nx serve [app-name]
+
+Run any app in development mode:
+
+```bash
+yarn nx serve docs.privasys.org
+yarn nx serve privasys.org
 ```
-To build a docker image for any app run:
+
+Build an app:
+
+```bash
+yarn nx build docs.privasys.org
 ```
-yarn nx dockerize [app-name]
+
+Build a Docker image:
+
+```bash
+yarn nx dockerize privasys.org
 ```
+
+## Contributing
+
+We welcome contributions! Please read our [Contributing Guide](CONTRIBUTING.md) before submitting a pull request.
+
+## Security
+
+To report a security vulnerability, please see our [Security Policy](SECURITY.md).
+
+## License
+
+This project is licensed under the [GNU Affero General Public License v3.0](LICENSE).

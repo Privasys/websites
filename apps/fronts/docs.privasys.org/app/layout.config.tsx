@@ -5,6 +5,7 @@ export const baseOptions: BaseLayoutProps = {
         title: 'Privasys',
         url: '/'
     },
+    githubUrl: 'https://github.com/Privasys',
     links: [
         {
             text: 'Website',
@@ -14,11 +15,6 @@ export const baseOptions: BaseLayoutProps = {
         {
             text: 'Blog',
             url: 'https://privasys.org/blog',
-            external: true
-        },
-        {
-            text: 'GitHub',
-            url: 'https://github.com/Privasys',
             external: true
         }
     ]
