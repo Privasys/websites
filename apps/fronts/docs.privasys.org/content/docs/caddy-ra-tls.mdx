@@ -212,7 +212,7 @@ A relying party verifying an RA-TLS certificate should:
 | **Deployment** | Custom build, SGX SDK, signed enclave | Standard Linux binary, xcaddy, no special SDK |
 | **Application model** | WASM modules loaded into the enclave | Any process in the VM, Caddy as reverse proxy |
 | **Quote source** | SGX DCAP quoting enclave | Linux configfs-tsm |
-| **RA-TLS cert** | CA-signed, enclave-generated (intermediary CA sealed inside SGX) | CA-signed, TEE-generated (intermediary CA on filesystem) |
+| **RA-TLS cert** | CA-signed, enclave-generated| CA-signed, TEE-generated|
 | **Use case** | Maximum security, minimal TCB | Ease of deployment, existing applications |
 
 Choose **Enclave OS** when you need the smallest possible TCB and per-application WASM isolation. Choose the **Caddy module** when you want to add attestation to an existing application with minimal changes, or when you're running on TDX/SEV infrastructure.
