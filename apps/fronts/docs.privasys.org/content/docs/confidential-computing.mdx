@@ -1,6 +1,6 @@
 ---
 title: Confidential Computing
-description: An introduction to Trusted Execution Environments, Intel SGX, Intel TDX, and remote attestation.
+description: An introduction to Trusted Execution Environments, Intel SGX, Intel TDX, AMD SEV-SNP, and remote attestation.
 ---
 
 Confidential Computing is a set of hardware technologies that protect data **while it is being processed**. Combined with encryption at rest and in transit, it closes the last remaining gap in the data protection lifecycle.
@@ -30,31 +30,57 @@ Key properties:
 
 SGX is available on select Intel Xeon processors (Ice Lake, Sapphire Rapids, and later) and is the foundation for Privasys's **Enclave OS (Mini)**.
 
-## Intel TDX
+### ECALLs and OCALLs
 
-Intel Trust Domain Extensions (TDX) provides **VM-level** isolation. Instead of protecting a single application, TDX protects an entire virtual machine (called a Trust Domain) from the hypervisor and host OS.
+Because an SGX enclave is isolated from the rest of the system, it cannot directly call OS functions, access the network, or read from disk. All communication between the enclave (trusted) and the host application (untrusted) goes through a narrow, explicitly defined interface:
 
-Key properties:
+- **ECALL (Enclave Call):** The host calls *into* the enclave. This is how the host starts enclave code or passes data to it.
+- **OCALL (Outside Call):** The enclave calls *out* to the host. This is how the enclave requests services it cannot perform itself — such as network I/O or file access.
 
-- **Whole-VM protection.** Run unmodified Linux inside a TDX VM with encrypted memory.
+Each ECALL/OCALL involves a hardware-enforced context switch (~10,000 CPU cycles), so minimising the number of transitions is critical for performance. The Enclave OS [RPC and Circular Buffers](/enclave-os/rpc-and-circular-buffers) design addresses this by replacing per-request ECALLs/OCALLs with shared-memory queues.
+
+ECALLs and OCALLs are declared in an **Enclave Definition Language (EDL)** file, which defines the exact function signatures allowed to cross the trust boundary. This is the enclave's attack surface — the smaller and simpler the EDL, the harder it is to exploit.
+
+## Confidential Virtual Machines (Intel TDX & AMD SEV-SNP)
+
+Unlike SGX, which protects a single application, **Confidential VMs** protect an entire virtual machine. The hypervisor and host OS are excluded from the trust boundary — the VM runs unmodified Linux with hardware-encrypted memory.
+
+Two major implementations exist today:
+
+### Intel TDX
+
+Intel Trust Domain Extensions (TDX) creates isolated VMs called **Trust Domains**.
+
 - **MRTD / RTMR.** Measurement registers capture the identity of the VM firmware and runtime.
 - **configfs-tsm.** Quote generation via the kernel's `/sys/kernel/config/tsm/report` interface — no special SDK needed.
 - **Available on major clouds.** Google Cloud, Azure, and others offer TDX Confidential VMs.
 
-TDX is the foundation for Privasys's **Caddy RA-TLS Module**, which runs Caddy inside a TDX VM and generates RA-TLS certificates using TDX quotes.
+### AMD SEV-SNP
 
-## SGX vs TDX
+AMD Secure Encrypted Virtualization – Secure Nested Paging (SEV-SNP) provides similar VM-level isolation on AMD EPYC processors.
 
-| | Intel SGX | Intel TDX |
-|--|-----------|-----------|
-| **Isolation level** | Application (enclave) | Virtual machine |
-| **TCB size** | Minimal (enclave code only) | Larger (full OS + application) |
-| **Deployment** | Custom build toolchain, EDL interface | Unmodified Linux applications |
-| **Attestation** | EPID / DCAP quotes | TDX quotes via configfs-tsm |
-| **Memory limit** | EPC size (128–512 MB typical) | Full VM memory |
-| **Use case** | High-security workloads with minimal TCB | General-purpose confidential VMs |
+- **Memory encryption.** Each VM has its own encryption key, managed by a dedicated AMD Secure Processor.
+- **Attestation reports.** The AMD Secure Processor produces signed attestation reports containing the VM's launch measurement and platform identity.
+- **Available on major clouds.** Azure, AWS, and Google Cloud offer SEV-SNP Confidential VMs.
 
-Privasys supports both: SGX for the Enclave OS (maximum security, minimal TCB) and TDX for the Caddy module (ease of deployment, standard Linux stack).
+### TDX vs SEV-SNP
+
+Both provide whole-VM confidential computing with similar security guarantees. The main differences are the CPU vendor (Intel vs AMD), attestation mechanisms, and cloud availability. From an application perspective, code runs identically in either — the Linux kernel abstracts the hardware differences.
+
+Privasys's **Caddy RA-TLS Module** currently supports TDX, with SEV-SNP support planned.
+
+## Comparison
+
+| | Intel SGX | Intel TDX | AMD SEV-SNP |
+|--|-----------|-----------|-------------|
+| **Isolation level** | Application (enclave) | Virtual machine | Virtual machine |
+| **TCB size** | Minimal (enclave code only) | Full OS + application | Full OS + application |
+| **Deployment** | Custom build, EDL interface | Unmodified Linux | Unmodified Linux |
+| **Attestation** | EPID / DCAP quotes | TDX quotes (configfs-tsm) | AMD attestation reports |
+| **Memory limit** | EPC size (128–512 MB typical) | Full VM memory | Full VM memory |
+| **Use case** | Minimal TCB, high security | General-purpose confidential VMs | General-purpose confidential VMs |
+
+Privasys supports SGX via the **Enclave OS** (maximum security, minimal TCB) and TDX/SEV-SNP via the **Caddy RA-TLS Module** (ease of deployment, standard Linux stack).
 
 ## Remote Attestation
 

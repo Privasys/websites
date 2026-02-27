@@ -1,6 +1,6 @@
 ---
 title: Architecture
-description: The host/enclave split, ECALL/OCALL interface, and data flow of Enclave OS (Mini).
+description: The modular architecture, host/enclave split, module system, and data flow of Enclave OS (Mini).
 ---
 
 Enclave OS (Mini) is a lightweight SGX enclave runtime that exposes an RA-TLS HTTPS server from inside an Intel SGX enclave. It is written in Rust, built with a fork of the Teaclave SGX SDK, and provides a minimal, auditable Trusted Computing Base.
@@ -12,44 +12,109 @@ Enclave OS (Mini) is a lightweight SGX enclave runtime that exposes an RA-TLS HT
 | **Minimal TCB** | Only the enclave binary runs inside SGX. The host is untrusted. |
 | **Standard protocols** | Uses TLS 1.3, X.509, HTTPS — no proprietary attestation channels. |
 | **Defence in depth** | MRENCLAVE sealing, AES-256-GCM KV encryption, per-app namespace isolation, config Merkle tree for integrity. |
+| **Modular by design** | All business logic lives in pluggable module crates. The core OS provides only RA-TLS ingress, HTTPS egress, and sealed storage. |
 | **No vendor lock-in** | Open source (AGPL-3.0), self-hostable on any SGX-capable hardware. |
+
+## What the Enclave Provides
+
+1. **RA-TLS Ingress** — Accept incoming TCP connections authenticated via RA-TLS (TLS 1.3 with SGX quotes embedded in X.509 certificates).
+2. **HTTPS Egress** — Make outbound HTTPS requests from inside the enclave (TLS termination inside the enclave, network I/O via host RPC).
+3. **Sealed Key-Value Store** — Encrypted KV database stored on the host, with both keys and values encrypted using a master key sealed to MRENCLAVE.
+4. **WASM Runtime** — Execute WebAssembly bytecode inside SGX with WASI support (random, sockets, KV).
+5. **JWT-Authenticated Vault** — Store and retrieve secrets gated by ES256 JWT verification.
+6. **Sealed Config** — All persistent state (CA material, egress CA bundle, KV master key) stored as a single MRENCLAVE-bound blob.
+7. **Config Attestation** — A Merkle root and per-module OIDs over all config inputs are embedded as custom X.509 extensions in every RA-TLS certificate.
 
 ## High-Level Topology
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                   Host Process                      │
-│                                                     │
-│  ┌────────────┐    ┌────────────────┐               │
-│  │ TCP        │    │ KV Storage     │               │
-│  │ Listener   │    │ (Filesystem)   │               │
-│  │ :8443      │    └───────┬────────┘               │
-│  └─────┬──────┘            │                        │
-│        │              OCALL (notify)                │
-│        │                   │                        │
-│  ══════╪═══════════════════╪══════════════════════  │
-│  ║     │   ECALL           │  Shared SPSC Queues ║  │
-│  ║     ▼  (run)            ▼                     ║  │
-│  ║  ┌─────────────────────────────────────┐      ║  │
-│  ║  │            SGX Enclave              │      ║  │
-│  ║  │                                     │      ║  │
-│  ║  │  ┌──────────┐   ┌───────────────┐   │      ║  │
-│  ║  │  │ RA-TLS   │   │ Sealed        │   │      ║  │
-│  ║  │  │ Server   │   │ KV Store      │   │      ║  │
-│  ║  │  │ (TLS 1.3)│   │ (AES-256-GCM) │   │      ║  │
-│  ║  │  └────┬─────┘   └───────────────┘   │      ║  │
-│  ║  │       │                             │      ║  │
-│  ║  │  ┌────▼──────────────────────┐      │      ║  │
-│  ║  │  │ WASM Runtime (wasmtime)   │      │      ║  │
-│  ║  │  │ ┌─────────┐  ┌─────────┐  │      │      ║  │
-│  ║  │  │ │ App A   │  │ App B   │  │      │      ║  │
-│  ║  │  │ │ /app-a/*│  │ /app-b/*│  │      │      ║  │
-│  ║  │  │ └─────────┘  └─────────┘  │      │      ║  │
-│  ║  │  └───────────────────────────┘      │      ║  │
-│  ║  └─────────────────────────────────────┘      ║  │
-│  ═════════════════════════════════════════════════  │
-└─────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────┐
+│                     Host (Untrusted)                       │
+│                                                            │
+│  ┌──────────────┐   ┌─────────────┐   ┌────────────────┐   │
+│  │ TCP Socket   │   │ KV Store    │   │ RPC Dispatcher │   │
+│  │ Table        │   │ Backend     │   │ (spin-polls    │   │
+│  │ (net/)       │   │ (kvstore/)  │   │  enc_to_host)  │   │
+│  └──────┬───────┘   └──────┬──────┘   └────────┬───────┘   │
+│         │                  │                   │           │
+│  ┌──────┴──────────────────┴───────────────────┴────────┐  │
+│  │            Shared Memory SPSC Queues                 │  │
+│  │  enc_to_host: [ring buf]  ← enclave writes requests  │  │
+│  │  host_to_enc: [ring buf]  → host writes responses    │  │
+│  └──────────────────────────────────────────────────────┘  │
+│                           │                                │
+├───────────────────────────┼────────────────────────────────┤
+│                           │     ← SGX boundary             │
+│                           │       (3 ECALLs + 1 OCALL)     │
+│  ┌────────────────────────┴────────────────────────────┐   │
+│  │                RPC Client                           │   │
+│  │  (encodes requests → enc_to_host, reads responses)  │   │
+│  └───┬──────────┬──────────────┬───────────────────────┘   │
+│      │          │              │                           │
+│  ┌───┴──────┐ ┌─┴──────────┐ ┌┴───────────┐                │
+│  │ RA-TLS   │ │ HTTPS      │ │ Sealed KV  │                │
+│  │ Server   │ │ Egress     │ │ Store      │                │
+│  │ (rustls) │ │ (rustls)   │ │ (AES-GCM)  │                │
+│  └──────────┘ └────────────┘ └────────────┘                │
+│      │                                                     │
+│  ┌───┴───────────────────────────────────────────────┐     │
+│  │          Pluggable Modules (EnclaveModule)        │     │
+│  │  ┌────────┐ ┌────────┐ ┌──────┐ ┌──────────────┐  │     │
+│  │  │ Egress │ │ WASM   │ │Vault │ │ HelloWorld   │  │     │
+│  │  └────────┘ └────────┘ └──────┘ └──────────────┘  │     │
+│  └───────────────────────────────────────────────────┘     │
+│                  Enclave (Trusted)                         │
+└────────────────────────────────────────────────────────────┘
 ```
+
+## Modular Architecture
+
+All business logic is implemented as **pluggable modules** that conform to the `EnclaveModule` trait and are registered at enclave startup. The core OS provides only the RA-TLS ingress server, HTTPS egress client, and sealed key-value store. Each module lives in its own crate under `crates/enclave-os-*`, keeping the core enclave small and each concern independently testable.
+
+### Module Interface
+
+Each module implements the following trait (defined in `enclave/src/modules/mod.rs`):
+
+```rust
+pub trait EnclaveModule: Send + Sync {
+    /// Human-readable module name.
+    fn name(&self) -> &str;
+    /// Handle a client request.
+    fn handle(&self, req: &Request) -> Option<Response>;
+    /// Config leaves for the Merkle tree (default: none).
+    fn config_leaves(&self) -> Vec<ConfigLeaf> { Vec::new() }
+    /// Custom X.509 OIDs for RA-TLS certificates (default: none).
+    fn custom_oids(&self) -> Vec<ModuleOid> { Vec::new() }
+}
+```
+
+- `config_leaves()` — named inputs hashed into the [config Merkle root](/enclave-os/config-and-merkle-tree) OID.
+- `custom_oids()` — individual X.509 OID extensions embedded in every RA-TLS certificate, allowing clients to verify specific module properties without a full Merkle audit.
+
+### Module Crates
+
+| Module | Crate | Description |
+|--------|-------|-------------|
+| **egress** | `crates/enclave-os-egress` | HTTPS egress client; owns egress root CA store; registers `egress.ca_bundle` config leaf + OID `1.3.6.1.4.1.1337.2.1` |
+| **kvstore** | `crates/enclave-os-kvstore` | Sealed (AES-256-GCM) KV store; owns master key from sealed config |
+| **wasm** | `crates/enclave-os-wasm` | WASM runtime (wasmtime); registers `wasm.code_hash` config leaf + OID `1.3.6.1.4.1.1337.2.3` |
+| **vault** | `crates/enclave-os-vault` | JWT-authenticated (ES256) secret store and retrieval |
+| **helloworld** | `enclave/src/modules/helloworld.rs` | Smoke-test module: responds `"world"` to `"hello"` (inline, used by `default-ecall` feature) |
+
+Modules are registered at startup in `ecall_run()`:
+
+```rust
+crate::modules::register_module(Box::new(MyModule));
+```
+
+The enclave dispatches all incoming requests to registered modules. If a module returns `Some(response)`, that response is sent to the client.
+
+### Adding Your Own Module
+
+1. Create a new crate: `crates/enclave-os-mymodule/` depending on `enclave-os-common`.
+2. Implement the `EnclaveModule` trait (including `name()`, `handle()`, and optionally `config_leaves()` + `custom_oids()`).
+3. Add your crate as a dependency in `enclave/Cargo.toml`.
+4. Register your module in `ecall_run()` in `ecall.rs`.
 
 ## The Two Processes
 
@@ -69,10 +134,25 @@ The host has **no access** to TLS keys, plaintext application data, or the maste
 The **enclave** runs inside SGX-protected memory. It:
 
 1. **Generates or unseals its master key.** On first boot, generates a 256-bit master key via SGX's hardware random number generator and seals it to MRENCLAVE. On subsequent boots, unseals the existing key.
-2. **Generates the RA-TLS certificate.** An ECDSA P-256 key pair is generated inside the enclave, bound to an SGX quote via `ReportData`, and wrapped in an X.509 certificate.
-3. **Runs the TLS 1.3 server.** Raw TCP bytes arrive from the host; the enclave performs the TLS handshake, decrypts HTTPS requests, and routes them to WASM modules.
+2. **Generates the RA-TLS certificate.** An ECDSA P-256 key pair is generated inside the enclave, bound to an SGX quote via `ReportData`, and wrapped in an X.509 certificate signed by the intermediary CA.
+3. **Runs the TLS 1.3 server.** Raw TCP bytes arrive from the host; the enclave performs the TLS handshake, decrypts HTTPS requests, and dispatches them to registered modules.
 4. **Manages the WASM runtime.** Loads wasmtime Component Model modules, enforcing per-app namespace isolation for KV storage and filesystem access.
-5. **Maintains the Merkle tree.** All configuration (CA cert, CA key, WASM app hashes) is captured in a Merkle tree whose root is embedded in the RA-TLS certificate.
+5. **Makes HTTPS egress requests.** Modules can call out to external services; TLS termination happens inside the enclave with network I/O proxied through the host RPC layer.
+6. **Maintains the Merkle tree.** All configuration (CA cert, egress CA bundle, WASM app hashes, module config) is captured in a Merkle tree whose root is embedded in the RA-TLS certificate.
+
+## Certificate Trust Chain
+
+```
+Root CA (privasys.root-ca.crt)
+ └── Intermediary CA (sealed inside enclave)
+      └── Leaf RA-TLS certificate (generated per-connection)
+               ├── Extension: SGX Quote             (OID 1.2.840.113741.1.13.1.0)
+               ├── Extension: Config Merkle Root    (OID 1.3.6.1.4.1.1337.1.1)
+               ├── Extension: Egress CA Hash        (OID 1.3.6.1.4.1.1337.2.1)  ← egress module
+               └── Extension: WASM Code Hash        (OID 1.3.6.1.4.1.1337.2.3)  ← wasm module
+```
+
+The intermediary CA cert + key are passed to the enclave at init time, sealed to disk as part of the unified `SealedConfig` (MRENCLAVE policy), and kept only in encrypted enclave memory. The leaf certificate is generated per-connection with an embedded SGX quote and signed by the intermediary CA. Module OIDs are registered by each module via `custom_oids()` and embedded as non-critical X.509 extensions.
 
 ## ECALL / OCALL Interface
 
@@ -102,42 +182,9 @@ Here's how a client HTTPS request flows through the system:
 2. **Host** allocates a channel (a pair of SPSC queues) and calls `ecall_init_channel`.
 3. **Host** writes raw TCP bytes into the request queue.
 4. **Enclave** reads the bytes, performs the **TLS 1.3 handshake** (sending the RA-TLS certificate), and decrypts the HTTP request.
-5. **Enclave** routes the request (e.g., `/app-a/endpoint`) to the appropriate **WASM module**.
-6. **WASM module** processes the request, possibly reading/writing to its isolated KV namespace via WASI.
+5. **Enclave** dispatches the request to registered **modules** (e.g., WASM, vault, egress).
+6. **Module** processes the request, possibly reading/writing to its isolated KV namespace or making HTTPS egress calls.
 7. **Enclave** encrypts the HTTP response under TLS and writes the ciphertext to the response queue.
 8. **Host** reads from the response queue and sends the bytes back to the client over TCP.
 
 At no point does the host see plaintext HTTP payloads or TLS session keys.
-
-## Source Layout
-
-```
-enclave-os-mini/
-├── common/           # Shared types, RPC protocol, SPSC queue
-│   └── src/
-│       ├── protocol.rs   # RPC method enum and serialization
-│       ├── queue.rs      # Lock-free SPSC circular buffer
-│       ├── rpc.rs        # RPC request/response framing
-│       └── types.rs      # Shared data types
-├── enclave/          # SGX enclave code (trusted)
-│   └── src/
-│       ├── ecall.rs      # ECALL entry points
-│       ├── ocall.rs      # OCALL wrappers
-│       ├── rpc_client.rs # RPC client (enclave → host)
-│       ├── crypto/       # AEAD, sealing, key derivation
-│       ├── https/        # RA-TLS HTTPS server
-│       ├── kvstore/      # Encrypted KV store
-│       ├── ratls/        # RA-TLS cert generation & session mgmt
-│       └── secrets/      # Secret management & JWT
-├── host/             # Host process (untrusted)
-│   └── src/
-│       ├── main.rs       # Entry point
-│       ├── dispatcher.rs # Connection dispatching
-│       ├── enclave.rs    # Enclave lifecycle management
-│       ├── kvstore/      # Filesystem-backed KV persistence
-│       └── net/          # TCP listener & networking
-├── edl/              # Enclave Definition Language
-│   └── enclave_os.edl
-└── config/           # Enclave configuration
-    └── enclave.config.xml
-```
