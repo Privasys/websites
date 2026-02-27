@@ -15,20 +15,6 @@ const nextConfig = {
     poweredByHeader: false,
     images: {
         unoptimized: true
-    },
-    async redirects() {
-        return [
-            {
-                source: '/',
-                destination: '/introduction',
-                permanent: false,
-            },
-            {
-                source: '/enclave-os',
-                destination: '/enclave-os/architecture',
-                permanent: false,
-            },
-        ];
     }
 };
 
