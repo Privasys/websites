@@ -9,6 +9,8 @@
         "---Solutions---",
         "enclave-os",
         "caddy-ra-tls",
-        "ra-tls-clients"
+        "ra-tls-clients",
+        "---",
+        "acknowledgments"
     ]
 }
