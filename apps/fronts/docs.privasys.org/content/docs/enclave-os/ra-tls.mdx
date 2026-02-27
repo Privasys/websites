@@ -26,7 +26,7 @@ The double-hash construction (SHA-256 then SHA-512) ensures the full 64 bytes of
 
 ## Certificate Structure
 
-Enclave OS generates a self-signed X.509 certificate with the following properties:
+Enclave OS generates an X.509 leaf certificate **signed by an externally-provisioned intermediary CA**. The CA certificate and private key are provided at deployment time and sealed inside the SGX enclave. The leaf certificate has the following properties:
 
 | Field | Value |
 |-------|-------|
@@ -69,10 +69,10 @@ The certificate includes three custom extensions that carry attestation evidence
    - Attach SGX Quote extension (OID 1.2.840.113741.1.13.1.0)
    - Attach Config Merkle Root extension (OID 1.3.6.1.4.1.1337.1.1)
    - Attach WASM module extensions (OID 1.3.6.1.4.1.1337.2.*)
-   - Self-sign with the ECDSA private key
+   - Sign with the intermediary CA key
          │
          ▼
-7. Serve the certificate in the TLS 1.3 handshake
+7. Return cert chain [leaf, CA cert] for the TLS 1.3 handshake
 ```
 
 ## Challenge vs Deterministic Mode
