@@ -71,7 +71,7 @@ policy = SgxPolicy(
 )
 
 verifier = RaTlsVerifier(policy)
-session = verifier.connect("enclave.example.com", 8443)
+session = verifier.connect("enclave.example.com", 443)
 
 # session is now a verified TLS connection
 response = session.get("/api/secrets")
@@ -87,7 +87,7 @@ policy := ratls.SgxPolicy{
     AllowDebug: false,
 }
 
-conn, err := ratls.Dial("enclave.example.com:8443", policy)
+conn, err := ratls.Dial("enclave.example.com:443", policy)
 if err != nil {
     log.Fatal("Attestation failed:", err)
 }
@@ -107,7 +107,7 @@ let policy = SgxPolicy {
 };
 
 let verifier = RaTlsVerifier::new(policy);
-let stream = verifier.connect("enclave.example.com:8443")?;
+let stream = verifier.connect("enclave.example.com:443")?;
 
 // stream is a verified TLS stream
 ```
@@ -123,7 +123,7 @@ const policy: SgxPolicy = {
 };
 
 const verifier = new RaTlsVerifier(policy);
-const response = await verifier.fetch('https://enclave.example.com:8443/api/secrets');
+const response = await verifier.fetch('https://enclave.example.com:443/api/secrets');
 ```
 
 ### C\#
@@ -140,7 +140,7 @@ var policy = new SgxPolicy
 var verifier = new RaTlsVerifier(policy);
 using var client = verifier.CreateHttpClient();
 
-var response = await client.GetAsync("https://enclave.example.com:8443/api/secrets");
+var response = await client.GetAsync("https://enclave.example.com:443/api/secrets");
 ```
 
 ## Verification Policies
@@ -183,7 +183,7 @@ This proves the certificate was generated **in response to this specific connect
 ```python
 # Python challenge mode example
 session = verifier.connect(
-    "enclave.example.com", 8443,
+    "enclave.example.com", 443,
     mode="challenge"  # Sends random nonce in ClientHello
 )
 ```

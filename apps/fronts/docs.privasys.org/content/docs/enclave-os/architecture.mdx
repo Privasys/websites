@@ -123,7 +123,7 @@ The enclave dispatches all incoming requests to registered modules. If a module 
 The **host process** is a standard Linux binary that:
 
 1. **Creates the enclave.** Loads the signed enclave binary via the SGX SDK's `SgxEnclave::create` API.
-2. **Listens for TCP connections** on the configured port (default `0.0.0.0:8443`).
+2. **Listens for TCP connections** on the configured port (default `0.0.0.0:443`).
 3. **Forwards raw bytes** into the enclave via shared SPSC (Single-Producer Single-Consumer) circular buffers.
 4. **Persists encrypted KV data** to the filesystem on behalf of the enclave. The host never sees plaintext — only AES-256-GCM ciphertexts.
 
@@ -178,7 +178,7 @@ This minimal interface is a key security property: the attack surface between tr
 
 Here's how a client HTTPS request flows through the system:
 
-1. **Client connects** to port 8443. The host TCP listener accepts the connection.
+1. **Client connects** to port 443. The host TCP listener accepts the connection.
 2. **Host** allocates a channel (a pair of SPSC queues) and calls `ecall_init_channel`.
 3. **Host** writes raw TCP bytes into the request queue.
 4. **Enclave** reads the bytes, performs the **TLS 1.3 handshake** (sending the RA-TLS certificate), and decrypts the HTTP request.
