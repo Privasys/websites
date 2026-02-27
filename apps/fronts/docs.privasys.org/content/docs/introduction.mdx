@@ -7,12 +7,30 @@ import { Cards, Card } from 'fumadocs-ui/components/card';
 
 Welcome to the Privasys technical documentation. Privasys is a confidential computing platform that lets you run workloads inside hardware-enforced Trusted Execution Environments (TEEs) with standard HTTPS connectivity via RA-TLS.
 
+## Two TEE Models, Two Adoption Paths
+
+Confidential computing hardware comes in two fundamentally different forms, each with distinct trade-offs. Rather than force a one-size-fits-all solution, Privasys provides a dedicated solution for each:
+
+| | **Enclave OS Mini** (SGX) | **Caddy RA-TLS Module** (TDX / SEV-SNP) |
+|--|---------------------------|------------------------------------------|
+| **Isolation model** | Application enclave — only the enclave code is trusted | Confidential VM — the entire VM is hardware-encrypted |
+| **TCB size** | ~4 MB enclave binary | Full Linux VM + Caddy |
+| **Deployment** | Custom build, SGX SDK, signed enclave | Standard Linux binary, xcaddy, no special SDK |
+| **Application model** | WASM modules loaded into the enclave | Any process in the VM, Caddy as reverse proxy |
+| **RA-TLS certificate** | CA-signed, enclave-generated (intermediary CA sealed inside SGX) | CA-signed, TEE-generated (intermediary CA on filesystem) |
+
+**Choose Enclave OS Mini** when you need the smallest possible Trusted Computing Base and strong per-application WASM isolation — ideal for greenfield, security-critical workloads on SGX hardware.
+
+**Choose the Caddy RA-TLS Module** when you want to add attestation to existing applications with minimal changes — just configure a Caddy reverse proxy inside a Confidential VM running on Intel TDX or AMD SEV-SNP infrastructure.
+
+Both paths produce standard RA-TLS certificates that can be verified by the same [RA-TLS client libraries](/ra-tls-clients), so the choice of TEE backend is transparent to relying parties.
+
 ## Platform Components
 
 | Component | Description | Status |
 |-----------|-------------|--------|
 | **Enclave OS Mini** | Lightweight SGX enclave runtime with RA-TLS HTTPS server, sealed KV store, and WASM app hosting. | Production |
-| **Caddy RA-TLS Module** | Caddy TLS issuance module that produces RA-TLS certificates for Confidential VMs (Intel TDX, AMD SEV-SNP). | Production |
+| **RA-TLS for Caddy** | Caddy TLS issuance module that produces RA-TLS certificates for Confidential VMs (Intel TDX, AMD SEV-SNP). | Production |
 | **RA-TLS Clients** | Client libraries and CLI tools for verifying RA-TLS certificates and extracting SGX quotes. | Production |
 
 ## Getting Started
@@ -42,7 +60,5 @@ All Privasys components are open source.
 | Repository | License |
 |-----------|---------|
 | [enclave-os-mini](https://github.com/Privasys/enclave-os-mini) | AGPL-3.0 |
-| [caddy-ra-tls-module](https://github.com/Privasys/caddy-ra-tls-module) | AGPL-3.0 |
-| [ratls-client-go](https://github.com/Privasys/ratls-client-go) | Apache-2.0 |
-| [ratls-client-rs](https://github.com/Privasys/ratls-client-rs) | Apache-2.0 |
-| [ratls-client-py](https://github.com/Privasys/ratls-client-py) | Apache-2.0 |
+| [ra-tls-caddy](https://github.com/Privasys/ra-tls-caddy) | AGPL-3.0 |
+| [ra-tls-clients](https://github.com/Privasys/ra-tls-clients) | Apache-2.0 |

@@ -3,9 +3,9 @@ title: Caddy RA-TLS Module
 description: A Caddy TLS issuance module that produces RA-TLS certificates for Confidential Computing (Intel TDX, AMD SEV-SNP).
 ---
 
-The **Caddy RA-TLS Module** is a [Caddy](https://caddyserver.com/) `tls.issuance` module (`ra_tls`) that produces RA-TLS certificates for **Confidential Computing**. It turns any Caddy instance running inside a Confidential VM into an attested HTTPS server — no custom client-side code required.
+The **RA-TLS for Caddy** is a [Caddy](https://caddyserver.com/) `tls.issuance` module (`ra_tls`) that produces RA-TLS certificates for **Confidential Computing**. It turns any Caddy instance running inside a Confidential VM into an attested HTTPS server — no custom client-side code required.
 
-**Repository**: [github.com/Privasys/caddy-ra-tls-module](https://github.com/Privasys/caddy-ra-tls-module)
+**Repository**: [github.com/Privasys/ra-tls-caddy](https://github.com/Privasys/ra-tls-caddy)
 
 ## Supported Backends
 
@@ -14,7 +14,7 @@ The **Caddy RA-TLS Module** is a [Caddy](https://caddyserver.com/) `tls.issuance
 | `tdx` | Intel TDX | Supported |
 | `sev-snp` | AMD SEV-SNP | Planned |
 
-The hardware-specific logic is abstracted behind the `Attester` interface ([attester.go](https://github.com/Privasys/caddy-ra-tls-module/blob/main/attester.go)). Each backend lives in its own file (e.g. [attester_tdx.go](https://github.com/Privasys/caddy-ra-tls-module/blob/main/attester_tdx.go)) and registers itself via `init()`.
+The hardware-specific logic is abstracted behind the `Attester` interface ([attester.go](https://github.com/Privasys/ra-tls-caddy/blob/main/attester.go)). Each backend lives in its own file (e.g. [attester_tdx.go](https://github.com/Privasys/ra-tls-caddy/blob/main/attester_tdx.go)) and registers itself via `init()`.
 
 ## Why Caddy + Confidential VMs
 
@@ -104,9 +104,9 @@ This certificate is not cached — each challenge produces a unique response.
 go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
 
 # Clone the module and build from the local directory
-git clone https://github.com/Privasys/caddy-ra-tls-module.git
-cd caddy-ra-tls-module
-xcaddy build --with github.com/Privasys/caddy-ra-tls-module=.
+git clone https://github.com/Privasys/ra-tls-caddy.git
+cd ra-tls-caddy
+xcaddy build --with github.com/Privasys/ra-tls-caddy=.
 ```
 
 > **Note:** The `=.` suffix tells xcaddy to use the local directory as the module source. The import path before `=` must match the `module` directive in `go.mod`. If you are working from a fork, update `go.mod` accordingly.
@@ -212,7 +212,7 @@ A relying party verifying an RA-TLS certificate should:
 | **Deployment** | Custom build, SGX SDK, signed enclave | Standard Linux binary, xcaddy, no special SDK |
 | **Application model** | WASM modules loaded into the enclave | Any process in the VM, Caddy as reverse proxy |
 | **Quote source** | SGX DCAP quoting enclave | Linux configfs-tsm |
-| **RA-TLS cert** | Self-signed, enclave-generated | CA-signed, TEE-generated |
+| **RA-TLS cert** | CA-signed, enclave-generated (intermediary CA sealed inside SGX) | CA-signed, TEE-generated (intermediary CA on filesystem) |
 | **Use case** | Maximum security, minimal TCB | Ease of deployment, existing applications |
 
 Choose **Enclave OS** when you need the smallest possible TCB and per-application WASM isolation. Choose the **Caddy module** when you want to add attestation to an existing application with minimal changes, or when you're running on TDX/SEV infrastructure.
