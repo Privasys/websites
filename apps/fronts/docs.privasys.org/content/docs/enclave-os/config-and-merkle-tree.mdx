@@ -55,9 +55,9 @@ In addition to the Merkle root, each module can register **individual X.509 OID 
 
 | OID | Module | Value |
 |-----|--------|-------|
-| `1.3.6.1.4.1.1337.1.1` | Core | Config Merkle root (32 bytes) |
-| `1.3.6.1.4.1.1337.2.1` | Egress | SHA-256 of egress CA bundle (32 bytes) |
-| `1.3.6.1.4.1.1337.2.3` | WASM | SHA-256 of WASM bytecode (32 bytes) |
+| `1.3.6.1.4.1.65230.1.1` | Core | Config Merkle root (32 bytes) |
+| `1.3.6.1.4.1.65230.2.1` | Egress | SHA-256 of egress CA bundle (32 bytes) |
+| `1.3.6.1.4.1.65230.2.3` | WASM | SHA-256 of WASM bytecode (32 bytes) |
 
 This gives clients two verification strategies:
 
@@ -83,7 +83,7 @@ struct ConfigManifest {
 }
 
 struct MerkleLeaf {
-    oid: String,            // e.g., "1.3.6.1.4.1.1337.2.3"
+    oid: String,            // e.g., "1.3.6.1.4.1.65230.2.3"
     hash: [u8; 32],         // SHA-256 of the configuration item
     description: String,    // Human-readable label
 }
@@ -97,17 +97,15 @@ The Merkle root is embedded in the RA-TLS certificate as a custom X.509 extensio
 
 | Field | Value |
 |-------|-------|
-| **OID** | `1.3.6.1.4.1.1337.1.1` |
+| **OID** | `1.3.6.1.4.1.65230.1.1` |
 | **Critical** | No |
 | **Value** | 32 bytes — the SHA-256 Merkle root |
-
-This OID is under the Privasys Private Enterprise Number (PEN), for now using placeholder `1337` until the registation with IANA is complete.
 
 ## Verification Flow
 
 A verifier checking an RA-TLS certificate can:
 
-1. **Extract the Merkle root** from extension OID `1.3.6.1.4.1.1337.1.1`.
+1. **Extract the Merkle root** from extension OID `1.3.6.1.4.1.65230.1.1`.
 2. **Compare against expected root**: If the verifier knows the expected configuration, they can compute the expected Merkle root independently and compare.
 3. **Verify individual leaves**: If the verifier only cares about specific configuration items (e.g., "is WASM app X deployed?"), they can request a Merkle proof for that leaf and verify it against the root.
 
@@ -155,13 +153,13 @@ SGX DCAP Quote (platform attestation)
                 │
                 ├── TLS public key (enclave-generated)
                 │
-                ├── Config Merkle Root (OID 1337.1.1)
+                ├── Config Merkle Root (OID 65230.1.1)
                 │       │
                 │       ├── CA cert hash
                 │       ├── CA key hash
                 │       └── WASM app code hashes
                 │
-                └── WASM Module Extensions (OID 1337.2.*)
+                └── WASM Module Extensions (OID 65230.2.*)
                         │
                         ├── App name
                         ├── App route

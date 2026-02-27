@@ -43,8 +43,8 @@ The certificate includes three custom extensions that carry attestation evidence
 | OID | Name | Content |
 |-----|------|---------|
 | `1.2.840.113741.1.13.1.0` | SGX Quote | The full DCAP quote, including `ReportData` and platform measurements. |
-| `1.3.6.1.4.1.1337.1.1` | Config Merkle Root | The 32-byte SHA-256 Merkle root covering all enclave configuration (CA cert, CA key, WASM app hashes). |
-| `1.3.6.1.4.1.1337.2.{N}` | WASM Module | Per-application entries. `2.1` = app name, `2.2` = app route prefix, `2.3` = SHA-256 code hash of the WASM binary. |
+| `1.3.6.1.4.1.65230.1.1` | Config Merkle Root | The 32-byte SHA-256 Merkle root covering all enclave configuration (CA cert, CA key, WASM app hashes). |
+| `1.3.6.1.4.1.65230.2.{N}` | WASM Module | Per-application entries. `2.1` = app name, `2.2` = app route prefix, `2.3` = SHA-256 code hash of the WASM binary. |
 
 ## Generation Flow
 
@@ -67,8 +67,8 @@ The certificate includes three custom extensions that carry attestation evidence
 6. Build X.509 certificate:
    - Set subject, validity, key usage
    - Attach SGX Quote extension (OID 1.2.840.113741.1.13.1.0)
-   - Attach Config Merkle Root extension (OID 1.3.6.1.4.1.1337.1.1)
-   - Attach WASM module extensions (OID 1.3.6.1.4.1.1337.2.*)
+   - Attach Config Merkle Root extension (OID 1.3.6.1.4.1.65230.1.1)
+   - Attach WASM module extensions (OID 1.3.6.1.4.1.65230.2.*)
    - Sign with the intermediary CA key
          │
          ▼
@@ -120,6 +120,6 @@ A verifier checks an RA-TLS certificate by:
 2. **Verifying the quote signature** against Intel's DCAP root of trust.
 3. **Checking MRENCLAVE** against a known-good value to confirm the enclave code identity.
 4. **Recomputing `ReportData`**: hash the certificate's public key with the binding value and compare against the `ReportData` in the quote. This confirms the TLS key was generated inside the attested enclave.
-5. **Optionally checking the Merkle root** (OID `1.3.6.1.4.1.1337.1.1`) to verify the enclave's configuration.
+5. **Optionally checking the Merkle root** (OID `1.3.6.1.4.1.65230.1.1`) to verify the enclave's configuration.
 
 The Privasys [RA-TLS clients](/docs/ra-tls-clients) implement this verification flow in Python, Go, Rust, TypeScript, and C#.
