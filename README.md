@@ -46,6 +46,24 @@ We welcome contributions! Please read our [Contributing Guide](CONTRIBUTING.md) 
 
 To report a security vulnerability, please see our [Security Policy](SECURITY.md).
 
+## Third-party dependencies
+
+Key runtime and development dependencies:
+
+| Dependency | License | Usage |
+|---|---|---|
+| Next.js | MIT | React framework |
+| React / React DOM | MIT | UI library |
+| fumadocs | MIT | Documentation framework |
+| motion | MIT | Animation library |
+| Tailwind CSS | MIT | Utility-first CSS |
+| Nx | MIT | Monorepo build system |
+| TypeScript | Apache 2.0 | Type-safe JavaScript |
+| ESLint / Prettier | MIT | Linting & formatting |
+| Jest | MIT | Testing framework |
+
+All dependencies are MIT-licensed unless noted above. Full license texts are available in [THIRD-PARTY-LICENSES](THIRD-PARTY-LICENSES).
+
 ## License
 
 This project is licensed under the [GNU Affero General Public License v3.0](LICENSE).
