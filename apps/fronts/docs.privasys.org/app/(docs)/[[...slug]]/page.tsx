@@ -22,8 +22,15 @@ interface MdxPageData {
 
 /** Slugs that should redirect to a default child page. */
 const folderRedirects: Record<string, string> = {
-    '': '/introduction',
-    'enclave-os': '/enclave-os/architecture',
+    '': '/introduction/overview',
+    'introduction': '/introduction/overview',
+    'confidential-computing': '/confidential-computing/presentation',
+    'solutions': '/solutions/confidential-containers/concept',
+    'solutions/confidential-containers': '/solutions/confidential-containers/concept',
+    'solutions/enclave-os': '/solutions/enclave-os/architecture',
+    'solutions/clients': '/solutions/clients/ra-tls-clients',
+    'guides': '/guides/enclave-os/deploy',
+    'guides/deploy-caddy-ra-tls': '/guides/deploy-caddy-ra-tls/google-cloud',
 };
 
 export default async function Page(props: {

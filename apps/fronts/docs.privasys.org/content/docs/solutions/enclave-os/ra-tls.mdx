@@ -1,0 +1,358 @@
+---
+title: RA-TLS & Config Attestation
+description: How Enclave OS generates RA-TLS certificates, binds TLS keys to SGX quotes, attests configuration via Merkle trees, and issues per-app certificates.
+---
+
+RA-TLS (Remote Attestation TLS) is the mechanism that lets Enclave OS prove its identity to any TLS client without requiring a custom attestation protocol. The SGX quote is embedded directly inside the X.509 certificate served during the TLS handshake.
+
+## ReportData Binding
+
+The security of RA-TLS rests on **binding the TLS public key to the SGX quote**. If the key isn't bound, an attacker could intercept traffic with their own key while replaying a legitimate quote.
+
+Enclave OS computes the 64-byte `ReportData` field as:
+
+```
+ReportData = SHA-512( SHA-256(DER_pubkey) || binding )
+```
+
+Where:
+
+- `DER_pubkey` is the DER-encoded ECDSA P-256 public key generated inside the enclave.
+- `binding` is a mode-dependent value:
+  - **Challenge mode**: A nonce received from the client (via TLS `ClientHello` extension `0xFFBB`).
+  - **Deterministic mode**: The creation timestamp, allowing the certificate to be cached and reused.
+
+The double-hash construction (SHA-256 then SHA-512) ensures the full 64 bytes of `ReportData` carry entropy from both the key and the binding value.
+
+## Certificate Structure
+
+Enclave OS generates an X.509 leaf certificate **signed by an externally-provisioned intermediary CA**. The CA certificate and private key are provided at deployment time and sealed inside the SGX enclave. The leaf certificate has the following properties:
+
+| Field | Value |
+|-------|-------|
+| **Subject** | `CN=Enclave OS RA-TLS, O=Privasys` |
+| **Key** | ECDSA P-256 (generated inside SGX) |
+| **Signature** | ECDSA with SHA-256 |
+| **TLS version** | 1.3 only |
+| **Validity** | 5 minutes (challenge mode) or 24 hours (deterministic mode) |
+
+### Custom X.509 Extensions
+
+The certificate includes custom extensions that carry attestation evidence and configuration measurements:
+
+| OID | Name | Content |
+|-----|------|---------|
+| `1.2.840.113741.1.13.1.0` | SGX Quote | The full DCAP quote, including `ReportData` and platform measurements. |
+| `1.3.6.1.4.1.65230.1.1` | Config Merkle Root | The 32-byte SHA-256 Merkle root covering all enclave configuration. |
+| `1.3.6.1.4.1.65230.2.1` | Egress CA Hash | SHA-256 of the egress CA bundle (registered by the egress module). |
+| `1.3.6.1.4.1.65230.2.3` | WASM Code Hash | SHA-256 of all loaded WASM bytecode (registered by the WASM module). |
+
+### OID Hierarchy
+
+```
+1.2.840.113741.1.13.1.0              Intel SGX DCAP Quote
+
+1.3.6.1.4.1.65230                    Privasys arc
+├── 1.1                              Config Merkle root (enclave-wide)
+├── 2.*                              Module OIDs (enclave-wide)
+│   ├── 2.1                          Egress CA bundle hash
+│   └── 2.3                          Combined WASM apps hash
+└── 3.*                              Per-app OIDs
+    ├── 3.1                          App config Merkle root
+    └── 3.2                          App code hash
+```
+
+## Generation Flow
+
+```
+1. Generate ECDSA P-256 key pair (ring crate, inside SGX)
+         │
+         ▼
+2. DER-encode the public key
+         │
+         ▼
+3. Compute ReportData = SHA-512(SHA-256(DER_pubkey) || binding)
+         │
+         ▼
+4. Call sgx_create_report() with ReportData
+         │
+         ▼
+5. Obtain DCAP quote from quoting enclave
+         │
+         ▼
+6. Build X.509 certificate:
+   - Set subject, validity, key usage
+   - Attach SGX Quote extension (OID 1.2.840.113741.1.13.1.0)
+   - Attach Config Merkle Root extension (OID 1.3.6.1.4.1.65230.1.1)
+   - Attach module OID extensions (registered via `custom_oids()`)
+   - Sign with the intermediary CA key
+         │
+         ▼
+7. Return cert chain [leaf, CA cert] for the TLS 1.3 handshake
+```
+
+## Challenge vs Deterministic Mode
+
+### Challenge Mode
+
+In challenge mode, the client sends a random nonce in a custom TLS `ClientHello` extension (`0xFFBB`). The enclave uses this nonce as the binding value, generating a **fresh certificate per connection**.
+
+This provides **freshness**: the client knows the quote was produced in response to its specific challenge, preventing replay attacks.
+
+### Deterministic Mode
+
+In deterministic mode, the enclave uses the certificate's creation timestamp as the binding value. The certificate is generated once at startup and **reused for all connections**.
+
+This provides:
+
+- **Performance**: No per-connection quote generation (which takes ~100ms on SGX hardware).
+- **Compatibility**: Works with clients that don't support the `0xFFBB` extension (including standard browsers).
+- **Cacheability**: The quote can be verified once and the certificate pinned.
+
+The trade-off is that the quote could theoretically be replayed if the enclave's key is compromised — but since the key never leaves SGX memory, this requires compromising the hardware itself.
+
+Enclave OS defaults to **deterministic mode** for maximum compatibility.
+
+## Session Management
+
+Each TLS session is managed by the enclave's `RaTlsSession` struct, which:
+
+1. Owns the TLS server connection (via `rustls`).
+2. Reads encrypted bytes from the SPSC data channel.
+3. Decrypts them to produce plaintext HTTP requests.
+4. Encrypts HTTP responses and writes ciphertext back to the data channel.
+
+The `rustls` configuration enforces:
+
+- **TLS 1.3 only** — TLS 1.2 and below are disabled.
+- **No client certificate required** — the attestation is server-side only.
+- **ECDSA P-256 cipher suites** — matching the key type.
+
+## Config Merkle Tree
+
+MRENCLAVE tells a verifier *which binary* is running — but it says nothing about *how* the binary is configured. Two enclaves with the same MRENCLAVE could have different CA certificates, different WASM modules deployed, or different KV store contents.
+
+The **Config Merkle Tree** closes this gap. It captures all configuration in a hash tree whose root is embedded in every RA-TLS certificate:
+
+```
+                    Root
+               ┌─────┴─────┐
+            H(0,1)       H(2,3)
+           ┌──┴──┐      ┌──┴──┐
+          L0    L1      L2    L3
+          │      │       │     │
+       CA cert  Egress  App A  App B
+       hash     CA hash hash   hash
+```
+
+Any change to any leaf changes the root. A verifier can prove the inclusion of any specific leaf with a logarithmic-size proof.
+
+### Leaf Structure
+
+Each leaf is a named configuration input hashed with SHA-256. The **core** provides a fixed set of leaves, and each **module** can contribute additional leaves via the `config_leaves()` method of the [`EnclaveModule` trait](/solutions/enclave-os/architecture#module-interface):
+
+| Index | Name | Source | Input |
+|-------|------|--------|-------|
+| 0 | `core.ca_cert` | Core | Intermediary CA certificate (DER) |
+| 1 | `egress.ca_bundle` | Egress module | Egress CA bundle (PEM) |
+| 2 | `wasm.code_hash` | WASM module | SHA-256 of WASM bytecode |
+| ... | `<module>.<key>` | Any module | Module-specific inputs |
+
+Modules register their leaves at startup. Leaves are sorted by OID in lexicographic order before tree construction, so the same set of inputs always produces the same root hash. If the number of leaves is not a power of two, the tree is padded with **zero-hash leaves** (32 bytes of zeros).
+
+### Fast-Path Module OIDs
+
+In addition to the Merkle root, each module can register **individual X.509 OID extensions** via the `custom_oids()` trait method. These are embedded directly in every RA-TLS certificate:
+
+| OID | Module | Value |
+|-----|--------|-------|
+| `1.3.6.1.4.1.65230.1.1` | Core | Config Merkle root (32 bytes) |
+| `1.3.6.1.4.1.65230.2.1` | Egress | SHA-256 of egress CA bundle (32 bytes) |
+| `1.3.6.1.4.1.65230.2.3` | WASM | SHA-256 of WASM bytecode (32 bytes) |
+
+This gives clients two verification strategies:
+
+- **Full audit**: Request the config manifest from the enclave and recompute the Merkle root to verify all inputs.
+- **Fast-path**: Check a single module OID (e.g., "does the egress CA hash match my expectation?") without any Merkle computation.
+
+### Lifecycle
+
+On **enclave startup**:
+
+1. The sealed config is unsealed, recovering the master key and CA material.
+2. Each configuration item is hashed and added as a Merkle leaf.
+3. The Merkle root is computed.
+4. The RA-TLS certificate is generated, embedding the Merkle root.
+
+On **module deployment** (e.g. a new WASM app is loaded):
+
+1. New leaves are added (app name, code hash, key source).
+2. The Merkle root is recomputed.
+3. A new RA-TLS certificate is generated with the updated root.
+
+All new TLS connections receive the updated certificate.
+
+## Per-App Certificates and SNI Routing
+
+### Why per-app certificates?
+
+A single enclave can host many WASM apps simultaneously. Per-app certificates solve two important requirements:
+
+1. **Tenant isolation** — each client only sees the code hash and configuration of the app it connects to. A client connecting to `app-A` learns nothing about `app-B` or any other app in the same enclave.
+2. **Independent lifecycle** — adding, removing, or updating one app does not affect any other app's certificate. Clients only need to re-verify when *their* app changes.
+
+Enclave OS achieves this with a **two-tier certificate hierarchy** where each WASM app gets its own leaf certificate, signed by the enclave's attested CA:
+
+```
+Root CA (operator-provisioned)
+ └── Intermediary CA (sealed inside enclave)
+      └── Enclave CA Cert (attested — SGX quote lives here)
+            ├── OID: MRENCLAVE / MRSIGNER
+            ├── OID: Enclave Config Merkle Root (core config only)
+            │
+            ├── App Leaf: "payments-api"
+            │     ├── OID 1.3.6.1.4.1.65230.3.2  App Code Hash
+            │     ├── OID 1.3.6.1.4.1.65230.3.1  App Config Merkle Root
+            │     └── OID 1.3.6.1.4.1.65230.3.*   App-specific custom OIDs
+            │
+            ├── App Leaf: "analytics-api"
+            │     ├── OID 1.3.6.1.4.1.65230.3.2  App Code Hash
+            │     └── ...
+            │
+            └── ... (scales to thousands of apps)
+```
+
+### How it works
+
+1. **SGX quote generated once** — at enclave boot the quote is bound to the Enclave CA's public key via `ReportData`. No new quote per app — that would be prohibitively expensive at 1,000+ apps.
+2. **App leaf certs are cheap** — each is signed by the Enclave CA inside the enclave using `ring` ECDSA P-256. No round-trip to the quoting enclave.
+3. **SNI-based selection** — the client TLS `ClientHello` includes the app hostname (e.g. `payments-api.enclave.example.com`). The enclave's `CertStore` looks up the matching leaf cert + chain and presents it.
+4. **Independent lifecycle** — adding an app = generate a leaf cert. Removing an app = drop it. No certificate regeneration for other apps.
+5. **Tenant isolation** — a client connecting for `payments-api` sees only that app's code hash and config Merkle root. It learns nothing about `analytics-api` or any other app.
+
+### Per-app Merkle tree
+
+Each app gets its own Config Merkle tree, independent of the enclave-wide tree. Typical leaves:
+
+| Leaf name | Input |
+|-----------|-------|
+| `app.code_hash` | SHA-256 of the WASM `.cwasm` bytecode |
+| `app.key_source` | `"rdrand"` or `"byok:<key-id>"` |
+| `app.name` | App name string |
+
+The root of this per-app tree is embedded as OID `1.3.6.1.4.1.65230.3.1` in the app's leaf certificate.
+
+### Enclave-wide vs per-app: what goes where
+
+| Scope | Certificate | OIDs present |
+|-------|-------------|-------------|
+| **Enclave-wide** | Enclave CA cert (or default leaf if no SNI) | SGX Quote, Config Merkle Root (`1.1`), Module OIDs (`2.*`) |
+| **Per-app** | App leaf cert (via SNI) | App Code Hash (`3.2`), App Config Merkle Root (`3.1`), app-specific (`3.*`) |
+
+The enclave-wide certificate still contains the **combined WASM apps hash** (OID `1.3.6.1.4.1.65230.2.3`) for clients that want a single check covering all loaded apps without SNI routing.
+
+### SNI routing in CertStore
+
+The `CertStore` (in `enclave/src/ratls/cert_store.rs`) maintains a map of `hostname → (cert_chain, private_key)`. During the TLS handshake:
+
+1. rustls calls the `ResolvesServerCert` implementation.
+2. `CertStore` extracts the SNI from the `ClientHello`.
+3. If a matching app entry exists → return the app's leaf cert + Enclave CA chain.
+4. Otherwise → return the default enclave-wide leaf cert.
+
+Apps register their hostname when loaded via `EnclaveModule::app_identities()`:
+
+```rust
+fn app_identities(&self) -> Vec<AppIdentity> {
+    vec![AppIdentity {
+        hostname: "payments-api.enclave.example.com".into(),
+        code_hash: sha256_of_wasm_bytes,
+        config_leaves: vec![
+            ConfigLeaf { name: "app.code_hash".into(), data: wasm_bytes },
+            ConfigLeaf { name: "app.key_source".into(), data: b"rdrand" },
+        ],
+        custom_oids: vec![],
+    }]
+}
+```
+
+## Verification
+
+A verifier checks an RA-TLS certificate by:
+
+1. **Parsing the SGX Quote** from extension OID `1.2.840.113741.1.13.1.0`.
+2. **Verifying the quote signature** against Intel's DCAP root of trust.
+3. **Checking MRENCLAVE** against a known-good value to confirm the enclave code identity.
+4. **Recomputing `ReportData`**: hash the certificate's public key with the binding value and compare against the `ReportData` in the quote. This confirms the TLS key was generated inside the attested enclave.
+5. **Checking the Merkle root** (OID `1.3.6.1.4.1.65230.1.1`) to verify the enclave's configuration.
+6. **For per-app**: Check OID `3.2` (app code hash) and OID `3.1` (app config Merkle root) on the app leaf cert.
+
+### Verification Strategies
+
+Clients can choose their verification depth:
+
+| Strategy | What to check | Trust level |
+|----------|--------------|-------------|
+| **MRENCLAVE only** | SGX quote → MRENCLAVE matches known value | Code is correct, but config unknown |
+| **MRENCLAVE + Merkle root** | + OID `1.3.6.1.4.1.65230.1.1` | Code and full configuration verified |
+| **Fast-path module OIDs** | + OID `1.3.6.1.4.1.65230.2.*` | Verify specific properties without Merkle audit |
+| **Full manifest audit** | + request manifest, recompute root | Complete transparency of all inputs |
+| **Per-app verification** | + OID `1.3.6.1.4.1.65230.3.*` | Verify specific WASM app code + config |
+
+The Privasys [RA-TLS clients](/solutions/clients/ra-tls-clients) implement this verification flow in Python, Go, Rust, TypeScript, and C#.
+
+## Trust Chain
+
+The complete trust chain from hardware to application:
+
+```
+Intel CPU Hardware Key
+        │
+        ▼
+SGX DCAP Quote (platform attestation)
+        │
+        ├── MRENCLAVE (enclave code identity)
+        │
+        ├── ReportData (binds TLS key to quote)
+        │       │
+        │       └── SHA-512(SHA-256(pubkey) || binding)
+        │
+        └── RA-TLS Certificate
+                │
+                ├── TLS public key (enclave-generated)
+                │
+                ├── Config Merkle Root (OID 65230.1.1)
+                │       │
+                │       ├── CA cert hash
+                │       └── WASM app code hashes
+                │
+                ├── Egress CA Hash (OID 65230.2.1)
+                │
+                ├── WASM Code Hash (OID 65230.2.3)
+                │
+                └── Per-App Leaf Certs (via SNI)
+                        ├── App Code Hash (OID 65230.3.2)
+                        └── App Config Root (OID 65230.3.1)
+```
+
+A verifier inspecting this certificate knows:
+
+1. **Which hardware** is running (Intel SGX, specific CPU).
+2. **Which enclave binary** (MRENCLAVE).
+3. **Which TLS key** (bound via ReportData).
+4. **Which configuration and applications** (Merkle root + module-level OIDs).
+5. **Which specific app** (per-app OIDs via SNI routing).
+
+This is **full-stack attestation** — from silicon to application code — delivered over a standard TLS handshake.
+
+## Security Properties
+
+| Property | Guarantee |
+|----------|-----------|
+| **Key binding** | The TLS public key is cryptographically bound to the SGX quote via ReportData |
+| **Code identity** | MRENCLAVE in the quote proves the exact enclave binary |
+| **Config identity** | Merkle root proves all operator-chosen and module-contributed inputs |
+| **Freshness** | Challenge nonce or timestamp prevents replay of old certificates |
+| **CA isolation** | The CA private key is sealed to MRENCLAVE — only this enclave can sign leaf certs |
+| **No suppression** | The enclave is an honest reporter — it cannot hide its configuration |
+| **Per-app isolation** | Each WASM app gets its own certificate, Merkle tree, and OID extensions |

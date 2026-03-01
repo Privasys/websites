@@ -1,0 +1,59 @@
+---
+title: Overview
+description: Technical documentation for the Privasys confidential computing platform.
+---
+
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+Welcome to the Privasys technical documentation.
+
+Privacy is a fundamental human right — and one of our core values. We believe that people and organisations should never have to choose between using cloud services and protecting their data. Privasys exists to make that choice unnecessary.
+
+## What is Privasys?
+
+Privasys is an **open-source confidential computing platform** that builds trust through transparency. Modern processors embed secure hardware that can keep data encrypted in memory — even while it is being processed. Privasys leverages this hardware so that anyone connecting to our services can **independently verify** that their data is protected, without having to take our word for it.
+
+The result is a normal HTTPS connection that works everywhere — in a browser, from `curl`, in a mobile app — with cryptographic proof that the server is running exactly the code it claims, inside genuine secure hardware. No custom tools, no special SDKs, no blind trust.
+
+## Our Commitments
+
+We designed Privasys around a set of core principles:
+
+- **Confidential by design.** Data stays encrypted in secure hardware at all times — during transit, at rest, and while being processed. Not even the infrastructure operator can access it.
+- **Always verifiable.** Every connection carries cryptographic evidence of what code is running and that it is running inside genuine secure hardware. Anyone can verify these guarantees independently.
+- **Open source.** All infrastructure is published under AGPL-3.0. Inspect the code, audit the builds, reproduce from source. No black boxes.
+- **Standard protocols.** We use TLS, HTTPS, and X.509 — the same protocols the web already runs on. Attestation evidence rides inside standard certificates, invisible to clients that don't need it, fully inspectable by those that do.
+- **No vendor lock-in.** Deploy on any compatible hardware, on any cloud, or on-premises. The platform is self-hosted and provider-agnostic.
+
+## What We Provide
+
+Privasys ships as a set of composable, self-hosted components — each solving a specific part of the confidential computing stack:
+
+| Component | What it does |
+|-----------|-------------|
+| **Enclave OS (Mini)** | A minimal runtime for Intel SGX enclaves — runs your application inside hardware-protected memory with built-in encrypted storage and attestation. |
+| **RA-TLS for Caddy** | A module for the Caddy web server that adds hardware attestation to any application running inside a Confidential VM — no application changes required. |
+| **RA-TLS Clients** | Libraries in Go, Rust, Python, TypeScript, and C# for connecting to attested services and verifying their guarantees. |
+| **Attestation Server** | A standalone service that independently verifies hardware attestation evidence from Intel and AMD platforms. |
+
+To understand how these components map to different hardware and deployment scenarios, see [Why Privasys](/introduction/why-privasys).
+
+## Explore the Docs
+
+<Cards>
+  <Card title="Why Privasys" href="/introduction/why-privasys">
+    The trust problem in cloud computing and how Privasys solves it.
+  </Card>
+  <Card title="Confidential Computing" href="/confidential-computing/presentation">
+    What secure hardware is, how attestation works, and why it matters.
+  </Card>
+  <Card title="Enclave OS" href="/solutions/enclave-os/architecture">
+    Architecture, attestation, sealed storage, and the WASM runtime.
+  </Card>
+  <Card title="Confidential Containers" href="/solutions/confidential-containers/concept">
+    Add attestation to any application via Caddy on Confidential VMs.
+  </Card>
+  <Card title="RA-TLS Clients" href="/solutions/clients">
+    Verify attested connections from Go, Rust, Python, TypeScript, or C#.
+  </Card>
+</Cards>

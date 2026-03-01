@@ -1,0 +1,121 @@
+---
+title: Attestation
+description: How remote attestation works, what it proves, and why it is essential for confidential computing.
+---
+
+Remote attestation is the mechanism by which a Trusted Execution Environment proves its identity to a remote party. It answers the fundamental question: **"Is the software I'm talking to actually running inside a genuine TEE?"**
+
+## What Is Attested?
+
+Every TEE produces a cryptographic **quote** — a signed data structure that captures:
+
+| Field | What it proves |
+|-------|---------------|
+| **Code measurement** | The exact binary loaded into the TEE (MRENCLAVE for SGX, MRTD/RTMR for TDX) |
+| **Signer identity** | Who signed the enclave binary (MRSIGNER for SGX) |
+| **Platform identity** | The hardware and firmware version of the machine |
+| **ReportData** | Up to 64 bytes of user-chosen data, cryptographically bound to the quote |
+| **Quote signature** | Signed by the platform's attestation key, verifiable against the chip vendor's root of trust |
+
+The **ReportData** field is what makes attestation composable. By placing a hash of a TLS public key in the ReportData, we cryptographically bind the attestation to a specific TLS session — this is the foundation of [RA-TLS](/confidential-computing/ra-tls).
+
+## The Attestation Flow
+
+```
+┌───────────┐                    ┌────────────────┐                  ┌──────────────┐
+│  Client   │                    │  TEE (Enclave  │                  │ Attestation  │
+│ (Verifier)│                    │   or Conf. VM) │                  │   Service    │
+└────┬──────┘                    └───────┬────────┘                  └──────┬───────┘
+     │                                   │                                  │
+     │  1. Connect                       │                                  │
+     │ ────────────────────────────────> │                                  │
+     │                                   │                                  │
+     │                          2. Generate Report                          │
+     │                             (measurements +                          │
+     │                              ReportData)                             │
+     │                                   │                                  │
+     │                          3. Get Quote                                │
+     │                          (signed locally by                          │
+     │                           Quoting Enclave                            │
+     │                           or TDX module)                             │
+     │                                   │                                  │
+     │  4. Return Quote                  │                                  │
+     │ <──────────────────────────────── │                                  │
+     │                                   │                                  │
+     │  5. Verify quote signature        │                                  │
+     │ ──────────────────────────────────────────────────────────────────>  │
+     │  6. Signature valid + measurements match                             │
+     │ <──────────────────────────────────────────────────────────────────  │
+     │                                   │                                  │
+```
+
+1. The **TEE** generates a **report** containing its measurements and a user-supplied ReportData field.
+2. A **local** signing component — the Quoting Enclave (SGX) or TDX module (TDX) — verifies the report and signs it, producing a **quote**. This happens entirely on-platform; no network call is needed.
+3. The **verifier** sends the quote to an **attestation service** for signature verification. This service does not need to be run by the chip vendor — anyone can operate one using publicly available collateral (root certificates, CRLs, TCB info) fetched from the vendor's Provisioning Certificate Caching Service (PCCS). Privasys runs its own.
+4. If valid, the verifier knows: (a) the code identity, (b) the platform authenticity, and (c) that the ReportData was produced inside that TEE.
+
+## SGX Attestation (DCAP)
+
+Intel SGX uses **Data Center Attestation Primitives** (DCAP) for quote generation and verification:
+
+- The application enclave creates a **local report** with MRENCLAVE, MRSIGNER, and ReportData.
+- The **Quoting Enclave** (QE) verifies the local report and produces a signed **DCAP quote**.
+- The quote is signed using an ECDSA key provisioned by Intel, forming a chain of trust back to Intel's root CA.
+- Verification can be done **locally** (with Intel's DCAP libraries) or via Intel's attestation service.
+
+Key measurements in an SGX quote:
+
+| Measurement | Size | What it identifies |
+|-------------|------|--------------------|
+| MRENCLAVE | 32 bytes | SHA-256 of enclave code + data pages — the exact binary |
+| MRSIGNER | 32 bytes | SHA-256 of the enclave signer's public key — who built it |
+| ISV_PROD_ID | 2 bytes | Product identifier assigned by the signer |
+| ISV_SVN | 2 bytes | Security version number — for rollback protection |
+
+## TDX Attestation
+
+Intel TDX uses the kernel's **configfs-tsm** interface for quote generation:
+
+```bash
+# Write ReportData (64 bytes, hex-encoded)
+echo "$REPORT_DATA_HEX" > /sys/kernel/config/tsm/report/r0/inblob
+
+# Read the signed TDX quote
+cat /sys/kernel/config/tsm/report/r0/outblob > quote.bin
+```
+
+No special SDK is needed — any process in the Confidential VM can request a quote through the filesystem interface.
+
+Key measurements in a TDX quote:
+
+| Measurement | What it identifies |
+|-------------|--------------------|
+| MRTD | The initial Trust Domain (VM firmware) measurement |
+| RTMR[0–3] | Runtime Measurement Registers — firmware, OS, and application measurements |
+| ReportData | 64 bytes of user-supplied data (e.g. TLS public key hash) |
+
+## The Problem with Traditional Attestation
+
+Traditional attestation requires a custom protocol between client and server — a separate "attestation channel" before the real communication can begin. This is:
+
+- **Incompatible with browsers.** Web clients cannot run custom attestation code.
+- **Complex to integrate.** Every client language needs an attestation SDK.
+- **Fragile.** An out-of-band attestation step adds latency and failure modes.
+
+This is why Privasys uses [RA-TLS](/confidential-computing/ra-tls) — embedding the quote directly in the TLS certificate, eliminating the need for a separate attestation protocol.
+
+## What Clients Can Verify
+
+With a hardware quote in hand, a client can verify:
+
+| Check | What it proves |
+|-------|---------------|
+| **Quote signature** | The quote was produced by genuine hardware (Intel/AMD root of trust) |
+| **MRENCLAVE / MRTD** | The exact code running inside the TEE |
+| **MRSIGNER** | The entity that built and signed the enclave |
+| **ReportData** | The TLS key is bound to this specific TEE instance |
+| **Platform freshness** | The TCB level and firmware version are up to date |
+
+Beyond these hardware-level checks, Privasys extends attestation with **configuration measurements** — a Merkle tree of all runtime configuration inputs embedded as custom X.509 OID extensions. See [RA-TLS](/confidential-computing/ra-tls) for details.
+
+To run your own verification infrastructure, see the [Attestation Server guide](/guides/attestation-server).

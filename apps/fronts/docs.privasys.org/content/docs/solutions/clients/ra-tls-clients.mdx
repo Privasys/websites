@@ -3,7 +3,7 @@ title: RA-TLS Clients
 description: Multi-language RA-TLS verification clients for Python, Go, Rust, TypeScript, and C#.
 ---
 
-The **RA-TLS Clients** repository provides verification libraries in five languages, enabling any application to connect to an RA-TLS server and verify its attestation — whether it's an Enclave OS instance (SGX) or a Caddy RA-TLS server (TDX).
+The **RA-TLS Clients** provide verification libraries in five languages, enabling any application to connect to an RA-TLS server and verify its attestation — whether it's an [Enclave OS](/solutions/enclave-os/architecture) instance (SGX) or a [Caddy RA-TLS](/solutions/confidential-containers/caddy-ra-tls) server (TDX).
 
 **Repositories**: [ratls-client-go](https://github.com/Privasys/ratls-client-go)  [ratls-client-rs](https://github.com/Privasys/ratls-client-rs)  [ratls-client-py](https://github.com/Privasys/ratls-client-py)
 
@@ -19,7 +19,7 @@ The **RA-TLS Clients** repository provides verification libraries in five langua
 
 ## Verification Flow
 
-All clients follow the same verification logic:
+All clients follow the same verification logic described in [Attestation](/confidential-computing/attestation) and [RA-TLS](/confidential-computing/ra-tls):
 
 ```
 1. Connect to the RA-TLS server via TLS
@@ -186,7 +186,7 @@ session = verifier.connect(
 )
 ```
 
-Challenge mode requires server support (both Enclave OS and the Caddy RA-TLS module support it).
+Challenge mode requires server support (both [Enclave OS](/solutions/enclave-os/ra-tls) and the [Caddy RA-TLS module](/solutions/confidential-containers/caddy-ra-tls) support it).
 
 ## Test Certificates
 

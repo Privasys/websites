@@ -1,0 +1,268 @@
+---
+title: Azure (TDX)
+description: Deploy Caddy with RA-TLS on an Azure Confidential VM using Intel TDX.
+---
+
+This guide deploys the [Caddy RA-TLS module](/solutions/confidential-containers/caddy-ra-tls) on an Azure DCesv5 Confidential VM with Intel TDX.
+
+## Create a Confidential VM
+
+Azure offers **DCesv5** and **DCedsv5** series VMs with Intel TDX. You need at minimum a `Standard_DC4es_v5` (4 vCPUs, 32 GB RAM).
+
+### Via Azure CLI
+
+```bash
+az login
+
+az group create \
+    --name rg-tdx-dev \
+    --location westeurope
+
+az vm create \
+    --resource-group rg-tdx-dev \
+    --name tdx-vm-1 \
+    --size Standard_DC4es_v5 \
+    --image Canonical:ubuntu-24_04-lts-cvm:cvm:latest \
+    --security-type ConfidentialVM \
+    --os-disk-security-encryption-type VMGuestStateOnly \
+    --admin-username azureuser \
+    --generate-ssh-keys \
+    --public-ip-sku Standard \
+    --nsg-rule SSH
+```
+
+> **Note:** Use `--os-disk-security-encryption-type DiskWithVMGuestState` to also encrypt the OS disk.
+
+### Via Azure Portal
+
+1. **Create a resource → Virtual Machine**
+2. Under **Size**, filter by `DCesv5` and select `Standard_DC4es_v5`
+3. Under **Image**, select **Ubuntu 24.04 LTS (Confidential VM)**
+4. Under **Security type**, select **Confidential virtual machine**
+5. Under **Confidential compute encryption**, select **VMGuestStateOnly**
+6. Under **Networking**, allow SSH (22) inbound
+7. Complete the wizard and create
+
+### Connect
+
+```bash
+ssh azureuser@<vm-public-ip>
+# or
+az ssh vm --resource-group rg-tdx-dev --name tdx-vm-1
+```
+
+## Install the Quote Generation Stack
+
+```bash
+sudo apt update
+sudo apt upgrade -y
+
+# Add the Intel SGX/TDX repository
+wget -qO - https://download.01.org/intel-sgx/sgx_repo/ubuntu/intel-sgx-deb.key | \
+  sudo gpg --dearmor -o /usr/share/keyrings/intel-sgx-keyring.gpg
+echo "deb [arch=amd64 signed-by=/usr/share/keyrings/intel-sgx-keyring.gpg] \
+  https://download.01.org/intel-sgx/sgx_repo/ubuntu noble main" | \
+  sudo tee /etc/apt/sources.list.d/intel-sgx.list
+sudo apt update
+
+sudo apt install -y libsgx-dcap-ql libsgx-dcap-default-qpl libsgx-dcap-ql-dev
+```
+
+### Configure the Quote Provider
+
+**Option A — Your own PCCS** (recommended if you run one):
+
+```bash
+sudo nano /etc/sgx_default_qcnl.conf
+```
+
+```json
+{
+  "pccs_url": "https://<PCCS_IP>:8081/sgx/certification/v4/",
+  "use_secure_cert": true,
+  "pccs_api_version": "3.1",
+  "retry_times": 3,
+  "retry_delay": 3
+}
+```
+
+**Option B — Azure THIM** (Trusted Hardware Identity Management):
+
+Azure DCesv5 VMs can use the `az-dcap-client` package which fetches collateral from Azure's THIM service automatically:
+
+```bash
+sudo apt install -y az-dcap-client
+```
+
+When `az-dcap-client` is installed, it takes priority over `libsgx-dcap-default-qpl`.
+
+### Verify TDX Hardware
+
+```bash
+lscpu | grep -i tdx_guest
+ls -l /dev/tdx_guest
+```
+
+### Generate a Test Quote
+
+```bash
+sudo apt install -y libtdx-attest libtdx-attest-dev gcc make
+
+cd /opt/intel/tdx-quote-generation-sample/ 2>/dev/null || \
+  cd /usr/share/doc/libtdx-attest/examples/
+
+sudo make
+sudo ./test_tdx_attest -d 1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef
+```
+
+You should see **"Successfully get the TD Quote"**.
+
+## Install Caddy with RA-TLS
+
+### Build the Go Fork
+
+```bash
+cd ~
+sudo apt install -y git build-essential wget
+
+wget https://go.dev/dl/go1.24.0.linux-amd64.tar.gz
+sudo tar -C /usr/local -xzf go1.24.0.linux-amd64.tar.gz
+rm go1.24.0.linux-amd64.tar.gz
+
+git clone -b ratls https://github.com/Privasys/go.git ~/go-ratls
+export GOROOT_BOOTSTRAP=/usr/local/go
+cd ~/go-ratls/src && ./make.bash
+
+echo 'export GOROOT=~/go-ratls' >> ~/.bashrc
+echo 'export PATH=$GOROOT/bin:$HOME/go/bin:$PATH' >> ~/.bashrc
+source ~/.bashrc
+
+go version
+```
+
+### Build Caddy
+
+```bash
+go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
+
+git clone https://github.com/Privasys/ra-tls-caddy.git ~/ra-tls-caddy
+cd ~/ra-tls-caddy/src
+xcaddy build --with github.com/Privasys/ra-tls-caddy=.
+
+sudo mv caddy /usr/local/bin/caddy
+sudo chmod +x /usr/local/bin/caddy
+
+caddy version
+caddy list-modules | grep ra_tls
+```
+
+### Prepare CA Certificates
+
+```bash
+sudo mkdir -p /etc/caddy/certs
+```
+
+From your **local machine**:
+
+```bash
+scp intermediate-ca.dev.crt azureuser@<vm-public-ip>:/tmp/
+scp intermediate-ca.dev.key azureuser@<vm-public-ip>:/tmp/
+```
+
+On the **VM**:
+
+```bash
+sudo mv /tmp/intermediate-ca.dev.crt /etc/caddy/certs/
+sudo mv /tmp/intermediate-ca.dev.key /etc/caddy/certs/
+sudo chown root:root /etc/caddy/certs/*
+sudo chmod 644 /etc/caddy/certs/intermediate-ca.dev.crt
+sudo chmod 600 /etc/caddy/certs/intermediate-ca.dev.key
+```
+
+### Create the Caddyfile
+
+```bash
+sudo mkdir -p /etc/caddy
+sudo nano /etc/caddy/Caddyfile
+```
+
+```txt
+https://<your_host>:443 {
+    tls {
+        issuer ra_tls {
+            backend tdx
+            ca_cert /etc/caddy/certs/intermediate-ca.dev.crt
+            ca_key  /etc/caddy/certs/intermediate-ca.dev.key
+        }
+    }
+    respond "Hello from an Intel TDX Confidential VM configured with Privasys!"
+}
+```
+
+### Test
+
+```bash
+sudo caddy run --config /etc/caddy/Caddyfile
+```
+
+From your local machine:
+
+```bash
+curl -k https://<your_host>:443
+```
+
+### Create systemd Service
+
+```bash
+sudo nano /etc/systemd/system/caddy-ratls.service
+```
+
+```ini
+[Unit]
+Description=Caddy RA-TLS Web Server
+After=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/local/bin/caddy run --config /etc/caddy/Caddyfile
+ExecReload=/usr/local/bin/caddy reload --config /etc/caddy/Caddyfile
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now caddy-ratls
+sudo systemctl status caddy-ratls
+```
+
+### Verify the RA-TLS Certificate
+
+```bash
+echo | openssl s_client -connect <your_host>:443 \
+  -servername <your_host> 2>/dev/null \
+  | openssl x509 -noout -text
+```
+
+Look for the TDX quote extension (`1.2.840.113741.1.5.5.1.6`).
+
+### Open Port 443
+
+```bash
+az network nsg rule create \
+    --resource-group rg-tdx-dev \
+    --nsg-name tdx-vm-1NSG \
+    --name AllowRATLS443 \
+    --priority 1000 \
+    --direction Inbound \
+    --access Allow \
+    --protocol Tcp \
+    --destination-port-ranges 443 \
+    --source-address-prefixes '*'
+```
+
+Or from the Azure Portal: **VM → Networking → Add inbound port rule → Port 443, TCP, Allow**.

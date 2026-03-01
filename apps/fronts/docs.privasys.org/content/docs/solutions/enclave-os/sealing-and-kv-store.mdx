@@ -22,35 +22,35 @@ This means sealed data is bound to a specific (code identity, hardware platform)
 Rather than sealing every piece of data individually (which would require an SGX seal/unseal operation for each read/write), Enclave OS uses a **single master key** architecture:
 
 ```
-┌──────────────────────────────────────┐
-│          SGX Seal/Unseal             │
-│  (MRENCLAVE-bound, AES-128-GCM)      │
-│                                      │
-│  Protects ONE blob: SealedConfig     │
-│  which contains the 256-bit          │
-│  master key                          │
-└──────────────────┬───────────────────┘
-                   │
-                   ▼
-┌──────────────────────────────────────┐
-│          Master Key (256-bit)        │
-│  (Generated once via RDRAND,         │
-│   sealed at shutdown, unsealed       │
-│   at startup)                        │
-└──────────────────┬───────────────────┘
-                   │
-          ┌────────┼────────┐
-          ▼        ▼        ▼
-     ┌─────────┬────────┬────────┐
-     │ KV Key  │ KV Key │ KV Key │
-     │ HMAC    │ HMAC   │ HMAC   │
-     │ SHA-256 │ SHA-256│ SHA-256│
-     └────┬────┴───┬────┴───┬────┘
-          ▼        ▼        ▼
-     ┌─────────┬────────┬────────┐
-     │ AES-GCM │AES-GCM │AES-GCM │
-     │ encrypt │encrypt │encrypt │
-     └─────────┴────────┴────────┘
+┌───────────────────────────────────┐
+│          SGX Seal/Unseal          │
+│  (MRENCLAVE-bound, AES-128-GCM)   │
+│                                   │
+│  Protects ONE blob: SealedConfig  │
+│  which contains the 256-bit       │
+│  master key                       │
+└─────────────────┬─────────────────┘
+                  │
+                  ▼
+┌───────────────────────────────────┐
+│          Master Key (256-bit)     │
+│  (Generated once via RDRAND,      │
+│   sealed at shutdown, unsealed    │
+│   at startup)                     │
+└─────────────────┬─────────────────┘
+                  │
+        ┌─────────┼─────────┐
+        ▼         ▼         ▼
+   ┌─────────┬─────────┬─────────┐
+   │ KV Key  │ KV Key  │ KV Key  │
+   │ HMAC    │ HMAC    │ HMAC    │
+   │ SHA-256 │ SHA-256 │ SHA-256 │
+   └────┬────┴────┬────┴────┬────┘
+        ▼         ▼         ▼ 
+   ┌─────────┬─────────┬─────────┐
+   │ AES-GCM │ AES-GCM │ AES-GCM │
+   │ encrypt │ encrypt │ encrypt │
+   └─────────┴─────────┴─────────┘
 ```
 
 ### First Boot
@@ -71,16 +71,16 @@ Rather than sealing every piece of data individually (which would require an SGX
 The sealed data follows a versioned binary format:
 
 ```
-┌──────────────┬─────────────────────┬─────────────────────┐
-│ version: u32 │ master_key: [u8;32] │ CA certificate      │
-│ (= 3)        │                     │ (length-prefixed)   │
-├──────────────┼─────────────────────┼─────────────────────┤
-│              │                     │ CA private key      │
-│              │                     │ (length-prefixed)   │
-├──────────────┼─────────────────────┼─────────────────────┤
-│              │                     │ Module data map     │
-│              │                     │ (per-app configs)   │
-└──────────────┴─────────────────────┴─────────────────────┘
+┌──────────────┬─────────────────────┬───────────────────┐
+│ version: u32 │ master_key: [u8;32] │ CA certificate    │
+│ (= 3)        │                     │ (length-prefixed) │
+├──────────────┼─────────────────────┼───────────────────┤
+│              │                     │ CA private key    │
+│              │                     │ (length-prefixed) │
+├──────────────┼─────────────────────┼───────────────────┤
+│              │                     │ Module data map   │
+│              │                     │ (per-app configs) │
+└──────────────┴─────────────────────┴───────────────────┘
 
 AAD (Additional Authenticated Data): "enclave_os_sealed_config_v3"
 ```
@@ -118,9 +118,9 @@ Each value is encrypted with **AES-256-GCM**:
 The stored ciphertext format:
 
 ```
-┌─────────────┬────────────────────┬───────────┐
-│ nonce (12B) │ ciphertext (var)   │ tag (16B) │
-└─────────────┴────────────────────┴───────────┘
+┌─────────────┬──────────────────┬───────────┐
+│ nonce (12B) │ ciphertext (var) │ tag (16B) │
+└─────────────┴──────────────────┴───────────┘
 ```
 
 Every write uses a **fresh random nonce**, ensuring that storing the same value twice produces different ciphertexts (preventing the host from detecting whether data changed).

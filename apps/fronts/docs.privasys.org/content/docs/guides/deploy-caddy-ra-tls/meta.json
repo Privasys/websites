@@ -1,0 +1,9 @@
+{
+  "title": "Deploy Caddy RA-TLS",
+  "defaultOpen": false,
+  "pages": [
+    "google-cloud",
+    "azure",
+    "ovh-cloud"
+  ]
+}

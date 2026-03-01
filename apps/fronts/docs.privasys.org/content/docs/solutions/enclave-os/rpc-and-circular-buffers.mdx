@@ -24,18 +24,18 @@ The shared memory is organized as **Single-Producer Single-Consumer (SPSC) circu
 ### Memory Layout
 
 ```
-┌──────────────────────────────────────────────────┐
-│                   2 MB Buffer                    │
-├──────────┬───────────────────────────┬───────────┤
-│ Header   │         Data Region       │  Padding  │
-│ (64B)    │                           │  (align)  │
-└──────────┴───────────────────────────┴───────────┘
+┌────────────────────────────────┐
+│          2 MB Buffer           │
+├────────┬─────────────┬─────────┤
+│ Header │ Data Region │ Padding │
+│ (64B)  │             │ (align) │
+└────────┴─────────────┴─────────┘
 
 Header (64 bytes, cache-line aligned):
-┌──────────┬──────────┬──────────────────────────┐
-│ head: u64│ tail: u64│ padding (48 bytes)       │
-│ (atomic) │ (atomic) │ (to fill cache line)     │
-└──────────┴──────────┴──────────────────────────┘
+┌───────────┬───────────┬──────────────────────┐
+│ head: u64 │ tail: u64 │ padding (48 bytes)   │
+│ (atomic)  │ (atomic)  │ (to fill cache line) │
+└───────────┴───────────┴──────────────────────┘
 ```
 
 Each connection gets **two buffers**: one for requests (host → enclave) and one for responses (enclave → host).
@@ -54,10 +54,10 @@ Each connection gets **two buffers**: one for requests (host → enclave) and on
 Each message in the buffer is prefixed by a **4-byte header** containing the message length (little-endian `u32`):
 
 ```
-┌───────────┬──────────────────────┐
-│ len: u32  │  payload (len bytes) │
-│ (4 bytes) │                      │
-└───────────┴──────────────────────┘
+┌───────────┬─────────────────────┐
+│ len: u32  │ payload (len bytes) │
+│ (4 bytes) │                     │
+└───────────┴─────────────────────┘
 ```
 
 The constant `MSG_HEADER_SIZE = 4` is defined in the shared `common` crate and used by both the host and enclave.
@@ -96,19 +96,19 @@ On top of the raw circular buffers, Enclave OS implements a **request-response R
 ### Request Header (14 bytes)
 
 ```
-┌──────────────┬───────────────┬─────────────────┐
-│ req_id: u64  │ method: u16   │ payload_len: u32│
-│ (8 bytes)    │ (2 bytes)     │ (4 bytes)       │
-└──────────────┴───────────────┴─────────────────┘
+┌─────────────┬─────────────┬──────────────────┐
+│ req_id: u64 │ method: u16 │ payload_len: u32 │
+│ (8 bytes)   │ (2 bytes)   │ (4 bytes)        │
+└─────────────┴─────────────┴──────────────────┘
 ```
 
 ### Response Header (16 bytes)
 
 ```
-┌──────────────┬───────────────┬─────────────────┐
-│ req_id: u64  │ status: i32   │ payload_len: u32│
-│ (8 bytes)    │ (4 bytes)     │ (4 bytes)       │
-└──────────────┴───────────────┴─────────────────┘
+┌─────────────┬─────────────┬──────────────────┐
+│ req_id: u64 │ status: i32 │ payload_len: u32 │
+│ (8 bytes)   │ (4 bytes)   │ (4 bytes)        │
+└─────────────┴─────────────┴──────────────────┘
 ```
 
 The `req_id` field allows the enclave to match responses to requests, enabling potential future pipelining.

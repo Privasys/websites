@@ -85,7 +85,7 @@ When an HTTPS request arrives:
 The SHA-256 hash of each WASM module's binary is:
 
 1. Computed when the module is loaded.
-2. Stored as a leaf in the [configuration Merkle tree](/docs/enclave-os/config-and-merkle-tree).
+2. Stored as a leaf in the [configuration Merkle tree](/docs/enclave-os/ra-tls#config-merkle-tree).
 3. Embedded in the RA-TLS certificate as a custom X.509 extension (OID `1.3.6.1.4.1.65230.2.3`).
 
 This means a verifier can check not only that the correct enclave binary is running (**MRENCLAVE**) but also which exact application WASM modules are deployed and what code they contain.
