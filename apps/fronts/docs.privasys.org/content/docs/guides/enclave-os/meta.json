@@ -1,6 +1,6 @@
 {
   "title": "Enclave OS",
-  "defaultOpen": true,
+  "defaultOpen": false,
   "pages": [
     "deploy",
     "build-wasm-app",

@@ -47,34 +47,34 @@ This is the layer that makes WASM composable. Two components from different auth
 Now consider what happens when you put a WASM runtime inside an SGX enclave.
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        SGX Enclave                              │
-│                                                                 │
-│   ┌───────────────────────────────────────────────────────────┐ │
-│   │              WASM Component (guest app)                   │ │
-│   │                                                           │ │
-│   │   • Cannot access enclave memory directly                 │ │
-│   │   • Can only call host-provided interfaces                │ │
-│   │   • Fuel-metered execution (bounded CPU)                  │ │
-│   │   • Fresh instance per call (stateless)                   │ │
-│   └────────────────────────┬──────────────────────────────────┘ │
-│                            │ WIT interfaces                     │
-│   ┌────────────────────────┴──────────────────────────────────┐ │
-│   │              Enclave OS Runtime (host)                    │ │
-│   │                                                           │ │
-│   │   WASI (random, clocks, filesystem, io, cli, sockets)     │ │
-│   │   Platform APIs (crypto, keystore, https)                 │ │
-│   │                                                           │ │
-│   │   • Crypto: ring + RDRAND (hardware RNG)                  │ │
-│   │   • Keys: MRENCLAVE-sealed, never leave enclave           │ │
-│   │   • HTTPS: TLS terminated inside enclave (rustls)         │ │
-│   │   • Filesystem: AES-256-GCM encrypted KV store            │ │
-│   └───────────────────────────────────────────────────────────┘ │
-│                                                                 │
-├─────────────────────────────────────────────────────────────────┤
-│                    Untrusted Host OS                            │
-│         Only sees: encrypted blobs, TLS ciphertext, timestamps  │
-└─────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                      SGX Enclave                            │
+│                                                             │
+│  ┌───────────────────────────────────────────────────────┐  │
+│  │             WASM Component (guest app)                │  │
+│  │                                                       │  │
+│  │  • Cannot access enclave memory directly              │  │
+│  │  • Can only call host-provided interfaces             │  │
+│  │  • Fuel-metered execution (bounded CPU)               │  │
+│  │  • Fresh instance per call (stateless)                │  │
+│  └───────────────────────┬───────────────────────────────┘  │
+│                          │ WIT interfaces                   │
+│  ┌───────────────────────┴───────────────────────────────┐  │
+│  │             Enclave OS Runtime (host)                 │  │
+│  │                                                       │  │
+│  │  WASI (random, clocks, filesystem, io, cli, sockets)  │  │
+│  │  Platform APIs (crypto, keystore, https)              │  │
+│  │                                                       │  │
+│  │  • Crypto: ring + RDRAND (hardware RNG)               │  │
+│  │  • Keys: MRENCLAVE-sealed, never leave enclave        │  │
+│  │  • HTTPS: TLS terminated inside enclave (rustls)      │  │
+│  │  • Filesystem: AES-256-GCM encrypted KV store         │  │
+│  └───────────────────────────────────────────────────────┘  │
+│                                                             │
+├─────────────────────────────────────────────────────────────┤
+│                  Untrusted Host OS                          │
+│   Only sees: encrypted blobs, TLS ciphertext, timestamps    │ 
+└─────────────────────────────────────────────────────────────┘
 ```
 
 You get **two layers of sandboxing**:
