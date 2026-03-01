@@ -1,0 +1,325 @@
+---
+title: OVH Cloud (Bare Metal)
+description: Deploy Caddy with RA-TLS on an OVH bare metal server with Intel TDX via QEMU/KVM.
+---
+
+This guide deploys the [Caddy RA-TLS module](/solutions/confidential-containers/caddy-ra-tls) on an OVH dedicated server using Intel TDX with a QEMU/KVM Confidential VM.
+
+## Get a Bare Metal Server
+
+OVH offers dedicated servers with Intel Xeon processors that support TDX. You need a server from the **Advance** or **Scale** range with a 4th Gen Intel Xeon Scalable (Sapphire Rapids) or newer.
+
+1. Go to [OVH Bare Metal Servers](https://www.ovhcloud.com/en-gb/bare-metal/)
+2. Select a server with a **4th Gen Intel Xeon Scalable** (or newer) — models like `Advance-1`, `Scale-1`
+3. Choose **Ubuntu 24.04 LTS** as the OS
+4. Complete the order
+
+```bash
+ssh root@<server-ip>
+```
+
+## Enable TDX on the Host
+
+Unlike cloud VMs, bare metal requires BIOS configuration and host kernel setup.
+
+### BIOS Settings
+
+Access the BIOS via OVH's IPMI console (OVH Manager → Server dashboard) and enable:
+
+- **Intel TME (Total Memory Encryption)**
+- **Intel TDX**
+- **Intel TDX Secure Arbitration Mode (SEAM)**
+
+### Kernel Configuration
+
+TDX host support requires Linux **6.7+**. Ubuntu 24.04 ships with 6.8:
+
+```bash
+uname -r  # Should show 6.8.x+
+```
+
+Enable TDX in the kernel command line:
+
+```bash
+sudo nano /etc/default/grub
+```
+
+```
+GRUB_CMDLINE_LINUX_DEFAULT="quiet splash tdx=1 kvm_intel.tdx=1"
+```
+
+```bash
+sudo update-grub
+sudo reboot
+```
+
+### Verify TDX
+
+```bash
+dmesg | grep -i tdx
+# → "TDX module initialized"
+
+cat /sys/module/kvm_intel/parameters/tdx
+# → Y
+```
+
+## Create a TDX Guest VM
+
+### Install Virtualisation Stack
+
+```bash
+sudo apt install -y qemu-system-x86 libvirt-daemon-system libvirt-clients \
+    virt-manager bridge-utils ovmf
+```
+
+### Prepare the Guest Image
+
+```bash
+wget https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img
+qemu-img create -f qcow2 -b noble-server-cloudimg-amd64.img -F qcow2 tdx-guest.qcow2 20G
+```
+
+### Cloud-Init
+
+```bash
+cat > cloud-init.cfg << 'EOF'
+#cloud-config
+password: changeme
+chpasswd: { expire: False }
+ssh_pwauth: True
+EOF
+
+cloud-localds cloud-init.iso cloud-init.cfg
+```
+
+### Launch the VM
+
+```bash
+sudo qemu-system-x86_64 \
+    -accel kvm \
+    -cpu host \
+    -machine q35,kernel-irqchip=split,confidential-guest-support=tdx0 \
+    -object tdx-guest,id=tdx0 \
+    -m 4G \
+    -smp 4 \
+    -nographic \
+    -bios /usr/share/OVMF/OVMF_CODE_4M.fd \
+    -drive file=tdx-guest.qcow2,format=qcow2,if=virtio \
+    -drive file=cloud-init.iso,format=raw,if=virtio \
+    -netdev user,id=net0,hostfwd=tcp::2222-:22,hostfwd=tcp::8443-:443 \
+    -device virtio-net-pci,netdev=net0
+```
+
+> **Note:** Port 8443 on the host is forwarded to port 443 in the guest.
+
+```bash
+ssh -p 2222 ubuntu@localhost
+```
+
+## Install the Quote Generation Stack
+
+All subsequent commands run **inside the TDX guest**.
+
+```bash
+sudo apt update
+sudo apt upgrade -y
+
+wget -qO - https://download.01.org/intel-sgx/sgx_repo/ubuntu/intel-sgx-deb.key | \
+  sudo gpg --dearmor -o /usr/share/keyrings/intel-sgx-keyring.gpg
+echo "deb [arch=amd64 signed-by=/usr/share/keyrings/intel-sgx-keyring.gpg] \
+  https://download.01.org/intel-sgx/sgx_repo/ubuntu noble main" | \
+  sudo tee /etc/apt/sources.list.d/intel-sgx.list
+sudo apt update
+
+sudo apt install -y libsgx-dcap-ql libsgx-dcap-default-qpl libsgx-dcap-ql-dev
+```
+
+### Configure the PCCS
+
+```bash
+sudo nano /etc/sgx_default_qcnl.conf
+```
+
+```json
+{
+  "pccs_url": "https://<PCCS_IP>:8081/sgx/certification/v4/",
+  "use_secure_cert": true,
+  "pccs_api_version": "3.1",
+  "retry_times": 3,
+  "retry_delay": 3
+}
+```
+
+### Verify TDX in the Guest
+
+```bash
+lscpu | grep -i tdx_guest
+ls -l /dev/tdx_guest
+```
+
+### Generate a Test Quote
+
+```bash
+sudo apt install -y libtdx-attest libtdx-attest-dev gcc make
+
+cd /opt/intel/tdx-quote-generation-sample/ 2>/dev/null || \
+  cd /usr/share/doc/libtdx-attest/examples/
+
+sudo make
+sudo ./test_tdx_attest -d 1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef
+```
+
+## Install Caddy with RA-TLS
+
+### Build the Go Fork
+
+```bash
+cd ~
+sudo apt install -y git build-essential wget
+
+wget https://go.dev/dl/go1.24.0.linux-amd64.tar.gz
+sudo tar -C /usr/local -xzf go1.24.0.linux-amd64.tar.gz
+rm go1.24.0.linux-amd64.tar.gz
+
+git clone -b ratls https://github.com/Privasys/go.git ~/go-ratls
+export GOROOT_BOOTSTRAP=/usr/local/go
+cd ~/go-ratls/src && ./make.bash
+
+echo 'export GOROOT=~/go-ratls' >> ~/.bashrc
+echo 'export PATH=$GOROOT/bin:$HOME/go/bin:$PATH' >> ~/.bashrc
+source ~/.bashrc
+
+go version
+```
+
+### Build Caddy
+
+```bash
+go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
+
+git clone https://github.com/Privasys/ra-tls-caddy.git ~/ra-tls-caddy
+cd ~/ra-tls-caddy/src
+xcaddy build --with github.com/Privasys/ra-tls-caddy=.
+
+sudo mv caddy /usr/local/bin/caddy
+sudo chmod +x /usr/local/bin/caddy
+
+caddy version
+caddy list-modules | grep ra_tls
+```
+
+### Prepare CA Certificates
+
+```bash
+sudo mkdir -p /etc/caddy/certs
+```
+
+From your **local machine** (via port-forwarded SSH):
+
+```bash
+scp -P 2222 intermediate-ca.dev.crt ubuntu@<host-ip>:/tmp/
+scp -P 2222 intermediate-ca.dev.key ubuntu@<host-ip>:/tmp/
+```
+
+On the **guest VM**:
+
+```bash
+sudo mv /tmp/intermediate-ca.dev.crt /etc/caddy/certs/
+sudo mv /tmp/intermediate-ca.dev.key /etc/caddy/certs/
+sudo chown root:root /etc/caddy/certs/*
+sudo chmod 644 /etc/caddy/certs/intermediate-ca.dev.crt
+sudo chmod 600 /etc/caddy/certs/intermediate-ca.dev.key
+```
+
+### Create the Caddyfile
+
+```bash
+sudo mkdir -p /etc/caddy
+sudo nano /etc/caddy/Caddyfile
+```
+
+```txt
+https://<your_host>:443 {
+    tls {
+        issuer ra_tls {
+            backend tdx
+            ca_cert /etc/caddy/certs/intermediate-ca.dev.crt
+            ca_key  /etc/caddy/certs/intermediate-ca.dev.key
+        }
+    }
+    respond "Hello from an Intel TDX Confidential VM configured with Privasys!"
+}
+```
+
+### Test
+
+```bash
+sudo caddy run --config /etc/caddy/Caddyfile
+```
+
+From your local machine (port 8443 forwards to guest's 443):
+
+```bash
+curl -k https://<host-ip>:8443
+```
+
+### Create systemd Service
+
+```bash
+sudo nano /etc/systemd/system/caddy-ratls.service
+```
+
+```ini
+[Unit]
+Description=Caddy RA-TLS Web Server
+After=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/local/bin/caddy run --config /etc/caddy/Caddyfile
+ExecReload=/usr/local/bin/caddy reload --config /etc/caddy/Caddyfile
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now caddy-ratls
+sudo systemctl status caddy-ratls
+```
+
+### Verify the RA-TLS Certificate
+
+```bash
+echo | openssl s_client -connect <host-ip>:8443 \
+  -servername <your_host> 2>/dev/null \
+  | openssl x509 -noout -text
+```
+
+### Firewall
+
+```bash
+sudo iptables -A INPUT -p tcp --dport 8443 -j ACCEPT
+sudo iptables-save | sudo tee /etc/iptables/rules.v4
+```
+
+Or configure the OVH Network Firewall from **OVH Manager → IP → Firewall**.
+
+### Production Networking
+
+For production, replace QEMU user-mode networking with a bridge so the guest gets its own IP:
+
+```bash
+sudo ip link add br0 type bridge
+sudo ip link set br0 up
+sudo ip addr add <host-subnet-ip>/24 dev br0
+
+sudo qemu-system-x86_64 \
+    ... \
+    -netdev tap,id=net0,ifname=tap0,script=no,downscript=no \
+    -device virtio-net-pci,netdev=net0
+```

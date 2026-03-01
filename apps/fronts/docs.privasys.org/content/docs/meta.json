@@ -2,14 +2,14 @@
     "title": "Documentation",
     "root": true,
     "pages": [
-        "introduction",
-        "---Technology---",
-        "why-privasys",
-        "confidential-computing",
+        "---Introduction---",
+        "...introduction",
+        "---Confidential Computing---",
+        "...confidential-computing",
         "---Solutions---",
-        "enclave-os",
-        "caddy-ra-tls",
-        "ra-tls-clients",
+        "...solutions",
+        "---Guides---",
+        "...guides",
         "---",
         "acknowledgments"
     ]

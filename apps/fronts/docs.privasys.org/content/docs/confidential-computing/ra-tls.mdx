@@ -1,0 +1,88 @@
+---
+title: RA-TLS
+description: How RA-TLS embeds attestation evidence in X.509 certificates, and how Privasys extends it with configuration measurements.
+---
+
+## What Is RA-TLS?
+
+**Remote Attestation TLS** (RA-TLS) embeds a hardware attestation quote directly inside a standard X.509 certificate extension. The result is a normal HTTPS connection where the certificate itself proves that the server is running inside a genuine TEE.
+
+No custom attestation protocol. No separate attestation channel. No client-side SDK changes. The quote rides along inside the certificate for any verifier that wants to inspect it.
+
+## How It Works
+
+The TEE performs these steps to produce an RA-TLS certificate:
+
+1. **Generate a TLS key pair** inside the enclave (ECDSA P-256).
+2. **Compute ReportData** — hash the public key into the attestation binding:
+   ```
+   ReportData = SHA-512( SHA-256(public_key_DER) || binding )
+   ```
+3. **Obtain a hardware quote** — the platform signs a report containing the ReportData, producing a DCAP quote (SGX) or TDX quote.
+4. **Build the X.509 certificate** — embed the quote as a custom extension OID.
+5. **Sign the certificate** — with the intermediary CA key (sealed inside the enclave or stored in the Confidential VM).
+6. **Serve over standard TLS** — clients see a normal HTTPS connection.
+
+The `binding` parameter supports two modes:
+- **Challenge mode**: binding = random nonce from the client (proves freshness).
+- **Deterministic mode**: binding = creation timestamp (allows certificate caching).
+
+## Certificate Structure
+
+An RA-TLS certificate is a standard X.509v3 certificate with one additional non-critical extension containing the hardware quote:
+
+```
+X509v3 Extensions:
+    Subject Alternative Name:
+        DNS: enclave.example.com
+    
+    1.2.840.113741.1.13.1.0:           ← SGX DCAP Quote (~4 KB)
+        <attestation evidence>
+```
+
+The quote extension OID depends on the TEE:
+- **SGX**: `1.2.840.113741.1.13.1.0` (Intel SGX DCAP Quote)
+- **TDX**: `1.2.840.113741.1.5.5.1.6` (Intel TDX Quote)
+
+Implementations may embed additional custom extensions — for example, [Enclave OS](/solutions/enclave-os/ra-tls#config-merkle-tree) adds configuration measurement OIDs that attest the enclave's runtime state alongside the code identity.
+
+## Client Verification
+
+A client verifies an RA-TLS certificate in three steps:
+
+1. **Standard TLS chain verification** — verify the certificate chain against the root CA, just like any HTTPS connection.
+2. **Quote verification** — extract the quote from the X.509 extension, verify the DCAP/TDX signature against the chip vendor's root of trust, and check that MRENCLAVE/MRTD matches the expected value.
+3. **ReportData binding** — verify that `SHA-512(SHA-256(cert_public_key) || binding)` matches the ReportData in the quote, proving the TLS key was generated inside the attested TEE.
+
+This is all standard X.509 parsing — any language with an ASN.1 library can extract and verify the quote. Privasys provides [RA-TLS client libraries](/solutions/clients) in Go, Python, Rust, TypeScript, and C#.
+
+## Beyond Code Identity: Configuration Attestation
+
+Standard RA-TLS proves **what code** is running (MRENCLAVE or MRTD). But the same code can behave differently depending on its configuration — which CA certificate is loaded, which applications are deployed, which external services it can reach.
+
+Privasys extends RA-TLS with **configuration attestation**: additional X.509 extensions that prove not just the code identity, but the complete runtime configuration of the TEE. A verifier can then check two things:
+
+| Pillar | What it proves | How |
+|--------|---------------|-----|
+| **Code identity** | The exact binary running in the TEE | MRENCLAVE (SGX) or MRTD (TDX) in the hardware quote |
+| **Configuration identity** | The runtime configuration of the TEE | Custom X.509 extensions in the RA-TLS certificate |
+
+The enclave acts as an **honest reporter** — it computes and publishes its configuration state in every certificate. There is no owner key, no authorization gate, no way to suppress information. Anyone with host access can change the configuration, but the certificate will reflect the change, and clients pinning a known-good value will immediately detect it.
+
+For the full specification of configuration measurement OIDs, `Merkle tree` construction, and verification strategies, see the implementation pages:
+
+- [Enclave OS — RA-TLS & Config Attestation](/solutions/enclave-os/ra-tls) (SGX)
+- [Enclave OS — RA-TLS Implementation](/solutions/enclave-os/ra-tls) (SGX)
+
+## Implementations
+
+Privasys implements RA-TLS in two products:
+
+| Product | TEE | Details |
+|---------|-----|---------|
+| [Enclave OS](/solutions/enclave-os/ra-tls) | Intel SGX | Full RA-TLS with Config Merkle tree, per-app certificates, challenge-response mode |
+| [Caddy RA-TLS Module](/solutions/confidential-containers/caddy-ra-tls) | Intel TDX | RA-TLS certificate issuance for Caddy, deterministic + challenge-response modes |
+
+Both produce standard X.509 certificates verifiable by the same [RA-TLS client libraries](/solutions/clients).
+
+Read more in our blog post: [A Practical Guide for an Attested Web](https://privasys.org/blog/a-practical-guide-for-an-attested-web/).

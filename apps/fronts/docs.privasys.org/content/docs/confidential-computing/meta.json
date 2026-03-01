@@ -1,0 +1,10 @@
+{
+    "title": "Confidential Computing",
+    "defaultOpen": true,
+    "pages": [
+        "presentation",
+        "trust-model",
+        "attestation",
+        "ra-tls"
+    ]
+}

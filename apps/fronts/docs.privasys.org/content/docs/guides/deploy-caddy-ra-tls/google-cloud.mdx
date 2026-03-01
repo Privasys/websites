@@ -1,0 +1,244 @@
+---
+title: Google Cloud (TDX)
+description: Deploy Caddy with RA-TLS on a Google Cloud Confidential VM using Intel TDX.
+---
+
+This guide deploys the [Caddy RA-TLS module](/solutions/confidential-containers/caddy-ra-tls) on a Google Cloud Confidential VM with Intel TDX.
+
+## Create a Confidential VM
+
+At minimum you need a `c3-standard-4` with a Confidential image (Ubuntu 24.04 LTS).
+
+### Via gcloud CLI
+
+```bash
+gcloud compute instances create tdx-c3-4-eu-lon-dev-1 \
+    --project=tdx-dev-123456 \
+    --zone=europe-west9-a \
+    --machine-type=c3-standard-4 \
+    --network-interface=network-tier=PREMIUM,nic-type=GVNIC,stack-type=IPV4_ONLY,subnet=default \
+    --maintenance-policy=TERMINATE \
+    --provisioning-model=STANDARD \
+    --service-account=123456789-compute@developer.gserviceaccount.com \
+    --scopes=https://www.googleapis.com/auth/devstorage.read_only,https://www.googleapis.com/auth/logging.write,https://www.googleapis.com/auth/monitoring.write,https://www.googleapis.com/auth/service.management.readonly,https://www.googleapis.com/auth/servicecontrol,https://www.googleapis.com/auth/trace.append \
+    --tags=https-server,ra-tls-server \
+    --create-disk=auto-delete=yes,boot=yes,device-name=tdx-c3-4-eu-lon-dev-1,disk-resource-policy=projects/tdx-dev-123456/regions/europe-west9/resourcePolicies/default-schedule-1,image=projects/ubuntu-os-accelerator-images/global/images/ubuntu-accelerator-2404-amd64-with-nvidia-580-v20260225,mode=rw,size=10,type=pd-balanced \
+    --shielded-secure-boot \
+    --shielded-vtpm \
+    --shielded-integrity-monitoring \
+    --labels=goog-ec-src=vm_add-gcloud \
+    --reservation-affinity=any \
+    --threads-per-core=1 \
+    --confidential-compute-type=TDX
+```
+
+### Connect
+
+```bash
+gcloud compute ssh --zone "europe-west9-a" "tdx-c3-4-eu-lon-dev-1" --project "tdx-dev-123456"
+```
+
+## Install the Quote Generation Stack
+
+```bash
+# Update
+sudo apt update
+sudo apt upgrade
+
+# Add the Intel SGX/TDX repository
+wget -qO - https://download.01.org/intel-sgx/sgx_repo/ubuntu/intel-sgx-deb.key | \
+  sudo gpg --dearmor -o /usr/share/keyrings/intel-sgx-keyring.gpg
+echo "deb [arch=amd64 signed-by=/usr/share/keyrings/intel-sgx-keyring.gpg] \
+  https://download.01.org/intel-sgx/sgx_repo/ubuntu noble main" | \
+  sudo tee /etc/apt/sources.list.d/intel-sgx.list
+sudo apt update
+
+# Install Quote Library (QL) and Quote Provider Library (QPL)
+sudo apt install -y libsgx-dcap-ql libsgx-dcap-default-qpl libsgx-dcap-ql-dev
+```
+
+### Configure the PCCS
+
+```bash
+sudo nano /etc/sgx_default_qcnl.conf
+```
+
+```json
+{
+  "pccs_url": "https://<PCCS_IP>:8081/sgx/certification/v4/",
+  "use_secure_cert": true,
+  "pccs_api_version": "3.1",
+  "retry_times": 3,
+  "retry_delay": 3
+}
+```
+
+Verify connectivity:
+
+```bash
+curl -k https://<PCCS_IP>:8081/sgx/certification/v4/rootcacrl
+```
+
+### Verify TDX Hardware
+
+```bash
+lscpu | grep -i tdx_guest
+ls -l /dev/tdx_guest
+```
+
+If `/dev/tdx_guest` is missing, the VM was not booted as a Trust Domain.
+
+### Generate a Test Quote
+
+```bash
+sudo apt install -y libtdx-attest libtdx-attest-dev gcc make
+
+cd /opt/intel/tdx-quote-generation-sample/ 2>/dev/null || \
+  cd /usr/share/doc/libtdx-attest/examples/
+
+sudo make
+sudo ./test_tdx_attest -d 1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef
+```
+
+You should see **"Successfully get the TD Quote"**.
+
+## Install Caddy with RA-TLS
+
+### Build the Go Fork
+
+The RA-TLS module requires the [Privasys Go fork](https://github.com/Privasys/go/tree/ratls) with `ClientHelloInfo.RATLSChallenge` support.
+
+```bash
+cd ~
+sudo apt install -y git build-essential wget
+
+# Bootstrap Go
+wget https://go.dev/dl/go1.24.0.linux-amd64.tar.gz
+sudo tar -C /usr/local -xzf go1.24.0.linux-amd64.tar.gz
+rm go1.24.0.linux-amd64.tar.gz
+
+# Build the fork
+git clone -b ratls https://github.com/Privasys/go.git ~/go-ratls
+export GOROOT_BOOTSTRAP=/usr/local/go
+cd ~/go-ratls/src && ./make.bash
+
+echo 'export GOROOT=~/go-ratls' >> ~/.bashrc
+echo 'export PATH=$GOROOT/bin:$HOME/go/bin:$PATH' >> ~/.bashrc
+source ~/.bashrc
+
+go version
+```
+
+### Build Caddy
+
+```bash
+go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
+
+git clone https://github.com/Privasys/ra-tls-caddy.git ~/ra-tls-caddy
+cd ~/ra-tls-caddy/src
+xcaddy build --with github.com/Privasys/ra-tls-caddy=.
+
+sudo mv caddy /usr/local/bin/caddy
+sudo chmod +x /usr/local/bin/caddy
+
+caddy version
+caddy list-modules | grep ra_tls
+```
+
+You should see `tls.issuance.ra_tls` in the module list.
+
+### Prepare CA Certificates
+
+```bash
+sudo mkdir -p /etc/caddy/certs
+```
+
+From your **local machine**:
+
+```bash
+scp intermediate-ca.dev.crt <user>@<vm-ip>:/tmp/
+scp intermediate-ca.dev.key <user>@<vm-ip>:/tmp/
+```
+
+On the **VM**:
+
+```bash
+sudo mv /tmp/intermediate-ca.dev.crt /etc/caddy/certs/
+sudo mv /tmp/intermediate-ca.dev.key /etc/caddy/certs/
+sudo chown root:root /etc/caddy/certs/*
+sudo chmod 644 /etc/caddy/certs/intermediate-ca.dev.crt
+sudo chmod 600 /etc/caddy/certs/intermediate-ca.dev.key
+```
+
+### Create the Caddyfile
+
+```bash
+sudo mkdir -p /etc/caddy
+sudo nano /etc/caddy/Caddyfile
+```
+
+```txt
+https://<your_host>:443 {
+    tls {
+        issuer ra_tls {
+            backend tdx
+            ca_cert /etc/caddy/certs/intermediate-ca.dev.crt
+            ca_key  /etc/caddy/certs/intermediate-ca.dev.key
+        }
+    }
+    respond "Hello from an Intel TDX Confidential VM configured with Privasys!"
+}
+```
+
+### Test
+
+```bash
+sudo caddy run --config /etc/caddy/Caddyfile
+```
+
+From your local machine:
+
+```bash
+curl -k https://<your_host>:443
+```
+
+### Create systemd Service
+
+```bash
+sudo nano /etc/systemd/system/caddy-ratls.service
+```
+
+```ini
+[Unit]
+Description=Caddy RA-TLS Web Server
+After=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/local/bin/caddy run --config /etc/caddy/Caddyfile
+ExecReload=/usr/local/bin/caddy reload --config /etc/caddy/Caddyfile
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+> **Note:** Caddy runs as root because it needs access to `/sys/kernel/config/tsm/report` for TDX attestation and to the CA private key.
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now caddy-ratls
+sudo systemctl status caddy-ratls
+```
+
+### Verify the RA-TLS Certificate
+
+```bash
+echo | openssl s_client -connect <your_host>:443 \
+  -servername <your_host> 2>/dev/null \
+  | openssl x509 -noout -text
+```
+
+Look for the TDX quote extension (`1.2.840.113741.1.5.5.1.6`) — it should contain ~8 KB of attestation evidence.

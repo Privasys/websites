@@ -1,0 +1,272 @@
+---
+title: Attestation Server
+description: Deploy the Privasys Attestation Server — a lightweight Go service that independently verifies hardware attestation quotes.
+---
+
+The **Privasys Attestation Server** is a lightweight Go server that verifies hardware attestation quotes from Confidential Computing platforms (Intel TDX, Intel SGX). It provides a simple REST API for validating quotes independently of the TLS layer, secured with Ed25519 JWT authentication.
+
+**Repository**: [github.com/Privasys/attestation-server](https://github.com/Privasys/attestation-server)
+
+## Why Run Your Own?
+
+Quote verification requires **collateral** — root certificates, certificate revocation lists (CRLs), and TCB (Trusted Computing Base) information — that originates from the chip vendor (Intel or AMD). This collateral is publicly available via the vendor's **Provisioning Certificate Caching Service** (PCCS).
+
+Anyone can run a PCCS and an attestation server using this public collateral. You do not need permission from the chip vendor. Running your own means:
+
+- **Independence.** No dependency on a third-party verification service.
+- **Privacy.** Quote contents (including measurements and ReportData) never leave your infrastructure.
+- **Availability.** No external service to go down during verification.
+
+Privasys operates its own attestation servers (e.g. `gcp-lon-1.dcap.privasys.org`) and provides the server as open-source so anyone can do the same.
+
+## Architecture
+
+```
+┌──────────┐           ┌────────────────────────┐          ┌─────────────┐
+│  Client  │──HTTPS──> │  Caddy (reverse proxy) │──HTTP──> │ Attestation │
+│          │           │  (automatic TLS)       │          │   Server    │
+└──────────┘           └────────────────────────┘          │  (:8080)    │
+                                                           └──────┬──────┘
+                                                                  │
+                                                           ┌──────┴──────┐
+                                                           │    PCCS     │
+                                                           │  (:8081)    │
+                                                           └─────────────┘
+```
+
+The server auto-detects the quote type (TDX v4 or SGX v3) from the version field in the raw bytes and routes to the appropriate verifier:
+
+- **TDX** — verified in pure Go using [google/go-tdx-guest](https://github.com/google/go-tdx-guest) (signature + certificate chain).
+- **SGX** — verified via DCAP libraries.
+
+## Endpoints
+
+| Method | Path | Scope | Description |
+|--------|------|-------|-------------|
+| `POST` | `/api/verify` | `verify` | Submit a base64-encoded quote for verification |
+| `POST` | `/api/issue` | `admin` | Issue a new JWT API key |
+
+All endpoints require a valid `Authorization: Bearer <JWT>` header.
+
+## Prerequisites
+
+| Dependency | Purpose |
+|------------|---------|
+| Go 1.22+ | Build the server |
+| Intel PCCS | Provides attestation collateral (root certs, CRLs, TCB info) |
+| `libsgx-dcap-ql` | DCAP quote verification libraries |
+| Caddy (optional) | Reverse proxy with automatic HTTPS in front of the server |
+
+## Building
+
+```bash
+git clone https://github.com/Privasys/attestation-server.git
+cd attestation-server
+go build -o dist/attestation-server ./src/
+```
+
+## Generate the JWT Signing Key
+
+The server uses **Ed25519 JWT tokens** for authentication. Generate a key pair once:
+
+```bash
+openssl genpkey -algorithm Ed25519 -out server-jwt.key
+openssl pkey -in server-jwt.key -pubout -out server-jwt.pub
+chmod 600 server-jwt.key
+```
+
+Keep `server-jwt.key` secret on the server. You only need `server-jwt.pub` if external services verify tokens independently.
+
+## Running
+
+### Environment
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `JWT_SIGNING_KEY_FILE` | Yes | Path to the Ed25519 private key (PEM) |
+
+### Start the server
+
+```bash
+JWT_SIGNING_KEY_FILE=server-jwt.key ./dist/attestation-server
+```
+
+The server listens on `:8080`.
+
+### systemd service
+
+Create `/etc/systemd/system/attestation-server.service`:
+
+```ini
+[Unit]
+Description=Privasys Attestation Server
+After=network.target pccs.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/attestation-server
+Environment=JWT_SIGNING_KEY_FILE=/opt/attestation-server/server-jwt.key
+ExecStart=/opt/attestation-server/attestation-server
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now attestation-server
+```
+
+## API Key Management
+
+### Scopes
+
+| Scope | Permissions |
+|-------|-------------|
+| `verify` | Submit quotes to `POST /api/verify` |
+| `admin` | Issue new API keys via `POST /api/issue` |
+
+A token can hold multiple scopes, comma-separated (e.g. `"verify,admin"`).
+
+### Issue via CLI
+
+The server binary doubles as a CLI tool — no running server required:
+
+```bash
+# Standard user token (verify-only, 90 days)
+JWT_SIGNING_KEY_FILE=server-jwt.key ./dist/attestation-server issue \
+  --subject "acme-corp" --scope "verify" --days 90
+
+# Admin token (can issue + verify, 365 days)
+JWT_SIGNING_KEY_FILE=server-jwt.key ./dist/attestation-server issue \
+  --subject "admin-user" --scope "verify,admin" --days 365
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--subject` | `"user"` | Token holder identifier |
+| `--scope` | `"verify"` | Comma-separated list of scopes |
+| `--days` | `30` | Token validity in days |
+
+### Issue via HTTP
+
+Requires a running server and an **admin-scoped** token:
+
+```bash
+curl -X POST https://your-attestation-server.example.com/api/issue \
+  -H "Authorization: Bearer <ADMIN_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"subject": "bob", "scope": "verify", "days_valid": 30}'
+```
+
+## Verifying a Quote
+
+```bash
+curl -X POST https://your-attestation-server.example.com/api/verify \
+  -H "Authorization: Bearer <TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"quote": "<base64-encoded-quote>"}'
+```
+
+Response:
+
+```json
+{
+  "success": true,
+  "status": "OK",
+  "message": "TDX quote verified (signature + certificate chain)"
+}
+```
+
+## Setting Up the PCCS
+
+The attestation server needs access to a **Provisioning Certificate Caching Service** (PCCS) to fetch Intel's attestation collateral. You can run the PCCS on the same machine or on a separate server.
+
+### Install
+
+```bash
+sudo apt install -y git nodejs npm libsgx-dcap-quote-verify \
+  libsgx-dcap-default-qpl libsgx-dcap-ql-dev
+
+# Clone and build Intel PCCS
+git clone https://github.com/intel/confidential-computing.tee.dcap.pccs.git ~/pccs-source
+cd ~/pccs-source/service
+sudo ./install.sh
+```
+
+### Configure
+
+Edit `/opt/intel/sgx-dcap-pccs/config/default.json` and set your [Intel PCS API key](https://api.portal.trustedservices.intel.com/).
+
+### Generate PCCS TLS certificate
+
+```bash
+sudo openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
+  -keyout /opt/intel/sgx-dcap-pccs/private/private.pem \
+  -out    /opt/intel/sgx-dcap-pccs/private/file.crt \
+  -subj   "/CN=localhost"
+```
+
+### Start
+
+```bash
+sudo systemctl enable --now pccs
+```
+
+### Point the quote provider at the PCCS
+
+Edit `/etc/sgx_default_qcnl.conf`:
+
+```json
+{
+  "pccs_url": "https://localhost:8081/sgx/certification/v4/",
+  "use_secure_cert": false,
+  "pccs_api_version": "3.1",
+  "retry_times": 3,
+  "retry_delay": 3
+}
+```
+
+Verify connectivity:
+
+```bash
+curl -k https://localhost:8081/sgx/certification/v4/rootcacrl
+```
+
+## Caddy Reverse Proxy (optional)
+
+Front the server with Caddy for automatic HTTPS:
+
+```bash
+sudo apt install caddy
+```
+
+Edit `/etc/caddy/Caddyfile`:
+
+```text
+attestation.example.com {
+    reverse_proxy /api/* localhost:8080
+}
+```
+
+```bash
+sudo systemctl restart caddy
+```
+
+Caddy will automatically obtain a Let's Encrypt certificate for the domain.
+
+## Cloud Deployment Guides
+
+For step-by-step instructions on specific cloud providers, see the installation guides in the repository:
+
+- [Google Cloud](https://github.com/Privasys/attestation-server/blob/main/install/Google%20Cloud.md)
+- [OVH Cloud](https://github.com/Privasys/attestation-server/blob/main/install/OVH%20Cloud.md)
+
+## Dependencies
+
+| Library | License | Usage |
+|---------|---------|-------|
+| [google/go-tdx-guest](https://github.com/google/go-tdx-guest) | Apache 2.0 | TDX quote parsing and signature verification |
+| [golang-jwt/jwt](https://github.com/golang-jwt/jwt) | MIT | JWT token signing and validation |

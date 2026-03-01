@@ -1,0 +1,9 @@
+{
+    "title": "Solutions",
+    "defaultOpen": false,
+    "pages": [
+        "confidential-containers",
+        "enclave-os",
+        "clients"
+    ]
+}

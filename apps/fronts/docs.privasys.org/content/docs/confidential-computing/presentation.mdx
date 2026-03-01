@@ -1,6 +1,6 @@
 ---
-title: Confidential Computing
-description: An introduction to Trusted Execution Environments, Intel SGX, Intel TDX, AMD SEV-SNP, and remote attestation.
+title: Presentation
+description: An introduction to Confidential Computing, Trusted Execution Environments, and the hardware technologies that protect data during processing.
 ---
 
 Confidential Computing is a set of hardware technologies that protect data **while it is being processed**. Combined with encryption at rest and in transit, it closes the last remaining gap in the data protection lifecycle.
@@ -28,7 +28,7 @@ Key properties:
 - **Sealing.** Enclaves can encrypt data bound to their MRENCLAVE identity. Only the same enclave binary on the same platform can decrypt it.
 - **EPID / DCAP attestation.** The enclave can generate a cryptographic quote signed by the platform, provable to remote verifiers.
 
-SGX is available on select Intel Xeon processors (Ice Lake, Sapphire Rapids, and later) and is the foundation for Privasys's **Enclave OS (Mini)**.
+SGX is available on select Intel Xeon processors (Ice Lake, Sapphire Rapids, and later) and is the foundation for Privasys's [Enclave OS (Mini)](/solutions/enclave-os/architecture).
 
 ### ECALLs and OCALLs
 
@@ -37,7 +37,7 @@ Because an SGX enclave is isolated from the rest of the system, it cannot direct
 - **ECALL (Enclave Call):** The host calls *into* the enclave. This is how the host starts enclave code or passes data to it.
 - **OCALL (Outside Call):** The enclave calls *out* to the host. This is how the enclave requests services it cannot perform itself — such as network I/O or file access.
 
-Each ECALL/OCALL involves a hardware-enforced context switch (~10,000 CPU cycles), so minimising the number of transitions is critical for performance. The Enclave OS [RPC and Circular Buffers](/enclave-os/rpc-and-circular-buffers) design addresses this by replacing per-request ECALLs/OCALLs with shared-memory queues.
+Each ECALL/OCALL involves a hardware-enforced context switch (~10,000 CPU cycles), so minimising the number of transitions is critical for performance. The Enclave OS [RPC and Circular Buffers](/solutions/enclave-os/rpc-and-circular-buffers) design addresses this by replacing per-request ECALLs/OCALLs with shared-memory queues.
 
 ECALLs and OCALLs are declared in an **Enclave Definition Language (EDL)** file, which defines the exact function signatures allowed to cross the trust boundary. This is the enclave's attack surface — the smaller and simpler the EDL, the harder it is to exploit.
 
@@ -67,50 +67,4 @@ AMD Secure Encrypted Virtualization – Secure Nested Paging (SEV-SNP) provides 
 
 Both provide whole-VM confidential computing with similar security guarantees. The main differences are the CPU vendor (Intel vs AMD), attestation mechanisms, and cloud availability. From an application perspective, code runs identically in either — the Linux kernel abstracts the hardware differences.
 
-Privasys's **Caddy RA-TLS Module** currently supports TDX, with SEV-SNP support planned.
-
-## Comparison
-
-| | Intel SGX | Intel TDX | AMD SEV-SNP |
-|--|-----------|-----------|-------------|
-| **Isolation level** | Application (enclave) | Virtual machine | Virtual machine |
-| **TCB size** | Minimal (enclave code only) | Full OS + application | Full OS + application |
-| **Deployment** | Custom build, EDL interface | Unmodified Linux | Unmodified Linux |
-| **Attestation** | EPID / DCAP quotes | TDX quotes (configfs-tsm) | AMD attestation reports |
-| **Memory limit** | EPC size (128–512 MB typical) | Full VM memory | Full VM memory |
-| **Use case** | Minimal TCB, high security | General-purpose confidential VMs | General-purpose confidential VMs |
-
-Privasys supports SGX via the **Enclave OS** (maximum security, minimal TCB) and TDX/SEV-SNP via the **Caddy RA-TLS Module** (ease of deployment, standard Linux stack).
-
-## Remote Attestation
-
-Remote attestation is the mechanism by which a TEE proves its identity to a remote party.
-
-### The Flow
-
-1. The TEE generates a **report** containing its measurements (MRENCLAVE or MRTD) and a user-supplied **ReportData** field (up to 64 bytes).
-2. The platform's quoting enclave (SGX) or firmware (TDX) signs this report, producing a **quote**.
-3. The remote verifier checks the quote's signature against the chip vendor's root of trust (Intel's attestation service or DCAP).
-4. If valid, the verifier knows: (a) the code identity, (b) the platform authenticity, and (c) that the `ReportData` was produced inside that TEE.
-
-### The Problem with Traditional Attestation
-
-Traditional attestation requires a custom protocol between client and server — a separate "attestation channel" before the real communication can begin. This is:
-
-- **Incompatible with browsers.** Web clients cannot run custom attestation code.
-- **Complex to integrate.** Every client language needs an attestation SDK.
-- **Fragile.** An out-of-band attestation step adds latency and failure modes.
-
-### RA-TLS: Attestation Meets TLS
-
-RA-TLS solves this by embedding the attestation quote inside a standard **X.509 certificate extension**. The TEE:
-
-1. Generates a TLS key pair inside the enclave.
-2. Computes `ReportData = SHA-512( SHA-256(DER public key) || binding )`, cryptographically tying the key to the attestation.
-3. Obtains a hardware quote over this `ReportData`.
-4. Builds an X.509 certificate with the quote in a custom extension OID.
-5. Serves this certificate over standard TLS.
-
-The result is a **normal HTTPS connection**. The attestation evidence rides along inside the certificate for any verifier that wants to inspect it, while clients that don't care simply see a valid TLS handshake.
-
-Read more in our blog post: [A Practical Guide for an Attested Web](https://privasys.org/blog/a-practical-guide-for-an-attested-web/).
+Privasys's [Caddy RA-TLS Module](/solutions/confidential-containers/caddy-ra-tls) currently supports TDX, with SEV-SNP support planned.

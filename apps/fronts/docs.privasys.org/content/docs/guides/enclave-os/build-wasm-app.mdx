@@ -1,0 +1,180 @@
+---
+title: Build a WASM App
+description: Build and deploy WebAssembly applications for Enclave OS using the WASI Component Model.
+---
+
+This guide covers building a WASM application for [Enclave OS](/solutions/enclave-os/architecture) using the WASI Component Model, pre-compiling it for SGX, and loading it at runtime.
+
+**Example repository**: [github.com/Privasys/wasm-app-example](https://github.com/Privasys/wasm-app-example)
+
+## Prerequisites
+
+| Dependency | Purpose | Install |
+|------------|---------|---------|
+| Rust stable 1.82+ | WASM compilation | `rustup update stable` |
+| `wasm32-wasip2` target | WASI Component Model | `rustup target add wasm32-wasip2` |
+| cargo-component | WIT-based builds | `cargo install cargo-component` |
+| Wasmtime CLI | AOT pre-compilation | `cargo install wasmtime-cli` |
+
+## Project Structure
+
+A WASM app for Enclave OS uses the **WASI Component Model** with WIT interface definitions:
+
+```
+wasm-app-example/
+├── Cargo.toml              # WASM app crate
+├── src/
+│   └── lib.rs              # HTTP handler implementation
+├── wit/
+│   └── world.wit           # WIT interface definition
+└── enclave/                # Composition crate (integrates with Enclave OS)
+    ├── Cargo.toml
+    └── src/
+        └── lib.rs
+```
+
+## Writing the Handler
+
+Your WASM app implements the `wasi:http/incoming-handler` interface. Here's a minimal example:
+
+```rust
+use exports::wasi::http::incoming_handler::Guest;
+use wasi::http::types::*;
+
+struct MyApp;
+
+impl Guest for MyApp {
+    fn handle(request: IncomingRequest, response_out: ResponseOutparam) {
+        // Read the request path
+        let path = request.path_with_query().unwrap_or_default();
+
+        // Create a response
+        let response = OutgoingResponse::new(Fields::new());
+        response.set_status_code(200).unwrap();
+
+        let body = response.body().unwrap();
+        let stream = body.write().unwrap();
+
+        match path.as_str() {
+            "/hello" => stream.write(b"Hello from inside SGX!").unwrap(),
+            _ => stream.write(b"Unknown path").unwrap(),
+        }
+
+        drop(stream);
+        OutgoingBody::finish(body, None).unwrap();
+        ResponseOutparam::set(response_out, Ok(response));
+    }
+}
+
+export!(MyApp);
+```
+
+## Available WASI Capabilities
+
+Your WASM module can use the following interfaces provided by the enclave:
+
+| Interface | Description |
+|-----------|-------------|
+| `wasi:http/incoming-handler` | Entry point — the enclave routes HTTPS requests to your module |
+| `wasi:keyvalue/store` | Encrypted KV store with automatic namespace isolation |
+| `wasi:filesystem/types` | Virtual filesystem backed by the encrypted KV store |
+| `wasi:clocks/wall-clock` | Current time (via host RPC) |
+| `wasi:logging/logging` | Log messages (streamed to host) |
+| `wasi:random/random` | Cryptographic randomness (SGX RDRAND) |
+| `wasi:cli/environment` | Environment variables (app name, version) |
+
+See [WASM Runtime](/solutions/enclave-os/wasm-runtime) for details on capabilities and isolation.
+
+## Building
+
+### 1. Compile to WASM
+
+```bash
+cd wasm-app-example
+cargo component build --release
+```
+
+This produces a WASM Component at `target/wasm32-wasip2/release/wasm_example.wasm`.
+
+### 2. Pre-compile for SGX (AOT)
+
+SGX does not allow JIT compilation (W^X policy). The WASM module must be ahead-of-time compiled to native code:
+
+```bash
+wasmtime compile target/wasm32-wasip2/release/wasm_example.wasm -o wasm_example.cwasm
+```
+
+The `.cwasm` file contains pre-compiled native code that wasmtime can load directly inside the enclave without any code generation.
+
+## Loading into the Enclave
+
+The enclave starts empty — WASM apps are loaded at runtime over the RA-TLS connection.
+
+### Using the test script
+
+```bash
+python tests/test_wasm_functions.py wasm_example.cwasm
+```
+
+### Programmatic loading
+
+Using any [RA-TLS client](/solutions/clients/ra-tls-clients):
+
+```python
+import json, socket, ssl, struct
+
+def frame(data):
+    return struct.pack(">I", len(data)) + data
+
+# Connect to the enclave
+ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+ctx.check_hostname = False
+ctx.verify_mode = ssl.CERT_NONE
+sock = ctx.wrap_socket(
+    socket.create_connection(("127.0.0.1", 8443)),
+    server_hostname="127.0.0.1",
+)
+
+# Load the WASM app
+with open("wasm_example.cwasm", "rb") as f:
+    wasm_bytes = list(f.read())
+
+load_req = json.dumps({
+    "wasm_load": {"name": "my-app", "bytes": wasm_bytes}
+}).encode()
+sock.sendall(frame(json.dumps({"Data": list(load_req)}).encode()))
+
+# Read response
+buf = sock.recv(65536)
+length = struct.unpack(">I", buf[:4])[0]
+resp = json.loads(buf[4:4+length])
+inner = json.loads(bytes(resp["Data"]))
+print("Loaded:", json.dumps(inner, indent=2))
+```
+
+## What Happens on Load
+
+When a WASM app is loaded into the enclave:
+
+1. The `.cwasm` bytecode is received over the RA-TLS connection.
+2. The enclave computes the **SHA-256 code hash** of the WASM binary.
+3. A new `AppContext` is created with the app name, route prefix, and code hash.
+4. The code hash is added as a leaf in the [Config Merkle tree](/solutions/enclave-os/ra-tls#config-merkle-tree).
+5. The RA-TLS certificate is **regenerated** with the updated Merkle root and WASM OID extensions.
+6. All subsequent TLS handshakes serve the updated certificate, attesting to the new app.
+
+## Attestation
+
+Once loaded, the WASM app's code hash is embedded in every RA-TLS certificate:
+
+| OID | Content |
+|-----|---------|
+| `1.3.6.1.4.1.65230.2.1` | App name |
+| `1.3.6.1.4.1.65230.2.2` | Route prefix |
+| `1.3.6.1.4.1.65230.2.3` | SHA-256 code hash |
+
+Clients can verify not just the enclave identity (MRENCLAVE) but the exact application code running inside it.
+
+## Building Enclave OS with WASM Support
+
+To build the enclave with WASM runtime enabled, see [Deploy Enclave OS](/guides/enclave-os/deploy#build-with-wasm-runtime).

@@ -1,0 +1,65 @@
+---
+title: Concept
+description: How Confidential Containers combine Confidential VMs with reverse proxies to bring attestation to existing applications.
+---
+
+## What Are Confidential Containers?
+
+Confidential Containers run existing, unmodified applications inside **Confidential Virtual Machines** (Intel TDX, AMD SEV-SNP) and expose them over **attested HTTPS** — without changing a single line of application code.
+
+The approach is simple: place a reverse proxy with RA-TLS capabilities (like Caddy with our RA-TLS module) in front of your application inside a Confidential VM. The reverse proxy:
+
+1. Generates TLS keys **inside the TEE**
+2. Embeds a **hardware attestation quote** in the X.509 certificate
+3. Terminates TLS and proxies traffic to your backend application
+4. Clients see a standard HTTPS connection with attestation evidence in the certificate
+
+```
+┌──────────────────────────────────────────────┐
+│          Confidential VM (TDX / SEV)         │
+│                                              │
+│  ┌──────────────┐     ┌───────────────────┐  │
+│  │   Caddy      │────>│  Your Application │  │
+│  │  (RA-TLS)    │     │  (unmodified)     │  │
+│  └──────┬───────┘     └───────────────────┘  │
+│         │ TLS termination                    │
+│         │ inside the TEE                     │
+└─────────┼────────────────────────────────────┘
+          │
+    ┌─────┴─────┐
+    │  Client   │  Standard HTTPS connection
+    │           │  (attestation in X.509 cert)
+    └───────────┘
+```
+
+## When to Use Confidential Containers
+
+| Scenario | Why Confidential Containers? |
+|----------|------------------------------|
+| **Existing web applications** | No code changes. Add Caddy as a reverse proxy, enable RA-TLS. |
+| **Container-based deployments** | Your Docker/Kubernetes workloads run as-is inside the Confidential VM. |
+| **Quick adoption** | Standard Linux, standard toolchains, standard deployment. No SGX SDK. |
+| **TDX/SEV cloud instances** | Available on Google Cloud, Azure, AWS — just choose a Confidential VM instance type. |
+
+## Compared to Enclave OS
+
+For maximum security with the smallest Trusted Computing Base, use [Enclave OS](/solutions/enclave-os/architecture) (Intel SGX). For ease of deployment with existing applications, use Confidential Containers.
+
+| | **Confidential Containers** | **Enclave OS** |
+|--|---------------------------|----------------|
+| **TEE** | Intel TDX / AMD SEV-SNP | Intel SGX |
+| **TCB** | Full VM (kernel + all apps) | ~4 MB enclave binary |
+| **Code changes** | None | Application built as WASM module |
+| **Deployment** | Standard Linux + Caddy | Custom Rust build + SGX SDK |
+| **Best for** | Existing applications, quick adoption | Security-critical, minimal TCB |
+
+See [Trust Model](/confidential-computing/trust-model) for a deeper comparison.
+
+## Our Implementation: Caddy RA-TLS Module
+
+Privasys provides the [Caddy RA-TLS Module](/solutions/confidential-containers/caddy-ra-tls) — a `tls.issuance` plugin for Caddy that produces RA-TLS certificates inside Confidential VMs. It supports Intel TDX today with AMD SEV-SNP planned.
+
+For deployment guides, see:
+- [Deploy Caddy RA-TLS on Google Cloud](/guides/deploy-caddy-ra-tls) (TDX)
+- [Deploy Caddy RA-TLS on Azure](/guides/deploy-caddy-ra-tls) (TDX)
+- [Deploy Caddy RA-TLS on OVH Cloud](/guides/deploy-caddy-ra-tls) (bare metal + QEMU/KVM)
