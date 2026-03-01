@@ -1,6 +1,6 @@
 {
   "title": "Guides",
-  "defaultOpen": true,
+  "defaultOpen": false,
   "pages": [
     "enclave-os",
     "deploy-caddy-ra-tls",
