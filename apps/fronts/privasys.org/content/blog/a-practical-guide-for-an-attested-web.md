@@ -82,7 +82,7 @@ The module is open source and available at:
 │   │  1. GenerateKey() → ECDSA P-256         │   │
 │   │  2. Issue()                             │   │
 │   │     ├─ Compute ReportData               │   │
-│   │     ├─ attester.Quote(reportData) ──────┼───┼──> /sys/kernel/config/tsm/report
+│   │     ├─ attester.Quote(reportData) ──────┼───┼─► /sys/kernel/config/tsm/report
 │   │     ├─ Build X.509 + embed quote        │   │
 │   │     └─ Sign with intermediary CA        │   │
 │   └─────────────────────────────────────────┘   │

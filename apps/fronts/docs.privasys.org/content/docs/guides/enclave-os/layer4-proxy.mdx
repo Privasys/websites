@@ -10,7 +10,7 @@ The enclave terminates TLS internally — the host-side TCP proxy (`0.0.0.0:8443
 ## Architecture
 
 ```
-Client ──TLS──▶ Load Balancer (L4) ──TCP──▶ Host TCP Proxy (:8443)
+Client ──TLS──► Load Balancer (L4) ──TCP──► Host TCP Proxy (:8443)
                                                 │
                                           SPSC data channel
                                                 │
