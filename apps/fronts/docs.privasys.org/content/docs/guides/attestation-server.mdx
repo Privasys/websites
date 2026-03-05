@@ -17,13 +17,13 @@ Anyone can run a PCCS and an attestation server using this public collateral. Yo
 - **Privacy.** Quote contents (including measurements and ReportData) never leave your infrastructure.
 - **Availability.** No external service to go down during verification.
 
-Privasys operates its own attestation servers (e.g. `gcp-lon-1.dcap.privasys.org`) and provides the server as open-source so anyone can do the same.
+Privasys operates its own attestation servers (e.g. `as.privasys.org`) and provides the server as open-source so anyone can do the same.
 
 ## Architecture
 
 ```
 ┌──────────┐           ┌────────────────────────┐          ┌─────────────┐
-│  Client  │──HTTPS──> │  Caddy (reverse proxy) │──HTTP──> │ Attestation │
+│  Client  │──HTTPS──► │  Caddy (reverse proxy) │──HTTP──► │ Attestation │
 │          │           │  (automatic TLS)       │          │   Server    │
 └──────────┘           └────────────────────────┘          │  (:8080)    │
                                                            └──────┬──────┘

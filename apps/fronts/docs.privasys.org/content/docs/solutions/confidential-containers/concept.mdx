@@ -19,7 +19,7 @@ The approach is simple: place a reverse proxy with RA-TLS capabilities (like Cad
 │          Confidential VM (TDX / SEV)         │
 │                                              │
 │  ┌──────────────┐     ┌───────────────────┐  │
-│  │   Caddy      │────>│  Your Application │  │
+│  │   Caddy      │────►│  Your Application │  │
 │  │  (RA-TLS)    │     │  (unmodified)     │  │
 │  └──────┬───────┘     └───────────────────┘  │
 │         │ TLS termination                    │
