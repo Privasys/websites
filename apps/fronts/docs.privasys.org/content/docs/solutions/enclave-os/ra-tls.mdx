@@ -45,7 +45,9 @@ The certificate includes custom extensions that carry attestation evidence and c
 | `1.2.840.113741.1.13.1.0` | SGX Quote | The full DCAP quote, including `ReportData` and platform measurements. |
 | `1.3.6.1.4.1.65230.1.1` | Config Merkle Root | The 32-byte SHA-256 Merkle root covering all enclave configuration. |
 | `1.3.6.1.4.1.65230.2.1` | Egress CA Hash | SHA-256 of the egress CA bundle (registered by the egress module). |
-| `1.3.6.1.4.1.65230.2.3` | WASM Code Hash | SHA-256 of all loaded WASM bytecode (registered by the WASM module). |
+| `1.3.6.1.4.1.65230.2.4` | Runtime Version Hash | SHA-256 of the runtime version (reserved for Wasmtime version). |
+| `1.3.6.1.4.1.65230.2.5` | Combined Workloads Hash | SHA-256 of all loaded WASM bytecode (registered by the WASM module). |
+| `1.3.6.1.4.1.65230.2.7` | Attestation Servers Hash | SHA-256 of the sorted attestation server URL list. |
 
 ### OID Hierarchy
 
@@ -56,10 +58,13 @@ The certificate includes custom extensions that carry attestation evidence and c
 ├── 1.1                              Config Merkle root (enclave-wide)
 ├── 2.*                              Module OIDs (enclave-wide)
 │   ├── 2.1                          Egress CA bundle hash
-│   └── 2.3                          Combined WASM apps hash
+│   ├── 2.4                          Runtime version hash (reserved)
+│   ├── 2.5                          Combined workloads hash
+│   └── 2.7                          Attestation servers hash
 └── 3.*                              Per-app OIDs
     ├── 3.1                          App config Merkle root
-    └── 3.2                          App code hash
+    ├── 3.2                          App code hash
+    └── 3.4                          App key source
 ```
 
 ## Generation Flow
@@ -168,7 +173,8 @@ In addition to the Merkle root, each module can register **individual X.509 OID 
 |-----|--------|-------|
 | `1.3.6.1.4.1.65230.1.1` | Core | Config Merkle root (32 bytes) |
 | `1.3.6.1.4.1.65230.2.1` | Egress | SHA-256 of egress CA bundle (32 bytes) |
-| `1.3.6.1.4.1.65230.2.3` | WASM | SHA-256 of WASM bytecode (32 bytes) |
+| `1.3.6.1.4.1.65230.2.5` | WASM | SHA-256 of combined WASM bytecode (32 bytes) |
+| `1.3.6.1.4.1.65230.2.7` | Core | SHA-256 of attestation server URLs (32 bytes) |
 
 This gives clients two verification strategies:
 
@@ -213,6 +219,7 @@ Root CA (operator-provisioned)
             ├── App Leaf: "payments-api"
             │     ├── OID 1.3.6.1.4.1.65230.3.2  App Code Hash
             │     ├── OID 1.3.6.1.4.1.65230.3.1  App Config Merkle Root
+            │     ├── OID 1.3.6.1.4.1.65230.3.4  App Key Source
             │     └── OID 1.3.6.1.4.1.65230.3.*   App-specific custom OIDs
             │
             ├── App Leaf: "analytics-api"
@@ -237,7 +244,7 @@ Each app gets its own Config Merkle tree, independent of the enclave-wide tree. 
 | Leaf name | Input |
 |-----------|-------|
 | `app.code_hash` | SHA-256 of the WASM `.cwasm` bytecode |
-| `app.key_source` | `"rdrand"` or `"byok:<key-id>"` |
+| `app.key_source` | `"generated"` or `"byok:<fingerprint>"` |
 | `app.name` | App name string |
 
 The root of this per-app tree is embedded as OID `1.3.6.1.4.1.65230.3.1` in the app's leaf certificate.
@@ -247,9 +254,9 @@ The root of this per-app tree is embedded as OID `1.3.6.1.4.1.65230.3.1` in the 
 | Scope | Certificate | OIDs present |
 |-------|-------------|-------------|
 | **Enclave-wide** | Enclave CA cert (or default leaf if no SNI) | SGX Quote, Config Merkle Root (`1.1`), Module OIDs (`2.*`) |
-| **Per-app** | App leaf cert (via SNI) | App Code Hash (`3.2`), App Config Merkle Root (`3.1`), app-specific (`3.*`) |
+| **Per-app** | App leaf cert (via SNI) | App Code Hash (`3.2`), App Config Merkle Root (`3.1`), App Key Source (`3.4`), app-specific (`3.*`) |
 
-The enclave-wide certificate still contains the **combined WASM apps hash** (OID `1.3.6.1.4.1.65230.2.3`) for clients that want a single check covering all loaded apps without SNI routing.
+The enclave-wide certificate still contains the **combined workloads hash** (OID `1.3.6.1.4.1.65230.2.5`) for clients that want a single check covering all loaded apps without SNI routing.
 
 ### SNI routing in CertStore
 
@@ -269,7 +276,7 @@ fn app_identities(&self) -> Vec<AppIdentity> {
         code_hash: sha256_of_wasm_bytes,
         config_leaves: vec![
             ConfigLeaf { name: "app.code_hash".into(), data: wasm_bytes },
-            ConfigLeaf { name: "app.key_source".into(), data: b"rdrand" },
+            ConfigLeaf { name: "app.key_source".into(), data: b"generated" },
         ],
         custom_oids: vec![],
     }]
@@ -285,7 +292,7 @@ A verifier checks an RA-TLS certificate by:
 3. **Checking MRENCLAVE** against a known-good value to confirm the enclave code identity.
 4. **Recomputing `ReportData`**: hash the certificate's public key with the binding value and compare against the `ReportData` in the quote. This confirms the TLS key was generated inside the attested enclave.
 5. **Checking the Merkle root** (OID `1.3.6.1.4.1.65230.1.1`) to verify the enclave's configuration.
-6. **For per-app**: Check OID `3.2` (app code hash) and OID `3.1` (app config Merkle root) on the app leaf cert.
+6. **For per-app**: Check OID `3.2` (app code hash), OID `3.1` (app config Merkle root), and OID `3.4` (app key source) on the app leaf cert.
 
 ### Verification Strategies
 
@@ -328,11 +335,14 @@ SGX DCAP Quote (platform attestation)
                 │
                 ├── Egress CA Hash (OID 65230.2.1)
                 │
-                ├── WASM Code Hash (OID 65230.2.3)
+                ├── Combined Workloads Hash (OID 65230.2.5)
+                │
+                ├── Attestation Servers Hash (OID 65230.2.7)
                 │
                 └── Per-App Leaf Certs (via SNI)
                         ├── App Code Hash (OID 65230.3.2)
-                        └── App Config Root (OID 65230.3.1)
+                        ├── App Config Root (OID 65230.3.1)
+                        └── App Key Source (OID 65230.3.4)
 ```
 
 A verifier inspecting this certificate knows:
