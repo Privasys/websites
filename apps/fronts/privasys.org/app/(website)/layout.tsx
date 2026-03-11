@@ -36,7 +36,7 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
 
 export const metadata: Metadata = {
     title: {
-        default: `${APP_NAME} | Derive intelligence from private data`,
+        default: `${APP_NAME} | Data protection and confidential computing`,
         template: `%s | ${APP_NAME}`
     },
     applicationName: APP_NAME,
@@ -46,8 +46,8 @@ export const metadata: Metadata = {
         type: 'website',
         url: 'https://privasys.org/',
         siteName: 'Privasys',
-        title: 'Privasys | Derive intelligence from private data without losing control.',
-        description: 'Use AI with your private data.',
+        title: 'Privasys | Data protection and confidential computing',
+        description: 'We protect your data with confidential computing. Hardware-enforced, cryptographically attested, and fully open source.',
         images: [
             {
                 url: `${DEFAULT_FAVICON_ROUTE}/privasys-logo-1200x630.png`,
