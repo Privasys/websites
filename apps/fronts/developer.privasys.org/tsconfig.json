@@ -12,7 +12,9 @@
         "baseUrl": ".",
         "types": ["node"],
         "paths": {
-            "~/*": ["./*"]
+            "~/*": ["./*"],
+            "@privasys/ui": ["../../../libs/ui/src/index.ts"],
+            "@privasys/ui/*": ["../../../libs/ui/src/*"]
         },
         "plugins": [{ "name": "next" }]
     },
