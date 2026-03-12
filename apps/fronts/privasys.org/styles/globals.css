@@ -1,4 +1,5 @@
 @import 'tailwindcss';
+@import '@privasys/ui/styles.css';
 
 :root {
     --transition-duration: 400ms;

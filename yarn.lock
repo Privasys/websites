@@ -4252,6 +4252,16 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@privasys/ui@workspace:libs/ui":
+  version: 0.0.0-use.local
+  resolution: "@privasys/ui@workspace:libs/ui"
+  peerDependencies:
+    next: ">=15"
+    react: ">=19"
+    react-dom: ">=19"
+  languageName: unknown
+  linkType: soft
+
 "@privasys/websites@workspace:.":
   version: 0.0.0-use.local
   resolution: "@privasys/websites@workspace:."
@@ -9499,6 +9509,12 @@ __metadata:
   checksum: 10c0/4ea9eb46a637cb21220dd0a62b6074792894fc77b2cacbc9de533d1908b2eedafa7bfd7547baaa2ac1e9c7ba7c289b34b17db896dca6da142f4fc6e2060eee17
   languageName: node
   linkType: hard
+
+"developer.privasys.org@workspace:apps/fronts/developer.privasys.org":
+  version: 0.0.0-use.local
+  resolution: "developer.privasys.org@workspace:apps/fronts/developer.privasys.org"
+  languageName: unknown
+  linkType: soft
 
 "devlop@npm:^1.0.0, devlop@npm:^1.1.0":
   version: 1.1.0
