@@ -13,8 +13,16 @@
                 "command": "node -e \"require('fs').cpSync('assets/logo','apps/fronts/privasys.org/public/favicon',{recursive:true,force:true})\""
             }
         },
+        "copy-fonts": {
+            "executor": "nx:run-commands",
+            "inputs": ["{workspaceRoot}/assets/fonts/**"],
+            "outputs": ["{projectRoot}/public/fonts"],
+            "options": {
+                "command": "node -e \"require('fs').cpSync('assets/fonts','apps/fronts/privasys.org/public/fonts',{recursive:true,force:true})\""
+            }
+        },
         "build": {
-            "dependsOn": ["copy-logo"],
+            "dependsOn": ["copy-logo", "copy-fonts"],
             "executor": "@nx/next:build",
             "outputs": [
                 "{options.outputPath}"
@@ -41,7 +49,7 @@
             }
         },
         "serve": {
-            "dependsOn": ["copy-logo"],
+            "dependsOn": ["copy-logo", "copy-fonts"],
             "executor": "nx:run-commands",
             "options": {
                 "command": "npx next dev -p 4208",

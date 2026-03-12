@@ -18,6 +18,10 @@
         ],
         "skipLibCheck": true,
         "baseUrl": ".",
+        "paths": {
+            "@privasys/ui": ["libs/ui/src/index.ts"],
+            "@privasys/ui/*": ["libs/ui/src/*"]
+        },
         "strict": true,
         "verbatimModuleSyntax": null,
         "ignoreDeprecations": "5.0"
