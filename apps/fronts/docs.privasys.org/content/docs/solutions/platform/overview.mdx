@@ -1,13 +1,18 @@
 ---
 title: Overview
-description: How the Privasys Platform brings attestation to existing applications running inside Confidential VMs.
+description: The Privasys Platform is a Developer Platform and an App Store for confidential applications, backed by hardware attestation.
 ---
 
-The Privasys Platform is the deployment infrastructure that brings hardware attestation to existing applications. It runs unmodified applications inside **Confidential Virtual Machines** (Intel TDX, AMD SEV-SNP) and exposes them over **attested HTTPS**, without changing a single line of application code.
+The Privasys Platform is the complete infrastructure for building, deploying, and discovering confidential applications. It consists of two core components:
 
-## How It Works
+- **[Developer Platform](/docs/solutions/platform/developer-platform)** -- A self-service interface at [developer.privasys.org](https://developer.privasys.org) for deploying WASM modules and containers on hardware-protected infrastructure.
+- **[App Store](/docs/solutions/platform/app-store)** -- A country-scoped catalogue at [privasys.org/uk/apps](https://privasys.org/uk/apps) where verified confidential applications are listed and discoverable.
 
-Place an attested reverse proxy in front of your application inside a Confidential VM. The proxy:
+Both components are built on top of Privasys's confidential computing stack: Enclave OS, hardware attestation, and RA-TLS verification.
+
+## How the Platform Works
+
+The platform runs applications inside **Confidential Virtual Machines** (Intel TDX, AMD SEV-SNP) or **SGX enclaves** (Intel SGX), and exposes them over **attested HTTPS**. An attested reverse proxy terminates TLS inside the trusted execution environment:
 
 1. Generates TLS keys **inside the TEE**
 2. Embeds a **hardware attestation quote** in the X.509 certificate
@@ -43,7 +48,7 @@ Place an attested reverse proxy in front of your application inside a Confidenti
 
 ## Compared to Enclave OS
 
-For maximum security with the smallest Trusted Computing Base, use [Enclave OS (Mini)](/solutions/enclave-os/architecture) (Intel SGX). For container workloads in Confidential VMs, use [Enclave OS (Virtual)](/solutions/enclave-os/virtual-architecture).
+For maximum security with the smallest Trusted Computing Base, use [Enclave OS (Mini)](/docs/solutions/enclave-os/enclave-os-mini/architecture) (Intel SGX). For container workloads in Confidential VMs, use [Enclave OS (Virtual)](/docs/solutions/enclave-os/enclave-os-virtual/architecture).
 
 | | **Platform** (Confidential VMs) | **Enclave OS** (SGX) |
 |--|---------------------------|----------------|
@@ -53,21 +58,13 @@ For maximum security with the smallest Trusted Computing Base, use [Enclave OS (
 | **Deployment** | Standard Linux + attested proxy | Custom Rust build + SGX SDK |
 | **Best for** | Existing applications, quick adoption | Security-critical, minimal TCB |
 
-See [Trust Model](/technology/confidential-computing/trust-model) for a deeper comparison.
-
-## Developer Platform
-
-The [Privasys Developer Platform](https://developer.privasys.org) provides a self-service interface for building, deploying, and managing confidential applications. It supports two deployment targets:
-
-- **WASM modules** — Upload a pre-compiled `.cwasm` file or link a GitHub repository. The platform compiles your code via GitHub Actions and deploys it inside Enclave OS Mini.
-- **Containers** — Provide a container image reference. The platform deploys it inside Enclave OS Virtual with hardware-encrypted memory and full attestation.
-
-Authentication is handled via OIDC, with no custom credentials to manage. Deployments are automatically attested, and clients verify the service through a standard RA-TLS connection.
+See [Trust Model](/docs/technology/confidential-computing/trust-model) for a deeper comparison.
 
 ## Platform Components
 
 | Component | Description |
 |-----------|-------------|
-| [Developer Platform](https://developer.privasys.org) | Self-service interface for deploying WASM modules and containers on confidential infrastructure. |
-| [Verification Libraries](/solutions/platform/verification-libraries) | Libraries in Python, Go, Rust, TypeScript, C#, and .NET for verifying attested connections with a single function call. |
-| [Attestation Server](/technology/attestation/attestation-server) | A standalone service that independently verifies hardware attestation quotes from Intel and AMD platforms. |
+| [Developer Platform](/docs/solutions/platform/developer-platform) | Self-service interface for deploying WASM modules and containers on confidential infrastructure. |
+| [App Store](/docs/solutions/platform/app-store) | Verified catalogue of confidential applications, backed by hardware attestation. |
+| [Verification Libraries](/docs/solutions/platform/verification-libraries) | Libraries in Python, Go, Rust, TypeScript, and C# for verifying attested connections with a single function call. |
+| [Attestation Server](/docs/technology/attestation/attestation-server) | A standalone service that independently verifies hardware attestation quotes from Intel and AMD platforms. |
