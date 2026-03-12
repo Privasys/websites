@@ -19,6 +19,41 @@ export default function Platform() {
 
             <section className='mt-20 lg:mt-40'>
                 <h2 className='text-2xl lg:text-4xl'>
+                    <Balancer>Two sides of the same platform.</Balancer>
+                </h2>
+                <div className='mt-16 grid grid-cols-1 lg:grid-cols-2 gap-16 lg:gap-x-32 lg:gap-y-20'>
+                    <div>
+                        <h3 className='text-xl lg:text-3xl'>Developer Platform</h3>
+                        <p>
+                            <Balancer>
+                                A self-service interface for building, deploying, and managing confidential applications.
+                                Sign in with GitHub, choose your deployment target, upload your code, and your application runs inside hardware-protected infrastructure with attestation built in.
+                            </Balancer>
+                        </p>
+                        <a href='https://developer.privasys.org'
+                            className='inline-block mt-4 text-sm font-medium underline underline-offset-4'>
+                            developer.privasys.org &rarr;
+                        </a>
+                    </div>
+                    <div>
+                        <h3 className='text-xl lg:text-3xl'>App Store</h3>
+                        <p>
+                            <Balancer>
+                                A public catalogue of verified confidential applications.
+                                Every listing is backed by hardware attestation evidence that anyone can verify independently.
+                                Discover services you can trust, or list your own.
+                            </Balancer>
+                        </p>
+                        <a href='/uk/apps'
+                            className='inline-block mt-4 text-sm font-medium underline underline-offset-4'>
+                            Browse the App Store &rarr;
+                        </a>
+                    </div>
+                </div>
+            </section>
+
+            <section className='mt-20 lg:mt-40'>
+                <h2 className='text-2xl lg:text-4xl'>
                     <Balancer>The gap between &ldquo;confidential computing&rdquo; and actual data protection.</Balancer>
                 </h2>
                 <p className='mt-8 text-lg'>
