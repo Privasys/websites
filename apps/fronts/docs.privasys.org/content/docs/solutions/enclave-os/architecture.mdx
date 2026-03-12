@@ -10,20 +10,20 @@ Enclave OS (Mini) is a lightweight SGX enclave runtime that exposes an RA-TLS HT
 | Principle | How it's applied |
 |-----------|------------------|
 | **Minimal TCB** | Only the enclave binary runs inside SGX. The host is untrusted. |
-| **Standard protocols** | Uses TLS 1.3, X.509, HTTPS — no proprietary attestation channels. |
+| **Standard protocols** | Uses TLS 1.3, X.509, HTTPS with no proprietary attestation channels. |
 | **Defence in depth** | MRENCLAVE sealing, AES-256-GCM KV encryption, per-app namespace isolation, config Merkle tree for integrity. |
 | **Modular by design** | All business logic lives in pluggable module crates. The core OS provides only RA-TLS ingress, HTTPS egress, and sealed storage. |
 | **No vendor lock-in** | Open source (AGPL-3.0), self-hostable on any SGX-capable hardware. |
 
 ## What the Enclave Provides
 
-1. **RA-TLS Ingress** — Accept incoming TCP connections authenticated via RA-TLS (TLS 1.3 with SGX quotes embedded in X.509 certificates).
-2. **HTTPS Egress** — Make outbound HTTPS requests from inside the enclave (TLS termination inside the enclave, network I/O via host RPC).
-3. **Sealed Key-Value Store** — Encrypted KV database stored on the host, with both keys and values encrypted using a master key sealed to MRENCLAVE.
-4. **WASM Runtime** — Execute WebAssembly bytecode inside SGX with WASI support (random, sockets, KV).
-5. **JWT-Authenticated Vault** — Store and retrieve secrets gated by ES256 JWT verification.
-6. **Sealed Config** — All persistent state (CA material, egress CA bundle, KV master key) stored as a single MRENCLAVE-bound blob.
-7. **Config Attestation** — A Merkle root and per-module OIDs over all config inputs are embedded as custom X.509 extensions in every RA-TLS certificate.
+1. **RA-TLS Ingress.** Accept incoming TCP connections authenticated via RA-TLS (TLS 1.3 with SGX quotes embedded in X.509 certificates).
+2. **HTTPS Egress.** Make outbound HTTPS requests from inside the enclave (TLS termination inside the enclave, network I/O via host RPC).
+3. **Sealed Key-Value Store.** Encrypted KV database stored on the host, with both keys and values encrypted using a master key sealed to MRENCLAVE.
+4. **WASM Runtime.** Execute WebAssembly bytecode inside SGX with WASI support (random, sockets, KV).
+5. **JWT-Authenticated Vault.** Store and retrieve secrets gated by ES256 JWT verification.
+6. **Sealed Config.** All persistent state (CA material, egress CA bundle, KV master key) stored as a single MRENCLAVE-bound blob.
+7. **Config Attestation.** A Merkle root and per-module OIDs over all config inputs are embedded as custom X.509 extensions in every RA-TLS certificate.
 
 ## High-Level Topology
 
@@ -71,8 +71,8 @@ Enclave OS (Mini) is a lightweight SGX enclave runtime that exposes an RA-TLS HT
 
 The host runs two dedicated threads alongside the enclave:
 
-- **TCP Proxy thread** — accepts inbound TCP connections and shuttles raw bytes to/from the enclave over a dedicated **Data Channel** (pair of SPSC queues). The enclave performs TLS termination internally, so the host never sees plaintext.
-- **RPC Dispatcher thread** — processes enclave requests (KV operations, egress HTTP, etc.) arriving over the **RPC Channel** (a second pair of SPSC queues).
+- **TCP Proxy thread**: accepts inbound TCP connections and shuttles raw bytes to/from the enclave over a dedicated **Data Channel** (pair of SPSC queues). The enclave performs TLS termination internally, so the host never sees plaintext.
+- **RPC Dispatcher thread**: processes enclave requests (KV operations, egress HTTP, etc.) arriving over the **RPC Channel** (a second pair of SPSC queues).
 
 The two channel pairs are fully independent: the data-plane (network I/O) never contends with the control-plane (KV and egress RPC).
 
@@ -97,8 +97,8 @@ pub trait EnclaveModule: Send + Sync {
 }
 ```
 
-- `config_leaves()` — named inputs hashed into the [config Merkle root](/solutions/enclave-os/ra-tls#config-merkle-tree) OID.
-- `custom_oids()` — individual X.509 OID extensions embedded in every RA-TLS certificate, allowing clients to verify specific module properties without a full Merkle audit.
+- `config_leaves()`: named inputs hashed into the [config Merkle root](/solutions/enclave-os/attestation/merkle-tree) OID.
+- `custom_oids()`: individual X.509 OID extensions embedded in every RA-TLS certificate, allowing clients to verify specific module properties without a full Merkle audit.
 
 ### Module Crates
 
@@ -132,10 +132,10 @@ The enclave dispatches all incoming requests to registered modules. If a module 
 The **host process** is a standard Linux binary that:
 
 1. **Creates the enclave.** Loads the signed enclave binary via the SGX SDK's `SgxEnclave::create` API.
-2. **Allocates two SPSC channel pairs** — one for RPC (KV, egress, etc.) and one for the data plane (TCP proxy ↔ enclave TLS).
+2. **Allocates two SPSC channel pairs**: one for RPC (KV, egress, etc.) and one for the data plane (TCP proxy ↔ enclave TLS).
 3. **Runs the TCP Proxy thread.** A non-blocking TCP listener on the configured port (default `0.0.0.0:443`) accepts connections, assigns a `conn_id`, and shuttles raw TCP bytes through the Data Channel. All sockets are non-blocking; the proxy polls both the listener and the enclave output queue in a single loop.
 4. **Runs the RPC Dispatcher thread.** Spin-polls the RPC Channel for enclave requests (KV reads/writes, egress HTTP, etc.) and dispatches them to the appropriate host-side handler.
-5. **Persists encrypted KV data** to a RocksDB store on behalf of the enclave. The host never sees plaintext — only AES-256-GCM ciphertexts.
+5. **Persists encrypted KV data** to a RocksDB store on behalf of the enclave. The host never sees plaintext, only AES-256-GCM ciphertexts.
 
 The host has **no access** to TLS keys, plaintext application data, or the master sealing key.
 
@@ -166,7 +166,7 @@ The intermediary CA cert + key are passed to the enclave at init time, sealed to
 
 ## ECALL / OCALL Interface
 
-Enclave OS uses a deliberately narrow EDL (Enclave Definition Language) interface — only **4 ECALLs** and **1 OCALL**:
+Enclave OS uses a deliberately narrow EDL (Enclave Definition Language) interface with only **4 ECALLs** and **1 OCALL**:
 
 ### ECALLs (Host → Enclave)
 
@@ -193,7 +193,7 @@ Here's how a client HTTPS request flows through the system:
 2. **TCP Proxy** reads raw TCP bytes from the socket and writes `TcpData` frames to the Data Channel.
 3. **Enclave** reads the data frames, performs the **TLS 1.3 handshake** (sending the RA-TLS certificate), and decrypts the HTTP request.
 4. **Enclave** dispatches the request to registered **modules** (e.g., WASM, vault, egress).
-5. **Module** processes the request. If it needs KV or egress, it sends requests over the **RPC Channel** — independently of the data plane.
+5. **Module** processes the request. If it needs KV or egress, it sends requests over the **RPC Channel**, independently of the data plane.
 6. **Enclave** encrypts the HTTP response under TLS and writes the ciphertext back to the Data Channel.
 7. **TCP Proxy** reads the enclave's TLS output from the Data Channel and writes it to the client socket.
 
@@ -201,6 +201,6 @@ At no point does the host see plaintext HTTP payloads or TLS session keys.
 
 ## Production Deployment
 
-Because TLS terminates **inside** the enclave, any front-end load balancer must operate at **Layer 4 (TCP passthrough)** — it must not terminate TLS itself. The load balancer forwards opaque TCP to the host's TCP Proxy port, which relays into the enclave.
+Because TLS terminates **inside** the enclave, any front-end load balancer must operate at **Layer 4 (TCP passthrough)** and must not terminate TLS itself. The load balancer forwards opaque TCP to the host's TCP Proxy port, which relays into the enclave.
 
-See the [Layer 4 Proxy guide](/guides/enclave-os/layer4-proxy) for Caddy (caddy-l4) and HAProxy configurations, including SNI-based routing for multiple enclave instances.
+See the [Layer 4 Proxy guide](/solutions/enclave-os/guides/layer4-proxy) for Caddy (caddy-l4) and HAProxy configurations, including SNI-based routing for multiple enclave instances.

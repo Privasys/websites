@@ -1,0 +1,9 @@
+{
+    "title": "Attestation & Verification",
+    "defaultOpen": false,
+    "pages": [
+        "remote-attestation",
+        "attested-connections",
+        "attestation-server"
+    ]
+}

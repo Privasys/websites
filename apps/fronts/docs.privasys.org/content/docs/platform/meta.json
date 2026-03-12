@@ -1,0 +1,11 @@
+{
+    "title": "Platform",
+    "defaultOpen": false,
+    "pages": [
+        "attestation-server",
+        "caddy-ra-tls",
+        "ra-tls-clients",
+        "---Deploy Caddy RA-TLS---",
+        "deploy-caddy-ra-tls"
+    ]
+}

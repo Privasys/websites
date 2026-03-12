@@ -1,0 +1,47 @@
+---
+title: Attested MCP
+description: Attested Model Context Protocol for hardware-verified AI agent interactions.
+---
+
+Attested MCP wraps the [Model Context Protocol](https://modelcontextprotocol.io/) in RA-TLS, enabling AI agents to interact with external tools and services with hardware-attested security on both ends of the connection.
+
+## Why Attested MCP
+
+The Model Context Protocol (MCP) defines a standard interface for AI agents to call external tools: databases, APIs, code interpreters, file systems. In a standard MCP deployment, the agent trusts the tool server, and the tool server trusts the agent. Neither side can verify the other's integrity.
+
+Attested MCP adds mutual attestation: both the agent and the tool server present RA-TLS certificates that prove their hardware identity and code measurements. This creates a verified chain of trust between every component in an AI workflow.
+
+## How it works
+
+### Connection establishment
+
+1. The AI agent initiates an MCP connection to a tool server.
+2. Both sides perform an RA-TLS handshake, presenting attestation evidence.
+3. Each side verifies the other's attestation report against a known-good measurement.
+4. Only after mutual verification does the MCP session begin.
+
+### Tool invocation
+
+Once the MCP session is established, tool calls proceed through the standard MCP protocol. The difference is that every message is encrypted in transit and both parties have been hardware-verified.
+
+### Attestation chain
+
+In a typical AI workflow, the chain looks like:
+
+```
+Client → (RA-TLS) → Enclave Agent → (Attested MCP) → RAG Service
+                                  → (Attested MCP) → Database Tool
+                                  → (Attested MCP) → Code Interpreter
+```
+
+Each hop is independently attestation-verified. A compromise of any single component does not break the attestation guarantees of the others.
+
+## Use cases
+
+- **Private RAG with external data sources**: An agent queries a vector database containing sensitive documents. Attested MCP ensures both the agent and the database are running in verified hardware.
+- **Multi-party AI workflows**: Multiple organisations contribute tools to a shared AI pipeline. Attested MCP lets each party verify that the others are running agreed-upon code in trusted hardware.
+- **Regulated AI operations**: Financial, healthcare, and government workloads where every data access must be auditable and verifiable.
+
+## Integration
+
+Attested MCP is compatible with existing MCP clients and servers. The RA-TLS layer is transparent to the MCP protocol: existing tools work without modification when deployed inside a confidential environment with RA-TLS-capable networking.

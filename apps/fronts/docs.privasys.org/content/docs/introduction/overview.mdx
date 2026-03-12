@@ -7,53 +7,102 @@ import { Cards, Card } from 'fumadocs-ui/components/card';
 
 Welcome to the Privasys technical documentation.
 
-Privacy is a fundamental human right — and one of our core values. We believe that people and organisations should never have to choose between using cloud services and protecting their data. Privasys exists to make that choice unnecessary.
+Privacy is a fundamental human right, and one of our core values. We believe that people and organisations should never have to choose between using cloud services and protecting their data. Privasys exists to make that choice unnecessary.
 
 ## What is Privasys?
 
-Privasys is an **open-source confidential computing platform** that builds trust through transparency. Modern processors embed secure hardware that can keep data encrypted in memory — even while it is being processed. Privasys leverages this hardware so that anyone connecting to our services can **independently verify** that their data is protected, without having to take our word for it.
-
-The result is a normal HTTPS connection that works everywhere — in a browser, from `curl`, in a mobile app — with cryptographic proof that the server is running exactly the code it claims, inside genuine secure hardware. No custom tools, no special SDKs, no blind trust.
+Privasys is an **open-source confidential computing platform** that builds trust through transparency. Modern processors embed secure hardware that can keep data encrypted in memory, even while it is being processed. Privasys leverages this hardware so that anyone connecting to our services can **independently verify** that their data is protected, without having to take our word for it.
 
 ## Our Commitments
 
 We designed Privasys around a set of core principles:
 
-- **Confidential by design.** Data stays encrypted in secure hardware at all times — during transit, at rest, and while being processed. Not even the infrastructure operator can access it.
+- **Confidential by design.** Data stays encrypted in secure hardware at all times: during transit, at rest, and while being processed. Not even the infrastructure operator can access it.
 - **Always verifiable.** Every connection carries cryptographic evidence of what code is running and that it is running inside genuine secure hardware. Anyone can verify these guarantees independently.
 - **Open source.** All infrastructure is published under AGPL-3.0. Inspect the code, audit the builds, reproduce from source. No black boxes.
-- **Standard protocols.** We use TLS, HTTPS, and X.509 — the same protocols the web already runs on. Attestation evidence rides inside standard certificates, invisible to clients that don't need it, fully inspectable by those that do.
+- **Standard protocols.** We use TLS, HTTPS, and X.509, the same protocols the web already runs on. Attestation evidence rides inside standard certificates, invisible to clients that don't need it, fully inspectable by those that do.
 - **No vendor lock-in.** Deploy on any compatible hardware, on any cloud, or on-premises. The platform is self-hosted and provider-agnostic.
 
-## What We Provide
+## The Trust Problem
 
-Privasys ships as a set of composable, self-hosted components — each solving a specific part of the confidential computing stack:
+Cloud computing requires handing over your data and code to a third party. Even with encryption at rest and in transit, there is a fundamental gap: **data must be decrypted to be processed**, and during that window the cloud provider, the host OS, the hypervisor, and any privileged attacker can observe it.
 
-| Component | What it does |
-|-----------|-------------|
-| **Enclave OS (Mini)** | A minimal runtime for Intel SGX enclaves — runs your application inside hardware-protected memory with built-in encrypted storage and attestation. |
-| **RA-TLS for Caddy** | A module for the Caddy web server that adds hardware attestation to any application running inside a Confidential VM — no application changes required. |
-| **RA-TLS Clients** | Libraries in Go, Rust, Python, TypeScript, and C# for connecting to attested services and verifying their guarantees. |
-| **Attestation Server** | A standalone service that independently verifies hardware attestation evidence from Intel and AMD platforms. |
+Confidential Computing closes this gap by running workloads inside hardware-enforced Trusted Execution Environments (TEEs). Technologies like Intel SGX, Intel TDX, and AMD SEV-SNP ensure that memory is encrypted, CPU state is isolated, and even a compromised hypervisor cannot peek inside.
 
-To understand how these components map to different hardware and deployment scenarios, see [Why Privasys](/introduction/why-privasys).
+But hardware isolation alone is insufficient. A critical question remains:
+
+> **How does a remote client know it is actually talking to a genuine TEE running the expected code?**
+
+The traditional answer, remote attestation, requires custom client-side code, specialised SDKs, and an out-of-band attestation flow that is alien to the browser-based web.
+
+## Our Approach: Attested Connections
+
+Privasys takes a different path. Instead of asking every client to speak a custom attestation protocol, we embed the attestation evidence **directly into standard TLS certificates**. This technique is called **RA-TLS** (Remote Attestation TLS), and it means:
+
+- **Zero client-side changes.** Any TLS client, a browser, `curl`, a mobile app, can connect without modification. HTTPS just works.
+- **Composable with existing PKI.** The certificate is signed by a private CA, chaining into your organisation's existing trust hierarchy.
+- **Cryptographic binding.** The hardware quote's `ReportData` contains a hash of the TLS public key, making the attestation inseparable from the TLS session.
+- **Verifiable by anyone.** A relying party extracts the quote from a standard X.509 extension and verifies it against the chip vendor's attestation infrastructure.
+
+## Our Products
+
+Privasys is **open-source infrastructure** that you can deploy on your own hardware or cloud instances:
+
+### Enclave OS
+
+A minimal operating system for hardware-protected environments, available in two editions:
+
+**Enclave OS Mini** runs inside Intel SGX enclaves. Written entirely in Rust, it provides attested connections, an encrypted key-value store, sealed configuration, and a WASM runtime for running arbitrary business logic inside the enclave. The Trusted Computing Base is approximately 4 MB, the smallest attack surface available.
+
+**Enclave OS Virtual** runs inside Confidential VMs (Intel TDX, AMD SEV-SNP). Standard Linux, standard tooling, with hardware-encrypted memory and full attestation. No code changes needed, your existing containers run as-is.
+
+[Enclave OS documentation](/solutions/enclave-os/presentation)
+
+### Enclave Vaults
+
+Hardware-isolated secrets management that distributes trust across multiple enclave nodes using Shamir's secret sharing. Keys are generated and used exclusively inside secure hardware. Access is controlled through customisable policies, and every connection is verified through remote attestation. No single party, not even us, can access your secrets.
+
+[Enclave Vaults documentation](/solutions/enclave-vaults/overview)
+
+### Enclave Agent
+
+Confidential AI inference inside hardware-protected environments. Models run inside AMD SEV-SNP Confidential VMs with NVIDIA H100 Confidential Computing for GPU workloads. Supports private knowledge retrieval, secure agent-to-agent communication via Attested MCP, and hardware-attested connections to clients.
+
+[Enclave Agent documentation](/solutions/enclave-agent/overview)
+
+### Privasys Platform
+
+The deployment infrastructure that ties everything together: verification libraries in multiple languages (Python, Go, Rust, TypeScript, C# .NET), an attestation server that independently verifies hardware quotes, and deployment guides for Google Cloud, Azure, and OVH Cloud.
+
+[Platform documentation](/solutions/platform/overview)
+
+## Honest by Design
+
+Traditional cloud requires you to *trust* the provider. Privasys replaces trust with **verification**:
+
+- The enclave's identity (MRENCLAVE) proves exactly which code is running.
+- The attested connection proves the TLS key was generated inside that enclave.
+- The Config Merkle root proves exactly which CA, modules, and applications are loaded.
+- All of this is embedded in a standard X.509 certificate that any client can inspect.
+
+**Do not trust. Verify.**
 
 ## Explore the Docs
 
 <Cards>
-  <Card title="Why Privasys" href="/introduction/why-privasys">
-    The trust problem in cloud computing and how Privasys solves it.
-  </Card>
-  <Card title="Confidential Computing" href="/confidential-computing/presentation">
+  <Card title="Technology" href="/technology/confidential-computing/overview">
     What secure hardware is, how attestation works, and why it matters.
   </Card>
-  <Card title="Enclave OS" href="/solutions/enclave-os/architecture">
-    Architecture, attestation, sealed storage, and the WASM runtime.
+  <Card title="Enclave OS" href="/solutions/enclave-os/presentation">
+    Two deployment models, attestation, sealed storage, and container workloads.
   </Card>
-  <Card title="Confidential Containers" href="/solutions/confidential-containers/concept">
-    Add attestation to any application via Caddy on Confidential VMs.
+  <Card title="Enclave Vaults" href="/solutions/enclave-vaults/overview">
+    Hardware-isolated secrets management with distributed trust.
   </Card>
-  <Card title="RA-TLS Clients" href="/solutions/clients">
-    Verify attested connections from Go, Rust, Python, TypeScript, or C#.
+  <Card title="Enclave Agent" href="/solutions/enclave-agent/overview">
+    Confidential AI inference with hardware-protected data access.
+  </Card>
+  <Card title="Platform" href="/solutions/platform/overview">
+    Verification libraries, attestation server, and deployment guides.
   </Card>
 </Cards>

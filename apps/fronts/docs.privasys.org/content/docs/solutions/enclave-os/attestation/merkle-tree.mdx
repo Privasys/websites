@@ -1,0 +1,89 @@
+---
+title: Configuration Merkle Tree
+description: How Enclave OS attests runtime configuration via a binary Merkle tree embedded in RA-TLS certificates.
+---
+
+Hardware attestation (MRENCLAVE for SGX, MRTD/RTMRs for TDX) proves which *binary* or *image* is running, but says nothing about *how it is configured*. Two deployments with the same code could have different CA certificates, different workloads loaded, or different environment variables.
+
+The **Config Merkle Tree** closes this gap. Every configuration input is hashed into a leaf of a binary Merkle tree. The root hash is embedded in the [RA-TLS certificate](/solutions/enclave-os/attestation/ra-tls) as [OID `1.3.6.1.4.1.65230.1.1`](/solutions/enclave-os/attestation/oids).
+
+```
+                 Root (OID 1.1)
+           ┌───────────┴───────────┐
+         H(0,1)                  H(2,3)
+     ┌─────┴─────┐           ┌─────┴─────┐
+     L0          L1          L2          L3
+     │           │           │           │
+   CA cert    Workload    Workload      ...
+   hash       A hash      B hash
+```
+
+Any change to any leaf changes the root. A verifier can prove the inclusion of a specific leaf with a logarithmic-size Merkle proof.
+
+## How Each Edition Uses It
+
+**Enclave OS Mini** hashes the intermediary CA certificate, egress CA bundle, WASM bytecode, and module-contributed config leaves. Each module can register additional leaves via the [`EnclaveModule` trait](/solutions/enclave-os/enclave-os-mini/architecture#module-interface). Leaves are sorted by OID before tree construction.
+
+**Enclave OS Virtual** computes both a platform-level tree (CA certificate, attestation server URLs, runtime version) and per-container trees (image digest, environment variables, volume configuration, port mappings). The platform Merkle root and each container's Merkle root are embedded as separate [OID extensions](/solutions/enclave-os/attestation/oids).
+
+## Leaf Structure
+
+Each leaf is a named configuration input hashed with SHA-256. Both editions sort leaves by OID in lexicographic order before tree construction, so the same set of inputs always produces the same root hash. If the number of leaves is not a power of two, the tree is padded with zero-hash leaves (32 bytes of zeros).
+
+### Mini
+
+The core provides a fixed set of leaves, and each module can contribute additional leaves via the `config_leaves()` method of the [`EnclaveModule` trait](/solutions/enclave-os/enclave-os-mini/architecture#module-interface):
+
+| Index | Name | Source | Input |
+|-------|------|--------|-------|
+| 0 | `core.ca_cert` | Core | Intermediary CA certificate (DER) |
+| 1 | `egress.ca_bundle` | Egress module | Egress CA bundle (PEM) |
+| 2 | `wasm.code_hash` | WASM module | SHA-256 of WASM bytecode |
+| ... | `<module>.<key>` | Any module | Module-specific inputs |
+
+### Virtual
+
+The platform tree and per-container trees are computed separately.
+
+**Platform tree** (served on the management hostname):
+
+| Leaf | Input |
+|------|-------|
+| CA certificate | Intermediary CA certificate (DER) |
+| Attestation servers | Sorted URL list |
+| Runtime version | Version string |
+| Combined workloads | Concatenated container image digests |
+| Data encryption key origin | `"generated"` or `"byok:<fingerprint>"` |
+
+**Per-container tree** (served on each container's hostname):
+
+| Leaf | Input |
+|------|-------|
+| Image digest | SHA-256 of the OCI image |
+| Environment variables | Sorted key=value pairs |
+| Volume configuration | Mount paths and encryption status |
+| Port mappings | Exposed port configuration |
+
+## Lifecycle
+
+Both editions follow the same pattern: the Merkle tree is recomputed whenever the workload set changes, and all new TLS connections receive the updated certificate.
+
+**Mini.** On enclave startup, the sealed config is unsealed, each configuration item is hashed and added as a Merkle leaf, and the RA-TLS certificate is generated. When a new WASM app is loaded, new leaves are added (app name, code hash, key source), the Merkle root is recomputed, and a fresh certificate is issued.
+
+**Virtual.** On VM boot, the platform tree is computed from the CA certificate, attestation server URLs, and runtime version. When a container is loaded via the management API, the container's image digest, environment variables, and volume configuration are hashed into a per-container tree. The platform-level combined workloads hash is also recomputed. ra-tls-caddy issues new certificates for both the container hostname and the management hostname.
+
+## Verification Strategies
+
+In addition to the Merkle root, both editions embed individual [OID extensions](/solutions/enclave-os/attestation/oids) for common properties. This gives clients two complementary approaches:
+
+- **Full audit**: Request the configuration manifest from the [attestation server](/solutions/platform/attestation-server) and recompute the Merkle root to verify all inputs.
+- **Fast-path**: Check a single OID (for example, "does the workload hash match my expectation?") without any Merkle computation.
+
+### Platform-wide vs per-workload scope
+
+| Scope | Certificate | Merkle root OID | What it covers |
+|-------|-------------|-----------------|----------------|
+| **Platform-wide** | Enclave CA cert (Mini) or management cert (Virtual) | `1.1` | CA material, runtime config, combined workloads hash |
+| **Per-workload** | App leaf cert (Mini) or container cert (Virtual) | `3.1` | Workload-specific code hash, config, key source |
+
+A client connecting via [SNI routing](/solutions/enclave-os/attestation/ra-tls#per-workload-certificates-and-sni-routing) receives the per-workload certificate and can verify both the workload's own Merkle root (`3.1`) and the platform-level root (`1.1`) from the parent CA certificate.

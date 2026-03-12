@@ -3,12 +3,55 @@ import { RootProvider } from 'fumadocs-ui/provider';
 import type { ReactNode } from 'react';
 import type { Metadata } from 'next';
 
+const FAVICON = '/favicon';
+
 export const metadata: Metadata = {
     title: {
         default: 'Privasys Documentation',
         template: '%s | Privasys Docs'
     },
-    description: 'Documentation for the Privasys confidential computing platform — Enclave OS, Caddy RA-TLS Module, and RA-TLS Clients.'
+    description:
+        'Documentation for the Privasys confidential computing platform — Enclave OS, Enclave Vaults, Enclave Agent, and the Privasys Platform.',
+    metadataBase: new URL('https://docs.privasys.org'),
+    openGraph: {
+        type: 'website',
+        url: 'https://docs.privasys.org/',
+        siteName: 'Privasys Docs',
+        title: 'Privasys Documentation',
+        description:
+            'Documentation for the Privasys confidential computing platform — hardware-enforced, cryptographically attested, and fully open source.',
+        images: [
+            {
+                url: `${FAVICON}/privasys-logo-1200x630.png`,
+                width: 1200,
+                height: 630,
+                alt: 'Privasys'
+            }
+        ]
+    },
+    icons: [
+        {
+            rel: 'apple-touch-icon',
+            sizes: '180x180',
+            url: `${FAVICON}/apple-touch-icon.png`
+        },
+        {
+            rel: 'icon',
+            type: 'image/png',
+            sizes: '96x96',
+            url: `${FAVICON}/favicon-96x96.png`
+        },
+        {
+            rel: 'icon',
+            type: 'image/svg+xml',
+            url: `${FAVICON}/favicon.svg`
+        },
+        {
+            rel: 'shortcut icon',
+            url: `${FAVICON}/favicon.ico`
+        }
+    ],
+    manifest: `${FAVICON}/site.webmanifest`
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

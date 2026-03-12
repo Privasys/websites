@@ -1,0 +1,8 @@
+{
+    "title": "Confidential Computing",
+    "defaultOpen": false,
+    "pages": [
+        "overview",
+        "trust-model"
+    ]
+}

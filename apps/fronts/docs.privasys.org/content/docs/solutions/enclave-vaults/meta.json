@@ -1,0 +1,9 @@
+{
+    "title": "Enclave Vaults",
+    "defaultOpen": false,
+    "pages": [
+        "overview",
+        "architecture",
+        "access-control"
+    ]
+}

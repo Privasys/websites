@@ -1,0 +1,78 @@
+---
+title: X.509 OID Scheme
+description: Complete reference of the Privasys X.509 OID extensions used in RA-TLS certificates across Enclave OS Mini and Virtual.
+---
+
+All Privasys OIDs live under the Private Enterprise Number arc `1.3.6.1.4.1.65230`. The scheme is shared across both Enclave OS editions so that [verification libraries](/solutions/platform/verification-libraries) work regardless of the TEE backend.
+
+## Hardware Quote OIDs
+
+These OIDs carry the raw hardware attestation quote. Each certificate contains exactly one, depending on the TEE type.
+
+| OID | Name | Present in |
+|-----|------|------------|
+| `1.2.840.113741.1.13.1.0` | Intel SGX DCAP Quote | Enclave OS Mini |
+| `1.2.840.113741.1.5.5.1.6` | Intel TDX Quote | Enclave OS Virtual |
+
+## Platform-Level OIDs (arc `1.3.6.1.4.1.65230`)
+
+Platform OIDs describe the TEE instance as a whole: its configuration, loaded workloads, and operational parameters.
+
+| OID | Name | Description | Present in |
+|-----|------|-------------|------------|
+| `1.1` | Config Merkle Root | SHA-256 root of the platform [configuration tree](/solutions/enclave-os/attestation/merkle-tree) | Both |
+| `2.1` | Egress CA Hash | SHA-256 of the egress CA bundle | Mini |
+| `2.3` | WASM Code Hash | SHA-256 of loaded WASM bytecode | Mini |
+| `2.4` | Runtime Version Hash | SHA-256 of the runtime version string | Virtual |
+| `2.5` | Combined Workloads Hash | SHA-256 covering all loaded workload digests | Both |
+| `2.6` | Data Encryption Key Origin | `"byok:<fingerprint>"` or `"generated"` | Virtual |
+| `2.7` | Attestation Servers Hash | SHA-256 of the attestation server URL list | Both |
+
+## Per-Workload OIDs (arc `1.3.6.1.4.1.65230.3.*`)
+
+Per-workload OIDs appear in certificates served via [SNI routing](/solutions/enclave-os/attestation/ra-tls#per-workload-certificates-and-sni-routing). Each workload (WASM app in Mini, OCI container in Virtual) gets its own leaf certificate with these extensions.
+
+| OID | Name | Description |
+|-----|------|-------------|
+| `3.1` | Workload Config Merkle Root | SHA-256 root of a per-workload [configuration tree](/solutions/enclave-os/attestation/merkle-tree) |
+| `3.2` | Workload Image/Code Digest | SHA-256 of the WASM bytecode or OCI image |
+| `3.3` | Container Image Ref | Full OCI image reference string (Virtual only) |
+| `3.4` | Volume/Key Source | `"byok:<fingerprint>"` or `"generated"` |
+
+## OID Hierarchy
+
+```
+1.2.840.113741.1.13.1.0              Intel SGX DCAP Quote
+1.2.840.113741.1.5.5.1.6             Intel TDX Quote
+
+1.3.6.1.4.1.65230                    Privasys arc
++-- 1.1                              Config Merkle root (platform-wide)
++-- 2.*                              Platform OIDs
+|   +-- 2.1                          Egress CA bundle hash (Mini)
+|   +-- 2.3                          WASM code hash (Mini)
+|   +-- 2.4                          Runtime version hash (Virtual)
+|   +-- 2.5                          Combined workloads hash
+|   +-- 2.6                          Data encryption key origin (Virtual)
+|   +-- 2.7                          Attestation servers hash
++-- 3.*                              Per-workload OIDs
+    +-- 3.1                          Workload config Merkle root
+    +-- 3.2                          Workload image/code digest
+    +-- 3.3                          Container image ref (Virtual)
+    +-- 3.4                          Volume/key source
+```
+
+## Verification Strategies
+
+In addition to the [Configuration Merkle Tree](/solutions/enclave-os/attestation/merkle-tree) root (OID `1.1`), both editions embed individual OID extensions for common properties. This gives clients two complementary approaches:
+
+- **Full audit**: Request the configuration manifest and recompute the Merkle root to verify all inputs.
+- **Fast-path**: Check a single OID (for example, "does the workload hash match my expectation?") without any Merkle computation.
+
+| Strategy | OIDs to check | What it proves |
+|----------|--------------|----------------|
+| **Code identity only** | Hardware quote OID | Correct binary, but configuration unknown |
+| **Code + Merkle root** | Hardware quote + `1.1` | Code and full configuration verified |
+| **Fast-path OIDs** | Specific `2.*` or `3.*` OIDs | Individual properties without full Merkle audit |
+| **Full manifest audit** | Request manifest, recompute `1.1` | Complete transparency of all inputs |
+
+See [RA-TLS Certificates: Verification](/solutions/enclave-os/attestation/ra-tls#verification) for the step-by-step verification flow.

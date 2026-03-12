@@ -204,7 +204,7 @@ export default function Home() {
                                         &nbsp;Runs LLMs and SLMs on tamper-proof hardware (CPUs or GPUs), and ensures data privacy even during model inference.
                                     </li>
                                     <li className='pt-1'>
-                                        <span className='text-black dark:text-white underline'>Secure-enclave Model Context Protocol (SMCP):</span>
+                                        <span className='text-black dark:text-white underline'>Attested MCP:</span>
                                         &nbsp;Enables AI agents to interact with external services while guaranteeing data privacy and process integrity.
                                     </li>
                                 </ul>

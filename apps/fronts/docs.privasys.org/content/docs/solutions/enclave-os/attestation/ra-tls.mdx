@@ -1,0 +1,321 @@
+---
+title: RA-TLS Certificates
+description: "How RA-TLS certificates carry attestation evidence: key generation, certificate structure, generation flows, per-workload SNI routing, trust chains, and verification strategies."
+---
+
+Both Enclave OS editions embed attestation evidence directly into X.509 certificates served during the TLS handshake. This page covers the shared RA-TLS model, certificate generation, per-workload routing, and verification.
+
+For the full OID reference, see the [X.509 OID scheme](/solutions/enclave-os/attestation/oids). For configuration attestation via Merkle trees, see the [Configuration Merkle Tree](/solutions/enclave-os/attestation/merkle-tree).
+
+## RA-TLS in Brief
+
+Remote Attestation TLS (RA-TLS) extends standard TLS with hardware attestation. Instead of requiring a separate out-of-band protocol, the TEE quote is embedded as a custom X.509 extension in the server's certificate. Any TLS client can extract and verify it.
+
+The core mechanism:
+
+1. **Key generation inside the TEE.** An ECDSA P-256 key pair is generated within the hardware trust boundary (SGX enclave or Confidential VM).
+2. **Binding the key to the quote.** The `ReportData` field of the TEE quote is set to `SHA-512( SHA-256(DER public key) || binding )`, where the binding value is either a client-provided nonce (challenge mode) or a timestamp (deterministic mode).
+3. **Certificate issuance.** The public key, quote, and configuration measurements are packaged into an X.509 certificate signed by an operator-provisioned intermediary CA. The CA key never leaves the TEE.
+4. **Standard TLS handshake.** The certificate chain is served during the TLS 1.3 handshake. Clients validate the chain, extract the quote, and verify the attestation evidence.
+
+This is one-way (server-side) attestation. For bidirectional attestation where both sides prove they run inside a TEE, see [Mutual RA-TLS](/solutions/enclave-os/attestation/mutual-ra-tls).
+
+## Deterministic vs Challenge Mode
+
+### Challenge Mode
+
+In challenge mode, the client sends a random nonce in a custom TLS `ClientHello` extension (`0xFFBB`). The enclave uses this nonce as the binding value, generating a **fresh certificate per connection**.
+
+This provides **freshness**: the client knows the quote was produced in response to its specific challenge, preventing replay attacks.
+
+### Deterministic Mode
+
+In deterministic mode, the enclave uses the certificate's creation timestamp as the binding value. The certificate is generated once at startup and **reused for all connections**.
+
+This provides:
+
+- **Performance**: No per-connection quote generation (which takes ~100ms on SGX hardware).
+- **Compatibility**: Works with clients that don't support the `0xFFBB` extension (including standard browsers).
+- **Cacheability**: The quote can be verified once and the certificate pinned.
+
+The trade-off is that the quote could theoretically be replayed if the enclave's key is compromised, but since the key never leaves the TEE, this requires compromising the hardware itself.
+
+Enclave OS defaults to **deterministic mode** for maximum compatibility.
+
+Both modes produce identical certificate structures. The only difference is the binding value in `ReportData`.
+
+## Certificate Structure
+
+Both editions generate an X.509 leaf certificate signed by an operator-provisioned intermediary CA. The CA certificate and private key are provided at deployment time and protected by the TEE: sealed to MRENCLAVE in Mini, stored on the LUKS2-encrypted partition in Virtual.
+
+| Field | Mini | Virtual |
+|-------|------|--------|
+| **Subject** | `CN=Enclave OS RA-TLS, O=Privasys` | `CN=<workload>.<hostname>, O=Privasys` |
+| **Key** | ECDSA P-256 (generated inside SGX via `ring`) | ECDSA P-256 (generated inside the Confidential VM) |
+| **Signature** | ECDSA with SHA-256 | ECDSA with SHA-256 |
+| **TLS version** | 1.3 only (rustls) | 1.3 (Caddy / Go TLS) |
+| **Validity** | 5 min (challenge) / 24 h (deterministic) | 5 min (challenge) / 24 h (deterministic) |
+| **TLS stack** | rustls (pure Rust, inside SGX) | ra-tls-caddy (Go, Caddy `tls.issuance` module) |
+
+Both editions follow the same three-tier certificate hierarchy:
+
+```
+Root CA (operator-provisioned)
+ +-- Intermediary CA (protected by the TEE)
+      +-- Leaf RA-TLS certificate (per-connection or per-workload)
+               |-- Hardware quote (SGX or TDX)
+               |-- Config Merkle root (OID 1.1)
+               |-- Platform OIDs (2.*)
+               +-- Per-workload OIDs (3.*)
+```
+
+## Generation Flow
+
+```
+1. Generate ECDSA P-256 key pair
+         |
+         v
+2. DER-encode the public key
+         |
+         v
+3. Compute ReportData = SHA-512(SHA-256(DER_pubkey) || binding)
+         |
+         v
+4. Request quote with ReportData (hardware-dependent stack)
+         |
+         v
+5. Obtain/read quote from quoting enclave/configfs-tsm
+         |
+         v
+6. Build X.509 certificate:
+   - Set subject, validity, key usage
+   - Attach Quote extension (OID 1.2.840.113741.1...)
+   - Attach Config Merkle Root extension (OID 1.3.6.1.4.1.65230.1.1)
+   - Attach workload OID extensions (3.*)
+   - Sign with the intermediary CA key
+         |
+         v
+7. Return cert chain [leaf, CA cert] for the TLS 1.3 handshake
+```
+
+## Session Management
+
+### Mini
+
+Each TLS session is managed by the enclave's `RaTlsSession` struct, which:
+
+1. Owns the TLS server connection (via `rustls`).
+2. Reads encrypted bytes from the SPSC data channel.
+3. Decrypts them to produce plaintext HTTP requests.
+4. Encrypts HTTP responses and writes ciphertext back to the data channel.
+
+The `rustls` configuration enforces:
+
+- **TLS 1.3 only.** TLS 1.2 and below are disabled.
+- **No client certificate required.** The attestation is server-side only.
+- **ECDSA P-256 cipher suites.** Matching the key type.
+
+### Virtual
+
+TLS is handled by ra-tls-caddy (a Caddy reverse proxy module). Caddy terminates TLS and forwards plaintext to containers on localhost. Certificate selection uses SNI, with each container hostname mapping to its own RA-TLS certificate. Certificates are cached by certmagic and auto-renewed when they expire.
+
+## Per-Workload Certificates and SNI Routing
+
+Both editions issue per-workload certificates so that each client only sees the identity and configuration of the specific workload it connects to.
+
+| | Mini | Virtual |
+|--|------|--------|
+| **Workload type** | WASM app | OCI container |
+| **Hostname** | `<app>.enclave.example.com` | `<container>.<machine>.<hostname>` |
+| **Per-workload OIDs** | App code hash (`3.2`), config root (`3.1`), key source (`3.4`) | Image digest (`3.2`), image ref (`3.3`), config root (`3.1`), volume encryption (`3.4`) |
+| **Platform cert** | Enclave CA cert (or default leaf if no SNI) | Management hostname cert |
+| **TLS stack** | rustls `ResolvesServerCert` | Caddy certmagic per-hostname |
+
+The platform-level certificate carries the **combined workloads hash** (OID `2.5`) for clients that want a single check covering all loaded workloads without SNI routing.
+
+### Why per-workload certificates?
+
+1. **Tenant isolation.** Each client only sees the code hash and configuration of the workload it connects to. A client connecting to `app-A` learns nothing about `app-B`.
+2. **Independent lifecycle.** Adding, removing, or updating one workload does not affect any other workload's certificate.
+
+### Certificate hierarchy (Mini)
+
+In Mini, each WASM app gets its own leaf certificate signed by the enclave's attested CA:
+
+```
+Root CA (operator-provisioned)
+ +-- Intermediary CA (sealed inside enclave)
+      +-- Enclave CA Cert (attested, SGX quote lives here)
+            |-- OID: MRENCLAVE / MRSIGNER
+            |-- OID: Enclave Config Merkle Root (core config only)
+            |
+            |-- App Leaf: "payments-api"
+            |     |-- OID 1.3.6.1.4.1.65230.3.2  App Code Hash
+            |     |-- OID 1.3.6.1.4.1.65230.3.1  App Config Merkle Root
+            |     |-- OID 1.3.6.1.4.1.65230.3.4  App Key Source
+            |     +-- OID 1.3.6.1.4.1.65230.3.*   App-specific custom OIDs
+            |
+            ├── App Leaf: "analytics-api"
+            │     ├── OID 1.3.6.1.4.1.65230.3.2  App Code Hash
+            │     └── ...
+            │
+            └── ... (scales to thousands of apps)
+```
+
+The SGX quote is generated once at boot and bound to the Enclave CA's public key. App leaf certs are signed inside the enclave using `ring` ECDSA P-256, requiring no round-trip to the quoting enclave.
+
+### Certificate hierarchy (Virtual)
+
+In Virtual, ra-tls-caddy generates a separate RA-TLS certificate for each container hostname:
+
+```
+Root CA (operator-provisioned)
+ +-- Intermediary CA (stored on LUKS2-encrypted partition)
+      +-- Management Cert (platform quote + platform OIDs)
+      |     |-- OID: MRTD / RTMR (TDX)
+      |     |-- OID: Config Merkle Root (platform tree)
+      |     +-- OID: Combined Workloads Hash (2.5)
+      |
+      +-- Container Cert: "myapp"
+      |     |-- OID: MRTD / RTMR (TDX)
+      |     |-- OID 1.3.6.1.4.1.65230.3.2  Image Digest
+      |     |-- OID 1.3.6.1.4.1.65230.3.3  Image Ref
+      |     |-- OID 1.3.6.1.4.1.65230.3.1  Container Config Root
+      |     +-- OID 1.3.6.1.4.1.65230.3.4  Volume Encryption
+      |
+      +-- Container Cert: "db"
+            +-- ...
+```
+
+Each container certificate carries its own TDX quote (obtained via configfs-tsm) and per-container OID extensions.
+
+## Trust Chain
+
+Both editions produce a trust chain from hardware to application, verifiable in a single TLS handshake.
+
+### Mini (SGX)
+
+```
+Intel CPU Hardware Key
+        |
+        v
+SGX DCAP Quote (platform attestation)
+        |
+        |-- MRENCLAVE (enclave code identity)
+        |
+        |-- ReportData (binds TLS key to quote)
+        |       |
+        |       +-- SHA-512(SHA-256(pubkey) || binding)
+        |
+        +-- RA-TLS Certificate
+                |
+                |-- TLS public key (enclave-generated)
+                |
+                |-- Config Merkle Root (OID 65230.1.1)
+                |       |
+                |       |-- CA cert hash
+                |       +-- WASM app code hashes
+                |
+                |-- Egress CA Hash (OID 65230.2.1)
+                |
+                |-- Combined Workloads Hash (OID 65230.2.5)
+                |
+                |-- Attestation Servers Hash (OID 65230.2.7)
+                |
+                +-- Per-App Leaf Certs (via SNI)
+                        |-- App Code Hash (OID 65230.3.2)
+                        |-- App Config Root (OID 65230.3.1)
+                        +-- App Key Source (OID 65230.3.4)
+```
+
+### Virtual (TDX)
+
+```
+Intel TDX Module
+        |
+        v
+TDX Quote (platform attestation)
+        |
+        |-- MRTD (VM firmware measurement)
+        |
+        |-- RTMR[0-3] (runtime measurements)
+        |
+        |-- ReportData (binds TLS key to quote)
+        |       |
+        |       +-- SHA-512(SHA-256(pubkey) || binding)
+        |
+        +-- RA-TLS Certificate
+                |
+                |-- TLS public key (VM-generated)
+                |
+                |-- Config Merkle Root (OID 65230.1.1)
+                |       |
+                |       |-- CA cert hash
+                |       +-- Container image digests
+                |
+                |-- Runtime Version Hash (OID 65230.2.4)
+                |
+                |-- Combined Workloads Hash (OID 65230.2.5)
+                |
+                |-- Data Encryption Key Origin (OID 65230.2.6)
+                |
+                |-- Attestation Servers Hash (OID 65230.2.7)
+                |
+                +-- Per-Container Certs (via SNI)
+                        |-- Image Digest (OID 65230.3.2)
+                        |-- Image Ref (OID 65230.3.3)
+                        |-- Container Config Root (OID 65230.3.1)
+                        +-- Volume Encryption (OID 65230.3.4)
+```
+
+A verifier inspecting either certificate knows:
+
+1. **Which hardware** is running (Intel SGX or TDX, specific CPU).
+2. **Which code** (MRENCLAVE for SGX, MRTD + RTMRs for TDX).
+3. **Which TLS key** (bound via ReportData).
+4. **Which configuration and workloads** (Merkle root + platform OIDs).
+5. **Which specific workload** (per-workload OIDs via SNI routing).
+
+This is full-stack attestation, from silicon to application code, delivered over a standard TLS handshake.
+
+## Verification
+
+A relying party verifying an RA-TLS certificate follows these steps:
+
+1. **Validate the certificate chain** back to the trusted root CA.
+2. **Extract the hardware quote** from the appropriate OID (SGX or TDX).
+3. **Verify the quote** against the hardware vendor's attestation infrastructure (Intel DCAP for SGX, Intel Trust Authority or configfs-tsm for TDX).
+4. **Check code identity**: MRENCLAVE (SGX) or MRTD + RTMR values (TDX) against known-good measurements.
+5. **Recompute `ReportData`**: `SHA-512( SHA-256(DER public key) || binding )` and confirm it matches the quote. This proves the TLS key was generated inside the attested TEE.
+6. **Check configuration OIDs**: Verify the Merkle root, workload hashes, or individual OID values against expected values.
+
+### Verification Depth
+
+| Strategy | What to check | Trust level |
+|----------|--------------|-------------|
+| **Code identity only** | Hardware quote measurements | Correct code, but configuration unknown |
+| **Code + Merkle root** | + OID `1.1` | Code and full configuration verified |
+| **Fast-path OIDs** | + specific `2.*` or `3.*` OIDs | Verify individual properties without full Merkle audit |
+| **Full manifest audit** | Request manifest, recompute root | Complete transparency of all inputs |
+
+The Privasys [verification libraries](/solutions/platform/verification-libraries) implement this flow in Python, Go, Rust, TypeScript, and C#.
+
+## Security Properties
+
+| Property | Guarantee | Applies to |
+|----------|-----------|------------|
+| **Key binding** | The TLS public key is cryptographically bound to the hardware quote via ReportData | Both |
+| **Code identity** | MRENCLAVE (SGX) or MRTD + RTMRs (TDX) prove the exact code running | Both |
+| **Config identity** | Merkle root proves all operator-chosen and module/container-contributed inputs | Both |
+| **Freshness** | Challenge nonce or timestamp prevents replay of old certificates | Both |
+| **CA isolation** | The CA private key is sealed to MRENCLAVE (Mini) or stored on LUKS2-encrypted disk (Virtual) | Both |
+| **No suppression** | The TEE is an honest reporter and cannot hide its configuration | Both |
+| **Per-workload isolation** | Each WASM app (Mini) or OCI container (Virtual) gets its own certificate, Merkle tree, and OID extensions | Both |
+
+## References
+
+- [X.509 OID Scheme](/solutions/enclave-os/attestation/oids): Full reference of all Privasys OID extensions
+- [Configuration Merkle Tree](/solutions/enclave-os/attestation/merkle-tree): How configuration inputs are attested via Merkle trees
+- [Mutual RA-TLS](/solutions/enclave-os/attestation/mutual-ra-tls): Bidirectional attestation between TEEs
+- [Enclave OS Virtual Architecture](/solutions/enclave-os/enclave-os-virtual): How ra-tls-caddy generates RA-TLS certificates in Confidential VMs
+- [Verification Libraries](/solutions/platform/verification-libraries): Client libraries for Python, Go, Rust, TypeScript, and C#

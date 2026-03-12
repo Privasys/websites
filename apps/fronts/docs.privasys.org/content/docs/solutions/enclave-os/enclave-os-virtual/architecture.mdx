@@ -1,0 +1,128 @@
+---
+title: Architecture
+description: The architecture of Enclave OS Virtual, running OCI containers inside Confidential VMs with end-to-end attestation via ra-tls-caddy.
+---
+
+Enclave OS Virtual runs OCI containers inside Intel TDX (or AMD SEV-SNP) Confidential VMs with end-to-end attestation. Every container image digest, environment variable, volume mount, and platform configuration is measured into a deterministic Merkle tree and embedded in X.509 certificate extensions via RA-TLS. Clients can verify the full workload stack in a single TLS handshake.
+
+## High-Level Topology
+
+```
+┌────────────────────────────────────────────────────────┐
+│  Intel TDX / AMD SEV-SNP Confidential VM               │
+│                                                        │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │  Enclave OS (Virtual)                            │  │
+│  │                                                  │  │
+│  │  ┌────────────┐  ┌────────────┐  ┌────────────┐  │  │
+│  │  │ ra-tls-    │  │ Workload   │  │ Management │  │  │
+│  │  │ caddy      │  │ Launcher   │  │ Server     │  │  │
+│  │  │ (TLS +     │  │ (containerd│  │ (HTTP on   │  │  │
+│  │  │  reverse   │  │  lifecycle)│  │  localhost)│  │  │
+│  │  │  proxy)    │  │            │  │            │  │  │
+│  │  └─────┬──────┘  └─────┬──────┘  └────────────┘  │  │
+│  │        │               │                         │  │
+│  │        │    ┌──────────┴──────────┐              │  │
+│  │        │    │     containerd      │              │  │
+│  │        │    └──────────┬──────────┘              │  │
+│  │        │    ┌──────────┴──────────┐              │  │
+│  │        └────┤  OCI Containers     │              │  │
+│  │             │  ┌─────┐  ┌──────┐  │              │  │
+│  │             │  │App  │  │ DB   │  │              │  │
+│  │             │  │     │  │      │  │              │  │
+│  │             │  └─────┘  └──────┘  │              │  │
+│  │             └─────────────────────┘              │  │
+│  └──────────────────────────────────────────────────┘  │
+│                                                        │
+│   dm-verity root │ UKI Secure Boot │ measured /etc/    │
+└────────────────────────────────────────────────────────┘
+```
+
+Three components run inside the Confidential VM:
+
+- **ra-tls-caddy** is a Caddy server with a custom TLS issuance module that generates RA-TLS certificates. It acts as a reverse proxy, terminating TLS at the edge and forwarding plaintext to containers on localhost. Each container gets its own hostname and its own RA-TLS certificate with per-container OID extensions.
+- **Workload Launcher** manages the OCI container lifecycle via containerd. It pulls digest-pinned images, creates containers, runs health checks, and wires up Caddy routes dynamically.
+- **Management Server** exposes an HTTP API on localhost for loading and unloading containers at runtime, authenticated via OIDC bearer tokens. It also serves health, readiness, status, and Prometheus metrics endpoints over RA-TLS.
+
+## How It Works
+
+1. **Boot.** The VM starts from a [dm-verity protected, UKI Secure Boot image](/solutions/enclave-os/hardened-images) built with tdx-image-base. Every byte of the root filesystem is verified against a hash tree measured by TDX.
+
+2. **Dynamic loading.** The manager starts with zero containers. Operators call `POST /api/v1/containers` (authenticated via OIDC bearer token) to load containers at runtime. Each request specifies a digest-pinned OCI image reference, environment variables, volumes, and ports.
+
+3. **Pull and verify.** OCI images are pulled via containerd. Each image digest is verified against the pinned `@sha256:...` reference in the load request.
+
+4. **Merkle tree.** A platform Merkle tree and per-container Merkle trees are recomputed after every load or unload. Leaves include the CA certificate, image digests, environment variables, volume configuration, and runtime version.
+
+5. **RA-TLS certificates.** The Merkle roots and container metadata are embedded as [X.509 extensions](/solutions/enclave-os/attestation/oids) in RA-TLS certificates, alongside the TDX or SEV-SNP attestation quote.
+
+6. **TLS handshake.** Clients connecting via TLS receive a certificate chain that proves: which TEE is running, what OS image booted, which containers are deployed (by digest), and how they are configured.
+
+7. **Health and metrics.** The management API exposes `/healthz`, `/readyz`, `/api/v1/status`, and Prometheus `/metrics` over RA-TLS at `manager.<machine-name>.<hostname>`.
+
+## RA-TLS via Caddy
+
+ra-tls-caddy is a Caddy `tls.issuance` module that generates RA-TLS certificates inside the Confidential VM. It supports the same [deterministic and challenge-response](/solutions/enclave-os/attestation/ra-tls#deterministic-vs-challenge-mode) attestation paths as Enclave OS Mini.
+
+The module abstracts hardware-specific logic behind an `Attester` interface. Each TEE backend (TDX, SEV-SNP) lives in its own file and registers itself at init time.
+
+### Supported Backends
+
+| Backend | Hardware | Status |
+|---------|----------|--------|
+| `tdx` | Intel TDX | Supported |
+| `sev-snp` | AMD SEV-SNP | Planned |
+
+### How Certificates Are Generated
+
+**Deterministic path (cached):**
+
+1. An ECDSA P-256 key pair is generated inside the TEE.
+2. `ReportData = SHA-512( SHA-256(DER public key) || creation_time )`, where `creation_time` is `NotBefore` truncated to minute precision.
+3. A TEE quote is obtained from the configured backend (e.g. `/sys/kernel/config/tsm/report` for TDX).
+4. An X.509 certificate is signed by the operator-provisioned intermediary CA, embedding the quote and OID extensions.
+5. The certificate is cached by certmagic and auto-renewed.
+
+**Challenge-response path (per-connection):**
+
+1. The client sends a random nonce in a TLS `ClientHello` extension (`0xFFBB`).
+2. A fresh ECDSA P-256 key pair is generated.
+3. `ReportData = SHA-512( SHA-256(DER public key) || nonce )`.
+4. A short-lived certificate (5 minutes) is signed by the same CA.
+
+### SNI-Based Routing
+
+Each container gets its own hostname derived from the workload manifest:
+
+- Management API: `manager.<machine-name>.<hostname>`
+- Container `myapp`: `myapp.<machine-name>.<hostname>`
+- Internal containers (e.g. databases): no external hostname, accessible only on localhost
+
+When a client connects, ra-tls-caddy selects the certificate matching the SNI hostname. Each certificate carries per-container OID extensions (image digest, config Merkle root, volume encryption status).
+
+## Per-Container OID Extensions
+
+Every container's RA-TLS certificate includes extensions specific to that container:
+
+| OID | Name | Value |
+|-----|------|-------|
+| `1.3.6.1.4.1.65230.3.1` | Container Config Merkle Root | SHA-256 root of the container's config tree |
+| `1.3.6.1.4.1.65230.3.2` | Container Image Digest | Raw SHA-256 digest of the OCI image |
+| `1.3.6.1.4.1.65230.3.3` | Container Image Ref | Full OCI image reference string |
+| `1.3.6.1.4.1.65230.3.4` | Container Volume Encryption | `"byok:<fingerprint>"` or `"generated"` (present only when an encrypted volume is attached) |
+
+The platform-level certificate (served for the management hostname) carries the [platform OIDs](/solutions/enclave-os/attestation/oids#platform-level-oids-arc-13614165230) including the combined workloads hash (OID `2.5`), runtime version (OID `2.4`), and data encryption key origin (OID `2.6`).
+
+## Requirements
+
+- A **Confidential VM** running Intel TDX or AMD SEV-SNP
+- A [hardened base image](/solutions/enclave-os/hardened-images) with dm-verity and Secure Boot
+- An **intermediary CA** certificate and private key (private PKI)
+- An **OIDC provider** for management API authentication
+- containerd installed on the VM
+
+## What to Read Next
+
+- [Containers and Workload Manifest](/solutions/enclave-os/containers): How containers are loaded, configured, and managed
+- [Hardened Guest Images](/solutions/enclave-os/hardened-images): The dm-verity base image and trust chain from silicon to userland
+- [Disk Encryption](/solutions/enclave-os/disk-encryption): LUKS2+AEAD encryption for the OS data partition and per-container volumes

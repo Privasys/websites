@@ -1,0 +1,70 @@
+---
+title: Overview
+description: An introduction to Confidential Computing, Trusted Execution Environments, and the hardware technologies that protect data during processing.
+---
+
+Confidential Computing is a set of hardware technologies that protect data **while it is being processed**. Combined with encryption at rest and in transit, it closes the last remaining gap in the data protection lifecycle.
+
+## Trusted Execution Environments
+
+A Trusted Execution Environment (TEE) is a hardware-enforced isolated region where code and data are protected from all other software on the system, including the operating system, hypervisor, and firmware.
+
+TEEs provide three guarantees:
+
+| Guarantee | Description |
+|-----------|-------------|
+| **Confidentiality** | Memory inside the TEE is encrypted by the CPU. No software outside can read it. |
+| **Integrity** | Code and data inside the TEE cannot be tampered with by external software. |
+| **Attestation** | The TEE can produce a cryptographic proof of its identity and state, verifiable by remote parties. |
+
+## Application-level Enclaves
+
+An enclave is a protected region of memory within a user-mode process. CPUs such as Intel Software Guard Extensions (Intel SGX) encrypts enclave memory with keys that never leave the processor package.
+
+#### Key properties:
+
+- **Small TCB.** Only the code loaded into the enclave is trusted. The OS, hypervisor, and other applications are excluded.
+- **MRENCLAVE.** A SHA-256 measurement of the enclave's initial code and data. Two enclaves with the same MRENCLAVE are running identical code.
+- **Sealing.** Enclaves can encrypt data bound to their MRENCLAVE identity. Only the same enclave binary on the same machine can decrypt it.
+- **Attestation.** The enclave can generate a cryptographic quote signed by the hardware, provable to remote verifiers.
+
+Intel SGX is available on select Intel Xeon processors (Ice Lake, Sapphire Rapids, and later) and is the foundation for Privasys's [Enclave OS (Mini)](/solutions/enclave-os/architecture).
+
+#### ECALLs and OCALLs
+
+Because an SGX enclave is isolated from the rest of the system, it cannot directly call OS functions, access the network, or read from disk. All communication between the enclave (trusted) and the host application (untrusted) goes through a narrow, explicitly defined interface:
+
+- **ECALL (Enclave Call):** The host calls *into* the enclave. This is how the host starts enclave code or passes data to it.
+- **OCALL (Outside Call):** The enclave calls *out* to the host. This is how the enclave requests services it cannot perform itself, such as network I/O or file access.
+
+Each ECALL/OCALL involves a hardware-enforced context switch (~10,000 CPU cycles), so minimising the number of transitions is critical for performance. The Enclave OS [RPC and Circular Buffers](/solutions/enclave-os/rpc-and-circular-buffers) design addresses this by replacing per-request ECALLs/OCALLs with shared-memory queues.
+
+ECALLs and OCALLs are declared in an **Enclave Definition Language (EDL)** file, which defines the exact function signatures allowed to cross the trust boundary. This is the enclave's attack surface: the smaller and simpler the EDL, the harder it is to exploit.
+
+## Confidential Virtual Machines (Intel TDX & AMD SEV-SNP)
+
+Unlike SGX, which protects a single application, **Confidential VMs** protect an entire virtual machine. The hypervisor and host OS are excluded from the trust boundary, and the VM runs unmodified Linux with hardware-encrypted memory.
+
+Two major implementations exist today:
+
+### Intel TDX
+
+Intel Trust Domain Extensions (TDX) creates isolated VMs called **Trust Domains**.
+
+- **MRTD / RTMR.** Measurement registers capture the identity of the VM firmware and runtime.
+- **configfs-tsm.** Quote generation via the kernel's `/sys/kernel/config/tsm/report` interface, requiring no special SDK.
+- **Available on major clouds.** Google Cloud, Azure, and others offer TDX Confidential VMs.
+
+### AMD SEV-SNP
+
+AMD Secure Encrypted Virtualisation - Secure Nested Paging (SEV-SNP) provides similar VM-level isolation on AMD EPYC processors.
+
+- **Memory encryption.** Each VM has its own encryption key, managed by a dedicated AMD Secure Processor.
+- **Attestation reports.** The AMD Secure Processor produces signed attestation reports containing the VM's launch measurement and platform identity.
+- **Available on major clouds.** Azure, AWS, and Google Cloud offer SEV-SNP Confidential VMs.
+
+### TDX vs SEV-SNP
+
+Both provide whole-VM confidential computing with similar security guarantees. The main differences are the CPU vendor (Intel vs AMD), attestation mechanisms, and cloud availability. From an application perspective, code runs identically in either. The Linux kernel abstracts the hardware differences.
+
+The [Privasys Platform](/solutions/platform/overview) currently supports Intel TDX, with AMD SEV-SNP support planned.

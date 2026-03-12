@@ -1,0 +1,8 @@
+{
+    "title": "Technology",
+    "defaultOpen": false,
+    "pages": [
+        "confidential-computing",
+        "attestation"
+    ]
+}

@@ -1,0 +1,7 @@
+{
+    "title": "Guides",
+    "defaultOpen": false,
+    "pages": [
+        "build-wasm-app"
+    ]
+}

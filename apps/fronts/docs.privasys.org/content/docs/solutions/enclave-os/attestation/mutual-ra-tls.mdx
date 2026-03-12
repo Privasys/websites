@@ -1,0 +1,133 @@
+---
+title: Mutual RA-TLS
+description: Bidirectional remote attestation over TLS, where both client and server prove they run inside a TEE.
+---
+
+Standard [RA-TLS](/solutions/enclave-os/attestation/ra-tls) is one-directional: the **server** proves it runs inside a TEE while the client is a regular TLS peer (browser, CLI tool, API gateway). Mutual RA-TLS extends this so that **both** sides present an RA-TLS certificate during the TLS handshake, enabling each party to verify the other's hardware attestation evidence.
+
+## When to Use Mutual RA-TLS
+
+| Scenario | Who needs attesting? | Mode |
+|----------|---------------------|------|
+| Browser querying an enclave API | Server only | Standard RA-TLS |
+| CLI tool reading attested data | Server only | Standard RA-TLS |
+| TEE retrieving a secret from [Enclave Vaults](/solutions/enclave-vaults/overview) | Both | Mutual RA-TLS |
+| TEE-to-TEE service mesh | Both | Mutual RA-TLS |
+| Enclave forwarding data to another enclave | Both | Mutual RA-TLS |
+
+The primary use case today is **Enclave Vaults**: when a TEE calls `GetSecret`, the vault needs to verify that the requesting workload matches the secret's access policy (correct MRENCLAVE, correct configuration OIDs). The only way to prove this over a network is for the client to present its own RA-TLS certificate.
+
+## How It Works
+
+Mutual RA-TLS reuses the same certificate format and [OID scheme](/solutions/enclave-os/attestation/oids) as standard RA-TLS. The difference is that **both** the `ServerHello` and the client's `Certificate` message carry an X.509 certificate with an embedded TEE quote.
+
+### Handshake Flow
+
+```
+Client (TEE A)                              Server (TEE B)
+     |                                           |
+     |--- ClientHello [+ nonce 0xFFBB] --------->|
+     |                                           |
+     |<-- ServerHello + Server Certificate ------|
+     |    (server RA-TLS cert with TEE quote)    |
+     |                                           |
+     |<-- CertificateRequest [+ nonce 0xFFBB] ---|
+     |    (server challenge for client)          |
+     |                                           |
+     |--- Client Certificate ------------------->|
+     |    (client RA-TLS cert with TEE quote)    |
+     |                                           |
+     |--- Finished ----------------------------->|
+     |<-- Finished ------------------------------|
+     |                                           |
+     |  Both sides verified. Encrypted channel.  |
+```
+
+1. The **client** optionally sends a challenge nonce in `ClientHello` extension `0xFFBB`. The server binds this nonce into its certificate's `ReportData`.
+2. The **server** presents its RA-TLS certificate (standard flow).
+3. The server sends a `CertificateRequest` with its own challenge nonce in extension `0xFFBB`. The client binds this nonce into its certificate's `ReportData`.
+4. The **client** presents its RA-TLS certificate. The server extracts the TEE quote and verifies it.
+5. Both sides now have a verified, encrypted channel where each knows the other's code identity, configuration, and hardware platform.
+
+### Challenge-Response in Both Directions
+
+When both sides use challenge-response mode, each party generates a fresh certificate bound to the other's nonce. This provides **bidirectional freshness**: neither side can replay a stale certificate.
+
+| Direction | Nonce source | Bound into |
+|-----------|-------------|------------|
+| Client challenges server | Client sends nonce in `ClientHello` `0xFFBB` | Server's `ReportData` |
+| Server challenges client | Server sends nonce in `CertificateRequest` `0xFFBB` | Client's `ReportData` |
+
+## Server-Side Support
+
+### Enclave OS Mini
+
+The enclave's `rustls` TLS server is configured with a permissive client certificate verifier:
+
+- **`offer_client_auth()`** returns `true`, so the server always sends a `CertificateRequest`.
+- **`client_auth_mandatory()`** returns `false`, so browsers and standard clients can connect without presenting a certificate.
+- When a client *does* present a certificate, it is stored verbatim. The application layer (e.g. the vault module) extracts the quote and verifies it against the request's access policy.
+
+This design means the same TLS endpoint serves both regular clients and mutual RA-TLS clients. No separate port or configuration is needed.
+
+The `RequestContext` passed to each module's `handle()` method includes:
+
+- **`peer_cert_der`**: The DER-encoded client certificate (if presented).
+- **`client_challenge_nonce`**: The nonce sent to the client for bidirectional challenge-response.
+
+### Enclave OS Virtual
+
+In Virtual, ra-tls-caddy handles mutual TLS at the Caddy layer. When `client_auth` is enabled on a route, Caddy requests a client certificate during the handshake and forwards it to the container application, which performs quote extraction and verification.
+
+## Client-Side Support
+
+Mutual RA-TLS always uses challenge-response mode: the server sends a challenge nonce in the `CertificateRequest` message (extension `0xFFBB`), and the client generates a fresh RA-TLS certificate bound to that nonce. This means the client cannot pre-generate its certificate; it must create one dynamically during the TLS handshake.
+
+### Forked TLS Libraries
+
+Standard TLS libraries do not expose custom extensions from `CertificateRequest` to application code. Privasys maintains forks of Go and rustls that propagate the `0xFFBB` challenge nonce to the client certificate callback:
+
+- **Go**: [Privasys/go](https://github.com/Privasys/go/tree/ratls) adds an `RATLSChallenge` field to `tls.CertificateRequestInfo`, carrying the server's nonce. Requires the `ratls` build tag.
+- **rustls**: [Privasys/rustls](https://github.com/Privasys/rustls) extends the `CertificateRequest` handler to pass the `0xFFBB` nonce through to the client certificate resolver.
+
+These forks are what enable mutual RA-TLS between Enclave OS Mini and Virtual, and are required for features like [Enclave Vaults](/solutions/enclave-vaults/overview).
+
+### Dynamic Certificate Generation
+
+The client provides a callback that receives the server's `CertificateRequestInfo` (including the challenge nonce) and generates a fresh certificate on the fly:
+
+```
+GetClientCertificate: func(info) -> certificate {
+    1. Read server's challenge nonce from info
+    2. Generate fresh key pair inside TEE
+    3. Compute ReportData binding the server's nonce
+    4. Obtain TEE quote
+    5. Build and return RA-TLS certificate
+}
+```
+
+This provides full bidirectional challenge-response: the server's nonce is bound into the client certificate's `ReportData`, proving the client generated the certificate in response to this specific handshake.
+
+## Enclave Vaults Integration
+
+[Enclave Vaults](/solutions/enclave-vaults/overview) uses mutual RA-TLS for the `GetSecret` operation. The flow is:
+
+1. The requesting TEE connects to the vault via mutual RA-TLS.
+2. The vault verifies the server's own identity to the client (standard RA-TLS).
+3. The vault extracts the client's RA-TLS certificate from the TLS session.
+4. The vault parses the TEE quote and [OID extensions](/solutions/enclave-os/attestation/oids) from the client certificate.
+5. The vault checks the client's measurements (MRENCLAVE / MRTD) and configuration OIDs against the secret's access policy.
+6. If the policy matches, the vault returns the secret share. Otherwise the request is rejected.
+
+This ensures that secrets are only released to workloads that match the policy defined by the secret owner, verified end-to-end through hardware attestation, with no trusted intermediary.
+
+## Security Properties
+
+| Property | Guarantee |
+|----------|----------|
+| **Bidirectional attestation** | Both sides prove they run inside a TEE with specific code and configuration |
+| **Key binding** | Each party's TLS key is bound to its own TEE quote via `ReportData` |
+| **Bidirectional freshness** | Each side's certificate is bound to the other's challenge nonce, preventing replay |
+| **No trusted intermediary** | Verification happens directly between the two TEEs over the TLS channel |
+| **Graceful degradation** | The server accepts both mutual RA-TLS clients and standard TLS clients on the same port |
+| **Policy enforcement** | The server can enforce fine-grained access policies based on the client's attestation evidence |

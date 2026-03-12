@@ -1,9 +1,0 @@
-{
-  "title": "Guides",
-  "defaultOpen": false,
-  "pages": [
-    "enclave-os",
-    "deploy-caddy-ra-tls",
-    "attestation-server"
-  ]
-}

@@ -22,15 +22,23 @@ interface MdxPageData {
 
 /** Slugs that should redirect to a default child page. */
 const folderRedirects: Record<string, string> = {
+    // Root → Introduction
     '': '/introduction/overview',
+    // Folder index redirects (new structure)
     'introduction': '/introduction/overview',
-    'confidential-computing': '/confidential-computing/presentation',
-    'solutions': '/solutions/confidential-containers/concept',
-    'solutions/confidential-containers': '/solutions/confidential-containers/concept',
-    'solutions/enclave-os': '/solutions/enclave-os/architecture',
-    'solutions/clients': '/solutions/clients/ra-tls-clients',
-    'guides': '/guides/enclave-os/deploy',
-    'guides/deploy-caddy-ra-tls': '/guides/deploy-caddy-ra-tls/google-cloud',
+    'technology': '/technology/confidential-computing/overview',
+    'technology/confidential-computing': '/technology/confidential-computing/overview',
+    'technology/attestation': '/technology/attestation/remote-attestation',
+    'solutions': '/solutions/enclave-os/presentation',
+    'solutions/enclave-os': '/solutions/enclave-os/presentation',
+    'solutions/enclave-os/enclave-os-mini': '/solutions/enclave-os/enclave-os-mini/architecture',
+    'solutions/enclave-os/enclave-os-mini/guides': '/solutions/enclave-os/enclave-os-mini/guides/build-wasm-app',
+    'solutions/enclave-os/enclave-os-virtual': '/solutions/enclave-os/enclave-os-virtual/architecture',
+    'solutions/enclave-os/attestation': '/solutions/enclave-os/attestation/ra-tls',
+    'solutions/enclave-vaults': '/solutions/enclave-vaults/overview',
+    'solutions/enclave-agent': '/solutions/enclave-agent/overview',
+    'solutions/platform': '/solutions/platform/overview',
+    'solutions/platform/deploy': '/solutions/platform/deploy/google-cloud'
 };
 
 export default async function Page(props: {

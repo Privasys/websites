@@ -1,0 +1,110 @@
+---
+title: Trust Model
+description: "Comparing confidential computing approaches: application-level enclaves (SGX) vs. VM-level isolation (TDX, SEV-SNP, NVIDIA), with WASM sandboxing as a third layer."
+---
+
+Confidential computing hardware comes in two fundamentally different forms. The choice affects the Trusted Computing Base (TCB), deployment complexity, and the security guarantees available to clients.
+
+## Enclave Model (Intel SGX)
+
+An [SGX enclave](/technology/confidential-computing/overview#application-level-enclaves) isolates a single application inside a hardware-protected memory region. Only the code loaded into the enclave is in the TCB.
+
+| Property | Detail |
+|----------|--------|
+| **Isolation level** | Application (single process) |
+| **TCB** | Enclave binary only (~4 MB for Enclave OS) |
+| **Deployment** | Custom build, SGX SDK, signed enclave |
+| **Memory** | Limited to EPC (128 to 512 MB typical) |
+| **Attestation** | MRENCLAVE: SHA-256 of the enclave binary |
+| **Code changes** | Application must be written for or ported to the enclave environment |
+
+**Strengths:** Smallest possible attack surface. The enclave's measurement (MRENCLAVE) covers every byte of code in the TCB. A verifier knows exactly which binary is running, down to the bit.
+
+**Trade-offs:** Requires a custom build toolchain (Rust + SGX SDK), an EDL interface for host communication, and careful memory management within EPC limits.
+
+## Confidential VM Model (TDX, SEV-SNP, NVIDIA)
+
+A [Confidential VM](/technology/confidential-computing/overview#confidential-virtual-machines-intel-tdx--amd-sev-snp) encrypts an entire virtual machine, excluding the hypervisor and host from the trust boundary. Everything inside the VM (kernel, libraries, and all applications) is in the TCB.
+
+| Property | Detail |
+|----------|--------|
+| **Isolation level** | Virtual machine (full OS) |
+| **TCB** | Entire VM: kernel + libraries + all applications |
+| **Deployment** | Standard Linux, no special SDK |
+| **Memory** | Full VM memory (no EPC limit) |
+| **Attestation** | MRTD / RTMR (TDX), Launch Measurement (SEV-SNP) |
+| **Code changes** | None: existing applications run unmodified |
+
+**Strengths:** Easy adoption. Existing applications, containers, and toolchains work as-is inside the Confidential VM. No code changes required.
+
+**Trade-offs:** The measurement covers the VM firmware and initial boot, but does not necessarily attest every application binary running inside. The TCB is orders of magnitude larger than an enclave.
+
+### NVIDIA Confidential Computing
+
+NVIDIA H100 and later GPUs support **Confidential Computing mode**, where GPU memory is encrypted and isolated from the host. Combined with a TDX or SEV-SNP Confidential VM, this extends TEE protection to GPU workloads (AI/ML inference and training). The attestation flow follows the same pattern: hardware quotes prove the GPU firmware identity alongside the VM measurement.
+
+## Side-by-Side Comparison
+
+| | **Enclave (SGX)** | **Confidential VM (TDX / SEV-SNP)** |
+|--|-------------------|--------------------------------------|
+| **What's protected** | One application | An entire VM |
+| **TCB size** | ~4 MB (Enclave OS) | Hundreds of MB (kernel + userspace) |
+| **Deployment effort** | High (custom Rust build, SGX SDK) | Low (standard Linux binary) |
+| **Application model** | WASM modules loaded into enclave | Any process in the VM |
+| **Quote contents** | MRENCLAVE (exact binary hash) | MRTD/RTMR (firmware + boot hash) |
+| **Memory limit** | EPC (128 to 512 MB) | Full VM memory |
+| **OS required** | No (enclave is the OS) | Yes (full Linux kernel) |
+| **Best for** | Maximum security, minimal TCB | Ease of deployment, existing apps |
+
+## WASM as a Third Layer
+
+Within the enclave model, Privasys adds a further isolation layer: **WebAssembly sandboxing**. WASM apps run inside the SGX enclave but are isolated from each other by the Wasmtime runtime:
+
+```
+┌───────────────────────────────────────────┐
+│                SGX Enclave                │
+│                                           │
+│  ┌─────────────┐ ┌─────────────┐          │
+│  │  WASM App A │ │  WASM App B │  ...     │
+│  │ (sandboxed) │ │ (sandboxed) │          │
+│  └──────┬──────┘ └──────┬──────┘          │
+│         │               │                 │
+│  ┌──────┴───────────────┴──────────────┐  │
+│  │       Wasmtime (Component Model)    │  │
+│  └──────┬──────────────────────────────┘  │
+│         │                                 │
+│  ┌──────┴──────────────────────────────┐  │
+│  │       Enclave OS Runtime            │  │
+│  │  (RA-TLS, KV Store, Crypto, RPC)    │  │
+│  └─────────────────────────────────────┘  │
+└───────────────────────────────────────────┘
+```
+
+| Layer | Isolates | Attests |
+|-------|----------|---------|
+| **SGX hardware** | Enclave from host/OS/hypervisor | MRENCLAVE (code identity) |
+| **Wasmtime sandbox** | WASM apps from each other | Per-app code hash (X.509 extension) |
+| **Per-app certificates** | App identities from each other | Per-app config root (X.509 extension) |
+
+This means a client connecting to `payments-api.enclave.example.com` receives a certificate proving:
+1. The exact enclave binary (MRENCLAVE)
+2. The exact WASM bytecode for `payments-api` (app code hash)
+3. The app's configuration (app Merkle root)
+
+All three layers are visible in a single RA-TLS certificate, without revealing information about other apps in the same enclave.
+
+## Choosing the Right Model
+
+| Scenario | Recommended |
+|----------|-------------|
+| Security-critical workloads with a well-defined API | **Enclave OS** (SGX) |
+| Multi-tenant WASM app hosting with per-app attestation | **Enclave OS** (SGX) + WASM |
+| Existing applications that need attestation with minimal changes | **Enclave OS Virtual** (TDX/SEV) |
+| GPU-accelerated AI/ML in confidential environments | **Confidential VM** (TDX/SEV + NVIDIA) |
+| Compliance requirement for smallest possible TCB | **Enclave OS Mini** (SGX) |
+
+Both paths produce standard attested connections verifiable by the same [verification libraries](/solutions/platform/verification-libraries).
+
+Read more about each solution:
+- [Enclave OS](/solutions/enclave-os): Attested runtimes for SGX enclaves and Confidential VMs
+- [Privasys Platform](/solutions/platform/overview): Attested connections for Confidential VMs

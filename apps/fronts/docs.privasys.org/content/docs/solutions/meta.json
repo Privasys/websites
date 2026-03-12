@@ -1,9 +1,10 @@
 {
     "title": "Solutions",
-    "defaultOpen": false,
+    "defaultOpen": true,
     "pages": [
-        "confidential-containers",
         "enclave-os",
-        "clients"
+        "enclave-vaults",
+        "enclave-agent",
+        "platform"
     ]
 }
