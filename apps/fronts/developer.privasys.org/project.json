@@ -1,0 +1,44 @@
+{
+    "name": "developer.privasys.org",
+    "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+    "sourceRoot": "apps/fronts/developer.privasys.org",
+    "projectType": "application",
+    "tags": [],
+    "targets": {
+        "copy-logo": {
+            "executor": "nx:run-commands",
+            "inputs": ["{workspaceRoot}/assets/logo/**"],
+            "outputs": ["{projectRoot}/public/favicon"],
+            "options": {
+                "command": "node -e \"require('fs').cpSync('assets/logo','apps/fronts/developer.privasys.org/public/favicon',{recursive:true,force:true})\""
+            }
+        },
+        "build": {
+            "dependsOn": ["copy-logo"],
+            "executor": "@nx/next:build",
+            "outputs": ["{options.outputPath}"],
+            "defaultConfiguration": "production",
+            "options": {
+                "outputPath": "dist/apps/fronts/developer.privasys.org"
+            },
+            "configurations": {
+                "development": {
+                    "outputPath": "apps/fronts/developer.privasys.org"
+                },
+                "production": {}
+            }
+        },
+        "serve": {
+            "dependsOn": ["copy-logo"],
+            "executor": "nx:run-commands",
+            "options": {
+                "command": "npx next dev -p 4210",
+                "cwd": "apps/fronts/developer.privasys.org"
+            }
+        },
+        "lint": {
+            "executor": "@nx/eslint:lint",
+            "outputs": ["{options.outputFile}"]
+        }
+    }
+}

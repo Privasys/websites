@@ -1,0 +1,27 @@
+{
+    "extends": "../../../tsconfig.base.json",
+    "compilerOptions": {
+        "jsx": "preserve",
+        "allowJs": true,
+        "esModuleInterop": true,
+        "allowSyntheticDefaultImports": true,
+        "noEmit": true,
+        "resolveJsonModule": true,
+        "isolatedModules": true,
+        "incremental": true,
+        "baseUrl": ".",
+        "types": ["node"],
+        "paths": {
+            "~/*": ["./*"]
+        },
+        "plugins": [{ "name": "next" }]
+    },
+    "include": [
+        "**/*.ts",
+        "**/*.tsx",
+        ".next/types/**/*.ts",
+        "next-env.d.ts",
+        "../../../dist/apps/fronts/developer.privasys.org/.next/types/**/*.ts"
+    ],
+    "exclude": ["node_modules", ".next", "dist", "jest.config.ts"]
+}
