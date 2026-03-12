@@ -5,7 +5,16 @@
     "projectType": "application",
     "tags": [],
     "targets": {
+        "copy-logo": {
+            "executor": "nx:run-commands",
+            "inputs": ["{workspaceRoot}/assets/logo/**"],
+            "outputs": ["{projectRoot}/public/favicon"],
+            "options": {
+                "command": "node -e \"require('fs').cpSync('assets/logo','apps/fronts/privasys.org/public/favicon',{recursive:true,force:true})\""
+            }
+        },
         "build": {
+            "dependsOn": ["copy-logo"],
             "executor": "@nx/next:build",
             "outputs": [
                 "{options.outputPath}"
@@ -32,6 +41,7 @@
             }
         },
         "serve": {
+            "dependsOn": ["copy-logo"],
             "executor": "nx:run-commands",
             "options": {
                 "command": "npx next dev -p 4208",
