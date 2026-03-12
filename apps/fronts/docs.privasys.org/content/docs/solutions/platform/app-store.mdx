@@ -1,0 +1,64 @@
+---
+title: App Store
+description: A country-scoped catalogue of verified confidential applications running on Privasys infrastructure, where every listing is backed by hardware attestation.
+---
+
+The Privasys App Store at [privasys.org/uk/apps](https://privasys.org/uk/apps) is a public catalogue of confidential applications built on the Privasys Developer Platform. Unlike traditional app stores where you trust the publisher's claims, the Privasys App Store provides **cryptographic proof of every listed application's integrity**.
+
+## How It Works
+
+Every application listed in the App Store runs inside hardware-protected infrastructure (Intel SGX or Intel TDX). The listing includes:
+
+- **Attestation status** showing whether the application has been independently verified
+- **TEE type** (SGX or TDX) and **deployment target** (WASM or Container)
+- **Source code link** so anyone can inspect and audit the application
+- **RA-TLS verification example** showing how to connect and verify the attestation
+
+## Country-Scoped Catalogue
+
+The App Store follows a country-scoped URL pattern, similar to other major app stores:
+
+| URL | Region |
+|-----|--------|
+| `privasys.org/uk/apps` | United Kingdom |
+| `privasys.org/us/apps` | United States |
+| `privasys.org/eu/apps` | European Union |
+| `privasys.org/fr/apps` | France |
+| `privasys.org/de/apps` | Germany |
+| `privasys.org/sg/apps` | Singapore |
+| `privasys.org/jp/apps` | Japan |
+| `privasys.org/au/apps` | Australia |
+
+## Verification
+
+The key differentiator of the Privasys App Store is that **every listed app is provably attested**. Clients can verify any listed application by connecting with an RA-TLS client library:
+
+```python
+from ratls_client import RaTlsClient
+
+client = RaTlsClient("service.example.com", 443)
+response = client.get("/")
+```
+
+See [Verification Libraries](/docs/solutions/platform/verification-libraries) for all available language bindings.
+
+## Listing an Application
+
+Developers who have deployed a confidential application on the Privasys Developer Platform can submit it for listing. The submission flow:
+
+1. Developer creates a pull request on the Privasys repository with the application metadata
+2. An automated verification step connects to the declared endpoint and verifies the attestation quote
+3. If verification passes, the listing is reviewed and merged
+4. The App Store rebuilds and the application appears in the catalogue
+
+### Verification Badges
+
+| Badge | Meaning |
+|-------|---------|
+| **Verified** | The endpoint was verified within the last 24 hours |
+| **Stale** | The endpoint was verified more than 24 hours ago but less than 7 days |
+| **Unverified** | The endpoint failed verification or has never been verified |
+
+## What It Is Not
+
+The Privasys App Store is **not** a traditional app store with payments or downloads. It is a **verified registry** of attested applications. There is no installation step. Users connect to the listed services directly over RA-TLS and verify the attestation themselves.

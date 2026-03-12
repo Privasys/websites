@@ -3,6 +3,8 @@
     "defaultOpen": false,
     "pages": [
         "overview",
+        "developer-platform",
+        "app-store",
         "verification-libraries"
     ]
 }
