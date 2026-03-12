@@ -112,7 +112,7 @@ export default function EnclaveOS() {
                         className='px-6 py-2.5 font-bold border rounded-full text-black dark:text-white hover:bg-black hover:text-white dark:border-white dark:hover:bg-white dark:hover:text-black transition-colors'>
                         Enclave OS Mini on GitHub
                     </a>
-                    <a href='https://docs.privasys.org/enclave-os/architecture' target='_blank' rel='noopener noreferrer'
+                    <a href='https://docs.privasys.org/solutions/enclave-os/presentation' target='_blank' rel='noopener noreferrer'
                         className='px-6 py-2.5 font-bold border rounded-full text-black dark:text-white hover:bg-black hover:text-white dark:border-white dark:hover:bg-white dark:hover:text-black transition-colors'>
                         Read the documentation
                     </a>

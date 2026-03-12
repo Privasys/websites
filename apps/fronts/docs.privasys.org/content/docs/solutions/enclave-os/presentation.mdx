@@ -1,0 +1,51 @@
+---
+title: Presentation
+description: Enclave OS adds remote attestation and hardware-backed confidentiality to your applications without changing how you build them.
+---
+
+Enclave OS is a family of open-source runtimes that adds remote attestation and hardware-backed confidentiality to your applications. Rather than requiring a rewrite, Enclave OS wraps your existing workloads so that every connection carries cryptographic proof of what is running, how it is configured, and that no one (including the cloud provider) can access plaintext data.
+
+## Bring Your Application
+
+Enclave OS supports two workload models depending on your hardware:
+
+- **WebAssembly modules** (Enclave OS Mini): Compile your application logic to WASM and load it into an SGX enclave. The enclave provides RA-TLS ingress, HTTPS egress, sealed storage, and a JWT-authenticated vault. Applications written in Rust, C/C++, Go, Python, or any language with a WASM target can run inside the enclave without modification.
+- **OCI containers** (Enclave OS Virtual): Deploy standard Docker/OCI container images inside a Confidential VM. An attested reverse proxy (ra-tls-caddy) terminates TLS at the edge, and a workload launcher manages containers via containerd. No changes to your container images are required.
+
+In both cases, clients verify the server's identity through a standard TLS handshake. The attestation evidence is embedded directly in the X.509 certificate, so no custom protocol or out-of-band verification channel is needed.
+
+## Two Deployment Models
+
+Confidential computing hardware comes in two fundamentally different forms. Rather than force a one-size-fits-all solution, Enclave OS provides a dedicated stack for each:
+
+| | **Enclave OS Mini** (Intel SGX) | **Enclave OS Virtual** (Intel TDX / AMD SEV-SNP) |
+|--|---------------------------|------------------------------------------|
+| **What it protects** | A single application inside a hardware enclave | An entire virtual machine with encrypted memory |
+| **Trusted Computing Base** | ~4 MB enclave binary | Full Linux VM + application containers |
+| **How you deploy** | Custom Rust build, SGX SDK, signed enclave | Standard Linux, attested reverse proxy |
+| **How apps run** | WASM modules loaded into the enclave | Any process in the VM; attested proxy acts as reverse proxy |
+| **Attested connection** | CA-signed, enclave-generated certificate | CA-signed, TEE-generated certificate |
+
+**Choose Enclave OS Mini** when you need the smallest possible attack surface and strong per-application isolation, ideal for security-critical workloads where minimising the Trusted Computing Base is paramount.
+
+**Choose Enclave OS Virtual** when you want to add attestation to existing applications with minimal changes. Place an attested reverse proxy inside a Confidential VM and deploy your workloads as standard containers.
+
+Both paths produce standard attested connections verifiable by the same [verification libraries](/solutions/platform/verification-libraries). The choice of TEE backend is transparent to clients: they see a normal HTTPS connection either way.
+
+## Shared Architecture
+
+Despite targeting different hardware, both editions share core design principles:
+
+| Principle | How it is applied |
+|-----------|-------------------|
+| **RA-TLS everywhere** | Every server presents an X.509 certificate with embedded attestation evidence. Clients verify it during the TLS handshake. |
+| **Merkle tree configuration attestation** | All configuration inputs (CA certificates, workload hashes, environment) are hashed into a Merkle tree whose root is embedded in the certificate. |
+| **Unified OID scheme** | Both editions use the same X.509 OID arc (`1.3.6.1.4.1.65230`) so that verification libraries work across SGX and TDX deployments. |
+| **Private PKI** | An operator-provisioned intermediary CA signs all RA-TLS leaf certificates. The CA key is protected by the TEE (sealed in SGX, or stored on an encrypted partition in TDX). |
+| **Open source** | Both editions are released under the AGPL-3.0 licence. |
+
+## What to Read Next
+
+- [Attestation](/solutions/enclave-os/attestation/ra-tls): How RA-TLS certificates work, the X.509 OID scheme, and the Configuration Merkle Tree
+- [Enclave OS Mini Architecture](/solutions/enclave-os/architecture): The SGX enclave runtime, host/enclave split, module system
+- [Enclave OS Virtual Architecture](/solutions/enclave-os/virtual-architecture): Containers inside Confidential VMs with attested TLS

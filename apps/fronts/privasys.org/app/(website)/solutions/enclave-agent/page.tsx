@@ -124,10 +124,14 @@ export default function EnclaveAgent() {
                     Government agencies processing classified information.
                     Until now, using AI with this data meant surrendering control over it. That is no longer the case.
                 </p>
-                <div className='mt-10'>
+                <div className='mt-10 flex flex-wrap gap-4'>
                     <a href='mailto:contact@privasys.org?subject=Enclave%20Agent%20inquiry' target='_blank' rel='noopener noreferrer'
                         className='px-6 py-2.5 font-bold border rounded-full text-black dark:text-white hover:bg-black hover:text-white dark:border-white dark:hover:bg-white dark:hover:text-black transition-colors'>
                         Get in touch
+                    </a>
+                    <a href='https://docs.privasys.org/solutions/enclave-agent/overview' target='_blank' rel='noopener noreferrer'
+                        className='px-6 py-2.5 font-bold border rounded-full text-black dark:text-white hover:bg-black hover:text-white dark:border-white dark:hover:bg-white dark:hover:text-black transition-colors'>
+                        Read the documentation
                     </a>
                 </div>
             </section>

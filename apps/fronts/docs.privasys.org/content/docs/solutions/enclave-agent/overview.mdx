@@ -1,0 +1,44 @@
+---
+title: Overview
+description: Confidential AI inference inside hardware-protected environments.
+---
+
+Enclave Agent runs AI models inside confidential virtual machines, ensuring that private data and model weights are protected by hardware throughout the entire inference pipeline.
+
+## The problem
+
+Running AI on private data creates a fundamental tension: models need access to sensitive information to produce useful results, but that access creates risk. Data can be leaked through model outputs, logging, or compromised infrastructure.
+
+Traditional approaches (anonymisation, differential privacy, federated learning) each involve trade-offs in data utility, implementation complexity, or trust assumptions.
+
+## The approach
+
+Enclave Agent takes a different path: run the model inside a hardware trust boundary where the infrastructure itself cannot access the data being processed.
+
+- **AMD SEV-SNP** provides memory encryption for the entire virtual machine. The hypervisor, host OS, and cloud provider cannot read the VM's memory.
+- **NVIDIA H100 Confidential Computing** extends the trust boundary to the GPU. Model weights and intermediate activations are encrypted in GPU memory and during transfers over PCIe.
+- **Remote attestation** proves to clients that the correct code is running inside the correct hardware before any data is sent.
+
+## Components
+
+### vLLM integration
+
+Enclave Agent uses [vLLM](https://github.com/vllm-project/vllm) as the inference engine. vLLM provides:
+
+- Efficient batched inference with PagedAttention.
+- OpenAI-compatible API endpoints.
+- Support for a wide range of model architectures.
+
+Running vLLM inside a confidential VM means the same API and tooling work as in a standard deployment, but with hardware-level data protection.
+
+### Private RAG
+
+Retrieval-Augmented Generation pipelines can connect to private data sources within the trust boundary. Documents are embedded, indexed, and retrieved inside the confidential VM, and the retrieval context never leaves the hardware-protected environment.
+
+### Attested MCP
+
+Enclave Agent implements [Attested MCP](/solutions/enclave-agent/attested-mcp), a secure variant of the [Model Context Protocol](https://modelcontextprotocol.io/) that wraps MCP connections in RA-TLS. This allows AI agents to interact with external tools and services while maintaining attestation guarantees on both sides of the connection.
+
+## Deployment
+
+Enclave Agent runs on cloud instances that support AMD SEV-SNP with NVIDIA H100 GPUs. Current supported platforms include select configurations on major cloud providers that offer confidential GPU instances.

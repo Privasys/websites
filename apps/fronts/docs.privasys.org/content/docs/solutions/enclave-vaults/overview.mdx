@@ -1,0 +1,30 @@
+---
+title: Overview
+description: Hardware-isolated secrets management inside Intel SGX enclaves.
+---
+
+Enclave Vaults provides hardware-isolated key storage and cryptographic operations inside Intel SGX enclaves. It is an alternative to traditional HSMs and cloud KMS services that keeps keys inside a hardware trust boundary while remaining software-defined and attestation-verified.
+
+## Why Enclave Vaults
+
+Traditional secrets management presents a trade-off:
+
+- **Hardware Security Modules (HSMs)**: Offer strong hardware isolation but cost tens of thousands per unit, require physical key ceremonies, and do not scale elastically.
+- **Cloud KMS services**: Scale easily but require trusting the cloud provider with your key material, a non-starter for regulated workloads or multi-cloud architectures.
+- **Software vaults**: Convenient but keys exist in process memory without hardware protection.
+
+Enclave Vaults occupies the space between these approaches: hardware-grade isolation at software cost, with cryptographic proof that the system behaves as expected.
+
+## How it works
+
+1. **Keys never leave the enclave.** All cryptographic material is generated and used inside an SGX enclave. The host operating system, hypervisor, and cloud provider cannot access key material.
+
+2. **Attestation-verified access.** Every client connection verifies the enclave's identity through RA-TLS. The hardware attests the code measurement, signer identity, and runtime configuration before any key operation is performed.
+
+3. **OIDC-based permissions.** Access policies are expressed as standard OIDC token claims. A CI/CD pipeline, microservice, or human operator presents a JWT; the enclave validates the token and enforces the policy within the trust boundary.
+
+4. **Sealed storage.** Keys are persisted using SGX sealing, which encrypts data to the enclave's identity. Only the same enclave on the same platform can unseal the data.
+
+## What it is not
+
+Enclave Vaults is not FIPS 140-3 certified. If your compliance framework mandates FIPS-certified key storage, you should use a certified HSM. Enclave Vaults is designed for teams that need strong hardware isolation without the operational overhead of traditional HSMs.

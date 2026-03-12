@@ -1,0 +1,128 @@
+---
+title: Hardened Guest Images
+description: The dm-verity base image for Enclave OS Virtual, the trust chain from silicon to userland, and why minimal images matter for confidential computing.
+---
+
+Enclave OS Virtual boots from a minimal, read-only, fully measured VM image built with mkosi. Every byte of the root filesystem is verified by dm-verity against a hash tree whose root hash is measured by TDX into the RTMR registers. A remote verifier can check the RTMR values and know, cryptographically, that the VM is running exactly the code that was built from the tdx-image-base repository.
+
+## Trust Chain
+
+```
+Silicon (TDX hardware)
+  └─ MRTD     measures the TD firmware (OVMF/TDVF) loaded by the hypervisor
+      └─ RTMR[0]     measures the firmware configuration
+          └─ Secure Boot     UEFI verifies shimx64.efi → grubx64.efi → kernel
+              └─ RTMR[1]     measures bootloader, kernel, initrd, cmdline (with dm-verity root hash)
+                  └─ dm-verity     every block of the rootfs verified against the hash tree
+                      └─ All userland binaries     any modification = I/O error + kernel panic
+```
+
+Every byte of code that executes on the machine is either measured by TDX hardware or verified by dm-verity. There are no gaps in the chain.
+
+## Why a Custom Image
+
+General-purpose Confidential VM images (such as Google's pre-built Ubuntu images) are designed to run any workload. That generality is at odds with verifiability. A confidential VM is only as trustworthy as the code running inside it.
+
+| | General-purpose CVM image | tdx-image-base |
+|---|---|---|
+| **Root filesystem** | ext4 (read-write) | erofs (read-only) |
+| **dm-verity** | Not enabled | Enabled on every block |
+| **Installed packages** | ~2000+ (full Ubuntu stack, cloud agents, package managers) | ~40 (minimal: kernel, systemd, openssh, attestation tools) |
+| **Image size** | ~30 GB | ~1.5 GB |
+| **Can modify rootfs at runtime** | Yes | No (I/O error then kernel panic) |
+| **Kernel modules** | All modules including unsigned third-party drivers | Signed modules only (`module.sig_enforce=1`) |
+| **Kernel lockdown** | Not enforced | `lockdown=integrity` (no unsigned code in ring 0) |
+| **Attack surface** | Large: writable FS, package managers, update services | Minimal: read-only FS, no package manager, no writable paths except tmpfs and data partition |
+| **What TDX attests** | "Some image the cloud provider built" | "This exact erofs image with this exact dm-verity root hash, bit-for-bit" |
+
+The core problem with general-purpose images:
+
+1. The rootfs is writable, so software can be installed or replaced after boot. The TDX measurement covers the initial state, but the running state can drift.
+2. Without dm-verity, nothing prevents a compromised process from modifying binaries on disk.
+3. Thousands of packages means a large attack surface.
+4. Unsigned kernel modules can be loaded, giving arbitrary code full ring-0 access to TEE-protected memory.
+
+With tdx-image-base, the dm-verity root hash is baked into the kernel command line and measured by TDX. A remote verifier can check the RTMR values against the expected hash and confirm the VM is running exactly the code in the repository.
+
+## What Is in the Image
+
+| Component | Details |
+|-----------|---------|
+| Guest OS | Ubuntu 24.04 LTS (Noble Numbat) |
+| Kernel | `linux-image-gcp` (6.17+, with TDX guest support) |
+| Root filesystem | erofs (read-only) |
+| Integrity | dm-verity hash tree |
+| Boot | Signed shim (Microsoft) then signed GRUB (Canonical) then kernel + initrd + dm-verity root hash in cmdline |
+| Secure Boot | Enabled: full chain from UEFI firmware through bootloader to kernel |
+| Partitions | ESP (512 MB) + root erofs (~940 MB) + verity hash (~63 MB) |
+| Networking | systemd-networkd with DHCP |
+| SSH | openssh-server (password auth disabled) |
+| Attestation support | tpm2-tools, clevis, cryptsetup |
+| Cloud integration | google-compute-engine, google-guest-agent (removable for other platforms) |
+
+## erofs and dm-verity
+
+**erofs** (Enhanced Read-Only File System) is a read-only filesystem designed for small size and fast random reads. It is ideal for dm-verity because writes are impossible by design, not just by policy. Any attempt to write to the root filesystem results in an immediate I/O error.
+
+**dm-verity** is a kernel device-mapper target that provides transparent integrity checking. Every 4 KB block of the root partition has a corresponding SHA-256 hash in the verity hash partition. When a block is read, the kernel computes its hash and compares it against the stored value. If the hashes do not match, the read fails and the kernel panics.
+
+Together, they guarantee that the root filesystem is bit-for-bit identical to what was built. No runtime modification is possible.
+
+## Where It Fits in the TDX Stack
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  TDX SEAM module                          Silicon firmware  │
+│  Creates and isolates Trust Domains, manages memory keys    │
+└──────────────────────────┬──────────────────────────────────┘
+                           │ creates / measures
+┌──────────────────────────▼──────────────────────────────────┐
+│  Host OS / hypervisor                                       │
+│  Modified kernel, QEMU, OVMF/TDVF                           │
+│  Enables the host to launch TDX guests                      │
+└──────────────────────────┬──────────────────────────────────┘
+                           │ launches
+┌──────────────────────────▼──────────────────────────────────┐
+│  tdx-image-base                             Guest OS image  │
+│  GRUB boot, erofs root, dm-verity, attestation tools        │
+└──────────────────────────┬──────────────────────────────────┘
+                           │ services go here
+┌──────────────────────────▼──────────────────────────────────┐
+│  Enclave OS Virtual                                         │
+│  ra-tls-caddy, containerd, management server, containers    │
+└─────────────────────────────────────────────────────────────┘
+```
+
+The guest OS image is the foundation. Application-specific layers (ra-tls-caddy, containerd, the management server) are built on top of it.
+
+## Releases and Measurements
+
+Each tagged release of the base image publishes:
+
+| Artifact | Description |
+|----------|-------------|
+| **dm-verity root hash** | The SHA-256 root of the hash tree covering every byte on the read-only root filesystem. This is the primary code identity measurement. |
+| **Disk image** | Bootable TDX Confidential VM image (cloud-specific formats produced by CI) |
+
+The dm-verity root hash is embedded in the kernel command line (`roothash=...`) and extended into RTMR[1] at boot. Clients can verify it via RA-TLS by inspecting the TDX quote in the server's certificate.
+
+## How Updates Work
+
+The rootfs is read-only. Running `apt install` on a booted VM is impossible. To update:
+
+1. Edit the configuration in the tdx-image-base repository (add or update packages, bump the image version).
+2. Build the image with `sudo mkosi build`.
+3. Test locally with QEMU.
+4. Upload and register the new image on the target cloud platform.
+5. Create a new VM, attach the existing data disk, and delete the old VM.
+
+The [data partition](/solutions/enclave-os/disk-encryption) (LUKS-encrypted, separate persistent disk) survives image updates.
+
+## Design Choices
+
+| Decision | Rationale |
+|----------|-----------|
+| **erofs over ext4** | Read-only by design. Smaller than ext4, ideal for dm-verity. No accidental writes possible. |
+| **GRUB over systemd-boot** | GCP's TDX firmware (TDVF) enforces Secure Boot which silently rejects unsigned EFI binaries. GRUB is the proven boot chain for TDX across cloud platforms. |
+| **Minimal package set** | Every additional package increases the attack surface. ~40 packages means fewer potential CVEs than ~2000. |
+| **Signed kernel modules only** | `module.sig_enforce=1` plus `lockdown=integrity` prevents unsigned code from running in ring 0. |

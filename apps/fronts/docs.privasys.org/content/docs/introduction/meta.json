@@ -2,7 +2,6 @@
     "title": "Introduction",
     "defaultOpen": true,
     "pages": [
-        "overview",
-        "why-privasys"
+        "overview"
     ]
 }

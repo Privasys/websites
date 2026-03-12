@@ -1,12 +1,10 @@
 {
-  "title": "Enclave OS",
-  "defaultOpen": false,
-  "pages": [
-    "architecture",
-    "rust-and-teaclave",
-    "rpc-and-circular-buffers",
-    "ra-tls",
-    "sealing-and-kv-store",
-    "wasm-runtime"
-  ]
+    "title": "Enclave OS",
+    "defaultOpen": false,
+    "pages": [
+        "presentation",
+        "enclave-os-mini",
+        "enclave-os-virtual",
+        "attestation"
+    ]
 }

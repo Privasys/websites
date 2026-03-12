@@ -11,8 +11,8 @@ Privasys builds on the shoulders of outstanding open-source projects and industr
 |---------|-------------|---------|
 | [Intel SGX SDK](https://github.com/intel/linux-sgx) | Intel's Software Guard Extensions SDK for Linux | BSD-3-Clause |
 | [Apache Teaclave SGX SDK](https://github.com/apache/incubator-teaclave-sgx-sdk) | Rust SDK for Intel SGX development (Apache Teaclave) | Apache-2.0 |
-| [Intel TDX](https://www.intel.com/content/www/us/en/developer/tools/trust-domain-extensions/overview.html) | Intel Trust Domain Extensions for confidential VMs | — |
-| [AMD SEV-SNP](https://www.amd.com/en/developer/sev.html) | AMD Secure Encrypted Virtualization – Secure Nested Paging | — |
+| [Intel TDX](https://www.intel.com/content/www/us/en/developer/tools/trust-domain-extensions/overview.html) | Intel Trust Domain Extensions for confidential VMs | - |
+| [AMD SEV-SNP](https://www.amd.com/en/developer/sev.html) | AMD Secure Encrypted Virtualisation - Secure Nested Paging | - |
 | [go-tdx-guest](https://github.com/google/go-tdx-guest) | Go library for TDX guest attestation | Apache-2.0 |
 
 ## Rust Ecosystem
@@ -26,7 +26,7 @@ Privasys builds on the shoulders of outstanding open-source projects and industr
 | [Wasmtime](https://github.com/bytecodealliance/wasmtime) | WebAssembly runtime (Privasys SGX fork) for in-enclave WASM execution | Apache-2.0 |
 | [serde](https://github.com/serde-rs/serde) | Serialisation framework for configuration and RPC payloads | Apache-2.0 / MIT |
 | [x509-parser](https://github.com/rusticata/x509-parser) | X.509 certificate parsing for RA-TLS client verification | Apache-2.0 / MIT |
-| [getrandom](https://github.com/rust-random/getrandom) | Entropy source — uses the `rdrand` feature for hardware random inside SGX | Apache-2.0 / MIT |
+| [getrandom](https://github.com/rust-random/getrandom) | Entropy source, using the `rdrand` feature for hardware random inside SGX | Apache-2.0 / MIT |
 
 ## Go Ecosystem
 
@@ -53,6 +53,12 @@ Privasys builds on the shoulders of outstanding open-source projects and industr
 | [CMake](https://cmake.org/) | Build system orchestration for the Enclave OS host + enclave | BSD-3-Clause |
 | [Cargo](https://doc.rust-lang.org/cargo/) | Rust package manager and build system | Apache-2.0 / MIT |
 | [cc (crate)](https://github.com/rust-lang/cc-rs) | C/C++ build integration for Rust build scripts | Apache-2.0 / MIT |
+
+## Access management
+
+| Tool | Role in Privasys | License |
+|------|-----------------|---------|
+| [Zitadel](https://zitadel.com) | OIDC server for the Privasys Platform | AGPL-3.0 license |
 
 ## Documentation
 

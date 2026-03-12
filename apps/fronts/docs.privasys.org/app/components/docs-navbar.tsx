@@ -8,6 +8,20 @@ import { buttonVariants } from 'fumadocs-ui/components/ui/button';
 import { cn } from 'fumadocs-ui/utils/cn';
 import type { LinkItemType } from 'fumadocs-ui/layouts/shared';
 import Link from 'fumadocs-core/link';
+import Image from 'next/image';
+
+function PrivasysLogo() {
+    return (
+        <Image
+            src="/favicon/favicon.svg"
+            alt=""
+            width={20}
+            height={20}
+            className="shrink-0"
+            aria-hidden
+        />
+    );
+}
 
 const links: LinkItemType[] = [
     {
@@ -38,7 +52,15 @@ export function DocsNavbar() {
             {/* Desktop: HomeLayout-style navbar with top navigation links */}
             <div className="max-md:hidden">
                 <Header
-                    nav={{ title: 'Privasys', url: '/' }}
+                    nav={{
+                        title: (
+                            <>
+                                <PrivasysLogo />
+                                Privasys
+                            </>
+                        ),
+                        url: '/'
+                    }}
                     links={links}
                     githubUrl="https://github.com/Privasys"
                 />
@@ -50,6 +72,7 @@ export function DocsNavbar() {
                     href="/"
                     className="inline-flex items-center gap-2.5 font-semibold"
                 >
+                    <PrivasysLogo />
                     Privasys
                 </Link>
                 <div className="flex-1" />

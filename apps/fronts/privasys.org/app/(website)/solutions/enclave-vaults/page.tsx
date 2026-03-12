@@ -107,7 +107,7 @@ export default function EnclaveVaults() {
                         className='px-6 py-2.5 font-bold border rounded-full text-black dark:text-white hover:bg-black hover:text-white dark:border-white dark:hover:bg-white dark:hover:text-black transition-colors'>
                         Read the deep-dive
                     </a>
-                    <a href='https://docs.privasys.org/enclave-vaults' target='_blank' rel='noopener noreferrer'
+                    <a href='https://docs.privasys.org/solutions/enclave-vaults/overview' target='_blank' rel='noopener noreferrer'
                         className='px-6 py-2.5 font-bold border rounded-full text-black dark:text-white hover:bg-black hover:text-white dark:border-white dark:hover:bg-white dark:hover:text-black transition-colors'>
                         Read the documentation
                     </a>

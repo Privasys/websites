@@ -1,0 +1,48 @@
+---
+title: Confidential Inference
+description: Running AI models inside hardware-protected confidential VMs.
+---
+
+Confidential inference runs AI model inference inside a hardware trust boundary that protects data and model weights from the infrastructure operator.
+
+## Hardware stack
+
+### AMD SEV-SNP
+
+Secure Encrypted Virtualisation - Secure Nested Paging (SEV-SNP) encrypts the memory of the entire virtual machine with a key managed by the AMD Secure Processor. This provides:
+
+- **Memory encryption**: VM memory is encrypted with AES-256. The hypervisor, host OS, and other VMs cannot read it.
+- **Integrity protection**: SNP adds integrity checks that prevent the hypervisor from tampering with memory contents or replaying old memory pages.
+- **Attestation**: The AMD Secure Processor generates a signed attestation report containing the VM's launch measurement, allowing clients to verify the VM's identity before sending data.
+
+### NVIDIA H100 Confidential Computing
+
+The H100 GPU extends confidential computing to GPU workloads:
+
+- **GPU memory encryption**: Data in HBM3 is encrypted. Other tenants and the host cannot read GPU memory.
+- **Encrypted PCIe transfers**: Data moving between CPU and GPU memory is encrypted in transit.
+- **GPU attestation**: The H100 produces its own attestation report that can be chained with the CPU attestation to prove the complete hardware stack.
+
+## Inference pipeline
+
+1. **Client connects via RA-TLS.** The client verifies the attestation report covering both CPU and GPU hardware.
+2. **Request is decrypted inside the VM.** The TLS termination happens inside the trust boundary.
+3. **vLLM processes the request.** Tokenisation, model inference, and detokenisation all execute inside the confidential VM. GPU operations use encrypted memory.
+4. **Response is encrypted and returned.** The response travels back over the RA-TLS connection.
+
+At no point during this pipeline is plaintext data accessible to the cloud provider, hypervisor, or host OS.
+
+## Model loading
+
+Models are loaded into the confidential VM from encrypted storage or over an RA-TLS connection. The attestation report proves the VM's identity before the model provider releases the weights, ensuring models are only deployed to verified hardware environments.
+
+## Supported models
+
+Enclave Agent supports any model that vLLM can serve, including:
+
+- GPT-OSS, LLaMA, Mistral, and Mixtral family models.
+- Phi, Qwen, and other architectures supported by vLLM.
+- Custom fine-tuned models in standard formats (safetensors, GGUF).
+- Other modals like VLMs...
+
+The available model size depends on the GPU memory of the confidential instance.

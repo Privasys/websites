@@ -1,0 +1,63 @@
+---
+title: Overview
+description: How the Privasys Platform brings attestation to existing applications running inside Confidential VMs.
+---
+
+The Privasys Platform is the deployment infrastructure that brings hardware attestation to existing applications. It runs unmodified applications inside **Confidential Virtual Machines** (Intel TDX, AMD SEV-SNP) and exposes them over **attested HTTPS**, without changing a single line of application code.
+
+## How It Works
+
+Place an attested reverse proxy in front of your application inside a Confidential VM. The proxy:
+
+1. Generates TLS keys **inside the TEE**
+2. Embeds a **hardware attestation quote** in the X.509 certificate
+3. Terminates TLS and proxies traffic to your backend application
+4. Clients see a standard HTTPS connection with attestation evidence in the certificate
+
+```
+┌──────────────────────────────────────────────┐
+│          Confidential VM (TDX / SEV)         │
+│                                              │
+│  ┌──────────────┐     ┌───────────────────┐  │
+│  │   Caddy      │────►│  Your Application │  │
+│  │  (RA-TLS)    │     │  (unmodified)     │  │
+│  └──────┬───────┘     └───────────────────┘  │
+│         │ TLS termination                    │
+│         │ inside the TEE                     │
+└─────────┼────────────────────────────────────┘
+          │
+    ┌─────┴─────┐
+    │  Client   │  Standard HTTPS connection
+    │           │  (attestation in X.509 cert)
+    └───────────┘
+```
+
+## When to Use the Platform
+
+| Scenario | Why? |
+|----------|------|
+| **Existing web applications** | No code changes. Add an attested reverse proxy, enable attested connections. |
+| **Container-based deployments** | Your Docker/Kubernetes workloads run as-is inside the Confidential VM. |
+| **Quick adoption** | Standard Linux, standard toolchains, standard deployment. No SGX SDK. |
+| **TDX/SEV cloud instances** | Available on Google Cloud, Azure, and OVH Cloud. |
+
+## Compared to Enclave OS
+
+For maximum security with the smallest Trusted Computing Base, use [Enclave OS (Mini)](/solutions/enclave-os/architecture) (Intel SGX). For container workloads in Confidential VMs, use [Enclave OS (Virtual)](/solutions/enclave-os/virtual-architecture).
+
+| | **Platform** (Confidential VMs) | **Enclave OS** (SGX) |
+|--|---------------------------|----------------|
+| **TEE** | Intel TDX / AMD SEV-SNP | Intel SGX |
+| **TCB** | Full VM (kernel + all apps) | ~4 MB enclave binary |
+| **Code changes** | None | Application built as WASM module |
+| **Deployment** | Standard Linux + attested proxy | Custom Rust build + SGX SDK |
+| **Best for** | Existing applications, quick adoption | Security-critical, minimal TCB |
+
+See [Trust Model](/technology/confidential-computing/trust-model) for a deeper comparison.
+
+## Platform Components
+
+| Component | Description |
+|-----------|-------------|
+| [Verification Libraries](/solutions/platform/verification-libraries) | Libraries in Python, Go, Rust, TypeScript, C#, and .NET for verifying attested connections with a single function call. |
+| [Attestation Server](/technology/attestation/attestation-server) | A standalone service that independently verifies hardware attestation quotes from Intel and AMD platforms. |

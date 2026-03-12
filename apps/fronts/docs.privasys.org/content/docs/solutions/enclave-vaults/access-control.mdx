@@ -1,0 +1,91 @@
+---
+title: Access Control
+description: Per-secret access policies, OIDC roles, and dual-path authentication for Enclave Vaults.
+---
+
+Every secret in Enclave Vaults carries a `SecretPolicy` that controls who can retrieve it. There are two retrieval paths, each with its own authentication mechanism.
+
+## GetSecret Dual-Path Auth
+
+### Path 1: OIDC Owner
+
+The secret owner retrieves their own secrets using their OIDC token. No mutual RA-TLS required. The vault checks that the token's `sub` claim matches the secret's `owner_sub`.
+
+### Path 2: Mutual RA-TLS TEE
+
+A remote TEE retrieves secrets via [mutual RA-TLS](/solutions/enclave-os/attestation/mutual-ra-tls). The vault:
+
+1. Requires a TLS client certificate (mutual RA-TLS).
+2. Extracts the attestation quote from the peer certificate.
+3. Verifies the quote via the configured attestation server(s).
+4. Checks the measurement against the policy whitelist.
+5. Verifies bidirectional challenge-response binding (if a nonce is present).
+6. Checks the optional bearer token from the secret manager.
+7. Checks required [OID claims](/solutions/enclave-os/attestation/oids).
+
+## Secret Policy
+
+Each secret carries a policy that is evaluated on every `GetSecret` request via the RA-TLS path. The OIDC owner path bypasses policy evaluation.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `allowed_mrenclave` | `Vec<String>` | SGX MRENCLAVE values (hex) allowed to retrieve the secret. |
+| `allowed_mrtd` | `Vec<String>` | TDX MRTD values (hex) allowed to retrieve the secret. |
+| `manager_sub` | `Option<String>` | OIDC `sub` of the secret manager. When set, `GetSecret` via RA-TLS requires a bearer token whose `sub` matches and who holds the `secret-manager` role. |
+| `required_oids` | `Vec<OidRequirement>` | OID/value pairs the caller's RA-TLS certificate must contain. |
+| `ttl_seconds` | `u64` | Time-to-live in seconds. Capped at 90 days, defaults to 30 days. |
+
+## OIDC Roles
+
+| Role | Claim value | Operations |
+|------|------------|------------|
+| `secret-owner` | `enclave-os-mini:secret-owner` | Store, Delete, Update, List, Get (own secrets) |
+| `secret-manager` | `enclave-os-mini:secret-manager` | Issue bearer tokens for RA-TLS `GetSecret` |
+
+### Token Delivery
+
+Since Enclave OS Mini uses a frame protocol (not HTTP), the OIDC bearer token is passed inside the JSON envelope as an `"auth"` field:
+
+```json
+{
+  "auth": "eyJhbGciOiJSUzI1NiIs...",
+  "StoreSecret": {
+    "name": "customer-123-dek",
+    "secret": "base64url-encoded-bytes",
+    "policy": {
+      "allowed_mrenclave": ["abcd1234..."],
+      "ttl_seconds": 604800
+    }
+  }
+}
+```
+
+The auth layer strips `"auth"`, verifies it via JWKS, and populates `OidcClaims` in the request context. The vault reads `sub` for ownership checks and `roles` for role verification.
+
+### Owner Identity
+
+The OIDC `sub` claim uniquely identifies the secret owner. The OIDC subject is the vault namespace. KV keys use the format `secret:{owner_sub}:{name}` for namespace isolation between owners.
+
+## Secret Manager (Defence-in-Depth)
+
+The secret manager is a separate actor whose role is to issue a bearer token at `GetSecret` time. This is optional: if a secret's policy has no `manager_sub`, no bearer token is required.
+
+Remote attestation proves what code is running, but if the attestation infrastructure were compromised (e.g. a firmware bug allowing forged quotes), an attacker could present a fake measurement. Requiring a fresh bearer token from the secret manager means the attacker needs **two independent things** to retrieve a secret: a valid quote **and** a token from the manager.
+
+```
+Threat model:
+
+  RA compromised alone            -> blocked (no manager token)
+  Manager compromised alone       -> blocked (no valid quote)
+  Both compromised                -> secret exposed (defence-in-depth breached)
+```
+
+## Security Properties
+
+| Property | Guarantee |
+|----------|----------|
+| **Hardware isolation** | All secret operations execute inside the SGX enclave. The host, hypervisor, and cloud provider cannot access secret material. |
+| **MRENCLAVE-bound sealing** | Sealed data can only be unsealed by the exact same enclave binary on the same platform. |
+| **Per-secret policies** | Each secret has its own measurement whitelist, OID requirements, manager binding, and TTL. |
+| **Namespace isolation** | Secrets are keyed by the owner's OIDC subject. No owner can access another owner's secrets. |
+| **No trusted intermediary** | RA-TLS verification happens directly between the vault enclave and the requesting TEE. |

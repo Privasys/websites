@@ -1,0 +1,111 @@
+---
+title: Architecture
+description: How Enclave Vaults stores and distributes secrets across SGX enclaves using Shamir Secret Sharing.
+---
+
+Enclave Vaults is built on top of [Enclave OS Mini](/solutions/enclave-os/mini/overview), inheriting its attestation stack, sealed storage, and module system. The vault runs as the `enclave-os-vault` module inside an SGX enclave.
+
+## Actors
+
+There are three actors in the vault model.
+
+### Secret Owner
+
+The owner is the entity that creates, deletes, manages, and lists secrets.
+
+- Authenticates via **OIDC bearer token** (any OIDC provider).
+- Must hold the **`enclave-os-mini:secret-owner`** role.
+- The owner's OIDC `sub` (subject) claim is stored in each secret record, so only the original creator can delete, update, or list their secrets.
+- Operations: `StoreSecret`, `DeleteSecret`, `UpdateSecretPolicy`, `ListSecrets`.
+- Can always retrieve their own secrets via the OIDC path (no RA-TLS required).
+
+In production the secret owner is typically a TEE application (SGX enclave, TDX VM, or SEV-SNP VM). When it needs to let **other TEEs** retrieve the secret, those TEEs use the RA-TLS path.
+
+### Remote TEE
+
+A remote TEE that needs to retrieve a secret authenticates via [mutual RA-TLS](/solutions/enclave-os/attestation/mutual-ra-tls):
+
+- Presents its own RA-TLS certificate during the mTLS handshake.
+- The vault extracts the SGX/TDX quote and [OID claims](/solutions/enclave-os/attestation/oids) directly from the peer certificate's X.509 extensions.
+- The vault parses the quote, extracts the measurement (MRENCLAVE or MRTD), and checks it against the secret's policy whitelist.
+- OID claims are checked against the policy's `required_oids`.
+- Operation: `GetSecret` (RA-TLS path).
+
+### Secret Manager
+
+The secret manager is a **separate actor** whose sole role is to issue bearer tokens at `GetSecret` time as defence-in-depth.
+
+- Authenticates via **OIDC bearer token**.
+- Must hold the **`enclave-os-mini:secret-manager`** role.
+- **Cannot** read, write, or delete secrets, and **cannot** update policies.
+- **Only** provides a bearer token that the remote TEE presents alongside its attestation evidence.
+
+This role is optional: if a secret's policy has no `manager_sub`, no bearer token is required. See [Access Control](/solutions/enclave-vaults/access-control) for details on why this exists.
+
+## Multi-Instance Deployment
+
+In production the vault is deployed as **multiple instances** (typically 3 or 5). The secret owner uses the vault client library to:
+
+1. Split the secret into M shares using **Shamir Secret Sharing** (threshold N).
+2. Store one share in each vault instance.
+
+To reconstruct the secret, any N-of-M vault instances must return their share. No single vault ever holds the complete secret.
+
+```
+┌──────────────┐       RA-TLS         ┌─────────────┐
+│              │──── share 1 ────────>│  Vault #1   │
+│  VaultClient │──── share 2 ────────>│  Vault #2   │
+│  (Shamir)    │──── share 3 ────────>│  Vault #3   │
+│              │       ...            │    ...      │
+│              │──── share M ────────>│  Vault #M   │
+└──────────────┘                      └─────────────┘
+
+Reconstruction: any N-of-M shares -> original secret
+```
+
+## Sealed Storage
+
+Secrets are persisted using `enclave-os-kvstore`, which seals data with an **MRENCLAVE-bound key** (AES-256-GCM). The KV store uses HMAC-SHA256 for key encryption, so keys are opaque on the host.
+
+Because sealing uses MRENCLAVE policy, only the exact same enclave binary on the same physical platform can unseal the data. The host OS, hypervisor, and cloud provider cannot read sealed data. An enclave upgrade (new MRENCLAVE) requires the owner to re-store secrets.
+
+### KV Key Layout
+
+| Key | Value | Purpose |
+|-----|-------|---------|
+| `secret:{owner_sub}:{name}` | JSON `SecretRecord` | The actual secret data |
+| `lookup:{name}` | `owner_sub` (UTF-8) | Reverse index for RA-TLS `GetSecret` (name to owner) |
+| `index:{owner_sub}` | JSON `Vec<String>` | Owner index for `ListSecrets` (owner to names) |
+
+The reverse lookup index enables the RA-TLS `GetSecret` path where the caller knows the secret name but not the owner's OIDC subject. The owner index enables `ListSecrets` without scanning all keys. Both indexes are maintained atomically with secret creation and deletion.
+
+## Protocol
+
+All requests arrive as JSON inside the Enclave OS length-delimited framing (4-byte big-endian length prefix followed by payload). OIDC tokens are passed in the JSON `"auth"` field, stripped by the auth layer before reaching the vault.
+
+### Requests
+
+| Request | Auth | Role | Description |
+|---------|------|------|-------------|
+| `StoreSecret` | OIDC | secret-owner | Store a secret (base64url-encoded). |
+| `GetSecret` | OIDC owner **or** mutual RA-TLS | -- | Retrieve a secret. |
+| `DeleteSecret` | OIDC | secret-owner | Delete a secret (owner only). |
+| `UpdateSecretPolicy` | OIDC | secret-owner | Update a secret's policy (owner only). |
+| `ListSecrets` | OIDC | secret-owner | List all secrets owned by the caller (metadata only). |
+
+### Responses
+
+| Response | Description |
+|----------|-------------|
+| `SecretStored` | Secret stored successfully (includes name and expiry). |
+| `SecretValue` | Secret data returned (typically a Shamir share). |
+| `SecretDeleted` | Secret removed. |
+| `PolicyUpdated` | Policy replaced. |
+| `SecretList` | List of name/expiry entries for the caller's secrets. |
+| `Error` | Human-readable error message. |
+
+## Server Configuration
+
+The RA-TLS server is configured with a **permissive client certificate verifier**: it offers client auth to every connection but does not require it. This allows browsers and non-TEE clients to connect without presenting a certificate.
+
+The vault module itself enforces the requirement per-path: the OIDC owner path needs a valid OIDC token, the RA-TLS path needs a peer certificate.

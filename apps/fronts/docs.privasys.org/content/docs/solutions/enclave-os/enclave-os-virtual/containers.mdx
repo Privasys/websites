@@ -1,0 +1,160 @@
+---
+title: Containers & Workload Manifest
+description: How Enclave OS Virtual dynamically loads OCI containers, the workload manifest format, and per-container attestation.
+---
+
+Enclave OS Virtual manages OCI containers dynamically at runtime. The workload launcher pulls digest-pinned images via containerd, configures networking and volumes, and wires each container into the RA-TLS reverse proxy so that clients receive per-container attestation certificates.
+
+## Dynamic Container Loading
+
+The VM starts with zero containers. Operators load workloads at runtime by calling the management API:
+
+```
+POST /api/v1/containers
+Authorization: Bearer <OIDC token>
+Content-Type: application/json
+
+{
+  "name": "myapp",
+  "image": "ghcr.io/example/myapp@sha256:abc123...",
+  "port": 8080,
+  "env": {
+    "DATABASE_URL": "postgres://127.0.0.1:5432/mydb"
+  },
+  "health_check": {
+    "http": "http://127.0.0.1:8080/healthz"
+  }
+}
+```
+
+When a container load request arrives:
+
+1. **Authentication.** The OIDC bearer token is validated against the configured issuer. Role claims are checked against the access policy.
+2. **Image pull.** containerd pulls the OCI image. The digest is verified against the `@sha256:...` reference in the request. If the digest does not match, the pull is rejected.
+3. **Container creation.** containerd creates the container with the specified environment variables, port mappings, and volume mounts.
+4. **Merkle tree update.** A per-container Merkle tree is computed from the image digest, environment variables, volume configuration, and port mappings. The platform Merkle tree is also recomputed to include the new container.
+5. **Caddy route.** A new reverse proxy route is registered with ra-tls-caddy via its admin API. The container's hostname (`<name>.<machine-name>.<hostname>`) is bound to a fresh RA-TLS certificate carrying per-container OID extensions.
+6. **Health check.** The launcher monitors the container's health endpoint. Once healthy, the container is marked as ready.
+
+Containers can be unloaded with `DELETE /api/v1/containers/<name>`, which reverses the process: stop the container, remove the Caddy route, and recompute Merkle trees.
+
+## Workload Manifest
+
+For reproducible deployments, containers can be declared in a YAML manifest:
+
+```yaml
+version: "1"
+platform:
+  machine_name: prod1
+  hostname: example.com
+  ca_cert: /data/ca.crt
+  ca_key: /data/ca.key
+  attestation_servers:
+    - https://as.privasys.org/verify
+containers:
+  - name: postgres
+    image: "docker.io/library/postgres@sha256:..."
+    port: 5432
+    internal: true
+    env:
+      POSTGRES_DB: mydb
+    health_check:
+      tcp: "127.0.0.1:5432"
+  - name: myapp
+    image: "ghcr.io/example/myapp@sha256:..."
+    port: 8080
+    health_check:
+      http: "http://127.0.0.1:8080/healthz"
+```
+
+### Manifest Fields
+
+**Platform configuration:**
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `machine_name` | Yes | Unique name for this VM instance, used in hostname derivation |
+| `hostname` | Yes | Base domain for all container hostnames |
+| `ca_cert` / `ca_key` | Yes | Path to the intermediary CA certificate and private key |
+| `attestation_servers` | No | List of [attestation server](/technology/attestation/attestation-server) URLs for quote verification |
+
+**Per-container configuration:**
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `name` | Yes | Container name, also used as the hostname prefix |
+| `image` | Yes | OCI image reference, must include `@sha256:...` digest |
+| `port` | Yes | Port the container listens on (reverse proxy target) |
+| `internal` | No | If `true`, no external hostname is created; container is accessible only on localhost |
+| `env` | No | Environment variables passed to the container |
+| `health_check.http` | No | HTTP endpoint for health checks |
+| `health_check.tcp` | No | TCP address for health checks (connection test) |
+
+### Hostname Derivation
+
+Hostnames are derived automatically from the machine name and base hostname:
+
+| Component | Hostname |
+|-----------|----------|
+| Management API | `manager.prod1.example.com` |
+| Container `myapp` | `myapp.prod1.example.com` |
+| Container `postgres` | (internal, no external hostname) |
+
+Each hostname gets its own RA-TLS certificate with per-container OID extensions.
+
+## Digest Pinning
+
+Every image reference in the manifest must include a `@sha256:...` digest. Tag-only references (e.g. `postgres:16`) are rejected. This ensures:
+
+1. **Determinism.** The same manifest always produces the same set of containers, regardless of when or where it is deployed.
+2. **Attestation accuracy.** The image digest in the Merkle tree and OID extensions matches exactly what was pulled. A tag can be moved to point at a different image; a digest cannot.
+3. **Supply chain integrity.** If a registry is compromised and an image tag is pointed at a malicious image, the digest mismatch causes the pull to fail.
+
+## Per-Container Merkle Trees
+
+Each container gets its own Merkle tree, independent of the platform-level tree. The leaves include:
+
+| Leaf | Input |
+|------|-------|
+| Image digest | SHA-256 from the OCI image reference |
+| Image reference | Full image string (e.g. `ghcr.io/example/myapp@sha256:...`) |
+| Environment | Sorted key-value pairs, hashed individually |
+| Port | Container port number |
+| Volume config | Volume mount paths and encryption status |
+
+The root of the per-container tree is embedded as OID `1.3.6.1.4.1.65230.3.1` in that container's RA-TLS certificate. A client connecting to `myapp.prod1.example.com` sees only the Merkle root and metadata for `myapp`, not for any other container.
+
+## Platform Merkle Tree
+
+The platform-level tree covers configuration that applies to the entire VM:
+
+| Leaf | Input |
+|------|-------|
+| CA certificate | SHA-256 of the intermediary CA certificate (DER) |
+| Attestation servers | SHA-256 of the sorted attestation server URL list |
+| Runtime version | SHA-256 of the containerd version string |
+| Combined workloads | SHA-256 covering all loaded container image digests |
+
+The platform Merkle root is embedded as OID `1.3.6.1.4.1.65230.1.1` in the management API certificate.
+
+## Health Checks
+
+The launcher monitors each container's health using the configured check type:
+
+- **HTTP**: Sends `GET` requests to the specified URL, expects a `2xx` response.
+- **TCP**: Attempts a TCP connection to the specified address.
+
+Containers are reported as ready only after passing their health check. The management API exposes aggregate health at `/healthz` and readiness at `/readyz`.
+
+## Management API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/v1/containers` | `POST` | Load a new container |
+| `/api/v1/containers/<name>` | `DELETE` | Unload a container |
+| `/api/v1/status` | `GET` | List all loaded containers and their status |
+| `/healthz` | `GET` | Liveness check |
+| `/readyz` | `GET` | Readiness check (all containers healthy) |
+| `/metrics` | `GET` | Prometheus metrics |
+
+All endpoints are served over RA-TLS at `manager.<machine-name>.<hostname>`. The `POST` and `DELETE` endpoints require an OIDC bearer token with appropriate role claims.

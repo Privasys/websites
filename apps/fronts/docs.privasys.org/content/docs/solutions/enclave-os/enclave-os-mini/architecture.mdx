@@ -46,19 +46,19 @@ Enclave OS (Mini) is a lightweight SGX enclave runtime that exposes an RA-TLS HT
 │  └──────┬───────────┘   └──────────┬─────────────────────────┘  │
 │         │                          │                            │
 ├─────────┼──────────────────────────┼────────────────────────────┤
-│         │                          │   ← SGX boundary           │
-│         │                          │     (4 ECALLs + 1 OCALL)   │
-│  ┌──────┴──────────┐   ┌───────────┴─────────────────────┐      │
-│  │  TLS Engine     │   │  RPC Client                     │      │
-│  │  (rustls)       │   │  (encodes req → enc_to_host,    │      │
-│  │  TCP bytes in,  │   │   reads responses)              │      │
-│  │  HTTP out       │   └───┬──────────────┬──────────────┘      │
-│  └──────┬──────────┘       │              │                     │
-│         │             ┌────┴──────┐  ┌────┴───────┐             │
-│         │             │ HTTPS     │  │ Sealed KV  │             │
-│         │             │ Egress    │  │ Store      │             │
-│         │             │ (rustls)  │  │ (AES-GCM)  │             │
-│         │             └───────────┘  └────────────┘             │
+│         │                          │  ← SGX boundary            │
+│         │                          │    (4 ECALLs + 1 OCALL)    │
+│  ┌──────┴───────────────┐   ┌──────┴─────────────────────────┐  │
+│  │  TLS Engine (rustls) │   │  RPC Client                    │  │
+│  │  TCP bytes in,       │   │  (encodes req → enc_to_host,   │  │
+│  │  HTTP out            │   │   reads responses)             │  │
+│  └──────┬───────────────┘   └────┬──────────────┬────────────┘  │
+│         │                        │              │               │
+│         │                   ┌────┴──────┐  ┌────┴───────┐       │
+│         │                   │ HTTPS     │  │ Sealed KV  │       │
+│         │                   │ Egress    │  │ Store      │       │
+│         │                   │ (rustls)  │  │ (AES-GCM)  │       │
+│         │                   └───────────┘  └────────────┘       │
 │  ┌──────┴───────────────────────────────────────────────┐       │
 │  │          Pluggable Modules (EnclaveModule)           │       │
 │  │  ┌────────┐  ┌────────┐  ┌──────┐  ┌──────────────┐  │       │

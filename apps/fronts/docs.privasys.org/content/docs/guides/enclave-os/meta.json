@@ -1,9 +1,0 @@
-{
-  "title": "Enclave OS",
-  "defaultOpen": false,
-  "pages": [
-    "deploy",
-    "build-wasm-app",
-    "layer4-proxy"
-  ]
-}

@@ -1,0 +1,82 @@
+---
+title: Disk Encryption
+description: LUKS2+AEAD encryption for the OS data partition and per-container volumes in Enclave OS Virtual, with BYOK and Enclave Vaults key distribution.
+---
+
+Enclave OS Virtual encrypts all persistent data at rest using LUKS2 with authenticated encryption (AEAD). The disk has two encrypted regions with independent keys, and the encryption status is attested in every RA-TLS certificate.
+
+## Encrypted Regions
+
+| Partition | Size | Purpose | Encryption |
+|-----------|------|---------|------------|
+| **OS data** (`/data`) | 2 GB | CA certificate and key, manager configuration | LUKS2+AEAD, single key (BYOK or auto-generated) |
+| **Container volumes** | Remaining disk | Per-container writable storage | LUKS2+AEAD per LVM logical volume, independent key per container |
+
+The two regions use separate keys. A compromise of one container's volume key does not expose the OS data partition or any other container's data.
+
+## OS Data Partition
+
+At boot, a systemd service runs before the data mount:
+
+1. Reads the passphrase from instance metadata (BYOK) or generates one.
+2. Formats the partition with LUKS2+AEAD on first boot, or opens an existing volume on subsequent boots.
+3. Writes the key origin (`"byok:<fingerprint>"` or `"generated"`) to `/run/luks/dek-origin`.
+4. The management server reads the origin and publishes it as **OID `1.3.6.1.4.1.65230.2.6`** in every RA-TLS certificate.
+
+This means a remote verifier can check the RA-TLS certificate's OID `2.6` extension and confirm whether the data partition uses a customer-provided key (BYOK) or an auto-generated one.
+
+## Per-Container Encrypted Volumes
+
+Each container receives an independent **LVM logical volume** with its own LUKS2+AEAD encryption key. Keys are never shared between containers and never stored on the OS data partition. They are held only in TEE-encrypted memory at runtime.
+
+| Key source | Mechanism |
+|------------|----------|
+| **BYOK** | A per-container key provided in the `POST /api/v1/containers` request |
+| **Enclave Vaults** | The key is fetched from the [Enclave Vaults](/solutions/enclave-vaults/overview) constellation via mutual RA-TLS |
+
+When a container load request includes a BYOK key, the launcher:
+
+1. Creates a new LVM logical volume on the container volumes partition.
+2. Formats it with LUKS2+AEAD using the provided key.
+3. Mounts it at the container's designated volume path.
+4. Embeds `"byok:<fingerprint>"` in OID `1.3.6.1.4.1.65230.3.4` of that container's RA-TLS certificate.
+
+When the key source is Enclave Vaults, the launcher establishes a mutual RA-TLS connection to the vault constellation, authenticates using the VM's own RA-TLS certificate, and retrieves the data encryption key. The vault verifies the VM's attestation before releasing the key, creating a mutual trust chain: the VM proves its identity to the vault, and the vault proves its identity to the VM.
+
+## LUKS2 with AEAD
+
+LUKS2+AEAD (dm-integrity in AEAD mode) provides both confidentiality and integrity for each disk sector. Standard LUKS2 encrypts data but does not detect tampering. With AEAD, every sector carries an authentication tag that is verified on read.
+
+This protects against:
+
+- **Offline attacks**: An attacker with physical access to the disk cannot read or modify encrypted data.
+- **Ciphertext manipulation**: Flipping bits in the ciphertext is detected on the next read, preventing subtle data corruption attacks.
+- **Sector-level replay**: Restoring an old sector's ciphertext to its original position is detected because the authentication tag depends on the sector index and write counter.
+
+The trade-off is that online resize is not supported. The `--integrity aead` mode uses dm-integrity, which cannot be grown in place. Choose the disk size at instance creation time (for example, `--create-disk=size=50` gives approximately 46 GB of container storage).
+
+## Enclave Vaults Integration
+
+[Enclave Vaults](/solutions/enclave-vaults/overview) provides hardware-isolated key storage inside SGX enclaves. When used as the key source for Enclave OS Virtual:
+
+1. The operator stores data encryption keys in the Enclave Vaults constellation using [Shamir secret sharing](/solutions/enclave-vaults/overview). Each key is split across multiple vault nodes; no single node holds the complete key.
+2. At container load time, the workload launcher connects to the vault constellation via mutual RA-TLS.
+3. The vaults verify the VM's RA-TLS certificate (checking the TDX quote, RTMR measurements, and dm-verity root hash) before releasing key shares.
+4. The launcher reconstructs the key from the shares and uses it to open or format the container's LUKS2 volume.
+
+This creates a closed attestation loop: the VM must prove it is running trusted code before it can access keys, and the vault must prove it is running trusted code before the VM accepts the key.
+
+## Attestation of Encryption Status
+
+The encryption key origin is embedded in RA-TLS certificates at two levels:
+
+| Level | OID | Value |
+|-------|-----|-------|
+| Platform (OS data partition) | `1.3.6.1.4.1.65230.2.6` | `"byok:<fingerprint>"` or `"generated"` |
+| Per-container (volume) | `1.3.6.1.4.1.65230.3.4` | `"byok:<fingerprint>"` or `"generated"` |
+
+A client verifying the RA-TLS certificate can confirm:
+
+- Whether data at rest is encrypted.
+- Whether the operator provided their own key (BYOK) or the VM generated one.
+- The SHA-256 fingerprint of the key (for BYOK), allowing the client to confirm the expected key is in use without revealing the key itself.

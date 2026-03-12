@@ -4,12 +4,10 @@
     "pages": [
         "---Introduction---",
         "...introduction",
-        "---Confidential Computing---",
-        "...confidential-computing",
+        "---Technology---",
+        "...technology",
         "---Solutions---",
         "...solutions",
-        "---Guides---",
-        "...guides",
         "---",
         "acknowledgments"
     ]
