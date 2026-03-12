@@ -6,43 +6,43 @@ import Link from 'next/link';
 const FEATURES = [
     {
         title: 'WASM modules',
-        description: 'Deploy lightweight WebAssembly modules inside Enclave OS Mini. Upload a pre-compiled .cwasm file, or link a GitHub repository and let our pipeline compile it for you. The smallest trust boundary available: just your code and the minimal runtime.',
+        description: 'Deploy lightweight WebAssembly modules inside Enclave OS Mini. Upload a pre-compiled .cwasm file, or link a GitHub repository and let our pipeline compile it for you. The smallest trust boundary available: just your code and the minimal runtime.'
     },
     {
         title: 'Containers',
-        description: 'Run your existing containers inside Enclave OS Virtual. Standard Linux, standard tooling, with hardware-encrypted memory and full attestation. No rewrite needed. Bring your own image and deploy it on confidential infrastructure.',
+        description: 'Run your existing containers inside Enclave OS Virtual. Standard Linux, standard tooling, with hardware-encrypted memory and full attestation. No rewrite needed. Bring your own image and deploy it on confidential infrastructure.'
     },
     {
         title: 'Attestation built in',
-        description: 'Every deployment is automatically attested. RA-TLS certificates carry proof of what hardware, firmware, and application code is running. Your users verify the service during a standard TLS handshake, with no custom protocol or SDK.',
+        description: 'Every deployment is automatically attested. RA-TLS certificates carry proof of what hardware, firmware, and application code is running. Your users verify the service during a standard TLS handshake, with no custom protocol or SDK.'
     },
     {
         title: 'Secrets management',
-        description: 'Enclave Vaults provides hardware-protected key storage and secrets management. Keys are split using Shamir secret sharing, sealed to the enclave measurements, and never exist in cleartext outside the trust boundary.',
-    },
+        description: 'Enclave Vaults provides hardware-protected key storage and secrets management. Keys are split using Shamir secret sharing, sealed to the enclave measurements, and never exist in cleartext outside the trust boundary.'
+    }
 ];
 
 const STEPS = [
     {
         step: '1',
         title: 'Sign in with your organisation',
-        description: 'Authenticate with your identity provider via OIDC. No new credentials to manage.',
+        description: 'Authenticate with your identity provider via OIDC. No new credentials to manage.'
     },
     {
         step: '2',
         title: 'Create an application',
-        description: 'Choose your deployment target: WASM module for Enclave OS Mini, or container image for Enclave OS Virtual.',
+        description: 'Choose your deployment target: WASM module for Enclave OS Mini, or container image for Enclave OS Virtual.'
     },
     {
         step: '3',
         title: 'Upload or link your code',
-        description: 'Upload a pre-compiled .cwasm file, push a container image, or link a GitHub repository for automated builds.',
+        description: 'Upload a pre-compiled .cwasm file, push a container image, or link a GitHub repository for automated builds.'
     },
     {
         step: '4',
         title: 'Deploy and attest',
-        description: 'Your application runs inside a hardware-protected enclave. Clients verify it with a single RA-TLS connection.',
-    },
+        description: 'Your application runs inside a hardware-protected enclave. Clients verify it with a single RA-TLS connection.'
+    }
 ];
 
 export default function MarketingPage() {

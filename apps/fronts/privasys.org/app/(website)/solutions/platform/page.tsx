@@ -108,6 +108,10 @@ export default function Platform() {
                     You write your application. We make it provably secure.
                 </p>
                 <div className='mt-10 flex flex-wrap gap-4'>
+                    <a href='https://developer.privasys.org'
+                        className='px-6 py-2.5 font-bold border rounded-full text-black dark:text-white hover:bg-black hover:text-white dark:border-white dark:hover:bg-white dark:hover:text-black transition-colors'>
+                        Open the Developer Platform
+                    </a>
                     <a href='https://github.com/Privasys' target='_blank' rel='noopener noreferrer'
                         className='px-6 py-2.5 font-bold border rounded-full text-black dark:text-white hover:bg-black hover:text-white dark:border-white dark:hover:bg-white dark:hover:text-black transition-colors'>
                         View on GitHub

@@ -64,6 +64,7 @@ export default function Home() {
                             <p>
                                 <Balancer>
                                     Everything developers need to build trusted applications.
+                                    Deploy WASM modules or containers on confidential infrastructure through our developer platform.
                                     Attestation, identity management, secure networking, and client libraries in six languages, all ready to integrate.
                                 </Balancer>
                             </p>
