@@ -2,6 +2,7 @@ import '~/styles/globals.css';
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import { APP_NAME, SITE_URL, DEFAULT_META_DESCRIPTION, DEFAULT_FAVICON_ROUTE } from '~/lib/constants';
+import { AuthProvider } from '~/lib/auth-provider';
 
 const FAVICON = DEFAULT_FAVICON_ROUTE;
 
@@ -43,7 +44,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
                 <script defer data-domain="developer.privasys.org" src="https://plausible.privasys.org/js/script.js" />
             </head>
             <body className="antialiased text-foreground leading-relaxed flex flex-col min-h-screen">
-                {children}
+                <AuthProvider>{children}</AuthProvider>
             </body>
         </html>
     );
