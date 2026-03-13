@@ -1,12 +1,52 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useSession } from 'next-auth/react';
+import { useState, useRef } from 'react';
+import { createApp, uploadCwasm } from '~/lib/api';
 
 type Target = 'wasm' | 'container' | null;
 
 export default function NewApplicationPage() {
+    const { data: session } = useSession();
+    const router = useRouter();
     const [target, setTarget] = useState<Target>(null);
+    const [name, setName] = useState('');
+    const [displayName, setDisplayName] = useState('');
+    const [description, setDescription] = useState('');
+    const [source, setSource] = useState<'upload' | 'github'>('upload');
+    const [githubRepo, setGithubRepo] = useState('');
+    const [file, setFile] = useState<File | null>(null);
+    const [submitting, setSubmitting] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const fileRef = useRef<HTMLInputElement>(null);
+
+    async function handleSubmit() {
+        if (!session?.accessToken || !target || !name) return;
+        setSubmitting(true);
+        setError(null);
+
+        try {
+            const app = await createApp(session.accessToken, {
+                name,
+                display_name: displayName || undefined,
+                description: description || undefined,
+                source_type: target === 'wasm' ? source : 'upload',
+                github_repo: source === 'github' ? githubRepo : undefined,
+            });
+
+            if (file && target === 'wasm' && source === 'upload') {
+                await uploadCwasm(session.accessToken, app.id, file);
+            }
+
+            router.push('/dashboard');
+        } catch (e) {
+            setError(e instanceof Error ? e.message : 'Something went wrong');
+        } finally {
+            setSubmitting(false);
+        }
+    }
 
     return (
         <div className="max-w-2xl">
@@ -17,6 +57,12 @@ export default function NewApplicationPage() {
             <p className="mt-2 text-sm text-black/60 dark:text-white/60">
                 Choose a deployment target and configure your application.
             </p>
+
+            {error && (
+                <div className="mt-4 p-3 rounded-lg bg-red-50 dark:bg-red-900/20 text-sm text-red-700 dark:text-red-300">
+                    {error}
+                </div>
+            )}
 
             {/* Target selection */}
             <fieldset className="mt-8">
@@ -60,7 +106,38 @@ export default function NewApplicationPage() {
                     id="app-name"
                     type="text"
                     placeholder="my-confidential-app"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
                     className="w-full px-3 py-2 rounded-lg border border-black/10 dark:border-white/10 bg-transparent text-sm focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/20"
+                />
+                <p className="mt-1 text-xs text-black/40 dark:text-white/40">
+                    3-63 lowercase alphanumeric characters or hyphens, starting with a letter.
+                </p>
+            </div>
+
+            {/* Display name */}
+            <div className="mt-4">
+                <label htmlFor="display-name" className="block text-sm font-medium mb-2">Display name <span className="text-black/40 dark:text-white/40 font-normal">(optional)</span></label>
+                <input
+                    id="display-name"
+                    type="text"
+                    placeholder="My Confidential App"
+                    value={displayName}
+                    onChange={(e) => setDisplayName(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-black/10 dark:border-white/10 bg-transparent text-sm focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/20"
+                />
+            </div>
+
+            {/* Description */}
+            <div className="mt-4">
+                <label htmlFor="description" className="block text-sm font-medium mb-2">Description <span className="text-black/40 dark:text-white/40 font-normal">(optional)</span></label>
+                <textarea
+                    id="description"
+                    rows={2}
+                    placeholder="A short description of your application"
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-black/10 dark:border-white/10 bg-transparent text-sm focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/20 resize-none"
                 />
             </div>
 
@@ -71,14 +148,28 @@ export default function NewApplicationPage() {
                         <label className="block text-sm font-medium mb-2">Source</label>
                         <div className="space-y-3">
                             <label className="flex items-start gap-3 p-3 rounded-lg border border-black/10 dark:border-white/10 cursor-pointer hover:bg-black/2 dark:hover:bg-white/3">
-                                <input type="radio" name="wasm-source" value="upload" className="mt-0.5" defaultChecked />
+                                <input
+                                    type="radio"
+                                    name="wasm-source"
+                                    value="upload"
+                                    checked={source === 'upload'}
+                                    onChange={() => setSource('upload')}
+                                    className="mt-0.5"
+                                />
                                 <div>
                                     <div className="text-sm font-medium">Upload .cwasm file</div>
                                     <p className="text-xs text-black/50 dark:text-white/50">Upload a pre-compiled Cranelift-native WASM file.</p>
                                 </div>
                             </label>
                             <label className="flex items-start gap-3 p-3 rounded-lg border border-black/10 dark:border-white/10 cursor-pointer hover:bg-black/2 dark:hover:bg-white/3">
-                                <input type="radio" name="wasm-source" value="github" className="mt-0.5" />
+                                <input
+                                    type="radio"
+                                    name="wasm-source"
+                                    value="github"
+                                    checked={source === 'github'}
+                                    onChange={() => setSource('github')}
+                                    className="mt-0.5"
+                                />
                                 <div>
                                     <div className="text-sm font-medium">GitHub repository</div>
                                     <p className="text-xs text-black/50 dark:text-white/50">Provide a repository URL and commit. We compile it via GitHub Actions.</p>
@@ -86,6 +177,53 @@ export default function NewApplicationPage() {
                             </label>
                         </div>
                     </div>
+
+                    {source === 'upload' && (
+                        <div>
+                            <label className="block text-sm font-medium mb-2">.cwasm file</label>
+                            <div
+                                onClick={() => fileRef.current?.click()}
+                                className="flex items-center justify-center w-full h-28 border-2 border-dashed border-black/10 dark:border-white/10 rounded-xl cursor-pointer hover:border-black/30 dark:hover:border-white/30 transition-colors"
+                            >
+                                <input
+                                    ref={fileRef}
+                                    type="file"
+                                    accept=".cwasm"
+                                    className="hidden"
+                                    onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                                />
+                                {file ? (
+                                    <div className="text-center">
+                                        <div className="text-sm font-medium">{file.name}</div>
+                                        <div className="text-xs text-black/40 dark:text-white/40 mt-1">
+                                            {(file.size / 1024).toFixed(1)} KB
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="text-center">
+                                        <div className="text-sm text-black/50 dark:text-white/50">
+                                            Click to select a .cwasm file
+                                        </div>
+                                        <div className="text-xs text-black/30 dark:text-white/30 mt-1">Max 10 MB</div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    {source === 'github' && (
+                        <div>
+                            <label htmlFor="github-repo" className="block text-sm font-medium mb-2">Repository URL</label>
+                            <input
+                                id="github-repo"
+                                type="text"
+                                placeholder="https://github.com/your-org/your-wasm-app"
+                                value={githubRepo}
+                                onChange={(e) => setGithubRepo(e.target.value)}
+                                className="w-full px-3 py-2 rounded-lg border border-black/10 dark:border-white/10 bg-transparent text-sm focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/20"
+                            />
+                        </div>
+                    )}
                 </div>
             )}
 
@@ -109,10 +247,11 @@ export default function NewApplicationPage() {
             <div className="mt-10 flex gap-3">
                 <button
                     type="button"
-                    disabled={!target}
+                    disabled={!target || !name || submitting}
+                    onClick={handleSubmit}
                     className="px-5 py-2 text-sm font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-80 transition-opacity disabled:opacity-30 disabled:cursor-not-allowed"
                 >
-                    Create application
+                    {submitting ? 'Creating…' : 'Create application'}
                 </button>
                 <Link
                     href="/dashboard"

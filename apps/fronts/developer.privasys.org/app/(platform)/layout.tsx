@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { Navbar } from '@privasys/ui';
+import { useSession, signOut } from 'next-auth/react';
 
 const SIDEBAR_ITEMS = [
     { label: 'Applications', href: '/dashboard', icon: 'M4 6h16M4 12h16M4 18h7' },
@@ -17,6 +18,7 @@ const NAVBAR_ITEMS = [
 
 function Sidebar() {
     const pathname = usePathname();
+    const { data: session } = useSession();
 
     return (
         <aside className="hidden lg:flex flex-col w-56 shrink-0 border-r border-black/5 dark:border-white/10 h-[calc(100vh-3.5rem)] sticky top-14">
@@ -41,8 +43,28 @@ function Sidebar() {
                     );
                 })}
             </nav>
-            <div className="px-3 py-4 border-t border-black/5 dark:border-white/10 text-xs text-black/40 dark:text-white/40">
-                Privasys Developer Platform
+            <div className="px-3 py-4 border-t border-black/5 dark:border-white/10">
+                {session?.user && (
+                    <div className="flex items-center gap-2 mb-3">
+                        {session.user.image ? (
+                            <img src={session.user.image} alt="" className="w-6 h-6 rounded-full" />
+                        ) : (
+                            <div className="w-6 h-6 rounded-full bg-black/10 dark:bg-white/10 flex items-center justify-center text-xs font-medium">
+                                {(session.user.name?.[0] ?? session.user.email?.[0] ?? '?').toUpperCase()}
+                            </div>
+                        )}
+                        <div className="min-w-0 flex-1">
+                            <div className="text-xs font-medium truncate">{session.user.name ?? session.user.email}</div>
+                        </div>
+                    </div>
+                )}
+                <button
+                    type="button"
+                    onClick={() => signOut({ callbackUrl: '/' })}
+                    className="text-xs text-black/40 dark:text-white/40 hover:text-black/70 dark:hover:text-white/70 transition-colors"
+                >
+                    Sign out
+                </button>
             </div>
         </aside>
     );
