@@ -14,7 +14,8 @@ const SIDEBAR_ITEMS = [
 
 const ADMIN_ITEMS = [
     { label: 'Review apps', href: '/dashboard/admin', icon: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z' },
-    { label: 'Enclave', href: '/dashboard/admin/enclave', icon: 'M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2' }
+    { label: 'Enclave', href: '/dashboard/admin/enclave', icon: 'M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2' },
+    { label: 'Platform settings', href: '/dashboard/admin/settings', icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z', adminOnly: true }
 ];
 
 const NAVBAR_ITEMS = [
@@ -24,7 +25,8 @@ const NAVBAR_ITEMS = [
 function Sidebar() {
     const pathname = usePathname();
     const { data: session } = useSession();
-    const isManager = session?.roles?.some(r => r.endsWith(':manager')) ?? false;
+    const isManager = session?.roles?.some(r => r.endsWith(':manager') || r === 'privasys-platform:admin') ?? false;
+    const isAdmin = session?.roles?.includes('privasys-platform:admin') ?? false;
 
     return (
         <aside className="hidden lg:flex flex-col w-56 shrink-0 border-r border-black/5 dark:border-white/10 h-[calc(100vh-3.5rem)] sticky top-14">
@@ -54,7 +56,7 @@ function Sidebar() {
                         <div className="pt-4 pb-1 px-3">
                             <span className="text-[10px] font-semibold uppercase tracking-wider text-black/30 dark:text-white/30">Admin</span>
                         </div>
-                        {ADMIN_ITEMS.map((item) => {
+                        {ADMIN_ITEMS.filter(item => !item.adminOnly || isAdmin).map((item) => {
                             const active = pathname === item.href || (item.href !== '/dashboard/admin' && pathname.startsWith(item.href));
                             return (
                                 <Link

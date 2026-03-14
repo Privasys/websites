@@ -1,9 +1,11 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { listApps } from '~/lib/api';
+import { useSSE } from '~/lib/use-sse';
 import type { App, AppStatus } from '~/lib/types';
 import { STATUS_LABELS, STATUS_COLORS } from '~/lib/types';
 
@@ -18,17 +20,37 @@ function StatusBadge({ status }: { status: string }) {
 
 export default function DashboardPage() {
     const { data: session } = useSession();
+    const router = useRouter();
     const [apps, setApps] = useState<App[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    useEffect(() => {
+    const loadApps = useCallback(async () => {
         if (!session?.accessToken) return;
-        listApps(session.accessToken)
-            .then(setApps)
-            .catch((e) => setError(e.message))
-            .finally(() => setLoading(false));
+        try {
+            const data = await listApps(session.accessToken);
+            setApps(data);
+        } catch (e) {
+            setError(e instanceof Error ? e.message : 'Failed to load');
+        } finally {
+            setLoading(false);
+        }
     }, [session?.accessToken]);
+
+    useEffect(() => { loadApps(); }, [loadApps]);
+
+    // Auto-refresh when any app is in a transitional state
+    useEffect(() => {
+        const hasActive = apps.some(a =>
+            a.status === 'building' || a.status === 'deploying'
+        );
+        if (!hasActive) return;
+        const interval = setInterval(loadApps, 5000);
+        return () => clearInterval(interval);
+    }, [apps, loadApps]);
+
+    // SSE: refresh on app/build updates
+    useSSE(session?.accessToken, useCallback(() => { loadApps(); }, [loadApps]));
 
     return (
         <div className="max-w-4xl">
@@ -83,7 +105,11 @@ export default function DashboardPage() {
                         </thead>
                         <tbody>
                             {apps.map((app) => (
-                                <tr key={app.id} className="border-b border-black/5 dark:border-white/5 last:border-b-0 hover:bg-black/2 dark:hover:bg-white/2 transition-colors">
+                                <tr
+                                    key={app.id}
+                                    onClick={() => router.push(`/dashboard/apps/${app.id}`)}
+                                    className="border-b border-black/5 dark:border-white/5 last:border-b-0 hover:bg-black/2 dark:hover:bg-white/2 transition-colors cursor-pointer"
+                                >
                                     <td className="px-4 py-3">
                                         <div className="font-medium">{app.display_name}</div>
                                         <div className="text-xs text-black/40 dark:text-white/40">{app.name}</div>

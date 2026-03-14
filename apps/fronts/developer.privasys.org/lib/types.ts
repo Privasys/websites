@@ -7,8 +7,7 @@ export interface App {
     owner_email: string;
     owner_name: string;
     source_type: string;
-    github_repo?: string;
-    github_branch?: string;
+    commit_url?: string;
     github_commit?: string;
     gpg_key_id?: string;
     gpg_verified: boolean;
@@ -26,6 +25,7 @@ export interface App {
     custom_domain?: string;
     domain_verified: boolean;
     current_build_id?: string;
+    enclave_id?: string;
     created_at: string;
     updated_at: string;
 }
@@ -58,7 +58,7 @@ export interface DeploymentLog {
 export interface BuildJob {
     id: string;
     app_id: string;
-    github_repo: string;
+    commit_url: string;
     github_commit: string;
     status: 'pending' | 'dispatched' | 'running' | 'success' | 'failed' | 'cancelled';
     run_id?: number;
@@ -102,3 +102,35 @@ export const STATUS_COLORS: Record<AppStatus, string> = {
     undeployed: 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-300',
     failed: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300'
 };
+
+// Enclave instance
+export interface Enclave {
+    id: string;
+    name: string;
+    host: string;
+    port: number;
+    mr_enclave: string;
+    country: string;
+    region: string;
+    gps_lat?: number;
+    gps_lon?: number;
+    provider: string;
+    status: 'active' | 'maintenance' | 'retired';
+    max_apps: number;
+    app_count: number;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface CreateEnclaveRequest {
+    name: string;
+    host: string;
+    port: number;
+    mr_enclave?: string;
+    country?: string;
+    region?: string;
+    gps_lat?: number;
+    gps_lon?: number;
+    provider?: string;
+    max_apps?: number;
+}

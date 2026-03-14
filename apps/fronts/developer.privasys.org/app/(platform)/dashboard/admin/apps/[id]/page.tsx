@@ -13,6 +13,7 @@ import {
     adminTriggerBuild,
     adminListBuilds
 } from '~/lib/api';
+import { useSSE } from '~/lib/use-sse';
 import type { App, AppStatus, DeploymentLog, BuildJob } from '~/lib/types';
 import { STATUS_LABELS, STATUS_COLORS } from '~/lib/types';
 
@@ -55,6 +56,22 @@ export default function AdminAppDetailPage() {
     }, [session?.accessToken, id]);
 
     useEffect(() => { load(); }, [load]);
+
+    // Auto-refresh when there's an active build or deploying status
+    useEffect(() => {
+        const hasActiveBuild = builds.some(b =>
+            b.status === 'pending' || b.status === 'dispatched' || b.status === 'running'
+        );
+        const isDeploying = app?.status === 'building' || app?.status === 'deploying';
+        if (!hasActiveBuild && !isDeploying) return;
+        const interval = setInterval(load, 5000);
+        return () => clearInterval(interval);
+    }, [builds, app?.status, load]);
+
+    // SSE: refresh on app/build updates for this app
+    useSSE(session?.accessToken, useCallback((ev) => {
+        if (ev.data.app_id === id) load();
+    }, [id, load]));
 
     async function handleReview(decision: 'approve' | 'reject') {
         if (!session?.accessToken || !id) return;
@@ -137,7 +154,7 @@ export default function AdminAppDetailPage() {
     const canReview = app.status === 'submitted' || app.status === 'under_review';
     const canDeploy = app.status === 'approved' || app.status === 'undeployed' || app.status === 'failed';
     const canUndeploy = app.status === 'deployed';
-    const canBuild = app.source_type === 'github' && app.github_commit &&
+    const canBuild = app.source_type === 'github' && app.commit_url &&
         (app.status === 'submitted' || app.status === 'failed');
 
     return (
@@ -173,22 +190,22 @@ export default function AdminAppDetailPage() {
                         <div className="text-xs text-black/50 dark:text-white/50">Source</div>
                         <div className="mt-0.5">{app.source_type === 'github' ? 'GitHub' : 'Upload'}</div>
                     </div>
-                    {app.github_repo && (
+                    {app.commit_url && (
                         <div className="col-span-2">
-                            <div className="text-xs text-black/50 dark:text-white/50">Repository</div>
+                            <div className="text-xs text-black/50 dark:text-white/50">Commit URL</div>
                             <a
-                                href={app.github_repo}
+                                href={app.commit_url}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="mt-0.5 text-blue-600 dark:text-blue-400 hover:underline break-all"
                             >
-                                {app.github_repo}
+                                {app.commit_url}
                             </a>
                         </div>
                     )}
                     {app.github_commit && (
                         <div>
-                            <div className="text-xs text-black/50 dark:text-white/50">Commit</div>
+                            <div className="text-xs text-black/50 dark:text-white/50">Commit SHA</div>
                             <code className="text-xs mt-0.5 block">{app.github_commit.slice(0, 12)}</code>
                         </div>
                     )}

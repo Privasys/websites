@@ -1,4 +1,4 @@
-import type { App, CreateAppRequest, ReviewRequest, DeploymentLog, BuildJob } from './types';
+import type { App, CreateAppRequest, ReviewRequest, DeploymentLog, BuildJob, Enclave, CreateEnclaveRequest } from './types';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
 
@@ -123,4 +123,75 @@ export function adminListBuilds(token: string, id: string): Promise<BuildJob[]> 
 
 export function listBuilds(token: string, id: string): Promise<BuildJob[]> {
     return request<BuildJob[]>(`/api/v1/apps/${encodeURIComponent(id)}/builds`, token);
+}
+
+// ---------------------------------------------------------------------------
+// User info
+// ---------------------------------------------------------------------------
+
+export interface UserInfo {
+    sub: string;
+    email: string;
+    name: string;
+    roles: string[];
+    is_admin: boolean;
+}
+
+export function getUserInfo(token: string): Promise<UserInfo> {
+    return request<UserInfo>('/api/v1/me', token);
+}
+
+// ---------------------------------------------------------------------------
+// Platform admin settings (privasys-platform:admin role required)
+// ---------------------------------------------------------------------------
+
+export interface SettingEntry {
+    key: string;
+    value: string;
+    masked: boolean;
+    updated_by: string;
+    updated_at: string;
+}
+
+export function adminGetSettings(token: string, group: string): Promise<SettingEntry[]> {
+    return request<SettingEntry[]>(`/api/v1/admin/settings/${encodeURIComponent(group)}`, token);
+}
+
+export function adminUpdateSettings(token: string, group: string, settings: Record<string, string>): Promise<{ status: string }> {
+    return request<{ status: string }>(`/api/v1/admin/settings/${encodeURIComponent(group)}`, token, {
+        method: 'PUT',
+        body: JSON.stringify({ settings })
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Enclave management (manager role required)
+// ---------------------------------------------------------------------------
+
+export function adminListEnclaves(token: string): Promise<Enclave[]> {
+    return request<Enclave[]>('/api/v1/admin/enclaves/', token);
+}
+
+export function adminGetEnclave(token: string, id: string): Promise<Enclave> {
+    return request<Enclave>(`/api/v1/admin/enclaves/${encodeURIComponent(id)}`, token);
+}
+
+export function adminCreateEnclave(token: string, body: CreateEnclaveRequest): Promise<Enclave> {
+    return request<Enclave>('/api/v1/admin/enclaves/', token, {
+        method: 'POST',
+        body: JSON.stringify(body)
+    });
+}
+
+export function adminUpdateEnclave(token: string, id: string, body: CreateEnclaveRequest): Promise<Enclave> {
+    return request<Enclave>(`/api/v1/admin/enclaves/${encodeURIComponent(id)}`, token, {
+        method: 'PUT',
+        body: JSON.stringify(body)
+    });
+}
+
+export function adminDeleteEnclave(token: string, id: string): Promise<void> {
+    return request<void>(`/api/v1/admin/enclaves/${encodeURIComponent(id)}`, token, {
+        method: 'DELETE'
+    });
 }
