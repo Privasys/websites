@@ -1,12 +1,13 @@
 'use client';
 
 import { useSession } from 'next-auth/react';
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { adminEnclaveHealth, adminListEnclaveApps, adminListEnclaves, adminCreateEnclave, adminUpdateEnclave, adminDeleteEnclave } from '~/lib/api';
+import { useSSE } from '~/lib/use-sse';
 import type { Enclave, CreateEnclaveRequest } from '~/lib/types';
 
 const EMPTY_FORM: CreateEnclaveRequest = {
-    name: '', host: '', port: 8445, mr_enclave: '', country: '', region: '', provider: '', max_apps: 0,
+    name: '', host: '', port: 8445, mr_enclave: '', country: '', region: '', provider: '', owner: '', max_apps: 0,
 };
 
 const ENC_STATUS_COLORS: Record<string, string> = {
@@ -14,6 +15,10 @@ const ENC_STATUS_COLORS: Record<string, string> = {
     maintenance: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300',
     retired: 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-300',
 };
+
+const PAGE_SIZE = 50;
+
+const INPUT_CLS = 'w-full px-3 py-2 text-sm rounded-lg border border-black/10 dark:border-white/10 bg-transparent focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/20';
 
 export default function AdminEnclavePage() {
     const { data: session } = useSession();
@@ -27,6 +32,14 @@ export default function AdminEnclavePage() {
     const [form, setForm] = useState<CreateEnclaveRequest>({ ...EMPTY_FORM });
     const [saving, setSaving] = useState(false);
     const [expandedId, setExpandedId] = useState<string | null>(null);
+
+    // Filters
+    const [search, setSearch] = useState('');
+    const [filterCountry, setFilterCountry] = useState('');
+    const [filterProvider, setFilterProvider] = useState('');
+    const [filterStatus, setFilterStatus] = useState('');
+    const [filterOwner, setFilterOwner] = useState('');
+    const [page, setPage] = useState(0);
 
     const isManager = session?.roles?.some((r: string) => r.endsWith(':manager') || r === 'privasys-platform:admin') ?? false;
 
@@ -51,6 +64,36 @@ export default function AdminEnclavePage() {
 
     useEffect(() => { load(); }, [load]);
 
+    // SSE: refresh enclave list on any enclave update
+    useSSE(session?.accessToken, useCallback(() => { load(); }, [load]));
+
+    // Derive unique filter options from data
+    const countries = useMemo(() => [...new Set(enclaves.map(e => e.country).filter(Boolean))].sort(), [enclaves]);
+    const providers = useMemo(() => [...new Set(enclaves.map(e => e.provider).filter(Boolean))].sort(), [enclaves]);
+    const owners = useMemo(() => [...new Set(enclaves.map(e => e.owner).filter(Boolean))].sort(), [enclaves]);
+
+    // Filter + search
+    const filtered = useMemo(() => {
+        const q = search.toLowerCase();
+        return enclaves.filter(e => {
+            if (filterCountry && e.country !== filterCountry) return false;
+            if (filterProvider && e.provider !== filterProvider) return false;
+            if (filterStatus && e.status !== filterStatus) return false;
+            if (filterOwner && e.owner !== filterOwner) return false;
+            if (q && !e.name.toLowerCase().includes(q) && !e.host.toLowerCase().includes(q)
+                && !e.country.toLowerCase().includes(q) && !e.provider.toLowerCase().includes(q)
+                && !e.owner.toLowerCase().includes(q) && !e.mr_enclave.toLowerCase().includes(q)) return false;
+            return true;
+        });
+    }, [enclaves, search, filterCountry, filterProvider, filterStatus, filterOwner]);
+
+    // Pagination
+    const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+    const pageEnclaves = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+
+    // Reset page when filters change
+    useEffect(() => { setPage(0); }, [search, filterCountry, filterProvider, filterStatus, filterOwner]);
+
     function openCreate() {
         setForm({ ...EMPTY_FORM });
         setEditingId(null);
@@ -61,7 +104,7 @@ export default function AdminEnclavePage() {
         setForm({
             name: enc.name, host: enc.host, port: enc.port, mr_enclave: enc.mr_enclave,
             country: enc.country, region: enc.region, gps_lat: enc.gps_lat, gps_lon: enc.gps_lon,
-            provider: enc.provider, max_apps: enc.max_apps,
+            provider: enc.provider, owner: enc.owner, max_apps: enc.max_apps,
         });
         setEditingId(enc.id);
         setShowForm(true);
@@ -90,7 +133,7 @@ export default function AdminEnclavePage() {
 
     async function handleDelete(id: string) {
         if (!session?.accessToken) return;
-        if (!confirm('Delete this enclave?')) return;
+        if (!confirm('Delete this enclave? All apps assigned to it will be unlinked.')) return;
         try {
             await adminDeleteEnclave(session.accessToken, id);
             await load();
@@ -106,12 +149,13 @@ export default function AdminEnclavePage() {
     const healthy = health?.status === 'healthy';
 
     return (
-        <div className="max-w-5xl">
+        <div className="max-w-6xl">
             <div className="flex items-center justify-between">
                 <div>
                     <h1 className="text-2xl font-semibold">Enclave management</h1>
                     <p className="mt-1 text-sm text-black/50 dark:text-white/50">
-                        Manage enclave instances, health, and deployed modules.
+                        {enclaves.length} enclave{enclaves.length !== 1 ? 's' : ''} registered
+                        {filtered.length !== enclaves.length && ` · ${filtered.length} shown`}
                     </p>
                 </div>
                 <button onClick={openCreate}
@@ -125,7 +169,7 @@ export default function AdminEnclavePage() {
             )}
 
             {/* Default enclave health */}
-            <section className="mt-6 p-5 rounded-xl border border-black/10 dark:border-white/10">
+            <section className="mt-6 p-4 rounded-xl border border-black/10 dark:border-white/10">
                 <div className="flex items-center justify-between">
                     <h2 className="text-sm font-semibold">Default enclave health</h2>
                     <button onClick={load} disabled={loading}
@@ -134,9 +178,9 @@ export default function AdminEnclavePage() {
                     </button>
                 </div>
                 {loading && !health ? (
-                    <div className="mt-3 text-sm text-black/40 dark:text-white/40 animate-pulse">Checking enclave…</div>
+                    <div className="mt-2 text-sm text-black/40 dark:text-white/40 animate-pulse">Checking…</div>
                 ) : health ? (
-                    <div className="mt-3 flex items-center gap-3">
+                    <div className="mt-2 flex items-center gap-3">
                         <span className={`w-3 h-3 rounded-full ${healthy ? 'bg-emerald-500' : 'bg-red-500'}`} />
                         <span className="text-sm font-medium">{healthy ? 'Healthy' : 'Unhealthy'}</span>
                         {health.error && <span className="text-xs text-red-600 dark:text-red-400">{health.error}</span>}
@@ -144,78 +188,72 @@ export default function AdminEnclavePage() {
                 ) : null}
             </section>
 
-            {/* Deployed modules */}
-            <section className="mt-4 p-5 rounded-xl border border-black/10 dark:border-white/10">
-                <h2 className="text-sm font-semibold mb-3">Deployed modules</h2>
-                {loading && !apps ? (
-                    <div className="text-sm text-black/40 dark:text-white/40 animate-pulse">Loading…</div>
-                ) : apps && typeof apps === 'object' ? (
-                    <pre className="text-xs bg-black/5 dark:bg-white/5 p-3 rounded-lg overflow-x-auto">
-                        {JSON.stringify(apps, null, 2)}
-                    </pre>
-                ) : (
-                    <p className="text-sm text-black/50 dark:text-white/50">No modules or unable to reach enclave.</p>
-                )}
-            </section>
-
             {/* Create / Edit form */}
             {showForm && (
                 <form onSubmit={handleSubmit} className="mt-6 p-5 rounded-xl border border-black/10 dark:border-white/10 space-y-4">
                     <h2 className="text-sm font-semibold">{editingId ? 'Edit enclave' : 'Register new enclave'}</h2>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-3 gap-4">
                         <div>
                             <label className="block text-xs font-medium mb-1">Name *</label>
                             <input required value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-                                className="w-full px-3 py-2 text-sm rounded-lg border border-black/10 dark:border-white/10 bg-transparent focus:outline-none focus:ring-2 focus:ring-black/20" />
+                                className={INPUT_CLS} />
                         </div>
                         <div>
                             <label className="block text-xs font-medium mb-1">Host *</label>
                             <input required value={form.host} onChange={e => setForm(f => ({ ...f, host: e.target.value }))}
-                                className="w-full px-3 py-2 text-sm rounded-lg border border-black/10 dark:border-white/10 bg-transparent focus:outline-none focus:ring-2 focus:ring-black/20" />
+                                className={INPUT_CLS} />
                         </div>
                         <div>
                             <label className="block text-xs font-medium mb-1">Port</label>
                             <input type="number" value={form.port} onChange={e => setForm(f => ({ ...f, port: parseInt(e.target.value) || 8445 }))}
-                                className="w-full px-3 py-2 text-sm rounded-lg border border-black/10 dark:border-white/10 bg-transparent focus:outline-none focus:ring-2 focus:ring-black/20" />
+                                className={INPUT_CLS} />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-medium mb-1">Owner</label>
+                            <input value={form.owner ?? ''} onChange={e => setForm(f => ({ ...f, owner: e.target.value }))}
+                                placeholder="e.g. Privasys, Acme Corp"
+                                className={INPUT_CLS} />
                         </div>
                         <div>
                             <label className="block text-xs font-medium mb-1">Provider</label>
                             <input value={form.provider ?? ''} onChange={e => setForm(f => ({ ...f, provider: e.target.value }))}
                                 placeholder="e.g. OVH, Azure, AWS"
-                                className="w-full px-3 py-2 text-sm rounded-lg border border-black/10 dark:border-white/10 bg-transparent focus:outline-none focus:ring-2 focus:ring-black/20" />
+                                className={INPUT_CLS} />
                         </div>
-                        <div className="col-span-2">
+                        <div>
+                            <label className="block text-xs font-medium mb-1">Max apps (0 = unlimited)</label>
+                            <input type="number" value={form.max_apps ?? 0} onChange={e => setForm(f => ({ ...f, max_apps: parseInt(e.target.value) || 0 }))}
+                                className={INPUT_CLS} />
+                        </div>
+                        <div className="col-span-3">
                             <label className="block text-xs font-medium mb-1">MR_ENCLAVE</label>
                             <input value={form.mr_enclave ?? ''} onChange={e => setForm(f => ({ ...f, mr_enclave: e.target.value }))}
                                 placeholder="Hex-encoded measurement hash"
-                                className="w-full px-3 py-2 text-sm rounded-lg border border-black/10 dark:border-white/10 bg-transparent font-mono text-xs focus:outline-none focus:ring-2 focus:ring-black/20" />
+                                className={`${INPUT_CLS} font-mono text-xs`} />
                         </div>
                         <div>
                             <label className="block text-xs font-medium mb-1">Country</label>
                             <input value={form.country ?? ''} onChange={e => setForm(f => ({ ...f, country: e.target.value }))}
-                                placeholder="e.g. FR, DE"
-                                className="w-full px-3 py-2 text-sm rounded-lg border border-black/10 dark:border-white/10 bg-transparent focus:outline-none focus:ring-2 focus:ring-black/20" />
+                                placeholder="e.g. FR, GB"
+                                className={INPUT_CLS} />
                         </div>
                         <div>
                             <label className="block text-xs font-medium mb-1">Region</label>
                             <input value={form.region ?? ''} onChange={e => setForm(f => ({ ...f, region: e.target.value }))}
                                 placeholder="e.g. europe-west9"
-                                className="w-full px-3 py-2 text-sm rounded-lg border border-black/10 dark:border-white/10 bg-transparent focus:outline-none focus:ring-2 focus:ring-black/20" />
+                                className={INPUT_CLS} />
                         </div>
-                        <div>
-                            <label className="block text-xs font-medium mb-1">GPS Latitude</label>
-                            <input type="number" step="any" value={form.gps_lat ?? ''} onChange={e => setForm(f => ({ ...f, gps_lat: e.target.value ? parseFloat(e.target.value) : undefined }))}
-                                className="w-full px-3 py-2 text-sm rounded-lg border border-black/10 dark:border-white/10 bg-transparent focus:outline-none focus:ring-2 focus:ring-black/20" />
-                        </div>
-                        <div>
-                            <label className="block text-xs font-medium mb-1">GPS Longitude</label>
-                            <input type="number" step="any" value={form.gps_lon ?? ''} onChange={e => setForm(f => ({ ...f, gps_lon: e.target.value ? parseFloat(e.target.value) : undefined }))}
-                                className="w-full px-3 py-2 text-sm rounded-lg border border-black/10 dark:border-white/10 bg-transparent focus:outline-none focus:ring-2 focus:ring-black/20" />
-                        </div>
-                        <div>
-                            <label className="block text-xs font-medium mb-1">Max apps (0 = unlimited)</label>
-                            <input type="number" value={form.max_apps ?? 0} onChange={e => setForm(f => ({ ...f, max_apps: parseInt(e.target.value) || 0 }))}
-                                className="w-full px-3 py-2 text-sm rounded-lg border border-black/10 dark:border-white/10 bg-transparent focus:outline-none focus:ring-2 focus:ring-black/20" />
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-xs font-medium mb-1">GPS Lat</label>
+                                <input type="number" step="any" value={form.gps_lat ?? ''} onChange={e => setForm(f => ({ ...f, gps_lat: e.target.value ? parseFloat(e.target.value) : undefined }))}
+                                    className={INPUT_CLS} />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium mb-1">GPS Lon</label>
+                                <input type="number" step="any" value={form.gps_lon ?? ''} onChange={e => setForm(f => ({ ...f, gps_lon: e.target.value ? parseFloat(e.target.value) : undefined }))}
+                                    className={INPUT_CLS} />
+                            </div>
                         </div>
                     </div>
                     <div className="flex gap-3 pt-2">
@@ -231,89 +269,170 @@ export default function AdminEnclavePage() {
                 </form>
             )}
 
-            {/* Registered enclaves */}
-            <h2 className="mt-8 text-lg font-semibold">Registered enclaves</h2>
-            {enclaves.length === 0 ? (
-                <div className="mt-4 text-center py-8 text-black/40 dark:text-white/40 text-sm">
-                    No enclaves registered. Click &quot;Add enclave&quot; to register one.
+            {/* Search + Filters */}
+            <div className="mt-6 flex flex-wrap items-center gap-3">
+                <input
+                    value={search}
+                    onChange={e => setSearch(e.target.value)}
+                    placeholder="Search by name, host, country, provider, owner…"
+                    className="flex-1 min-w-[200px] px-3 py-2 text-sm rounded-lg border border-black/10 dark:border-white/10 bg-transparent focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/20"
+                />
+                {countries.length > 1 && (
+                    <select value={filterCountry} onChange={e => setFilterCountry(e.target.value)}
+                        className="px-3 py-2 text-sm rounded-lg border border-black/10 dark:border-white/10 bg-transparent">
+                        <option value="">All countries</option>
+                        {countries.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                )}
+                {providers.length > 1 && (
+                    <select value={filterProvider} onChange={e => setFilterProvider(e.target.value)}
+                        className="px-3 py-2 text-sm rounded-lg border border-black/10 dark:border-white/10 bg-transparent">
+                        <option value="">All providers</option>
+                        {providers.map(p => <option key={p} value={p}>{p}</option>)}
+                    </select>
+                )}
+                {owners.length > 1 && (
+                    <select value={filterOwner} onChange={e => setFilterOwner(e.target.value)}
+                        className="px-3 py-2 text-sm rounded-lg border border-black/10 dark:border-white/10 bg-transparent">
+                        <option value="">All owners</option>
+                        {owners.map(o => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                )}
+                <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
+                    className="px-3 py-2 text-sm rounded-lg border border-black/10 dark:border-white/10 bg-transparent">
+                    <option value="">All statuses</option>
+                    <option value="active">Active</option>
+                    <option value="maintenance">Maintenance</option>
+                    <option value="retired">Retired</option>
+                </select>
+            </div>
+
+            {/* Enclave table */}
+            {loading && enclaves.length === 0 ? (
+                <div className="mt-8 text-center py-12 text-sm text-black/40 dark:text-white/40 animate-pulse">Loading enclaves…</div>
+            ) : filtered.length === 0 ? (
+                <div className="mt-8 text-center py-12 border border-dashed border-black/10 dark:border-white/10 rounded-xl">
+                    <div className="text-sm text-black/40 dark:text-white/40">
+                        {enclaves.length === 0 ? 'No enclaves registered. Click "Add enclave" to register one.' : 'No enclaves match your filters.'}
+                    </div>
                 </div>
             ) : (
-                <div className="mt-4 space-y-3">
-                    {enclaves.map((enc) => (
-                        <div key={enc.id} className="rounded-xl border border-black/10 dark:border-white/10 overflow-hidden">
-                            <div className="flex items-center justify-between px-5 py-4 cursor-pointer hover:bg-black/[0.02] dark:hover:bg-white/[0.02]"
-                                onClick={() => setExpandedId(expandedId === enc.id ? null : enc.id)}>
-                                <div>
-                                    <div className="text-sm font-medium">{enc.name}</div>
-                                    <div className="text-xs text-black/50 dark:text-white/50">
-                                        {enc.host}:{enc.port}
-                                        {enc.country && ` · ${enc.country}`}
-                                        {enc.provider && ` · ${enc.provider}`}
-                                    </div>
-                                </div>
-                                <div className="flex items-center gap-3">
-                                    <span className="text-xs text-black/40 dark:text-white/40">
-                                        {enc.app_count} app{enc.app_count !== 1 ? 's' : ''}
-                                        {enc.max_apps > 0 ? ` / ${enc.max_apps}` : ''}
-                                    </span>
-                                    <span className={`inline-block px-2 py-0.5 text-xs font-medium rounded-full ${ENC_STATUS_COLORS[enc.status] ?? ''}`}>
-                                        {enc.status}
-                                    </span>
-                                    <svg className={`w-4 h-4 text-black/30 dark:text-white/30 transition-transform ${expandedId === enc.id ? 'rotate-180' : ''}`}
-                                        fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7" /></svg>
-                                </div>
+                <>
+                    <div className="mt-4 border border-black/10 dark:border-white/10 rounded-xl overflow-hidden">
+                        <table className="w-full text-sm">
+                            <thead>
+                                <tr className="border-b border-black/5 dark:border-white/5 bg-black/[0.02] dark:bg-white/[0.02]">
+                                    <th className="text-left px-4 py-3 font-medium">Name</th>
+                                    <th className="text-left px-4 py-3 font-medium">Host</th>
+                                    <th className="text-left px-4 py-3 font-medium">Location</th>
+                                    <th className="text-left px-4 py-3 font-medium">Owner</th>
+                                    <th className="text-left px-4 py-3 font-medium">Provider</th>
+                                    <th className="text-left px-4 py-3 font-medium">Apps</th>
+                                    <th className="text-left px-4 py-3 font-medium">Status</th>
+                                    <th className="text-right px-4 py-3 font-medium">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {pageEnclaves.map((enc) => (
+                                    <>
+                                        <tr
+                                            key={enc.id}
+                                            className="border-b border-black/5 dark:border-white/5 last:border-b-0 hover:bg-black/[0.02] dark:hover:bg-white/[0.02] cursor-pointer transition-colors"
+                                            onClick={() => setExpandedId(expandedId === enc.id ? null : enc.id)}
+                                        >
+                                            <td className="px-4 py-3">
+                                                <div className="font-medium">{enc.name}</div>
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                <code className="text-xs">{enc.host}:{enc.port}</code>
+                                            </td>
+                                            <td className="px-4 py-3 text-black/60 dark:text-white/60">
+                                                {enc.country || '—'}{enc.region ? ` · ${enc.region}` : ''}
+                                            </td>
+                                            <td className="px-4 py-3 text-black/60 dark:text-white/60">
+                                                {enc.owner || '—'}
+                                            </td>
+                                            <td className="px-4 py-3 text-black/60 dark:text-white/60">
+                                                {enc.provider || '—'}
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                <span className="text-xs">
+                                                    {enc.app_count}{enc.max_apps > 0 ? ` / ${enc.max_apps}` : ''}
+                                                </span>
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                <span className={`inline-block px-2 py-0.5 text-xs font-medium rounded-full ${ENC_STATUS_COLORS[enc.status] ?? ''}`}>
+                                                    {enc.status}
+                                                </span>
+                                            </td>
+                                            <td className="px-4 py-3 text-right">
+                                                <button onClick={e => { e.stopPropagation(); openEdit(enc); }}
+                                                    className="text-xs text-black/50 dark:text-white/50 hover:text-black dark:hover:text-white mr-3">
+                                                    Edit
+                                                </button>
+                                                <button onClick={e => { e.stopPropagation(); handleDelete(enc.id); }}
+                                                    className="text-xs text-red-500 hover:text-red-700 dark:hover:text-red-300">
+                                                    Delete
+                                                </button>
+                                            </td>
+                                        </tr>
+                                        {expandedId === enc.id && (
+                                            <tr key={`${enc.id}-detail`}>
+                                                <td colSpan={8} className="bg-black/[0.01] dark:bg-white/[0.01] px-6 py-4 border-b border-black/5 dark:border-white/5">
+                                                    <div className="grid grid-cols-3 gap-y-3 gap-x-8 text-sm">
+                                                        {enc.mr_enclave && (
+                                                            <div className="col-span-3">
+                                                                <div className="text-xs text-black/50 dark:text-white/50">MR_ENCLAVE</div>
+                                                                <code className="text-xs mt-0.5 bg-black/5 dark:bg-white/5 px-2 py-1 rounded break-all block">{enc.mr_enclave}</code>
+                                                            </div>
+                                                        )}
+                                                        {(enc.gps_lat != null && enc.gps_lon != null) && (
+                                                            <div>
+                                                                <div className="text-xs text-black/50 dark:text-white/50">GPS</div>
+                                                                <div className="mt-0.5 text-xs">{enc.gps_lat}, {enc.gps_lon}</div>
+                                                            </div>
+                                                        )}
+                                                        <div>
+                                                            <div className="text-xs text-black/50 dark:text-white/50">Max apps</div>
+                                                            <div className="mt-0.5">{enc.max_apps === 0 ? 'Unlimited' : enc.max_apps}</div>
+                                                        </div>
+                                                        <div>
+                                                            <div className="text-xs text-black/50 dark:text-white/50">Created</div>
+                                                            <div className="mt-0.5">{new Date(enc.created_at).toLocaleString()}</div>
+                                                        </div>
+                                                        <div>
+                                                            <div className="text-xs text-black/50 dark:text-white/50">Updated</div>
+                                                            <div className="mt-0.5">{new Date(enc.updated_at).toLocaleString()}</div>
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        )}
+                                    </>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    {/* Pagination */}
+                    {totalPages > 1 && (
+                        <div className="mt-4 flex items-center justify-between text-sm">
+                            <span className="text-black/50 dark:text-white/50">
+                                Page {page + 1} of {totalPages} · {filtered.length} enclave{filtered.length !== 1 ? 's' : ''}
+                            </span>
+                            <div className="flex gap-2">
+                                <button disabled={page === 0} onClick={() => setPage(p => p - 1)}
+                                    className="px-3 py-1.5 rounded-lg border border-black/10 dark:border-white/10 disabled:opacity-30 hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
+                                    Previous
+                                </button>
+                                <button disabled={page >= totalPages - 1} onClick={() => setPage(p => p + 1)}
+                                    className="px-3 py-1.5 rounded-lg border border-black/10 dark:border-white/10 disabled:opacity-30 hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
+                                    Next
+                                </button>
                             </div>
-                            {expandedId === enc.id && (
-                                <div className="border-t border-black/5 dark:border-white/5 px-5 py-4">
-                                    <div className="grid grid-cols-2 gap-y-3 gap-x-8 text-sm">
-                                        <div>
-                                            <div className="text-xs text-black/50 dark:text-white/50">Host</div>
-                                            <code className="text-xs mt-0.5 block">{enc.host}:{enc.port}</code>
-                                        </div>
-                                        {enc.mr_enclave && (
-                                            <div className="col-span-2">
-                                                <div className="text-xs text-black/50 dark:text-white/50">MR_ENCLAVE</div>
-                                                <code className="text-xs mt-0.5 bg-black/5 dark:bg-white/5 px-2 py-1 rounded break-all block">{enc.mr_enclave}</code>
-                                            </div>
-                                        )}
-                                        {enc.country && (
-                                            <div>
-                                                <div className="text-xs text-black/50 dark:text-white/50">Location</div>
-                                                <div className="mt-0.5">{enc.country}{enc.region ? ` · ${enc.region}` : ''}</div>
-                                            </div>
-                                        )}
-                                        {(enc.gps_lat != null && enc.gps_lon != null) && (
-                                            <div>
-                                                <div className="text-xs text-black/50 dark:text-white/50">GPS</div>
-                                                <div className="mt-0.5 text-xs">{enc.gps_lat}, {enc.gps_lon}</div>
-                                            </div>
-                                        )}
-                                        {enc.provider && (
-                                            <div>
-                                                <div className="text-xs text-black/50 dark:text-white/50">Provider</div>
-                                                <div className="mt-0.5">{enc.provider}</div>
-                                            </div>
-                                        )}
-                                        <div>
-                                            <div className="text-xs text-black/50 dark:text-white/50">Created</div>
-                                            <div className="mt-0.5">{new Date(enc.created_at).toLocaleString()}</div>
-                                        </div>
-                                    </div>
-                                    <div className="mt-4 flex gap-3">
-                                        <button onClick={() => openEdit(enc)}
-                                            className="px-3 py-1.5 text-xs font-medium rounded-lg border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
-                                            Edit
-                                        </button>
-                                        <button onClick={() => handleDelete(enc.id)}
-                                            className="px-3 py-1.5 text-xs font-medium rounded-lg border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
-                                            Delete
-                                        </button>
-                                    </div>
-                                </div>
-                            )}
                         </div>
-                    ))}
-                </div>
+                    )}
+                </>
             )}
         </div>
     );

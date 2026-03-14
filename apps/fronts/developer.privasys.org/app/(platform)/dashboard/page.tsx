@@ -39,17 +39,7 @@ export default function DashboardPage() {
 
     useEffect(() => { loadApps(); }, [loadApps]);
 
-    // Auto-refresh when any app is in a transitional state
-    useEffect(() => {
-        const hasActive = apps.some(a =>
-            a.status === 'building' || a.status === 'deploying'
-        );
-        if (!hasActive) return;
-        const interval = setInterval(loadApps, 5000);
-        return () => clearInterval(interval);
-    }, [apps, loadApps]);
-
-    // SSE: refresh on app/build updates
+    // SSE: refresh on app/build updates (real-time, no polling)
     useSSE(session?.accessToken, useCallback(() => { loadApps(); }, [loadApps]));
 
     return (
