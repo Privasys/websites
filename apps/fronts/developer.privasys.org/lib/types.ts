@@ -115,6 +115,7 @@ export interface Enclave {
     gps_lat?: number;
     gps_lon?: number;
     provider: string;
+    owner: string;
     status: 'active' | 'maintenance' | 'retired';
     max_apps: number;
     app_count: number;
@@ -132,5 +133,6 @@ export interface CreateEnclaveRequest {
     gps_lat?: number;
     gps_lon?: number;
     provider?: string;
+    owner?: string;
     max_apps?: number;
 }

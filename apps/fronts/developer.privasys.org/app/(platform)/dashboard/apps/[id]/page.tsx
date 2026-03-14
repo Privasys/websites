@@ -54,17 +54,7 @@ export default function AppDetailPage() {
 
     useEffect(() => { load(); }, [load]);
 
-    // Auto-refresh when there's an active build
-    useEffect(() => {
-        const hasActiveBuild = builds.some(b =>
-            b.status === 'pending' || b.status === 'dispatched' || b.status === 'running'
-        );
-        if (!hasActiveBuild) return;
-        const interval = setInterval(load, 5000);
-        return () => clearInterval(interval);
-    }, [builds, load]);
-
-    // SSE: refresh on app/build updates for this app
+    // SSE: refresh on app/build updates for this app (real-time, no polling)
     useSSE(session?.accessToken, useCallback((ev) => {
         if (ev.data.app_id === id) load();
     }, [id, load]));
