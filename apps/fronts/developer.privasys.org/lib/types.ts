@@ -5,9 +5,13 @@ export interface App {
     description: string;
     owner_sub: string;
     owner_email: string;
+    owner_name: string;
     source_type: string;
     github_repo?: string;
     github_branch?: string;
+    github_commit?: string;
+    gpg_key_id?: string;
+    gpg_verified: boolean;
     cwasm_path?: string;
     cwasm_hash?: string;
     cwasm_size?: number;
@@ -21,6 +25,7 @@ export interface App {
     deployed_at?: string;
     custom_domain?: string;
     domain_verified: boolean;
+    current_build_id?: string;
     created_at: string;
     updated_at: string;
 }
@@ -30,8 +35,40 @@ export interface CreateAppRequest {
     display_name?: string;
     description?: string;
     source_type: 'upload' | 'github';
-    github_repo?: string;
-    github_branch?: string;
+    commit_url?: string;
+}
+
+export interface ReviewRequest {
+    decision: 'approve' | 'reject';
+    note?: string;
+}
+
+export interface DeploymentLog {
+    id: string;
+    app_id: string;
+    action: string;
+    status: string;
+    details?: string;
+    initiated_by: string;
+    enclave_host?: string;
+    enclave_port?: number;
+    created_at: string;
+}
+
+export interface BuildJob {
+    id: string;
+    app_id: string;
+    github_repo: string;
+    github_commit: string;
+    status: 'pending' | 'dispatched' | 'running' | 'success' | 'failed' | 'cancelled';
+    run_id?: number;
+    run_url?: string;
+    error_message?: string;
+    cwasm_url?: string;
+    started_at?: string;
+    completed_at?: string;
+    created_at: string;
+    updated_at: string;
 }
 
 export type AppStatus =
@@ -39,6 +76,7 @@ export type AppStatus =
     | 'under_review'
     | 'approved'
     | 'rejected'
+    | 'building'
     | 'deployed'
     | 'undeployed'
     | 'failed';
@@ -48,6 +86,7 @@ export const STATUS_LABELS: Record<AppStatus, string> = {
     under_review: 'Under review',
     approved: 'Approved',
     rejected: 'Rejected',
+    building: 'Building',
     deployed: 'Deployed',
     undeployed: 'Undeployed',
     failed: 'Failed'
@@ -58,6 +97,7 @@ export const STATUS_COLORS: Record<AppStatus, string> = {
     under_review: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300',
     approved: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300',
     rejected: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300',
+    building: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300',
     deployed: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300',
     undeployed: 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-300',
     failed: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300'
