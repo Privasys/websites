@@ -12,6 +12,11 @@ const SIDEBAR_ITEMS = [
     { label: 'Settings', href: '/dashboard/settings', icon: 'M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4' }
 ];
 
+const ADMIN_ITEMS = [
+    { label: 'Review apps', href: '/dashboard/admin', icon: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z' },
+    { label: 'Enclave', href: '/dashboard/admin/enclave', icon: 'M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2' }
+];
+
 const NAVBAR_ITEMS = [
     { label: 'Docs', href: 'https://docs.privasys.org', external: true },
 ];
@@ -19,6 +24,7 @@ const NAVBAR_ITEMS = [
 function Sidebar() {
     const pathname = usePathname();
     const { data: session } = useSession();
+    const isManager = session?.roles?.some(r => r.endsWith(':manager')) ?? false;
 
     return (
         <aside className="hidden lg:flex flex-col w-56 shrink-0 border-r border-black/5 dark:border-white/10 h-[calc(100vh-3.5rem)] sticky top-14">
@@ -42,6 +48,33 @@ function Sidebar() {
                         </Link>
                     );
                 })}
+
+                {isManager && (
+                    <>
+                        <div className="pt-4 pb-1 px-3">
+                            <span className="text-[10px] font-semibold uppercase tracking-wider text-black/30 dark:text-white/30">Admin</span>
+                        </div>
+                        {ADMIN_ITEMS.map((item) => {
+                            const active = pathname === item.href || (item.href !== '/dashboard/admin' && pathname.startsWith(item.href));
+                            return (
+                                <Link
+                                    key={item.href}
+                                    href={item.href}
+                                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
+                                        active
+                                            ? 'bg-black/5 dark:bg-white/10 font-medium'
+                                            : 'hover:bg-black/3 dark:hover:bg-white/5 text-black/60 dark:text-white/60'
+                                    }`}
+                                >
+                                    <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+                                        <path d={item.icon} />
+                                    </svg>
+                                    {item.label}
+                                </Link>
+                            );
+                        })}
+                    </>
+                )}
             </nav>
             <div className="px-3 py-4 border-t border-black/5 dark:border-white/10">
                 {session?.user && (

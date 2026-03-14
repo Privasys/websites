@@ -16,7 +16,7 @@ export default function NewApplicationPage() {
     const [displayName, setDisplayName] = useState('');
     const [description, setDescription] = useState('');
     const [source, setSource] = useState<'upload' | 'github'>('upload');
-    const [githubRepo, setGithubRepo] = useState('');
+    const [commitUrl, setCommitUrl] = useState('');
     const [file, setFile] = useState<File | null>(null);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -33,7 +33,7 @@ export default function NewApplicationPage() {
                 display_name: displayName || undefined,
                 description: description || undefined,
                 source_type: target === 'wasm' ? source : 'upload',
-                github_repo: source === 'github' ? githubRepo : undefined,
+                commit_url: source === 'github' ? commitUrl : undefined
             });
 
             if (file && target === 'wasm' && source === 'upload') {
@@ -212,16 +212,21 @@ export default function NewApplicationPage() {
                     )}
 
                     {source === 'github' && (
-                        <div>
-                            <label htmlFor="github-repo" className="block text-sm font-medium mb-2">Repository URL</label>
-                            <input
-                                id="github-repo"
-                                type="text"
-                                placeholder="https://github.com/your-org/your-wasm-app"
-                                value={githubRepo}
-                                onChange={(e) => setGithubRepo(e.target.value)}
-                                className="w-full px-3 py-2 rounded-lg border border-black/10 dark:border-white/10 bg-transparent text-sm focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/20"
-                            />
+                        <div className="space-y-4">
+                            <div>
+                                <label htmlFor="commit-url" className="block text-sm font-medium mb-2">Commit URL</label>
+                                <input
+                                    id="commit-url"
+                                    type="text"
+                                    placeholder="https://github.com/your-org/your-app/commit/abc1234..."
+                                    value={commitUrl}
+                                    onChange={(e) => setCommitUrl(e.target.value)}
+                                    className="w-full px-3 py-2 rounded-lg border border-black/10 dark:border-white/10 bg-transparent text-sm font-mono focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/20"
+                                />
+                                <p className="mt-1 text-xs text-black/40 dark:text-white/40">
+                                    Paste the full commit URL from GitHub. The commit must be GPG-signed.
+                                </p>
+                            </div>
                         </div>
                     )}
                 </div>

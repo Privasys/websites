@@ -26,11 +26,29 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                 token.accessToken = account.access_token;
                 token.refreshToken = account.refresh_token;
                 token.expiresAt = account.expires_at;
+                // Extract Zitadel project roles from access token
+                if (account.access_token) {
+                    try {
+                        const payload = JSON.parse(
+                            Buffer.from(account.access_token.split('.')[1], 'base64').toString()
+                        );
+                        const roles: string[] = [];
+                        for (const [key, val] of Object.entries(payload)) {
+                            if (key.includes(':roles') && key.startsWith('urn:zitadel:')) {
+                                for (const role of Object.keys(val as Record<string, unknown>)) {
+                                    if (!roles.includes(role)) roles.push(role);
+                                }
+                            }
+                        }
+                        token.roles = roles;
+                    } catch { /* ignore decode errors */ }
+                }
             }
             return token;
         },
         session({ session, token }) {
             session.accessToken = token.accessToken as string;
+            session.roles = token.roles ?? [];
             return session;
         }
     },
