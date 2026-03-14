@@ -9,7 +9,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             clientSecret: process.env.AUTH_ZITADEL_SECRET!,
             authorization: {
                 params: {
-                    scope: 'openid profile email offline_access'
+                    scope: 'openid profile email offline_access',
+                    prompt: 'login'
                 }
             }
         })
@@ -21,7 +22,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         strategy: 'jwt'
     },
     callbacks: {
-        jwt({ token, account }) {
+        jwt({ token, account, profile }) {
             if (account) {
                 token.accessToken = account.access_token;
                 token.refreshToken = account.refresh_token;
@@ -44,11 +45,28 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                     } catch { /* ignore decode errors */ }
                 }
             }
+            // Derive display name from profile or email if missing
+            if (!token.name && profile) {
+                token.name = (profile.name as string)
+                    || (profile.preferred_username as string)
+                    || (profile.nickname as string)
+                    || '';
+            }
+            if (!token.name && token.email) {
+                token.name = (token.email as string).split('@')[0];
+            }
             return token;
         },
         session({ session, token }) {
             session.accessToken = token.accessToken as string;
             session.roles = token.roles ?? [];
+            // Ensure user name is populated
+            if (!session.user.name && token.name) {
+                session.user.name = token.name as string;
+            }
+            if (!session.user.name && session.user.email) {
+                session.user.name = session.user.email.split('@')[0];
+            }
             return session;
         }
     },

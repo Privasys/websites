@@ -34,7 +34,7 @@ export default function AdminPage() {
             .finally(() => setLoading(false));
     }, [session?.accessToken, tab]);
 
-    const isManager = session?.roles?.some(r => r.endsWith(':manager')) ?? false;
+    const isManager = session?.roles?.some(r => r.endsWith(':manager') || r === 'privasys-platform:admin') ?? false;
 
     if (!isManager) {
         return (
