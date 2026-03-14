@@ -9,8 +9,7 @@ const CURRENT_YEAR = new Date().getFullYear();
 
 export function Footer({ companyLine, links }: FooterProps) {
     return (
-        <footer className="pui-footer">
-            <div className="pui-footer-divider" />
+        <footer className="pui-footer px-6 lg:px-0">
             <div className="pui-footer-inner">
                 <div className="pui-footer-company">
                     {companyLine && <span>{companyLine}</span>}
