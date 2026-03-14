@@ -40,7 +40,7 @@ export function Navbar({ brandSuffix, items, cta, faviconPath = '/favicon/favico
 
     return (
         <>
-            <nav className="pui-navbar">
+            <nav className="pui-navbar px-6 lg:px-0">
                 <div className="pui-navbar-inner">
                     <Link href="/" className="pui-navbar-brand">
                         <Image src={faviconPath} alt="" width={20} height={20} aria-hidden />

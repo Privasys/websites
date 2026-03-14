@@ -269,9 +269,6 @@ svg { transition: transform 0.15s; }
 
 .pui-footer {
     width: 100%;
-}
-
-.pui-footer-divider {
     margin-top: 7.5rem;
     border-top: 1px solid rgba(0, 0, 0, 0.08);
 }
