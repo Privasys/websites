@@ -1,13 +1,16 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useSession, signOut } from 'next-auth/react';
 import Link from 'next/link';
+import { getUserInfo } from '~/lib/api';
 
 export function UserMenu() {
     const { data: session } = useSession();
     const [open, setOpen] = useState(false);
     const ref = useRef<HTMLDivElement>(null);
+    const [profileName, setProfileName] = useState<string | null>(null);
+    const [profileEmail, setProfileEmail] = useState<string | null>(null);
 
     useEffect(() => {
         const onClick = (e: MouseEvent) => {
@@ -18,6 +21,18 @@ export function UserMenu() {
         document.addEventListener('mousedown', onClick);
         return () => document.removeEventListener('mousedown', onClick);
     }, []);
+
+    // Fetch profile from backend to fill in any missing session data
+    const fetchProfile = useCallback(async () => {
+        if (!session?.accessToken) return;
+        try {
+            const info = await getUserInfo(session.accessToken);
+            if (info.display_name || info.name) setProfileName(info.display_name || info.name);
+            if (info.display_email || info.email) setProfileEmail(info.display_email || info.email);
+        } catch { /* ignore */ }
+    }, [session?.accessToken]);
+
+    useEffect(() => { fetchProfile(); }, [fetchProfile]);
 
     // Auto sign-out when token refresh fails
     useEffect(() => {
@@ -35,14 +50,16 @@ export function UserMenu() {
 
     if (!session?.user) return null;
 
-    const initials = (session.user.name?.[0] ?? session.user.email?.[0] ?? '?').toUpperCase();
+    const displayName = profileName || session.user.name || '';
+    const displayEmail = profileEmail || session.user.email || '';
+    const initials = (displayName?.[0] ?? displayEmail?.[0] ?? '?').toUpperCase();
 
     return (
         <div ref={ref} className="relative">
             <button
                 onClick={() => setOpen(!open)}
                 className="w-8 h-8 rounded-full bg-black/10 dark:bg-white/10 flex items-center justify-center text-xs font-medium hover:bg-black/20 dark:hover:bg-white/20 transition-colors overflow-hidden"
-                title={session.user.name || session.user.email || ''}
+                title={displayName || displayEmail || ''}
             >
                 {session.user.image ? (
                     <img src={session.user.image} alt="" className="w-8 h-8 rounded-full" />
@@ -54,9 +71,9 @@ export function UserMenu() {
             {open && (
                 <div className="absolute top-10 right-0 w-64 bg-white dark:bg-neutral-900 border border-black/10 dark:border-white/10 rounded-xl shadow-lg overflow-hidden z-50">
                     <div className="px-4 py-3 border-b border-black/5 dark:border-white/5">
-                        <div className="text-sm font-medium truncate">{session.user.name}</div>
-                        {session.user.email && (
-                            <div className="text-xs text-black/50 dark:text-white/50 truncate mt-0.5">{session.user.email}</div>
+                        {displayName && <div className="text-sm font-medium truncate">{displayName}</div>}
+                        {displayEmail && (
+                            <div className="text-xs text-black/50 dark:text-white/50 truncate mt-0.5">{displayEmail}</div>
                         )}
                     </div>
                     <div className="py-1">
