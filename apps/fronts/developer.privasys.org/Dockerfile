@@ -13,9 +13,9 @@ RUN adduser -S nextjs -u 1001
 RUN yarn add sharp && rm yarn.lock package.json
 
 # Set the correct permission for prerender cache
-COPY --chown=nextjs:nodejs .next/standalone .
-COPY --chown=nextjs:nodejs .next/static ./dist/apps/fronts/developer.privasys.org/.next/static
-COPY --chown=nextjs:nodejs public ./apps/fronts/developer.privasys.org/public
+COPY --chown=nextjs:nodejs standalone/ .
+COPY --chown=nextjs:nodejs static/ ./dist/apps/fronts/developer.privasys.org/.next/static
+COPY --chown=nextjs:nodejs public/ ./apps/fronts/developer.privasys.org/public
 
 # When compiling on Windows there is a problem with the path separator
 RUN sed -i 's#\\#/#g' ./apps/fronts/developer.privasys.org/server.js

@@ -155,10 +155,7 @@ function Sidebar() {
 export default function PlatformLayout({ children }: { children: ReactNode }) {
     return (
         <>
-            <Navbar brandSuffix="Developer" items={NAVBAR_ITEMS} fullWidth />
-            <div className="fixed top-0 right-6 h-14 flex items-center z-50">
-                <UserMenu />
-            </div>
+            <Navbar brandSuffix="Developer" items={NAVBAR_ITEMS} fullWidth trailing={<UserMenu />} />
             <div className="flex pt-14 min-h-screen">
                 <Sidebar />
                 <main className="flex-1 p-6 lg:p-10 overflow-y-auto">

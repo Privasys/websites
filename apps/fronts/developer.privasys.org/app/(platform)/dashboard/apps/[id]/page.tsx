@@ -114,6 +114,139 @@ function VersionPipeline({ version, builds }: { version: AppVersion; builds: Bui
 
 type Tab = 'overview' | 'versions' | 'deployments';
 
+// Terminal states that show the full detail view
+const TERMINAL_STATUSES = new Set(['deployed', 'undeployed']);
+
+// App-level pipeline (vertical, like the wizard)
+function AppPipelineStep({ step, active, done, failed, last, children }: {
+    step: number; active: boolean; done: boolean; failed?: boolean; last?: boolean; children: React.ReactNode;
+}) {
+    return (
+        <div className="flex gap-4">
+            <div className="flex flex-col items-center">
+                <div className={`w-8 h-8 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${
+                    failed
+                        ? 'border-red-500 bg-red-500 text-white'
+                        : done
+                            ? 'border-emerald-500 bg-emerald-500 text-white'
+                            : active
+                                ? 'border-black dark:border-white bg-transparent'
+                                : 'border-black/15 dark:border-white/15 bg-transparent'
+                }`}>
+                    {failed ? (
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                            <path d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    ) : done ? (
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                            <path d="M5 13l4 4L19 7" />
+                        </svg>
+                    ) : (
+                        <span className={`text-xs font-semibold ${active ? 'text-black dark:text-white' : 'text-black/25 dark:text-white/25'}`}>
+                            {step}
+                        </span>
+                    )}
+                </div>
+                {!last && (
+                    <div className={`w-0.5 flex-1 min-h-[24px] transition-colors ${
+                        failed ? 'bg-red-500' : done ? 'bg-emerald-500' : 'bg-black/10 dark:bg-white/10'
+                    }`} />
+                )}
+            </div>
+            <div className={`pb-8 flex-1 ${!active && !done && !failed ? 'opacity-40' : ''}`}>
+                {children}
+            </div>
+        </div>
+    );
+}
+
+function AppPipeline({ app, builds }: { app: App; builds: BuildJob[] }) {
+    const s = app.status;
+    const latestBuild = builds[0];
+
+    // Compute step states
+    const submitted = true; // Always done — we're viewing the app
+    const reviewDone = s !== 'submitted' && s !== 'under_review';
+    const reviewActive = s === 'submitted' || s === 'under_review';
+    const reviewFailed = s === 'rejected';
+
+    const buildDone = ['deploying', 'deployed', 'undeployed'].includes(s) || (s === 'approved' && !!app.cwasm_hash);
+    const buildActive = s === 'building';
+    const buildFailed = s === 'failed' && !!latestBuild?.status && latestBuild.status !== 'success';
+
+    const deployReady = !!app.cwasm_hash || buildDone;
+    const deployDone = s === 'deployed' || s === 'deploying';
+    const deployActive = s === 'deploying';
+
+    const liveDone = s === 'deployed';
+
+    // What should the user know / do next?
+    const needsBuild = s === 'approved' && !app.cwasm_hash && builds.length === 0;
+
+    return (
+        <div className="max-w-xl">
+            <AppPipelineStep step={1} active={false} done={submitted}>
+                <h2 className="text-lg font-semibold">Application submitted</h2>
+                <div className="mt-1 text-sm text-black/50 dark:text-white/50">
+                    {app.source_type === 'github' ? (
+                        <>Created from <a href={app.commit_url || '#'} target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline">GitHub commit</a> &middot; {app.github_commit?.slice(0, 12)}</>
+                    ) : 'Uploaded manually'}
+                </div>
+            </AppPipelineStep>
+
+            <AppPipelineStep step={2} active={reviewActive} done={reviewDone && !reviewFailed} failed={reviewFailed}>
+                <h2 className="text-lg font-semibold">Application review</h2>
+                <div className="mt-1 text-sm text-black/50 dark:text-white/50">
+                    {reviewFailed
+                        ? <span className="text-red-600 dark:text-red-400">Application was rejected.{app.review_note ? ` Reason: ${app.review_note}` : ''}</span>
+                        : reviewActive
+                            ? 'Your application is queued for review.'
+                            : 'Approved.'}
+                </div>
+            </AppPipelineStep>
+
+            <AppPipelineStep step={3} active={buildActive || needsBuild} done={buildDone} failed={buildFailed}>
+                <h2 className="text-lg font-semibold">Reproducible build</h2>
+                <div className="mt-1 text-sm text-black/50 dark:text-white/50">
+                    {buildFailed
+                        ? <span className="text-red-600 dark:text-red-400">Build failed.{latestBuild?.run_url && <> <a href={latestBuild.run_url} target="_blank" rel="noopener noreferrer" className="underline">View build log</a></>}</span>
+                        : buildActive
+                            ? <>Building CWASM module…{latestBuild?.run_url && <> <a href={latestBuild.run_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline">View build</a></>}</>
+                            : buildDone
+                                ? <>
+                                    CWASM compiled.
+                                    {app.cwasm_hash && <code className="text-xs font-mono ml-1">{app.cwasm_hash.slice(0, 16)}…</code>}
+                                    {latestBuild?.run_url && <> &middot; <a href={latestBuild.run_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline">View build</a></>}
+                                </>
+                                : needsBuild
+                                    ? 'Waiting for build to be triggered.'
+                                    : 'Compile your application into a .cwasm artifact.'}
+                </div>
+            </AppPipelineStep>
+
+            <AppPipelineStep step={4} active={deployReady && !deployDone && !buildActive && !needsBuild && reviewDone && !reviewFailed && !buildFailed} done={deployDone}>
+                <h2 className="text-lg font-semibold">Deploy to enclave</h2>
+                <div className="mt-1 text-sm text-black/50 dark:text-white/50">
+                    {deployActive
+                        ? 'Deploying to enclave…'
+                        : deployDone
+                            ? 'Deployed successfully.'
+                            : 'Select a deployment location for your enclave.'}
+                </div>
+            </AppPipelineStep>
+
+            <AppPipelineStep step={5} active={false} done={liveDone} last>
+                <h2 className="text-lg font-semibold">Live &amp; attested</h2>
+                <div className="mt-1 text-sm text-black/50 dark:text-white/50">
+                    {liveDone
+                        ? <>Your application is live.{app.hostname && <> <a href={`https://${app.hostname}`} target="_blank" rel="noopener noreferrer" className="text-emerald-600 dark:text-emerald-400 hover:underline">{app.hostname}</a></>}</>
+                        : 'Your application will be live and remotely attested.'}
+                </div>
+            </AppPipelineStep>
+        </div>
+    );
+}
+
 export default function AppDetailPage() {
     const { id } = useParams<{ id: string }>();
     const searchParams = useSearchParams();
@@ -207,6 +340,96 @@ export default function AppDetailPage() {
 
     const activeDeployments = deployments.filter(d => d.status === 'active');
     const canDelete = app.status !== 'deployed' && app.status !== 'deploying';
+    const showPipeline = !TERMINAL_STATUSES.has(app.status);
+
+    // Pipeline view — shown while the app is still progressing through the flow
+    if (showPipeline) {
+        return (
+            <div className="max-w-4xl">
+                {/* Header */}
+                <div className="flex items-start justify-between">
+                    <div>
+                        <h1 className="text-2xl font-semibold">{app.display_name || app.name}</h1>
+                        <p className="mt-1 text-sm text-black/50 dark:text-white/50">
+                            {app.name} &middot; {app.source_type === 'github' ? 'GitHub' : 'Upload'}
+                        </p>
+                    </div>
+                    <StatusBadge status={app.status} labels={STATUS_LABELS} colors={STATUS_COLORS} />
+                </div>
+
+                {error && (
+                    <div className="mt-4 p-3 rounded-lg bg-red-50 dark:bg-red-900/20 text-sm text-red-700 dark:text-red-300">
+                        {error}
+                    </div>
+                )}
+
+                <div className="mt-8">
+                    <AppPipeline app={app} builds={builds} />
+                </div>
+
+                {/* Build details card */}
+                {builds.length > 0 && (() => {
+                    const b = builds[0];
+                    return (
+                        <section className="mt-8 p-5 rounded-xl border border-black/10 dark:border-white/10">
+                            <h2 className="text-sm font-semibold mb-3">Build details</h2>
+                            <div className="grid grid-cols-2 gap-3 text-sm">
+                                <div>
+                                    <span className="text-black/50 dark:text-white/50">Status</span>
+                                    <div className="mt-0.5 font-medium capitalize">{b.status}</div>
+                                </div>
+                                <div>
+                                    <span className="text-black/50 dark:text-white/50">Commit</span>
+                                    <div className="mt-0.5 font-mono text-xs">{b.github_commit?.slice(0, 12)}</div>
+                                </div>
+                                {b.run_url && (
+                                    <div className="col-span-2">
+                                        <span className="text-black/50 dark:text-white/50">GitHub Actions</span>
+                                        <div className="mt-0.5">
+                                            <a href={b.run_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline break-all">
+                                                {b.run_url}
+                                            </a>
+                                        </div>
+                                    </div>
+                                )}
+                                {app.cwasm_hash && (
+                                    <div className="col-span-2">
+                                        <span className="text-black/50 dark:text-white/50">CWASM hash</span>
+                                        <div className="mt-0.5 font-mono text-xs break-all">{app.cwasm_hash}</div>
+                                    </div>
+                                )}
+                                {b.completed_at && b.created_at && (
+                                    <div>
+                                        <span className="text-black/50 dark:text-white/50">Duration</span>
+                                        <div className="mt-0.5">{Math.round((new Date(b.completed_at).getTime() - new Date(b.created_at).getTime()) / 1000)}s</div>
+                                    </div>
+                                )}
+                            </div>
+                        </section>
+                    );
+                })()}
+
+                {/* Delete option for non-deployed apps */}
+                {canDelete && (
+                    <section className="mt-12 p-5 rounded-xl border border-red-200 dark:border-red-800/50">
+                        <h2 className="text-sm font-semibold text-red-700 dark:text-red-400">Danger zone</h2>
+                        <p className="mt-1 text-sm text-black/60 dark:text-white/60">
+                            Permanently delete this application and all its associated data.
+                        </p>
+                        <button
+                            onClick={handleDelete}
+                            disabled={deleting}
+                            className="mt-3 px-4 py-2 text-sm font-medium rounded-lg border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-40 transition-colors"
+                        >
+                            {deleting ? 'Deleting…' : 'Delete application'}
+                        </button>
+                    </section>
+                )}
+            </div>
+        );
+    }
+
+    // Full detail view — shown once the app has reached a terminal state
     const TABS: { key: Tab; label: string; count?: number }[] = [
         { key: 'overview', label: 'Overview' },
         { key: 'versions', label: 'Versions', count: versions.length },
@@ -322,24 +545,18 @@ function OverviewTab({ app, versions, builds, deployments }: { app: App; version
                             <div className="mt-0.5">{app.description}</div>
                         </div>
                     )}
-                    {app.commit_url && (
-                        <div className="col-span-2">
-                            <div className="text-xs text-black/50 dark:text-white/50">Source commit</div>
-                            <a
-                                href={app.commit_url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="mt-0.5 text-blue-600 dark:text-blue-400 hover:underline break-all text-xs"
-                            >
-                                {app.commit_url}
-                            </a>
-                        </div>
-                    )}
-                    {app.github_commit && (
+                    {app.github_commit && app.commit_url &&(
                         <>
                             <div>
                                 <div className="text-xs text-black/50 dark:text-white/50">Commit</div>
-                                <code className="text-xs mt-0.5 block font-mono">{app.github_commit.slice(0, 12)}</code>
+                                <a
+                                    href={app.commit_url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="mt-0.5 text-blue-600 dark:text-blue-400 hover:underline break-all text-xs"
+                                >
+                                    {app.github_commit.slice(0, 12)}
+                                </a>
                             </div>
                             <div>
                                 <div className="text-xs text-black/50 dark:text-white/50">GPG</div>
