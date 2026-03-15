@@ -115,6 +115,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                         || (profile.nickname as string);
                     if (profileName) token.name = profileName;
                 }
+                // Zitadel access tokens often omit profile claims — fetch from userinfo
+                if ((!token.name || !token.email) && account.access_token) {
+                    const info = await fetchUserInfo(account.access_token);
+                    if (info.name && !token.name) token.name = info.name;
+                    if (info.email && !token.email) token.email = info.email;
+                }
                 if (!token.name && token.email) {
                     token.name = (token.email as string).split('@')[0];
                 }
