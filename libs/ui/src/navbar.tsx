@@ -16,9 +16,10 @@ export interface NavbarProps {
     items: NavItem[];
     cta?: { label: string; href: string };
     faviconPath?: string;
+    fullWidth?: boolean;
 }
 
-export function Navbar({ brandSuffix, items, cta, faviconPath = '/favicon/favicon.svg' }: NavbarProps) {
+export function Navbar({ brandSuffix, items, cta, faviconPath = '/favicon/favicon.svg', fullWidth }: NavbarProps) {
     const [mobileOpen, setMobileOpen] = useState(false);
     const [openDropdown, setOpenDropdown] = useState<string | null>(null);
     const dropdownRef = useRef<HTMLDivElement>(null);
@@ -41,7 +42,7 @@ export function Navbar({ brandSuffix, items, cta, faviconPath = '/favicon/favico
     return (
         <>
             <nav className="pui-navbar px-6 lg:px-0">
-                <div className="pui-navbar-inner">
+                <div className={fullWidth ? 'pui-navbar-inner pui-navbar-inner--full' : 'pui-navbar-inner'}>
                     <Link href="/" className="pui-navbar-brand">
                         <Image src={faviconPath} alt="" width={20} height={20} aria-hidden />
                         <span>Privasys</span>

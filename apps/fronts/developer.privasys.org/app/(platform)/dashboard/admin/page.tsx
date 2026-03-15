@@ -1,6 +1,6 @@
 'use client';
 
-import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { useEffect, useState } from 'react';
 import { adminListApps } from '~/lib/api';
@@ -20,6 +20,7 @@ const TABS = ['all', 'submitted', 'approved', 'deployed', 'rejected'] as const;
 
 export default function AdminPage() {
     const { data: session } = useSession();
+    const router = useRouter();
     const [apps, setApps] = useState<App[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -102,12 +103,13 @@ export default function AdminPage() {
                                 <th className="text-left px-4 py-3 font-medium">Source</th>
                                 <th className="text-left px-4 py-3 font-medium">Status</th>
                                 <th className="text-left px-4 py-3 font-medium">Created</th>
-                                <th className="text-left px-4 py-3 font-medium w-20"></th>
                             </tr>
                         </thead>
                         <tbody>
                             {apps.map((app) => (
-                                <tr key={app.id} className="border-b border-black/5 dark:border-white/5 last:border-b-0 hover:bg-black/2 dark:hover:bg-white/2 transition-colors">
+                                <tr key={app.id}
+                                    onClick={() => router.push(`/dashboard/admin/apps/${app.id}`)}
+                                    className="border-b border-black/5 dark:border-white/5 last:border-b-0 hover:bg-black/2 dark:hover:bg-white/2 transition-colors cursor-pointer">
                                     <td className="px-4 py-3">
                                         <div className="font-medium">{app.display_name || app.name}</div>
                                         <div className="text-xs text-black/40 dark:text-white/40">{app.name}</div>
@@ -128,14 +130,6 @@ export default function AdminPage() {
                                     </td>
                                     <td className="px-4 py-3 text-black/60 dark:text-white/60">
                                         {new Date(app.created_at).toLocaleDateString()}
-                                    </td>
-                                    <td className="px-4 py-3">
-                                        <Link
-                                            href={`/dashboard/admin/apps/${app.id}`}
-                                            className="text-xs font-medium text-black/50 dark:text-white/50 hover:text-black dark:hover:text-white transition-colors"
-                                        >
-                                            View →
-                                        </Link>
                                     </td>
                                 </tr>
                             ))}

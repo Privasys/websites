@@ -2,8 +2,9 @@
 
 import { useSession } from 'next-auth/react';
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { adminEnclaveHealth, adminListEnclaveApps, adminListEnclaves, adminCreateEnclave, adminUpdateEnclave, adminDeleteEnclave } from '~/lib/api';
+import { adminEnclaveHealth, adminInspectEnclave, adminListEnclaves, adminCreateEnclave, adminUpdateEnclave, adminDeleteEnclave } from '~/lib/api';
 import { useSSE } from '~/lib/use-sse';
+import { COUNTRIES, regionForCountry, countryName } from '~/lib/countries';
 import type { Enclave, CreateEnclaveRequest } from '~/lib/types';
 
 const EMPTY_FORM: CreateEnclaveRequest = {
@@ -22,8 +23,6 @@ const INPUT_CLS = 'w-full px-3 py-2 text-sm rounded-lg border border-black/10 da
 
 export default function AdminEnclavePage() {
     const { data: session } = useSession();
-    const [health, setHealth] = useState<{ status: string; error?: string } | null>(null);
-    const [apps, setApps] = useState<unknown>(null);
     const [enclaves, setEnclaves] = useState<Enclave[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -31,7 +30,9 @@ export default function AdminEnclavePage() {
     const [editingId, setEditingId] = useState<string | null>(null);
     const [form, setForm] = useState<CreateEnclaveRequest>({ ...EMPTY_FORM });
     const [saving, setSaving] = useState(false);
+    const [fetchingMr, setFetchingMr] = useState(false);
     const [expandedId, setExpandedId] = useState<string | null>(null);
+    const [enclaveHealth, setEnclaveHealth] = useState<Record<string, { status: string; error?: string } | null>>({});
 
     // Filters
     const [search, setSearch] = useState('');
@@ -47,14 +48,8 @@ export default function AdminEnclavePage() {
         if (!session?.accessToken) return;
         setError(null);
         try {
-            const [h, a, enc] = await Promise.allSettled([
-                adminEnclaveHealth(session.accessToken),
-                adminListEnclaveApps(session.accessToken),
-                adminListEnclaves(session.accessToken),
-            ]);
-            setHealth(h.status === 'fulfilled' ? h.value : { status: 'unreachable' });
-            setApps(a.status === 'fulfilled' ? a.value : null);
-            if (enc.status === 'fulfilled') setEnclaves(enc.value);
+            const enc = await adminListEnclaves(session.accessToken);
+            setEnclaves(enc);
         } catch (e) {
             setError(e instanceof Error ? e.message : 'Failed to load');
         } finally {
@@ -66,6 +61,17 @@ export default function AdminEnclavePage() {
 
     // SSE: refresh enclave list on any enclave update
     useSSE(session?.accessToken, useCallback(() => { load(); }, [load]));
+
+    async function checkHealth(enc: Enclave) {
+        if (!session?.accessToken) return;
+        setEnclaveHealth(prev => ({ ...prev, [enc.id]: null })); // loading state
+        try {
+            const h = await adminEnclaveHealth(session.accessToken, enc.host, enc.port);
+            setEnclaveHealth(prev => ({ ...prev, [enc.id]: h }));
+        } catch {
+            setEnclaveHealth(prev => ({ ...prev, [enc.id]: { status: 'unreachable', error: 'Could not reach enclave' } }));
+        }
+    }
 
     // Derive unique filter options from data
     const countries = useMemo(() => [...new Set(enclaves.map(e => e.country).filter(Boolean))].sort(), [enclaves]);
@@ -110,16 +116,35 @@ export default function AdminEnclavePage() {
         setShowForm(true);
     }
 
+    async function fetchMrEnclave() {
+        if (!session?.accessToken || !form.host) return;
+        setFetchingMr(true);
+        setError(null);
+        try {
+            const info = await adminInspectEnclave(session.accessToken, form.host, form.port || 8445);
+            if (info.mr_enclave) {
+                setForm(f => ({ ...f, mr_enclave: info.mr_enclave! }));
+            } else {
+                setError('No MR_ENCLAVE found in enclave certificate');
+            }
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to inspect enclave');
+        } finally {
+            setFetchingMr(false);
+        }
+    }
+
     async function handleSubmit(e: React.FormEvent) {
         e.preventDefault();
         if (!session?.accessToken) return;
         setSaving(true);
         setError(null);
         try {
+            const payload = { ...form, region: regionForCountry(form.country ?? '') };
             if (editingId) {
-                await adminUpdateEnclave(session.accessToken, editingId, form);
+                await adminUpdateEnclave(session.accessToken, editingId, payload);
             } else {
-                await adminCreateEnclave(session.accessToken, form);
+                await adminCreateEnclave(session.accessToken, payload);
             }
             setShowForm(false);
             setEditingId(null);
@@ -146,8 +171,6 @@ export default function AdminEnclavePage() {
         return <p className="text-sm text-red-600">Access denied. Manager role required.</p>;
     }
 
-    const healthy = health?.status === 'healthy';
-
     return (
         <div className="max-w-6xl">
             <div className="flex items-center justify-between">
@@ -167,26 +190,6 @@ export default function AdminEnclavePage() {
             {error && (
                 <div className="mt-4 p-3 rounded-lg bg-red-50 dark:bg-red-900/20 text-sm text-red-700 dark:text-red-300">{error}</div>
             )}
-
-            {/* Default enclave health */}
-            <section className="mt-6 p-4 rounded-xl border border-black/10 dark:border-white/10">
-                <div className="flex items-center justify-between">
-                    <h2 className="text-sm font-semibold">Default enclave health</h2>
-                    <button onClick={load} disabled={loading}
-                        className="text-xs text-black/50 dark:text-white/50 hover:underline disabled:opacity-40">
-                        {loading ? 'Checking…' : 'Refresh'}
-                    </button>
-                </div>
-                {loading && !health ? (
-                    <div className="mt-2 text-sm text-black/40 dark:text-white/40 animate-pulse">Checking…</div>
-                ) : health ? (
-                    <div className="mt-2 flex items-center gap-3">
-                        <span className={`w-3 h-3 rounded-full ${healthy ? 'bg-emerald-500' : 'bg-red-500'}`} />
-                        <span className="text-sm font-medium">{healthy ? 'Healthy' : 'Unhealthy'}</span>
-                        {health.error && <span className="text-xs text-red-600 dark:text-red-400">{health.error}</span>}
-                    </div>
-                ) : null}
-            </section>
 
             {/* Create / Edit form */}
             {showForm && (
@@ -227,21 +230,28 @@ export default function AdminEnclavePage() {
                         </div>
                         <div className="col-span-3">
                             <label className="block text-xs font-medium mb-1">MR_ENCLAVE</label>
-                            <input value={form.mr_enclave ?? ''} onChange={e => setForm(f => ({ ...f, mr_enclave: e.target.value }))}
-                                placeholder="Hex-encoded measurement hash"
-                                className={`${INPUT_CLS} font-mono text-xs`} />
+                            <div className="flex gap-2">
+                                <input value={form.mr_enclave ?? ''} onChange={e => setForm(f => ({ ...f, mr_enclave: e.target.value }))}
+                                    placeholder="Hex-encoded measurement hash"
+                                    className={`${INPUT_CLS} font-mono text-xs flex-1`} />
+                                <button type="button" onClick={fetchMrEnclave} disabled={fetchingMr || !form.host}
+                                    className="px-3 py-2 text-xs font-medium rounded-lg border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-40 transition-colors whitespace-nowrap">
+                                    {fetchingMr ? 'Fetching…' : 'Fetch from enclave'}
+                                </button>
+                            </div>
                         </div>
                         <div>
                             <label className="block text-xs font-medium mb-1">Country</label>
-                            <input value={form.country ?? ''} onChange={e => setForm(f => ({ ...f, country: e.target.value }))}
-                                placeholder="e.g. FR, GB"
-                                className={INPUT_CLS} />
+                            <select value={form.country ?? ''} onChange={e => setForm(f => ({ ...f, country: e.target.value }))}
+                                className={INPUT_CLS}>
+                                <option value="">Select a country…</option>
+                                {COUNTRIES.map(c => <option key={c.code} value={c.code}>{c.name}</option>)}
+                            </select>
                         </div>
                         <div>
-                            <label className="block text-xs font-medium mb-1">Region</label>
-                            <input value={form.region ?? ''} onChange={e => setForm(f => ({ ...f, region: e.target.value }))}
-                                placeholder="e.g. europe-west9"
-                                className={INPUT_CLS} />
+                            <label className="block text-xs font-medium mb-1">Region (inferred)</label>
+                            <input readOnly value={form.country ? regionForCountry(form.country) : ''}
+                                className={`${INPUT_CLS} bg-black/[0.02] dark:bg-white/[0.02] cursor-not-allowed`} />
                         </div>
                         <div className="grid grid-cols-2 gap-4">
                             <div>
@@ -347,7 +357,7 @@ export default function AdminEnclavePage() {
                                                 <code className="text-xs">{enc.host}:{enc.port}</code>
                                             </td>
                                             <td className="px-4 py-3 text-black/60 dark:text-white/60">
-                                                {enc.country || '—'}{enc.region ? ` · ${enc.region}` : ''}
+                                                {enc.country ? countryName(enc.country) : '—'}{enc.region ? ` · ${enc.region}` : ''}
                                             </td>
                                             <td className="px-4 py-3 text-black/60 dark:text-white/60">
                                                 {enc.owner || '—'}
@@ -380,6 +390,23 @@ export default function AdminEnclavePage() {
                                             <tr key={`${enc.id}-detail`}>
                                                 <td colSpan={8} className="bg-black/[0.01] dark:bg-white/[0.01] px-6 py-4 border-b border-black/5 dark:border-white/5">
                                                     <div className="grid grid-cols-3 gap-y-3 gap-x-8 text-sm">
+                                                        <div className="col-span-3 flex items-center gap-3">
+                                                            <button onClick={(e) => { e.stopPropagation(); checkHealth(enc); }}
+                                                                className="px-3 py-1.5 text-xs font-medium rounded-lg border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
+                                                                Check health
+                                                            </button>
+                                                            {enc.id in enclaveHealth && (
+                                                                enclaveHealth[enc.id] === null ? (
+                                                                    <span className="text-xs text-black/40 dark:text-white/40 animate-pulse">Checking…</span>
+                                                                ) : (
+                                                                    <span className="flex items-center gap-2">
+                                                                        <span className={`w-2.5 h-2.5 rounded-full ${enclaveHealth[enc.id]?.status === 'healthy' ? 'bg-emerald-500' : 'bg-red-500'}`} />
+                                                                        <span className="text-xs font-medium">{enclaveHealth[enc.id]?.status === 'healthy' ? 'Healthy' : 'Unhealthy'}</span>
+                                                                        {enclaveHealth[enc.id]?.error && <span className="text-xs text-red-600 dark:text-red-400">{enclaveHealth[enc.id]?.error}</span>}
+                                                                    </span>
+                                                                )
+                                                            )}
+                                                        </div>
                                                         {enc.mr_enclave && (
                                                             <div className="col-span-3">
                                                                 <div className="text-xs text-black/50 dark:text-white/50">MR_ENCLAVE</div>

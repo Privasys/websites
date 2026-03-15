@@ -1,4 +1,4 @@
-import type { App, CreateAppRequest, ReviewRequest, DeploymentLog, BuildJob, Enclave, CreateEnclaveRequest } from './types';
+import type { App, CreateAppRequest, ReviewRequest, DeploymentLog, BuildJob, Enclave, CreateEnclaveRequest, AppVersion, AppDeployment } from './types';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
 
@@ -21,6 +21,9 @@ async function request<T>(path: string, token: string, init?: RequestInit): Prom
         }
     });
     if (!res.ok) {
+        if (res.status === 401 && typeof window !== 'undefined') {
+            window.dispatchEvent(new Event('auth:expired'));
+        }
         const body = await res.json().catch(() => ({ error: res.statusText }));
         throw new ApiError(body.error || `API error ${res.status}`, res.status);
     }
@@ -102,12 +105,16 @@ export function adminGetDeploymentLogs(token: string, id: string): Promise<Deplo
     return request<DeploymentLog[]>(`/api/v1/admin/apps/${encodeURIComponent(id)}/logs`, token);
 }
 
-export function adminEnclaveHealth(token: string): Promise<{ status: string; error?: string }> {
-    return request<{ status: string; error?: string }>('/api/v1/admin/enclave/health', token);
+export function adminEnclaveHealth(token: string, host: string, port: number): Promise<{ status: string; error?: string }> {
+    return request<{ status: string; error?: string }>(`/api/v1/admin/enclave/health?host=${encodeURIComponent(host)}&port=${port}`, token);
 }
 
-export function adminListEnclaveApps(token: string): Promise<unknown> {
-    return request<unknown>('/api/v1/admin/enclave/apps', token);
+export function adminListEnclaveApps(token: string, host: string, port: number): Promise<unknown> {
+    return request<unknown>(`/api/v1/admin/enclave/apps?host=${encodeURIComponent(host)}&port=${port}`, token);
+}
+
+export function adminInspectEnclave(token: string, host: string, port: number): Promise<{ mr_enclave?: string; mr_signer?: string; quote_type?: string }> {
+    return request<{ mr_enclave?: string; mr_signer?: string; quote_type?: string }>(`/api/v1/admin/enclave/inspect?host=${encodeURIComponent(host)}&port=${port}`, token);
 }
 
 export function adminTriggerBuild(token: string, id: string): Promise<BuildJob> {
@@ -133,12 +140,21 @@ export interface UserInfo {
     sub: string;
     email: string;
     name: string;
+    display_name: string;
+    display_email: string;
     roles: string[];
     is_admin: boolean;
 }
 
 export function getUserInfo(token: string): Promise<UserInfo> {
     return request<UserInfo>('/api/v1/me', token);
+}
+
+export function updateProfile(token: string, displayName: string, displayEmail: string): Promise<UserInfo> {
+    return request<UserInfo>('/api/v1/me', token, {
+        method: 'PUT',
+        body: JSON.stringify({ display_name: displayName, display_email: displayEmail })
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -193,5 +209,60 @@ export function adminUpdateEnclave(token: string, id: string, body: CreateEnclav
 export function adminDeleteEnclave(token: string, id: string): Promise<void> {
     return request<void>(`/api/v1/admin/enclaves/${encodeURIComponent(id)}`, token, {
         method: 'DELETE'
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Versions API
+// ---------------------------------------------------------------------------
+
+export function listVersions(token: string, appId: string): Promise<AppVersion[]> {
+    return request<AppVersion[]>(`/api/v1/apps/${encodeURIComponent(appId)}/versions`, token);
+}
+
+export function getVersion(token: string, appId: string, versionId: string): Promise<AppVersion> {
+    return request<AppVersion>(`/api/v1/apps/${encodeURIComponent(appId)}/versions/${encodeURIComponent(versionId)}`, token);
+}
+
+export function createVersion(token: string, appId: string, commitUrl: string): Promise<AppVersion> {
+    return request<AppVersion>(`/api/v1/apps/${encodeURIComponent(appId)}/versions`, token, {
+        method: 'POST',
+        body: JSON.stringify({ commit_url: commitUrl })
+    });
+}
+
+export function adminReviewVersion(token: string, appId: string, versionId: string, decision: 'approve' | 'reject'): Promise<AppVersion> {
+    return request<AppVersion>(`/api/v1/admin/apps/${encodeURIComponent(appId)}/versions/${encodeURIComponent(versionId)}/review`, token, {
+        method: 'POST',
+        body: JSON.stringify({ decision })
+    });
+}
+
+export function adminBuildVersion(token: string, appId: string, versionId: string): Promise<BuildJob> {
+    return request<BuildJob>(`/api/v1/admin/apps/${encodeURIComponent(appId)}/versions/${encodeURIComponent(versionId)}/build`, token, {
+        method: 'POST',
+        body: JSON.stringify({})
+    });
+}
+
+export function adminDeployVersion(token: string, appId: string, versionId: string, enclaveId?: string, enclaveHost?: string, enclavePort?: number): Promise<AppDeployment> {
+    return request<AppDeployment>(`/api/v1/admin/apps/${encodeURIComponent(appId)}/versions/${encodeURIComponent(versionId)}/deploy`, token, {
+        method: 'POST',
+        body: JSON.stringify({ enclave_id: enclaveId, enclave_host: enclaveHost, enclave_port: enclavePort })
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Deployments API
+// ---------------------------------------------------------------------------
+
+export function listDeployments(token: string, appId: string): Promise<AppDeployment[]> {
+    return request<AppDeployment[]>(`/api/v1/apps/${encodeURIComponent(appId)}/deployments`, token);
+}
+
+export function adminStopDeployment(token: string, appId: string, deploymentId: string): Promise<AppDeployment> {
+    return request<AppDeployment>(`/api/v1/admin/apps/${encodeURIComponent(appId)}/deployments/${encodeURIComponent(deploymentId)}/stop`, token, {
+        method: 'POST',
+        body: JSON.stringify({})
     });
 }
