@@ -12,14 +12,18 @@ export interface NavItem {
 }
 
 export interface NavbarProps {
+    /** Custom brand area — replaces the default Privasys logo + text. */
+    brand?: ReactNode;
     brandSuffix?: string;
-    items: NavItem[];
+    items?: NavItem[];
     cta?: { label: string; href: string };
+    /** Content rendered at the trailing end of the navbar (e.g. user menu). */
+    trailing?: ReactNode;
     faviconPath?: string;
     fullWidth?: boolean;
 }
 
-export function Navbar({ brandSuffix, items, cta, faviconPath = '/favicon/favicon.svg', fullWidth }: NavbarProps) {
+export function Navbar({ brand, brandSuffix, items = [], cta, trailing, faviconPath = '/favicon/favicon.svg', fullWidth }: NavbarProps) {
     const [mobileOpen, setMobileOpen] = useState(false);
     const [openDropdown, setOpenDropdown] = useState<string | null>(null);
     const dropdownRef = useRef<HTMLDivElement>(null);
@@ -42,76 +46,82 @@ export function Navbar({ brandSuffix, items, cta, faviconPath = '/favicon/favico
     return (
         <>
             <nav className="pui-navbar px-6 lg:px-0">
-                <div className={fullWidth ? 'pui-navbar-inner pui-navbar-inner--full' : 'pui-navbar-inner'}>
-                    <Link href="/" className="pui-navbar-brand">
-                        <Image src={faviconPath} alt="" width={20} height={20} aria-hidden />
-                        <span>Privasys</span>
-                        {brandSuffix && (
-                            <span className="pui-navbar-brand-suffix">{brandSuffix}</span>
-                        )}
-                    </Link>
+                <div className={'px-6 lg:px-0 pui-navbar-inner' + (fullWidth ? ' pui-navbar-inner--full' : '')}>
+                    {brand || (
+                        <Link href="/" className="pui-navbar-brand">
+                            <Image src={faviconPath} alt="" width={20} height={20} aria-hidden />
+                            <span>Privasys</span>
+                            {brandSuffix && (
+                                <span className="pui-navbar-brand-suffix">{brandSuffix}</span>
+                            )}
+                        </Link>
+                    )}
 
-                    {/* Desktop links */}
-                    <div className="pui-navbar-desktop" ref={dropdownRef}>
-                        {items.map((item) =>
-                            item.children ? (
-                                <div key={item.label} className="pui-navbar-dropdown-wrapper">
-                                    <button
-                                        onClick={() => setOpenDropdown(openDropdown === item.label ? null : item.label)}
-                                        className="pui-navbar-link pui-navbar-dropdown-trigger"
+                    <div className="pui-navbar-right">
+                        {/* Desktop links */}
+                        <div className="pui-navbar-desktop" ref={dropdownRef}>
+                            {items.map((item) =>
+                                item.children ? (
+                                    <div key={item.label} className="pui-navbar-dropdown-wrapper">
+                                        <button
+                                            onClick={() => setOpenDropdown(openDropdown === item.label ? null : item.label)}
+                                            className="pui-navbar-link pui-navbar-dropdown-trigger"
+                                        >
+                                            {item.label}
+                                            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className={openDropdown === item.label ? 'pui-rotate' : ''}>
+                                                <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                                            </svg>
+                                        </button>
+                                        {openDropdown === item.label && (
+                                            <div className="pui-navbar-dropdown">
+                                                {item.children.map((child) => (
+                                                    <Link key={child.href} href={child.href} className="pui-navbar-dropdown-item">
+                                                        {child.label}
+                                                    </Link>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                ) : (
+                                    <Link
+                                        key={item.href}
+                                        href={item.href}
+                                        className="pui-navbar-link"
+                                        {...(item.external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
                                     >
                                         {item.label}
-                                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className={openDropdown === item.label ? 'pui-rotate' : ''}>
-                                            <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                                        </svg>
-                                    </button>
-                                    {openDropdown === item.label && (
-                                        <div className="pui-navbar-dropdown">
-                                            {item.children.map((child) => (
-                                                <Link key={child.href} href={child.href} className="pui-navbar-dropdown-item">
-                                                    {child.label}
-                                                </Link>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
-                            ) : (
-                                <Link
-                                    key={item.href}
-                                    href={item.href}
-                                    className="pui-navbar-link"
-                                    {...(item.external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
-                                >
-                                    {item.label}
+                                    </Link>
+                                )
+                            )}
+                            {cta && (
+                                <Link href={cta.href} className="pui-navbar-cta">
+                                    {cta.label}
                                 </Link>
-                            )
-                        )}
-                        {cta && (
-                            <Link href={cta.href} className="pui-navbar-cta">
-                                {cta.label}
-                            </Link>
-                        )}
-                    </div>
+                            )}
+                        </div>
 
-                    {/* Mobile hamburger */}
-                    <button
-                        className="pui-navbar-mobile-toggle"
-                        onClick={() => setMobileOpen(!mobileOpen)}
-                        aria-label={mobileOpen ? 'Close menu' : 'Open menu'}
-                    >
-                        {mobileOpen ? (
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <line x1="18" y1="6" x2="6" y2="18" />
-                                <line x1="6" y1="6" x2="18" y2="18" />
-                            </svg>
-                        ) : (
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <line x1="3" y1="6" x2="21" y2="6" />
-                                <line x1="3" y1="12" x2="21" y2="12" />
-                                <line x1="3" y1="18" x2="21" y2="18" />
-                            </svg>
-                        )}
-                    </button>
+                        {trailing}
+
+                        {/* Mobile hamburger */}
+                        <button
+                            className="pui-navbar-mobile-toggle"
+                            onClick={() => setMobileOpen(!mobileOpen)}
+                            aria-label={mobileOpen ? 'Close menu' : 'Open menu'}
+                        >
+                            {mobileOpen ? (
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <line x1="18" y1="6" x2="6" y2="18" />
+                                    <line x1="6" y1="6" x2="18" y2="18" />
+                                </svg>
+                            ) : (
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <line x1="3" y1="6" x2="21" y2="6" />
+                                    <line x1="3" y1="12" x2="21" y2="12" />
+                                    <line x1="3" y1="18" x2="21" y2="18" />
+                                </svg>
+                            )}
+                        </button>
+                    </div>
                 </div>
             </nav>
 

@@ -35,6 +35,10 @@ export function listApps(token: string): Promise<App[]> {
     return request<App[]>('/api/v1/apps', token);
 }
 
+export function listEnclaves(token: string): Promise<Enclave[]> {
+    return request<Enclave[]>('/api/v1/enclaves', token);
+}
+
 export function getApp(token: string, id: string): Promise<App> {
     return request<App>(`/api/v1/apps/${encodeURIComponent(id)}`, token);
 }

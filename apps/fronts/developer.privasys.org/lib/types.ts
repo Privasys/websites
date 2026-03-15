@@ -36,6 +36,7 @@ export interface CreateAppRequest {
     description?: string;
     source_type: 'upload' | 'github';
     commit_url?: string;
+    enclave_id?: string;
 }
 
 export interface ReviewRequest {

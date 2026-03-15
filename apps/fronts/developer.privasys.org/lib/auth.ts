@@ -27,13 +27,13 @@ function extractRolesAndClaims(accessToken: string, token: JWT) {
 async function fetchUserInfo(accessToken: string): Promise<{ name?: string; email?: string }> {
     try {
         const res = await fetch(`${issuer}/oidc/v1/userinfo`, {
-            headers: { Authorization: `Bearer ${accessToken}` },
+            headers: { Authorization: `Bearer ${accessToken}` }
         });
         if (!res.ok) return {};
         const info = await res.json();
         return {
             name: info.name || info.preferred_username || info.nickname || undefined,
-            email: info.email || undefined,
+            email: info.email || undefined
         };
     } catch {
         return {};
@@ -49,8 +49,8 @@ async function refreshAccessToken(token: JWT): Promise<JWT> {
                 grant_type: 'refresh_token',
                 refresh_token: token.refreshToken as string,
                 client_id: process.env.AUTH_ZITADEL_ID!,
-                client_secret: process.env.AUTH_ZITADEL_SECRET!,
-            }),
+                client_secret: process.env.AUTH_ZITADEL_SECRET!
+            })
         });
         const data = await response.json();
         if (!response.ok) throw data;
@@ -60,7 +60,7 @@ async function refreshAccessToken(token: JWT): Promise<JWT> {
             accessToken: data.access_token,
             refreshToken: data.refresh_token ?? token.refreshToken,
             expiresAt: Math.floor(Date.now() / 1000) + data.expires_in,
-            error: undefined,
+            error: undefined
         };
         extractRolesAndClaims(data.access_token, refreshed);
 
