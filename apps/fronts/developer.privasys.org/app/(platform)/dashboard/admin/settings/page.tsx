@@ -8,7 +8,6 @@ import type { SettingEntry } from '~/lib/api';
 const GROUPS = [
     { id: 'smtp', label: 'Email (SMTP)', description: 'Azure AD credentials for sending notification emails via Microsoft Graph.' },
     { id: 'github', label: 'GitHub', description: 'GitHub Personal Access Token for triggering cwasm builds via GitHub Actions.' },
-    { id: 'enclave', label: 'Enclave', description: 'Default enclave connection settings for application deployments.' },
 ] as const;
 
 const FIELD_LABELS: Record<string, string> = {
@@ -19,15 +18,11 @@ const FIELD_LABELS: Record<string, string> = {
     'smtp.notify_emails': 'Notification emails (comma-separated)',
     'github.token': 'GitHub PAT',
     'github.builder_repo': 'Builder repository (owner/repo)',
-    'enclave.host': 'Enclave host',
-    'enclave.port': 'Enclave port',
-    'enclave.auth_token': 'Auth token',
 };
 
 const SENSITIVE_FIELDS = new Set([
     'smtp.azure_client_secret',
     'github.token',
-    'enclave.auth_token',
 ]);
 
 export default function AdminSettingsPage() {

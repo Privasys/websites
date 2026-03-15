@@ -1,53 +1,113 @@
-'use client';
+﻿'use client';
 
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { useEffect, useState, useCallback } from 'react';
 import {
     adminGetApp,
-    adminReviewApp,
-    adminDeployApp,
-    adminUndeployApp,
-    adminGetDeploymentLogs,
-    adminTriggerBuild,
-    adminListBuilds
+    adminListBuilds,
+    adminListEnclaves,
+    listVersions,
+    listDeployments,
+    adminReviewVersion,
+    adminBuildVersion,
+    adminDeployVersion,
+    adminStopDeployment,
 } from '~/lib/api';
 import { useSSE } from '~/lib/use-sse';
-import type { App, AppStatus, DeploymentLog, BuildJob } from '~/lib/types';
-import { STATUS_LABELS, STATUS_COLORS } from '~/lib/types';
+import type { App, BuildJob, AppVersion, AppDeployment, Enclave } from '~/lib/types';
+import { STATUS_LABELS, STATUS_COLORS, VERSION_STATUS_LABELS, VERSION_STATUS_COLORS, DEPLOYMENT_STATUS_LABELS, DEPLOYMENT_STATUS_COLORS } from '~/lib/types';
 
-function StatusBadge({ status }: { status: string }) {
-    const s = status as AppStatus;
+function StatusBadge({ status, labels, colors }: { status: string; labels: Record<string, string>; colors: Record<string, string> }) {
     return (
-        <span className={`inline-block px-2.5 py-1 text-xs font-medium rounded-full ${STATUS_COLORS[s] ?? 'bg-gray-100 text-gray-800'}`}>
-            {STATUS_LABELS[s] ?? status}
+        <span className={`inline-block px-2.5 py-0.5 text-xs font-medium rounded-full ${colors[status] ?? 'bg-gray-100 text-gray-800'}`}>
+            {labels[status] ?? status}
         </span>
     );
 }
 
+function VersionPipeline({ version, builds }: { version: AppVersion; builds: BuildJob[] }) {
+    const versionBuilds = builds.filter(b => b.version_id === version.id);
+    const latestBuild = versionBuilds[0];
+    const steps = [
+        { label: 'Submitted', done: true, active: version.status === 'submitted', failed: false },
+        { label: 'Approved', done: ['approved', 'building', 'ready'].includes(version.status), active: version.status === 'approved', failed: version.status === 'failed' && !latestBuild },
+        { label: 'Building', done: version.status === 'ready', active: version.status === 'building', failed: version.status === 'failed' && !!latestBuild },
+        { label: 'Ready', done: version.status === 'ready', active: false, failed: false },
+    ];
+    return (
+        <div className="flex items-center gap-0">
+            {steps.map((step, i) => (
+                <div key={step.label} className="flex items-center">
+                    <div className="flex flex-col items-center">
+                        <div className={`w-7 h-7 rounded-full flex items-center justify-center border-2 ${
+                            step.failed ? 'border-red-500 bg-red-50 dark:bg-red-900/20' :
+                            step.done ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20' :
+                            step.active ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' :
+                            'border-black/10 dark:border-white/10'
+                        }`}>
+                            {step.failed ? (
+                                <svg className="w-3.5 h-3.5 text-red-500" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" /></svg>
+                            ) : step.done ? (
+                                <svg className="w-3.5 h-3.5 text-emerald-500" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7" /></svg>
+                            ) : step.active ? (
+                                <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+                            ) : (
+                                <div className="w-2 h-2 rounded-full bg-black/10 dark:bg-white/10" />
+                            )}
+                        </div>
+                        <span className={`text-[10px] mt-1 ${
+                            step.failed ? 'text-red-600 dark:text-red-400 font-medium' :
+                            step.done || step.active ? 'text-black/70 dark:text-white/70 font-medium' :
+                            'text-black/30 dark:text-white/30'
+                        }`}>{step.label}</span>
+                    </div>
+                    {i < steps.length - 1 && (
+                        <div className={`w-10 h-0.5 mb-4 mx-1 ${
+                            step.done ? 'bg-emerald-500' : step.active ? 'bg-blue-500' : step.failed ? 'bg-red-500' : 'bg-black/10 dark:bg-white/10'
+                        }`} />
+                    )}
+                </div>
+            ))}
+        </div>
+    );
+}
+
+type Tab = 'overview' | 'versions' | 'deployments';
+
 export default function AdminAppDetailPage() {
     const { id } = useParams<{ id: string }>();
+    const searchParams = useSearchParams();
+    const router = useRouter();
     const { data: session } = useSession();
     const [app, setApp] = useState<App | null>(null);
-    const [logs, setLogs] = useState<DeploymentLog[]>([]);
     const [builds, setBuilds] = useState<BuildJob[]>([]);
+    const [versions, setVersions] = useState<AppVersion[]>([]);
+    const [deployments, setDeployments] = useState<AppDeployment[]>([]);
+    const [enclaves, setEnclaves] = useState<Enclave[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [actionLoading, setActionLoading] = useState<string | null>(null);
-    const [reviewNote, setReviewNote] = useState('');
+
+    const tab = (searchParams.get('tab') as Tab) || 'overview';
+    const setTab = (t: Tab) => router.push(`/dashboard/admin/apps/${id}?tab=${t}`);
 
     const load = useCallback(async () => {
         if (!session?.accessToken || !id) return;
         try {
-            const [appData, logsData, buildsData] = await Promise.all([
+            const [appData, buildsData, versionsData, deploymentsData, enclavesData] = await Promise.all([
                 adminGetApp(session.accessToken, id),
-                adminGetDeploymentLogs(session.accessToken, id),
-                adminListBuilds(session.accessToken, id)
+                adminListBuilds(session.accessToken, id),
+                listVersions(session.accessToken, id),
+                listDeployments(session.accessToken, id),
+                adminListEnclaves(session.accessToken).catch(() => [] as Enclave[]),
             ]);
             setApp(appData);
-            setLogs(logsData);
             setBuilds(buildsData);
+            setVersions(versionsData);
+            setDeployments(deploymentsData);
+            setEnclaves(enclavesData);
         } catch (e) {
             setError(e instanceof Error ? e.message : 'Failed to load');
         } finally {
@@ -57,129 +117,143 @@ export default function AdminAppDetailPage() {
 
     useEffect(() => { load(); }, [load]);
 
-    // Auto-refresh when there's an active build or deploying status
-    useEffect(() => {
-        const hasActiveBuild = builds.some(b =>
-            b.status === 'pending' || b.status === 'dispatched' || b.status === 'running'
-        );
-        const isDeploying = app?.status === 'building' || app?.status === 'deploying';
-        if (!hasActiveBuild && !isDeploying) return;
-        const interval = setInterval(load, 5000);
-        return () => clearInterval(interval);
-    }, [builds, app?.status, load]);
-
-    // SSE: refresh on app/build updates for this app
     useSSE(session?.accessToken, useCallback((ev) => {
         if (ev.data.app_id === id) load();
     }, [id, load]));
 
-    async function handleReview(decision: 'approve' | 'reject') {
+    // --- Version actions ---
+    async function handleVersionReview(versionId: string, decision: 'approve' | 'reject') {
         if (!session?.accessToken || !id) return;
-        setActionLoading(decision);
+        setActionLoading(`review-${versionId}`);
         setError(null);
         try {
-            const updated = await adminReviewApp(session.accessToken, id, {
-                decision,
-                note: reviewNote || undefined
-            });
-            setApp(updated);
-            setReviewNote('');
-        } catch (e) {
-            setError(e instanceof Error ? e.message : 'Review failed');
-        } finally {
-            setActionLoading(null);
-        }
-    }
-
-    async function handleDeploy() {
-        if (!session?.accessToken || !id) return;
-        setActionLoading('deploy');
-        setError(null);
-        try {
-            const updated = await adminDeployApp(session.accessToken, id);
-            setApp(updated);
-            await load(); // refresh logs
-        } catch (e) {
-            setError(e instanceof Error ? e.message : 'Deploy failed');
-        } finally {
-            setActionLoading(null);
-        }
-    }
-
-    async function handleUndeploy() {
-        if (!session?.accessToken || !id) return;
-        setActionLoading('undeploy');
-        setError(null);
-        try {
-            const updated = await adminUndeployApp(session.accessToken, id);
-            setApp(updated);
+            await adminReviewVersion(session.accessToken, id, versionId, decision);
             await load();
-        } catch (e) {
-            setError(e instanceof Error ? e.message : 'Undeploy failed');
-        } finally {
-            setActionLoading(null);
-        }
+        } catch (e) { setError(e instanceof Error ? e.message : 'Version review failed'); }
+        finally { setActionLoading(null); }
     }
 
-    async function handleBuild() {
+    async function handleVersionBuild(versionId: string) {
         if (!session?.accessToken || !id) return;
-        setActionLoading('build');
+        setActionLoading(`build-${versionId}`);
         setError(null);
         try {
-            await adminTriggerBuild(session.accessToken, id);
+            await adminBuildVersion(session.accessToken, id, versionId);
             await load();
-        } catch (e) {
-            setError(e instanceof Error ? e.message : 'Build trigger failed');
-        } finally {
-            setActionLoading(null);
-        }
+        } catch (e) { setError(e instanceof Error ? e.message : 'Build trigger failed'); }
+        finally { setActionLoading(null); }
+    }
+
+    async function handleVersionDeploy(versionId: string, enclaveId?: string) {
+        if (!session?.accessToken || !id) return;
+        setActionLoading(`deploy-${versionId}`);
+        setError(null);
+        try {
+            await adminDeployVersion(session.accessToken, id, versionId, enclaveId);
+            await load();
+        } catch (e) { setError(e instanceof Error ? e.message : 'Deploy failed'); }
+        finally { setActionLoading(null); }
+    }
+
+    async function handleStopDeployment(deploymentId: string) {
+        if (!session?.accessToken || !id) return;
+        setActionLoading(`stop-${deploymentId}`);
+        setError(null);
+        try {
+            await adminStopDeployment(session.accessToken, id, deploymentId);
+            await load();
+        } catch (e) { setError(e instanceof Error ? e.message : 'Stop failed'); }
+        finally { setActionLoading(null); }
     }
 
     if (loading) {
         return (
-            <div className="max-w-3xl">
-                <div className="animate-pulse text-sm text-black/50 dark:text-white/50">Loading…</div>
+            <div className="max-w-4xl">
+                <div className="animate-pulse text-sm text-black/50 dark:text-white/50 py-12 text-center">Loading…</div>
             </div>
         );
     }
 
     if (!app) {
         return (
-            <div className="max-w-3xl">
-                <p className="text-red-600">App not found.</p>
+            <div className="max-w-4xl">
+                <Link href="/dashboard/admin" className="text-sm text-black/50 dark:text-white/50 hover:underline">← Back to review</Link>
+                <p className="mt-4 text-red-600">App not found.</p>
             </div>
         );
     }
 
-    const canReview = app.status === 'submitted' || app.status === 'under_review';
-    const canDeploy = app.status === 'approved' || app.status === 'undeployed' || app.status === 'failed';
-    const canUndeploy = app.status === 'deployed';
-    const canBuild = app.source_type === 'github' && app.commit_url &&
-        (app.status === 'submitted' || app.status === 'failed');
+    const activeDeployments = deployments.filter(d => d.status === 'active');
+    const TABS: { key: Tab; label: string; count?: number }[] = [
+        { key: 'overview', label: 'Overview' },
+        { key: 'versions', label: 'Versions', count: versions.length },
+        { key: 'deployments', label: 'Deployments', count: activeDeployments.length },
+    ];
 
     return (
-        <div className="max-w-3xl">
-            <Link href="/dashboard/admin" className="text-sm text-black/50 dark:text-white/50 hover:underline">
-                ← Back to review
-            </Link>
+        <div className="max-w-4xl">
+<Link href="/dashboard/admin" className="text-sm text-black/50 dark:text-white/50 hover:underline">← Back to review</Link>
 
-            {/* Header */}
             <div className="mt-4 flex items-start justify-between">
                 <div>
                     <h1 className="text-2xl font-semibold">{app.display_name || app.name}</h1>
-                    <p className="mt-1 text-sm text-black/50 dark:text-white/50">{app.name}</p>
+                    <p className="mt-1 text-sm text-black/50 dark:text-white/50">
+                        {app.name} &middot; {app.source_type === 'github' ? 'GitHub' : 'Upload'} &middot; Owner: {app.owner_name || app.owner_email || app.owner_sub}
+                    </p>
                 </div>
-                <StatusBadge status={app.status} />
+                <StatusBadge status={app.status} labels={STATUS_LABELS} colors={STATUS_COLORS} />
             </div>
 
             {error && (
-                <div className="mt-4 p-3 rounded-lg bg-red-50 dark:bg-red-900/20 text-sm text-red-700 dark:text-red-300">
-                    {error}
-                </div>
+                <div className="mt-4 p-3 rounded-lg bg-red-50 dark:bg-red-900/20 text-sm text-red-700 dark:text-red-300">{error}</div>
             )}
 
-            {/* App details */}
-            <section className="mt-6 p-5 rounded-xl border border-black/10 dark:border-white/10 space-y-3">
+            <div className="mt-6 border-b border-black/10 dark:border-white/10">
+                <nav className="flex gap-6">
+                    {TABS.map((t) => (
+                        <button
+                            key={t.key}
+                            onClick={() => setTab(t.key)}
+                            className={`pb-3 text-sm font-medium border-b-2 transition-colors ${
+                                tab === t.key
+                                    ? 'border-black dark:border-white text-black dark:text-white'
+                                    : 'border-transparent text-black/50 dark:text-white/50 hover:text-black/70 dark:hover:text-white/70'
+                            }`}
+                        >
+                            {t.label}
+                            {t.count != null && t.count > 0 && (
+                                <span className="ml-1.5 px-1.5 py-0.5 text-[10px] rounded-full bg-black/5 dark:bg-white/10">{t.count}</span>
+                            )}
+                        </button>
+                    ))}
+                </nav>
+            </div>
+
+            <div className="mt-6">
+                {tab === 'overview' && <OverviewTab app={app} versions={versions} builds={builds} deployments={deployments} />}
+                {tab === 'versions' && (
+                    <VersionsTab
+                        app={app} versions={versions} builds={builds} enclaves={enclaves}
+                        actionLoading={actionLoading}
+                        onReview={handleVersionReview} onBuild={handleVersionBuild} onDeploy={handleVersionDeploy}
+                    />
+                )}
+                {tab === 'deployments' && (
+                    <DeploymentsTab deployments={deployments} versions={versions} actionLoading={actionLoading} onStop={handleStopDeployment} />
+                )}
+            </div>
+        </div>
+    );
+}
+
+// ------- Overview Tab -------
+function OverviewTab({ app, versions, builds, deployments }: { app: App; versions: AppVersion[]; builds: BuildJob[]; deployments: AppDeployment[] }) {
+    const activeDeployments = deployments.filter(d => d.status === 'active');
+    const latestVersion = versions[0];
+
+    return (
+        <div className="space-y-6">
+            <section className="p-5 rounded-xl border border-black/10 dark:border-white/10 space-y-3">
                 <h2 className="text-sm font-semibold">Details</h2>
                 <div className="grid grid-cols-2 gap-y-3 gap-x-8 text-sm">
                     <div>
@@ -190,47 +264,16 @@ export default function AdminAppDetailPage() {
                         <div className="text-xs text-black/50 dark:text-white/50">Source</div>
                         <div className="mt-0.5">{app.source_type === 'github' ? 'GitHub' : 'Upload'}</div>
                     </div>
-                    {app.commit_url && (
-                        <div className="col-span-2">
-                            <div className="text-xs text-black/50 dark:text-white/50">Commit URL</div>
-                            <a
-                                href={app.commit_url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="mt-0.5 text-blue-600 dark:text-blue-400 hover:underline break-all"
-                            >
-                                {app.commit_url}
-                            </a>
-                        </div>
-                    )}
-                    {app.github_commit && (
-                        <div>
-                            <div className="text-xs text-black/50 dark:text-white/50">Commit SHA</div>
-                            <code className="text-xs mt-0.5 block">{app.github_commit.slice(0, 12)}</code>
-                        </div>
-                    )}
-                    {app.github_commit && (
-                        <div>
-                            <div className="text-xs text-black/50 dark:text-white/50">GPG signature</div>
-                            <div className="mt-0.5 flex items-center gap-1.5">
-                                {app.gpg_verified ? (
-                                    <>
-                                        <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                                        <span className="text-xs text-emerald-700 dark:text-emerald-300">Verified</span>
-                                    </>
-                                ) : (
-                                    <>
-                                        <span className="w-2 h-2 rounded-full bg-red-500" />
-                                        <span className="text-xs text-red-700 dark:text-red-300">Not verified</span>
-                                    </>
-                                )}
-                            </div>
-                        </div>
-                    )}
                     {app.description && (
                         <div className="col-span-2">
                             <div className="text-xs text-black/50 dark:text-white/50">Description</div>
                             <div className="mt-0.5">{app.description}</div>
+                        </div>
+                    )}
+                    {app.commit_url && (
+                        <div className="col-span-2">
+                            <div className="text-xs text-black/50 dark:text-white/50">Commit URL</div>
+                            <a href={app.commit_url} target="_blank" rel="noopener noreferrer" className="mt-0.5 text-blue-600 dark:text-blue-400 hover:underline break-all text-xs">{app.commit_url}</a>
                         </div>
                     )}
                     <div>
@@ -244,187 +287,85 @@ export default function AdminAppDetailPage() {
                 </div>
             </section>
 
-            {/* CWASM info */}
+            {latestVersion && (
+                <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">
+                    <div className="flex items-center justify-between mb-4">
+                        <h2 className="text-sm font-semibold">Latest version &middot; v{latestVersion.version_number}</h2>
+                        <StatusBadge status={latestVersion.status} labels={VERSION_STATUS_LABELS} colors={VERSION_STATUS_COLORS} />
+                    </div>
+                    <VersionPipeline version={latestVersion} builds={builds} />
+                    {latestVersion.github_commit && (
+                        <div className="mt-3 text-xs text-black/40 dark:text-white/40">
+                            Commit: <code className="font-mono">{latestVersion.github_commit.slice(0, 12)}</code>
+                            {latestVersion.gpg_verified && <span className="ml-2 text-emerald-600 dark:text-emerald-400">GPG verified</span>}
+                        </div>
+                    )}
+                </section>
+            )}
+
+            {activeDeployments.length > 0 && (
+                <section className="p-5 rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50/50 dark:bg-emerald-900/10">
+                    <h2 className="text-sm font-semibold text-emerald-800 dark:text-emerald-300 mb-3">Live deployments ({activeDeployments.length})</h2>
+                    <div className="space-y-2">
+                        {activeDeployments.map((dep) => {
+                            const ver = versions.find(v => v.id === dep.version_id);
+                            return (
+                                <div key={dep.id} className="flex items-center justify-between py-2 text-sm">
+                                    <div className="flex items-center gap-3">
+                                        <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                                        <span>{dep.hostname || `${dep.enclave_host}:${dep.enclave_port}`}</span>
+                                        {ver && <span className="text-xs text-emerald-600/60">v{ver.version_number}</span>}
+                                    </div>
+                                    {dep.deployed_at && <span className="text-xs text-emerald-600/60">{new Date(dep.deployed_at).toLocaleString()}</span>}
+                                </div>
+                            );
+                        })}
+                    </div>
+                </section>
+            )}
+
+            {app.status === 'deployed' && activeDeployments.length === 0 && app.hostname && (
+                <section className="p-5 rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50/50 dark:bg-emerald-900/10 space-y-2">
+                    <h2 className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">Live deployment (legacy)</h2>
+                    <div className="grid grid-cols-2 gap-y-2 gap-x-8 text-sm">
+                        <div><div className="text-xs text-emerald-600/70">Hostname</div><code className="text-xs mt-0.5 block">{app.hostname}</code></div>
+                        {app.deployed_at && <div><div className="text-xs text-emerald-600/70">Deployed at</div><div className="mt-0.5">{new Date(app.deployed_at).toLocaleString()}</div></div>}
+                    </div>
+                </section>
+            )}
+
             {app.cwasm_hash && (
-                <section className="mt-4 p-5 rounded-xl border border-black/10 dark:border-white/10 space-y-2">
-                    <h2 className="text-sm font-semibold">WASM module</h2>
+                <section className="p-5 rounded-xl border border-black/10 dark:border-white/10 space-y-2">
+                    <h2 className="text-sm font-semibold">WASM module (app-level)</h2>
                     <div className="text-sm">
                         <div className="text-xs text-black/50 dark:text-white/50">SHA-256</div>
                         <code className="text-xs bg-black/5 dark:bg-white/5 px-2 py-1 rounded break-all block mt-1">{app.cwasm_hash}</code>
                     </div>
-                    {app.cwasm_size != null && (
-                        <div className="text-sm">
-                            <div className="text-xs text-black/50 dark:text-white/50">Size</div>
-                            <div className="mt-0.5">{(app.cwasm_size / 1024).toFixed(1)} KB</div>
-                        </div>
-                    )}
+                    {app.cwasm_size != null && <div className="text-sm"><div className="text-xs text-black/50 dark:text-white/50">Size</div><div className="mt-0.5">{(app.cwasm_size / 1024).toFixed(1)} KB</div></div>}
                 </section>
             )}
 
-            {/* Deployment info */}
-            {app.status === 'deployed' && (
-                <section className="mt-4 p-5 rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50/50 dark:bg-emerald-900/10 space-y-2">
-                    <h2 className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">Live deployment</h2>
-                    <div className="grid grid-cols-2 gap-y-2 gap-x-8 text-sm">
-                        {app.hostname && (
-                            <div>
-                                <div className="text-xs text-emerald-600/70 dark:text-emerald-400/70">Hostname</div>
-                                <code className="text-xs mt-0.5 block">{app.hostname}</code>
-                            </div>
-                        )}
-                        {app.deployed_at && (
-                            <div>
-                                <div className="text-xs text-emerald-600/70 dark:text-emerald-400/70">Deployed at</div>
-                                <div className="mt-0.5">{new Date(app.deployed_at).toLocaleString()}</div>
-                            </div>
-                        )}
-                    </div>
-                </section>
-            )}
-
-            {/* Review note */}
             {app.review_note && (
-                <section className="mt-4 p-5 rounded-xl border border-black/10 dark:border-white/10">
+                <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">
                     <h2 className="text-sm font-semibold">Review note</h2>
                     <p className="mt-1 text-sm text-black/60 dark:text-white/60">{app.review_note}</p>
-                    {app.reviewed_at && (
-                        <p className="mt-2 text-xs text-black/40 dark:text-white/40">
-                            Reviewed {new Date(app.reviewed_at).toLocaleString()}
-                        </p>
-                    )}
+                    {app.reviewed_at && <p className="mt-2 text-xs text-black/40 dark:text-white/40">Reviewed {new Date(app.reviewed_at).toLocaleString()}</p>}
                 </section>
             )}
 
-            {/* Actions */}
-            <section className="mt-6 p-5 rounded-xl border border-black/10 dark:border-white/10 space-y-4">
-                <h2 className="text-sm font-semibold">Actions</h2>
-
-                {/* Review */}
-                {canReview && (
-                    <div className="space-y-3">
-                        <textarea
-                            value={reviewNote}
-                            onChange={(e) => setReviewNote(e.target.value)}
-                            placeholder="Review note (optional)"
-                            rows={2}
-                            className="w-full px-3 py-2 rounded-lg border border-black/10 dark:border-white/10 bg-transparent text-sm resize-none focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/20"
-                        />
-                        <div className="flex gap-3">
-                            <button
-                                onClick={() => handleReview('approve')}
-                                disabled={actionLoading !== null}
-                                className="px-4 py-2 text-sm font-medium rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-40 transition-colors"
-                            >
-                                {actionLoading === 'approve' ? 'Approving…' : 'Approve'}
-                            </button>
-                            <button
-                                onClick={() => handleReview('reject')}
-                                disabled={actionLoading !== null}
-                                className="px-4 py-2 text-sm font-medium rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-40 transition-colors"
-                            >
-                                {actionLoading === 'reject' ? 'Rejecting…' : 'Reject'}
-                            </button>
-                        </div>
-                        {!app.cwasm_hash && (
-                            <p className="text-xs text-amber-600 dark:text-amber-400">
-                                No .cwasm uploaded yet — approval requires a compiled module.
-                            </p>
-                        )}
-                    </div>
-                )}
-
-                {/* Deploy */}
-                {canDeploy && (
-                    <button
-                        onClick={handleDeploy}
-                        disabled={actionLoading !== null}
-                        className="px-5 py-2 text-sm font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-80 disabled:opacity-40 transition-opacity"
-                    >
-                        {actionLoading === 'deploy' ? 'Deploying…' : 'Deploy to enclave'}
-                    </button>
-                )}
-
-                {/* Undeploy */}
-                {canUndeploy && (
-                    <button
-                        onClick={handleUndeploy}
-                        disabled={actionLoading !== null}
-                        className="px-5 py-2 text-sm font-medium rounded-lg border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-40 transition-colors"
-                    >
-                        {actionLoading === 'undeploy' ? 'Undeploying…' : 'Undeploy'}
-                    </button>
-                )}
-
-                {/* Build trigger */}
-                {canBuild && (
-                    <button
-                        onClick={handleBuild}
-                        disabled={actionLoading !== null}
-                        className="px-5 py-2 text-sm font-medium rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-40 transition-colors"
-                    >
-                        {actionLoading === 'build' ? 'Triggering build…' : 'Build .cwasm via GitHub Actions'}
-                    </button>
-                )}
-
-                {!canReview && !canDeploy && !canUndeploy && !canBuild && (
-                    <p className="text-sm text-black/50 dark:text-white/50">
-                        No actions available for apps in <strong>{app.status}</strong> status.
-                    </p>
-                )}
-            </section>
-
-            {/* Build history */}
             {builds.length > 0 && (
-                <section className="mt-6 p-5 rounded-xl border border-black/10 dark:border-white/10">
-                    <h2 className="text-sm font-semibold mb-3">Build history</h2>
+                <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">
+                    <h2 className="text-sm font-semibold mb-3">Recent builds</h2>
                     <div className="space-y-2">
-                        {builds.map((build) => (
+                        {builds.slice(0, 5).map((build) => (
                             <div key={build.id} className="flex items-center justify-between py-2 border-b border-black/5 dark:border-white/5 last:border-0">
                                 <div className="flex items-center gap-3">
-                                    <span className={`w-2 h-2 rounded-full ${
-                                        build.status === 'success' ? 'bg-emerald-500' :
-                                        build.status === 'failed' ? 'bg-red-500' :
-                                        build.status === 'running' ? 'bg-blue-500 animate-pulse' :
-                                        'bg-yellow-500'
-                                    }`} />
+                                    <span className={`w-2 h-2 rounded-full ${build.status === 'success' ? 'bg-emerald-500' : build.status === 'failed' ? 'bg-red-500' : build.status === 'running' ? 'bg-blue-500 animate-pulse' : 'bg-yellow-500'}`} />
                                     <span className="text-sm font-medium capitalize">{build.status}</span>
-                                    <code className="text-xs text-black/40 dark:text-white/40">{build.github_commit.slice(0, 8)}</code>
-                                    {build.run_url && (
-                                        <a href={build.run_url} target="_blank" rel="noopener noreferrer"
-                                            className="text-xs text-blue-600 dark:text-blue-400 hover:underline">
-                                            View run →
-                                        </a>
-                                    )}
-                                    {build.error_message && (
-                                        <span className="text-xs text-red-600 dark:text-red-400 truncate max-w-xs">{build.error_message}</span>
-                                    )}
+                                    <code className="text-xs text-black/40 dark:text-white/40 font-mono">{build.github_commit.slice(0, 8)}</code>
+                                    {build.run_url && <a href={build.run_url} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 dark:text-blue-400 hover:underline">View run &rarr;</a>}
                                 </div>
-                                <span className="text-xs text-black/40 dark:text-white/40">
-                                    {new Date(build.created_at).toLocaleString()}
-                                </span>
-                            </div>
-                        ))}
-                    </div>
-                </section>
-            )}
-
-            {/* Deployment logs */}
-            {logs.length > 0 && (
-                <section className="mt-6 p-5 rounded-xl border border-black/10 dark:border-white/10">
-                    <h2 className="text-sm font-semibold mb-3">Deployment history</h2>
-                    <div className="space-y-2">
-                        {logs.map((log) => (
-                            <div key={log.id} className="flex items-center justify-between py-2 border-b border-black/5 dark:border-white/5 last:border-0">
-                                <div className="flex items-center gap-3">
-                                    <span className={`w-2 h-2 rounded-full ${log.status === 'success' ? 'bg-emerald-500' : 'bg-red-500'}`} />
-                                    <span className="text-sm font-medium capitalize">{log.action}</span>
-                                    {log.details && (
-                                        <span className="text-xs text-black/40 dark:text-white/40 truncate max-w-xs">{log.details}</span>
-                                    )}
-                                </div>
-                                <span className="text-xs text-black/40 dark:text-white/40">
-                                    {new Date(log.created_at).toLocaleString()}
-                                </span>
+                                <span className="text-xs text-black/40 dark:text-white/40">{new Date(build.created_at).toLocaleString()}</span>
                             </div>
                         ))}
                     </div>
@@ -433,3 +374,150 @@ export default function AdminAppDetailPage() {
         </div>
     );
 }
+
+// ------- Versions Tab (admin: review, build, deploy) -------
+function VersionsTab({ app, versions, builds, enclaves, actionLoading, onReview, onBuild, onDeploy }: {
+    app: App; versions: AppVersion[]; builds: BuildJob[]; enclaves: Enclave[];
+    actionLoading: string | null;
+    onReview: (vid: string, decision: 'approve' | 'reject') => void;
+    onBuild: (vid: string) => void;
+    onDeploy: (vid: string, enclaveId?: string) => void;
+}) {
+    const [deployEnclaveId, setDeployEnclaveId] = useState<Record<string, string>>({});
+
+    if (versions.length === 0) {
+        return <div className="text-center py-12 text-sm text-black/40 dark:text-white/40">No versions submitted yet.</div>;
+    }
+
+    return (
+        <div className="space-y-4">
+            {versions.map((version) => {
+                const canReview = version.status === 'submitted';
+                const canBuild = version.status === 'approved' && app.source_type === 'github';
+                const canDeploy = version.status === 'ready';
+                const selectedEnclave = deployEnclaveId[version.id] || '';
+                const activeEnclaves = enclaves.filter(e => e.status === 'active');
+
+                return (
+                    <section key={version.id} className="p-5 rounded-xl border border-black/10 dark:border-white/10">
+                        <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-3">
+                                <h3 className="text-sm font-semibold">v{version.version_number}</h3>
+                                {version.github_commit && <code className="text-xs text-black/40 dark:text-white/40 font-mono">{version.github_commit.slice(0, 12)}</code>}
+                                {version.gpg_verified && (
+                                    <span className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />GPG
+                                    </span>
+                                )}
+                            </div>
+                            <StatusBadge status={version.status} labels={VERSION_STATUS_LABELS} colors={VERSION_STATUS_COLORS} />
+                        </div>
+
+                        <VersionPipeline version={version} builds={builds} />
+
+                        <div className="mt-3 text-xs text-black/50 dark:text-white/50 space-y-1">
+                            {version.commit_url && (
+                                <div><a href={version.commit_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline break-all">{version.commit_url}</a></div>
+                            )}
+                            <div>Created: {new Date(version.created_at).toLocaleString()}</div>
+                            {version.cwasm_hash && (
+                                <div>Module: <code className="font-mono">{version.cwasm_hash.slice(0, 16)}…</code>{version.cwasm_size != null && ` (${(version.cwasm_size / 1024).toFixed(1)} KB)`}</div>
+                            )}
+                        </div>
+
+                        {(canReview || canBuild || canDeploy) && (
+                            <div className="mt-4 pt-3 border-t border-black/5 dark:border-white/5 flex flex-wrap items-center gap-3">
+                                {canReview && (
+                                    <>
+                                        <button onClick={() => onReview(version.id, 'approve')} disabled={actionLoading !== null}
+                                            className="px-3 py-1.5 text-xs font-medium rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-40 transition-colors">
+                                            {actionLoading === `review-${version.id}` ? 'Approving…' : 'Approve'}
+                                        </button>
+                                        <button onClick={() => onReview(version.id, 'reject')} disabled={actionLoading !== null}
+                                            className="px-3 py-1.5 text-xs font-medium rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-40 transition-colors">
+                                            Reject
+                                        </button>
+                                    </>
+                                )}
+                                {canBuild && (
+                                    <button onClick={() => onBuild(version.id)} disabled={actionLoading !== null}
+                                        className="px-3 py-1.5 text-xs font-medium rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-40 transition-colors">
+                                        {actionLoading === `build-${version.id}` ? 'Triggering…' : 'Build .cwasm'}
+                                    </button>
+                                )}
+                                {canDeploy && (
+                                    <div className="flex items-center gap-2">
+                                        {activeEnclaves.length > 0 && (
+                                            <select value={selectedEnclave} onChange={(e) => setDeployEnclaveId({ ...deployEnclaveId, [version.id]: e.target.value })}
+                                                className="px-2 py-1.5 text-xs rounded-lg border border-black/10 dark:border-white/10 bg-transparent">
+                                                <option value="">Select enclave…</option>
+                                                {activeEnclaves.map(e => <option key={e.id} value={e.id}>{e.name} ({e.country})</option>)}
+                                            </select>
+                                        )}
+                                        <button onClick={() => onDeploy(version.id, selectedEnclave || undefined)} disabled={actionLoading !== null}
+                                            className="px-3 py-1.5 text-xs font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-80 disabled:opacity-40 transition-opacity">
+                                            {actionLoading === `deploy-${version.id}` ? 'Deploying…' : 'Deploy'}
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </section>
+                );
+            })}
+        </div>
+    );
+}
+
+// ------- Deployments Tab -------
+function DeploymentsTab({ deployments, versions, actionLoading, onStop }: {
+    deployments: AppDeployment[]; versions: AppVersion[];
+    actionLoading: string | null; onStop: (id: string) => void;
+}) {
+    const versionMap = Object.fromEntries(versions.map(v => [v.id, v]));
+
+    if (deployments.length === 0) {
+        return <div className="text-center py-12 text-sm text-black/40 dark:text-white/40">No deployments yet.</div>;
+    }
+
+    return (
+        <div className="space-y-4">
+            {deployments.map((dep) => {
+                const version = versionMap[dep.version_id];
+                const canStop = dep.status === 'active' || dep.status === 'deploying';
+                return (
+                    <section key={dep.id} className="p-5 rounded-xl border border-black/10 dark:border-white/10">
+                        <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-3">
+                                <span className={`w-2 h-2 rounded-full ${
+                                    dep.status === 'active' ? 'bg-emerald-500' :
+                                    dep.status === 'deploying' ? 'bg-blue-500 animate-pulse' :
+                                    dep.status === 'failed' ? 'bg-red-500' :
+                                    dep.status === 'stopped' ? 'bg-gray-400' : 'bg-yellow-500'
+                                }`} />
+                                <span className="text-sm font-medium">{dep.hostname || `${dep.enclave_host}:${dep.enclave_port}`}</span>
+                                {version && <span className="text-xs text-black/40 dark:text-white/40">v{version.version_number}</span>}
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <StatusBadge status={dep.status} labels={DEPLOYMENT_STATUS_LABELS} colors={DEPLOYMENT_STATUS_COLORS} />
+                                {canStop && (
+                                    <button onClick={() => onStop(dep.id)} disabled={actionLoading !== null}
+                                        className="px-3 py-1.5 text-xs font-medium rounded-lg border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-40 transition-colors">
+                                        {actionLoading === `stop-${dep.id}` ? 'Stopping…' : 'Stop'}
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-y-2 gap-x-8 text-xs text-black/50 dark:text-white/50">
+                            <div><span className="text-black/30 dark:text-white/30">Enclave:</span> {dep.enclave_host}:{dep.enclave_port}</div>
+                            <div><span className="text-black/30 dark:text-white/30">Deployed by:</span> {dep.deployed_by}</div>
+                            {dep.deployed_at && <div><span className="text-black/30 dark:text-white/30">Started:</span> {new Date(dep.deployed_at).toLocaleString()}</div>}
+                            {dep.stopped_at && <div><span className="text-black/30 dark:text-white/30">Stopped:</span> {new Date(dep.stopped_at).toLocaleString()}</div>}
+                        </div>
+                    </section>
+                );
+            })}
+        </div>
+    );
+}
+
