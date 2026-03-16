@@ -210,3 +210,52 @@ export const DEPLOYMENT_STATUS_COLORS: Record<DeploymentStatus, string> = {
     failed: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300',
     stopped: 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-300'
 };
+
+// RA-TLS attestation result
+export interface AttestationCertificate {
+    subject: string;
+    issuer: string;
+    serial_number: string;
+    not_before: string;
+    not_after: string;
+    signature_algorithm: string;
+    public_key_sha256: string;
+}
+
+export interface AttestationQuote {
+    type: string;
+    oid: string;
+    is_mock: boolean;
+    version?: number;
+    report_data?: string;
+    raw_base64?: string;
+    mr_enclave?: string;
+    mr_signer?: string;
+    format?: string;
+}
+
+export interface AttestationExtension {
+    oid: string;
+    label: string;
+    value_hex: string;
+}
+
+export interface AttestationTLS {
+    version: string;
+    cipher_suite: string;
+}
+
+export interface AttestationResult {
+    certificate: AttestationCertificate;
+    pem: string;
+    quote: AttestationQuote | null;
+    extensions: AttestationExtension[];
+    tls: AttestationTLS;
+    // Per-workload (SNI) certificate data
+    app_extensions?: AttestationExtension[];
+    app_pem?: string;
+    app_quote?: AttestationQuote | null;
+    // Challenge mode
+    challenge_mode: boolean;
+    challenge?: string;
+}
