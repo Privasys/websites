@@ -1,4 +1,4 @@
-import type { App, CreateAppRequest, ReviewRequest, DeploymentLog, BuildJob, Enclave, CreateEnclaveRequest, AppVersion, AppDeployment } from './types';
+import type { App, CreateAppRequest, ReviewRequest, DeploymentLog, BuildJob, Enclave, CreateEnclaveRequest, AppVersion, AppDeployment, AttestationResult } from './types';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
 
@@ -134,6 +134,22 @@ export function adminListBuilds(token: string, id: string): Promise<BuildJob[]> 
 
 export function listBuilds(token: string, id: string): Promise<BuildJob[]> {
     return request<BuildJob[]>(`/api/v1/apps/${encodeURIComponent(id)}/builds`, token);
+}
+
+// ---------------------------------------------------------------------------
+// Attestation & Enclave API (app must be deployed)
+// ---------------------------------------------------------------------------
+
+export function attestApp(token: string, appId: string, challenge?: string): Promise<AttestationResult> {
+    const qs = challenge ? `?challenge=${encodeURIComponent(challenge)}` : '';
+    return request<AttestationResult>(`/api/v1/apps/${encodeURIComponent(appId)}/attest${qs}`, token);
+}
+
+export async function sendToApp(token: string, appId: string, payload: unknown): Promise<unknown> {
+    return request<unknown>(`/api/v1/apps/${encodeURIComponent(appId)}/send`, token, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+    });
 }
 
 // ---------------------------------------------------------------------------

@@ -4,9 +4,9 @@ import Link from 'next/link';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { useEffect, useState, useCallback } from 'react';
-import { getApp, listBuilds, listVersions, listDeployments, deleteApp, createVersion } from '~/lib/api';
+import { getApp, listBuilds, listVersions, listDeployments, deleteApp, createVersion, attestApp, sendToApp } from '~/lib/api';
 import { useSSE } from '~/lib/use-sse';
-import type { App, BuildJob, AppVersion, AppDeployment } from '~/lib/types';
+import type { App, BuildJob, AppVersion, AppDeployment, AttestationResult } from '~/lib/types';
 import { STATUS_LABELS, STATUS_COLORS, VERSION_STATUS_LABELS, VERSION_STATUS_COLORS, DEPLOYMENT_STATUS_LABELS, DEPLOYMENT_STATUS_COLORS } from '~/lib/types';
 
 function StatusBadge({ status, labels, colors }: { status: string; labels: Record<string, string>; colors: Record<string, string> }) {
@@ -112,7 +112,7 @@ function VersionPipeline({ version, builds }: { version: AppVersion; builds: Bui
     );
 }
 
-type Tab = 'overview' | 'versions' | 'deployments';
+type Tab = 'overview' | 'versions' | 'deployments' | 'attestation' | 'api';
 
 // Terminal states that show the full detail view
 const TERMINAL_STATUSES = new Set(['deployed', 'undeployed']);
@@ -430,10 +430,15 @@ export default function AppDetailPage() {
     }
 
     // Full detail view — shown once the app has reached a terminal state
+    const isDeployed = app.status === 'deployed';
     const TABS: { key: Tab; label: string; count?: number }[] = [
         { key: 'overview', label: 'Overview' },
         { key: 'versions', label: 'Versions', count: versions.length },
-        { key: 'deployments', label: 'Deployments', count: activeDeployments.length }
+        { key: 'deployments', label: 'Deployments', count: activeDeployments.length },
+        ...(isDeployed ? [
+            { key: 'attestation' as Tab, label: 'Attestation' },
+            { key: 'api' as Tab, label: 'API Testing' }
+        ] : [])
     ];
 
     return (
@@ -497,6 +502,12 @@ export default function AppDetailPage() {
                 )}
                 {tab === 'deployments' && (
                     <DeploymentsTab deployments={deployments} versions={versions} />
+                )}
+                {tab === 'attestation' && session?.accessToken && (
+                    <AttestationTab appId={app.id} token={session.accessToken} />
+                )}
+                {tab === 'api' && session?.accessToken && (
+                    <ApiTestingTab appId={app.id} token={session.accessToken} />
                 )}
             </div>
 
@@ -789,6 +800,522 @@ function VersionsTab({ app, versions, builds, newCommitUrl, onCommitUrlChange, o
                         </section>
                     ))}
                 </div>
+            )}
+        </div>
+    );
+}
+
+// ------- Attestation Tab -------
+function AttestationTab({ appId, token }: { appId: string; token: string }) {
+    const [result, setResult] = useState<AttestationResult | null>(null);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [copied, setCopied] = useState<string | null>(null);
+    const [challenge, setChallenge] = useState<string>(() => {
+        const bytes = new Uint8Array(32);
+        if (typeof window !== 'undefined') crypto.getRandomValues(bytes);
+        return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+    });
+
+    async function inspect() {
+        setLoading(true);
+        setError(null);
+        try {
+            const trimmed = challenge.trim();
+            if (trimmed && !/^[0-9a-fA-F]{32,128}$/.test(trimmed)) {
+                throw new Error('Challenge must be 32-128 hex characters (16-64 bytes)');
+            }
+            const data = await attestApp(token, appId, trimmed || undefined);
+            setResult(data);
+        } catch (e) {
+            setError(e instanceof Error ? e.message : 'Attestation failed');
+        } finally {
+            setLoading(false);
+        }
+    }
+
+    function regenerateChallenge() {
+        const bytes = new Uint8Array(32);
+        crypto.getRandomValues(bytes);
+        setChallenge(Array.from(bytes, b => b.toString(16).padStart(2, '0')).join(''));
+    }
+
+    function copyToClipboard(text: string, label: string) {
+        navigator.clipboard.writeText(text);
+        setCopied(label);
+        setTimeout(() => setCopied(null), 2000);
+    }
+
+    function downloadPem() {
+        if (!result?.pem) return;
+        const blob = new Blob([result.pem], { type: 'application/x-pem-file' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'enclave-certificate.pem';
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+
+    const OID_DESCRIPTIONS: Record<string, string> = {
+        'Config Merkle Root': 'Hash of the enclave configuration tree. Changes if any config parameter is modified.',
+        'Egress CA Hash': 'Hash of the CA certificate used for egress TLS connections from the enclave.',
+        'Runtime Version Hash': 'Hash identifying the exact runtime version running inside the enclave.',
+        'Combined Workloads Hash': 'Aggregate hash of all loaded WASM workloads. Proves which code is running.',
+        'DEK Origin': 'Data Encryption Key origin — indicates how the enclave\'s encryption key was derived.',
+        'Attestation Servers Hash': 'Hash of the attestation server list the enclave trusts for quote verification.',
+        'Workload Config Merkle Root': 'Merkle root of this specific workload\'s configuration.',
+        'Workload Code Hash': 'SHA-256 hash of the compiled WASM bytecode for this workload.',
+        'Workload Image Ref': 'Container image reference from which the workload was loaded.',
+        'Workload Key Source': 'Indicates how the workload\'s encryption keys are sourced and managed.',
+        'Workload Permissions Hash': 'Hash of the security permissions granted to this workload (network access, storage, etc.).'
+    };
+
+    return (
+        <div className="space-y-6">
+            {/* Challenge input + Inspect button */}
+            {!result && (
+                <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">
+                    <div className="text-center mb-5">
+                        <svg className="w-10 h-10 mx-auto text-black/20 dark:text-white/20 mb-3" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
+                            <path d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
+                        </svg>
+                        <h2 className="text-lg font-semibold mb-1">Remote Attestation</h2>
+                        <p className="text-sm text-black/50 dark:text-white/50 max-w-lg mx-auto">
+                            Connect to the enclave via RA-TLS and inspect the x.509 certificate, SGX quote, and all custom attestation extensions.
+                        </p>
+                    </div>
+
+                    {/* Challenge nonce */}
+                    <div className="max-w-lg mx-auto mb-5">
+                        <div className="flex items-center justify-between mb-1.5">
+                            <label className="text-xs font-medium">Challenge Nonce</label>
+                            <button
+                                onClick={regenerateChallenge}
+                                className="text-[11px] text-black/40 dark:text-white/40 hover:text-black/70 dark:hover:text-white/70"
+                            >
+                                Regenerate
+                            </button>
+                        </div>
+                        <input
+                            type="text"
+                            value={challenge}
+                            onChange={e => setChallenge(e.target.value.replace(/[^0-9a-fA-F]/g, ''))}
+                            placeholder="32-128 hex characters (leave empty for deterministic mode)"
+                            className="w-full px-3 py-2 text-xs font-mono rounded-lg border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 focus:outline-none focus:ring-1 focus:ring-black/20 dark:focus:ring-white/20"
+                            maxLength={128}
+                        />
+                        <p className="text-[11px] text-black/35 dark:text-white/35 mt-1.5">
+                            Provide a random nonce to prove the certificate was generated <em>just now</em> for your request. Leave empty for deterministic mode.
+                        </p>
+                    </div>
+
+                    <div className="text-center">
+                        <button
+                            onClick={inspect}
+                            disabled={loading}
+                            className="px-5 py-2.5 text-sm font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-80 disabled:opacity-40 transition-opacity"
+                        >
+                            {loading ? 'Connecting…' : 'Inspect Certificate'}
+                        </button>
+                    </div>
+                </section>
+            )}
+
+            {error && (
+                <div className="p-3 rounded-lg bg-red-50 dark:bg-red-900/20 text-sm text-red-700 dark:text-red-300">
+                    {error}
+                </div>
+            )}
+
+            {result && (
+                <>
+                    {/* Challenge mode banner */}
+                    {result.challenge_mode && result.challenge && (
+                        <section className="p-4 rounded-xl border border-amber-200/50 dark:border-amber-500/20 bg-amber-50/40 dark:bg-amber-900/10">
+                            <div className="flex items-start gap-3">
+                                <span className="text-amber-600 dark:text-amber-400 mt-0.5">🔐</span>
+                                <div className="flex-1 min-w-0">
+                                    <h3 className="text-xs font-semibold text-amber-800 dark:text-amber-300 mb-1">Challenge Mode Active</h3>
+                                    <p className="text-[11px] text-amber-700/70 dark:text-amber-300/60 mb-2">
+                                        This certificate was freshly generated in response to your challenge nonce. The enclave bound your nonce into the SGX quote&apos;s ReportData field.
+                                    </p>
+                                    <div className="text-[11px] text-amber-700/70 dark:text-amber-300/60 mb-1">Challenge sent:</div>
+                                    <code className="text-[11px] bg-amber-100/50 dark:bg-amber-900/20 px-2 py-1 rounded block font-mono break-all">
+                                        {result.challenge}
+                                    </code>
+                                    <p className="text-[11px] text-amber-700/60 dark:text-amber-300/50 mt-2">
+                                        <strong>To verify:</strong> Compute SHA-512( SHA-256(public_key_DER) ‖ your_nonce ) and compare with the Report Data in the SGX Quote below. A match confirms the enclave generated this certificate <em>specifically</em> for your request.
+                                    </p>
+                                </div>
+                            </div>
+                        </section>
+                    )}
+                    {result.challenge_mode === false && (
+                        <section className="p-3 rounded-xl border border-black/5 dark:border-white/5 bg-black/[0.02] dark:bg-white/[0.02]">
+                            <p className="text-[11px] text-black/40 dark:text-white/40 text-center">
+                                <strong>Deterministic mode</strong> — certificate may be reused across connections (timestamp-based binding). Use challenge mode for proof of freshness.
+                            </p>
+                        </section>
+                    )}
+
+                    {/* Actions bar */}
+                    <div className="flex items-center gap-3">
+                        <button
+                            onClick={inspect}
+                            disabled={loading}
+                            className="px-4 py-2 text-sm font-medium rounded-lg border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-40 transition-colors"
+                        >
+                            {loading ? 'Refreshing…' : 'Refresh'}
+                        </button>
+                        <button
+                            onClick={downloadPem}
+                            className="px-4 py-2 text-sm font-medium rounded-lg border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                        >
+                            Download PEM
+                        </button>
+                        <button
+                            onClick={() => { setResult(null); regenerateChallenge(); }}
+                            className="px-4 py-2 text-sm font-medium rounded-lg border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 transition-colors ml-auto"
+                        >
+                            New Challenge
+                        </button>
+                    </div>
+
+                    {/* TLS Connection */}
+                    <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">
+                        <h2 className="text-sm font-semibold mb-3">TLS Connection</h2>
+                        <div className="grid grid-cols-2 gap-3 text-sm">
+                            <div>
+                                <div className="text-xs text-black/50 dark:text-white/50">Protocol</div>
+                                <div className="mt-0.5 font-mono text-xs">{result.tls.version}</div>
+                            </div>
+                            <div>
+                                <div className="text-xs text-black/50 dark:text-white/50">Cipher Suite</div>
+                                <div className="mt-0.5 font-mono text-xs">{result.tls.cipher_suite}</div>
+                            </div>
+                        </div>
+                    </section>
+
+                    {/* Certificate */}
+                    <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">
+                        <h2 className="text-sm font-semibold mb-3">x.509 Certificate</h2>
+                        <div className="space-y-3">
+                            {[
+                                { label: 'Subject', value: result.certificate.subject, desc: 'The entity this certificate identifies.' },
+                                { label: 'Issuer', value: result.certificate.issuer, desc: 'Certificate authority that issued the cert. Self-signed for enclaves.' },
+                                { label: 'Serial Number', value: result.certificate.serial_number, desc: 'Unique identifier assigned by the issuer.' },
+                                { label: 'Valid From', value: result.certificate.not_before, desc: 'Certificate validity start date.' },
+                                { label: 'Valid Until', value: result.certificate.not_after, desc: 'Certificate expiration date.' },
+                                { label: 'Signature Algorithm', value: result.certificate.signature_algorithm, desc: 'Cryptographic algorithm used to sign the certificate.' },
+                                { label: 'Public Key SHA-256', value: result.certificate.public_key_sha256, desc: 'SHA-256 fingerprint of the subject\'s public key.' }
+                            ].map((field) => (
+                                <div key={field.label}>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-xs text-black/50 dark:text-white/50">{field.label}</span>
+                                        <button
+                                            onClick={() => copyToClipboard(field.value, field.label)}
+                                            className="text-[10px] text-black/30 dark:text-white/30 hover:text-black/60 dark:hover:text-white/60"
+                                            title="Copy"
+                                        >
+                                            {copied === field.label ? '✓' : '⧉'}
+                                        </button>
+                                    </div>
+                                    <code className="text-xs bg-black/5 dark:bg-white/5 px-2 py-1 rounded block mt-1 font-mono break-all">
+                                        {field.value}
+                                    </code>
+                                    <p className="text-[11px] text-black/35 dark:text-white/35 mt-0.5">{field.desc}</p>
+                                </div>
+                            ))}
+                        </div>
+                    </section>
+
+                    {/* SGX Quote */}
+                    {result.quote && (
+                        <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">
+                            <div className="flex items-center gap-2 mb-3">
+                                <h2 className="text-sm font-semibold">SGX Quote</h2>
+                                {result.quote.is_mock && (
+                                    <span className="px-2 py-0.5 text-[10px] font-medium rounded-full bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300">
+                                        Mock
+                                    </span>
+                                )}
+                            </div>
+                            <div className="space-y-3">
+                                {[
+                                    { label: 'Quote Type', value: result.quote.type, desc: 'The attestation quote format embedded in the certificate.' },
+                                    ...(result.quote.format ? [{ label: 'Format', value: result.quote.format, desc: 'Detected binary format of the SGX report.' }] : []),
+                                    ...(result.quote.version != null ? [{ label: 'Version', value: String(result.quote.version), desc: 'Quote structure version number.' }] : []),
+                                    ...(result.quote.mr_enclave ? [{ label: 'MRENCLAVE', value: result.quote.mr_enclave, desc: 'Hash of the enclave code and initial data. Uniquely identifies the enclave build.' }] : []),
+                                    ...(result.quote.mr_signer ? [{ label: 'MRSIGNER', value: result.quote.mr_signer, desc: 'Hash of the enclave signer\'s public key. Identifies who built the enclave.' }] : []),
+                                    ...(result.quote.report_data ? [{ label: 'Report Data', value: result.quote.report_data, desc: result.challenge_mode
+                                        ? 'ReportData = SHA-512( SHA-256(public_key) ‖ challenge_nonce ). Compare this with your own computation using the Public Key SHA-256 and your challenge nonce to verify freshness.'
+                                        : 'ReportData = SHA-512( SHA-256(public_key) ‖ timestamp ). Deterministic binding — the certificate\'s NotBefore timestamp is used as the binding value.' }] : []),
+                                    { label: 'OID', value: result.quote.oid, desc: 'Object Identifier of the x.509 extension containing the quote.' }
+                                ].map((field) => (
+                                    <div key={field.label}>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-xs text-black/50 dark:text-white/50">{field.label}</span>
+                                            <button
+                                                onClick={() => copyToClipboard(field.value, field.label)}
+                                                className="text-[10px] text-black/30 dark:text-white/30 hover:text-black/60 dark:hover:text-white/60"
+                                                title="Copy"
+                                            >
+                                                {copied === field.label ? '✓' : '⧉'}
+                                            </button>
+                                        </div>
+                                        <code className="text-xs bg-black/5 dark:bg-white/5 px-2 py-1 rounded block mt-1 font-mono break-all">
+                                            {field.value}
+                                        </code>
+                                        <p className="text-[11px] text-black/35 dark:text-white/35 mt-0.5">{field.desc}</p>
+                                    </div>
+                                ))}
+                            </div>
+                        </section>
+                    )}
+
+                    {/* Custom OID Extensions */}
+                    {result.extensions.length > 0 && (
+                        <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">
+                            <h2 className="text-sm font-semibold mb-3">Platform Attestation Extensions</h2>
+                            <p className="text-xs text-black/40 dark:text-white/40 mb-4">
+                                Platform-level x.509 extensions (OIDs 1.x/2.x) from the enclave certificate. These bind the enclave configuration and runtime to the attestation.
+                            </p>
+                            <div className="space-y-4">
+                                {result.extensions.map((ext) => (
+                                    <div key={ext.oid} className="border-b border-black/5 dark:border-white/5 pb-3 last:border-0 last:pb-0">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-xs font-medium">{ext.label}</span>
+                                            <button
+                                                onClick={() => copyToClipboard(ext.value_hex, ext.oid)}
+                                                className="text-[10px] text-black/30 dark:text-white/30 hover:text-black/60 dark:hover:text-white/60"
+                                                title="Copy"
+                                            >
+                                                {copied === ext.oid ? '✓' : '⧉'}
+                                            </button>
+                                        </div>
+                                        <code className="text-[11px] bg-black/5 dark:bg-white/5 px-2 py-1 rounded block mt-1 font-mono break-all">
+                                            {ext.value_hex}
+                                        </code>
+                                        <div className="flex items-center gap-2 mt-1">
+                                            <span className="text-[10px] text-black/30 dark:text-white/30 font-mono">{ext.oid}</span>
+                                        </div>
+                                        {OID_DESCRIPTIONS[ext.label] && (
+                                            <p className="text-[11px] text-black/35 dark:text-white/35 mt-0.5">{OID_DESCRIPTIONS[ext.label]}</p>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        </section>
+                    )}
+
+                    {/* Per-Workload OID Extensions (from SNI connection) */}
+                    {result.app_extensions && result.app_extensions.length > 0 && (
+                        <section className="p-5 rounded-xl border border-emerald-200/50 dark:border-emerald-500/20 bg-emerald-50/30 dark:bg-emerald-900/10">
+                            <h2 className="text-sm font-semibold mb-3">Workload Attestation Extensions</h2>
+                            <p className="text-xs text-black/40 dark:text-white/40 mb-4">
+                                Per-workload x.509 extensions (OIDs 3.x) from the workload-specific certificate. Retrieved via SNI routing — these bind the specific WASM application code and permissions to a dedicated attestation.
+                            </p>
+                            <div className="space-y-4">
+                                {result.app_extensions.map((ext) => (
+                                    <div key={ext.oid} className="border-b border-emerald-200/30 dark:border-emerald-500/10 pb-3 last:border-0 last:pb-0">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-xs font-medium">{ext.label}</span>
+                                            <button
+                                                onClick={() => copyToClipboard(ext.value_hex, 'app-' + ext.oid)}
+                                                className="text-[10px] text-black/30 dark:text-white/30 hover:text-black/60 dark:hover:text-white/60"
+                                                title="Copy"
+                                            >
+                                                {copied === 'app-' + ext.oid ? '✓' : '⧉'}
+                                            </button>
+                                        </div>
+                                        <code className="text-[11px] bg-black/5 dark:bg-white/5 px-2 py-1 rounded block mt-1 font-mono break-all">
+                                            {ext.value_hex}
+                                        </code>
+                                        <div className="flex items-center gap-2 mt-1">
+                                            <span className="text-[10px] text-black/30 dark:text-white/30 font-mono">{ext.oid}</span>
+                                        </div>
+                                        {OID_DESCRIPTIONS[ext.label] && (
+                                            <p className="text-[11px] text-black/35 dark:text-white/35 mt-0.5">{OID_DESCRIPTIONS[ext.label]}</p>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        </section>
+                    )}
+
+                    {/* PEM Certificate */}
+                    {result.pem && (
+                        <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">
+                            <div className="flex items-center justify-between mb-3">
+                                <h2 className="text-sm font-semibold">Platform PEM Certificate</h2>
+                                <button
+                                    onClick={() => copyToClipboard(result.pem, 'pem')}
+                                    className="text-xs text-black/40 dark:text-white/40 hover:text-black/70 dark:hover:text-white/70"
+                                >
+                                    {copied === 'pem' ? 'Copied!' : 'Copy'}
+                                </button>
+                            </div>
+                            <pre className="text-[11px] bg-black/5 dark:bg-white/5 p-3 rounded-lg font-mono break-all whitespace-pre-wrap max-h-48 overflow-y-auto">
+                                {result.pem}
+                            </pre>
+                        </section>
+                    )}
+
+                    {/* Per-Workload PEM Certificate */}
+                    {result.app_pem && (
+                        <section className="p-5 rounded-xl border border-emerald-200/50 dark:border-emerald-500/20 bg-emerald-50/30 dark:bg-emerald-900/10">
+                            <div className="flex items-center justify-between mb-3">
+                                <h2 className="text-sm font-semibold">Workload PEM Certificate</h2>
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={() => {
+                                            const blob = new Blob([result.app_pem!], { type: 'application/x-pem-file' });
+                                            const url = URL.createObjectURL(blob);
+                                            const a = document.createElement('a');
+                                            a.href = url;
+                                            a.download = 'workload-certificate.pem';
+                                            a.click();
+                                            URL.revokeObjectURL(url);
+                                        }}
+                                        className="text-xs text-black/40 dark:text-white/40 hover:text-black/70 dark:hover:text-white/70"
+                                    >
+                                        Download
+                                    </button>
+                                    <button
+                                        onClick={() => copyToClipboard(result.app_pem!, 'app-pem')}
+                                        className="text-xs text-black/40 dark:text-white/40 hover:text-black/70 dark:hover:text-white/70"
+                                    >
+                                        {copied === 'app-pem' ? 'Copied!' : 'Copy'}
+                                    </button>
+                                </div>
+                            </div>
+                            <pre className="text-[11px] bg-black/5 dark:bg-white/5 p-3 rounded-lg font-mono break-all whitespace-pre-wrap max-h-48 overflow-y-auto">
+                                {result.app_pem}
+                            </pre>
+                        </section>
+                    )}
+                </>
+            )}
+        </div>
+    );
+}
+
+// ------- API Testing Tab -------
+function ApiTestingTab({ appId, token }: { appId: string; token: string }) {
+    const [payload, setPayload] = useState('{"wasm_list": {}}');
+    const [response, setResponse] = useState<string | null>(null);
+    const [sending, setSending] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [elapsed, setElapsed] = useState<number | null>(null);
+
+    const PRESETS = [
+        { label: 'List WASM modules', payload: '{"wasm_list": {}}' },
+        { label: 'Health check', payload: '{"healthz": {}}' }
+    ];
+
+    async function send() {
+        setSending(true);
+        setError(null);
+        setResponse(null);
+        setElapsed(null);
+        try {
+            JSON.parse(payload);
+        } catch {
+            setError('Invalid JSON payload');
+            setSending(false);
+            return;
+        }
+        const start = performance.now();
+        try {
+            const data = await sendToApp(token, appId, JSON.parse(payload));
+            setElapsed(Math.round(performance.now() - start));
+            setResponse(JSON.stringify(data, null, 2));
+        } catch (e) {
+            setElapsed(Math.round(performance.now() - start));
+            setError(e instanceof Error ? e.message : 'Request failed');
+        } finally {
+            setSending(false);
+        }
+    }
+
+    function formatPayload() {
+        try {
+            const parsed = JSON.parse(payload);
+            setPayload(JSON.stringify(parsed, null, 2));
+        } catch { /* ignore */ }
+    }
+
+    return (
+        <div className="space-y-6">
+            <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">
+                <h2 className="text-sm font-semibold mb-1">Send command to enclave</h2>
+                <p className="text-xs text-black/40 dark:text-white/40 mb-4">
+                    Send a JSON payload to your WASM application via RA-TLS. The request is proxied through the management service.
+                </p>
+
+                {/* Presets */}
+                <div className="flex gap-2 mb-3">
+                    {PRESETS.map((preset) => (
+                        <button
+                            key={preset.label}
+                            onClick={() => setPayload(preset.payload)}
+                            className="px-3 py-1.5 text-xs font-medium rounded-lg border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                        >
+                            {preset.label}
+                        </button>
+                    ))}
+                </div>
+
+                {/* Payload editor */}
+                <div className="relative">
+                    <textarea
+                        value={payload}
+                        onChange={(e) => setPayload(e.target.value)}
+                        onBlur={formatPayload}
+                        rows={8}
+                        spellCheck={false}
+                        className="w-full px-3 py-2.5 text-xs font-mono rounded-lg border border-black/10 dark:border-white/10 bg-black/3 dark:bg-white/3 focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/20 resize-y"
+                        placeholder='{"wasm_list": {}}'
+                    />
+                </div>
+
+                {/* Send button */}
+                <div className="flex items-center gap-3 mt-3">
+                    <button
+                        onClick={send}
+                        disabled={sending || !payload.trim()}
+                        className="px-5 py-2.5 text-sm font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-80 disabled:opacity-40 transition-opacity"
+                    >
+                        {sending ? 'Sending…' : 'Send'}
+                    </button>
+                    {elapsed != null && (
+                        <span className="text-xs text-black/40 dark:text-white/40">{elapsed}ms</span>
+                    )}
+                </div>
+            </section>
+
+            {error && (
+                <div className="p-3 rounded-lg bg-red-50 dark:bg-red-900/20 text-sm text-red-700 dark:text-red-300">
+                    {error}
+                </div>
+            )}
+
+            {response && (
+                <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">
+                    <div className="flex items-center justify-between mb-3">
+                        <h2 className="text-sm font-semibold">Response</h2>
+                        <button
+                            onClick={() => { navigator.clipboard.writeText(response); }}
+                            className="text-xs text-black/40 dark:text-white/40 hover:text-black/70 dark:hover:text-white/70"
+                        >
+                            Copy
+                        </button>
+                    </div>
+                    <pre className="text-xs bg-black/5 dark:bg-white/5 p-3 rounded-lg font-mono break-all whitespace-pre-wrap max-h-96 overflow-y-auto">
+                        {response}
+                    </pre>
+                </section>
             )}
         </div>
     );
