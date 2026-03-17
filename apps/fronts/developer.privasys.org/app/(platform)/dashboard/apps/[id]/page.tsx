@@ -1261,6 +1261,19 @@ function AttestationTab({ appId, token }: { appId: string; token: string }) {
                                         {OID_DESCRIPTIONS[ext.label] && (
                                             <p className="text-[11px] text-black/35 dark:text-white/35 mt-0.5">{OID_DESCRIPTIONS[ext.label]}</p>
                                         )}
+                                        {ext.oid === '1.3.6.1.4.1.65230.3.2' && result.cwasm_hash && (
+                                            <div className="mt-1.5 flex items-center gap-2">
+                                                {ext.value_hex.toLowerCase() === result.cwasm_hash.toLowerCase() ? (
+                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400">
+                                                        ✓ Verified — matches uploaded CWASM hash
+                                                    </span>
+                                                ) : (
+                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded-full bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400">
+                                                        ✗ Mismatch — does not match uploaded CWASM hash
+                                                    </span>
+                                                )}
+                                            </div>
+                                        )}
                                     </div>
                                 ))}
                             </div>
@@ -1343,8 +1356,10 @@ const buf2hex = b => [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, 
   console.log("challenge:    ", challenge);
   console.log("computed:     ", computed);
   console.log("report_data:  ", actual);
-  console.log(computed === actual ? "✓ MATCH" : "✗ MISMATCH");
-  if (computed !== actual) {
+  if (computed === actual)
+    console.log('%c✓%c MATCH', 'color: green', 'color: normal');
+  else {
+    console.log('%c✗%c MISMATCH', 'color: red', 'color: normal');
     for (let i = 0; i < Math.max(computed.length, actual.length); i += 2) {
       if (computed.slice(i, i+2) !== actual.slice(i, i+2)) {
         console.log(\`First diff at byte \${i/2}: computed=\${computed.slice(i, i+2)} actual=\${actual.slice(i, i+2)}\`);
@@ -1363,7 +1378,7 @@ const buf2hex = b => [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, 
                                 </button>
                             </div>
                             <p className="text-xs text-black/40 dark:text-white/40 mb-3">
-                                Independent verification — copy and run in your browser&apos;s developer console to confirm <code className="text-[11px]">SHA-512(pubkey_sha256 ‖ challenge) == report_data</code>.
+                                Copy this snippet and paste it in your browser&apos;s developer console to independently verify that <code className="text-[11px]">SHA-512(pubkey_sha256 ‖ challenge) == report_data</code>.
                             </p>
                             <pre className="text-[11px] bg-black/5 dark:bg-white/5 p-3 rounded-lg font-mono break-all whitespace-pre-wrap max-h-56 overflow-y-auto">
                                 {[

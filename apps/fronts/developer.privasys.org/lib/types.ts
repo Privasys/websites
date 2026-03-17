@@ -258,4 +258,6 @@ export interface AttestationResult {
     // Challenge mode
     challenge_mode: boolean;
     challenge?: string;
+    // Stored CWASM hash for verification against APP_CODE_HASH_OID (3.2)
+    cwasm_hash?: string;
 }
