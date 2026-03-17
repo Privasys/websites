@@ -820,6 +820,7 @@ function AttestationTab({ appId, token }: { appId: string; token: string }) {
     async function inspect() {
         setLoading(true);
         setError(null);
+        setVerifyResult(null);
         try {
             const trimmed = challenge.trim();
             if (trimmed && !/^[0-9a-fA-F]{32,128}$/.test(trimmed)) {
@@ -846,6 +847,10 @@ function AttestationTab({ appId, token }: { appId: string; token: string }) {
         setTimeout(() => setCopied(null), 2000);
     }
 
+    const [verifyResult, setVerifyResult] = useState<string | null>(null);
+    const [verifying, setVerifying] = useState(false);
+    const [verifyDebug, setVerifyDebug] = useState<{ computed: string; actual: string } | null>(null);
+
     function downloadPem() {
         if (!result?.pem) return;
         const blob = new Blob([result.pem], { type: 'application/x-pem-file' });
@@ -856,6 +861,56 @@ function AttestationTab({ appId, token }: { appId: string; token: string }) {
         a.click();
         URL.revokeObjectURL(url);
     }
+
+    /** Decode hex string to UTF-8 text. Returns null if not valid UTF-8. */
+    function hexToText(hex: string): string | null {
+        try {
+            const bytes = new Uint8Array(hex.match(/.{1,2}/g)!.map(b => parseInt(b, 16)));
+            const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+            // Only show as text if all chars are printable ASCII/UTF-8
+            if (/^[\x20-\x7e]+$/.test(text)) return text;
+            return null;
+        } catch { return null; }
+    }
+
+    /** OIDs whose values are UTF-8 strings, not hashes */
+    const TEXT_OIDS = new Set(['1.3.6.1.4.1.65230.3.3', '1.3.6.1.4.1.65230.3.4']);
+
+    /** Verify ReportData using SubtleCrypto */
+    async function verifyReportData() {
+        if (!result?.quote?.report_data || !result.certificate?.public_key_sha256 || !result.challenge) return;
+        setVerifying(true);
+        setVerifyResult(null);
+        setVerifyDebug(null);
+        try {
+            const pubKeySha256 = new Uint8Array(result.certificate.public_key_sha256.match(/.{1,2}/g)!.map(b => parseInt(b, 16)));
+            const nonce = new Uint8Array(result.challenge.match(/.{1,2}/g)!.map(b => parseInt(b, 16)));
+            const concat = new Uint8Array(pubKeySha256.length + nonce.length);
+            concat.set(pubKeySha256);
+            concat.set(nonce, pubKeySha256.length);
+            const hash = await crypto.subtle.digest('SHA-512', concat);
+            const computed = Array.from(new Uint8Array(hash), b => b.toString(16).padStart(2, '0')).join('');
+            const actual = result.quote.report_data.toLowerCase();
+            setVerifyDebug({ computed, actual });
+            if (computed === actual) {
+                setVerifyResult('match');
+            } else {
+                setVerifyResult('mismatch');
+            }
+        } catch (e) {
+            setVerifyResult('error');
+        } finally {
+            setVerifying(false);
+        }
+    }
+
+    // Auto-verify ReportData when results arrive in challenge mode
+    useEffect(() => {
+        if (result?.challenge_mode && result?.quote?.report_data && result?.certificate?.public_key_sha256 && result?.challenge) {
+            verifyReportData();
+        }
+
+    }, [result]);
 
     const OID_DESCRIPTIONS: Record<string, string> = {
         'Config Merkle Root': 'Hash of the enclave configuration tree. Changes if any config parameter is modified.',
@@ -932,21 +987,47 @@ function AttestationTab({ appId, token }: { appId: string; token: string }) {
                 <>
                     {/* Challenge mode banner */}
                     {result.challenge_mode && result.challenge && (
-                        <section className="p-4 rounded-xl border border-amber-200/50 dark:border-amber-500/20 bg-amber-50/40 dark:bg-amber-900/10">
+                        <section className={`p-4 rounded-xl border ${
+                            verifyResult === 'match'
+                                ? 'border-emerald-200/50 dark:border-emerald-500/20 bg-emerald-50/40 dark:bg-emerald-900/10'
+                                : verifyResult === 'mismatch' || verifyResult === 'error'
+                                    ? 'border-red-200/50 dark:border-red-500/20 bg-red-50/40 dark:bg-red-900/10'
+                                    : 'border-amber-200/50 dark:border-amber-500/20 bg-amber-50/40 dark:bg-amber-900/10'
+                        }`}>
                             <div className="flex items-start gap-3">
-                                <span className="text-amber-600 dark:text-amber-400 mt-0.5">🔐</span>
+                                <span className={`mt-0.5 ${verifyResult === 'match' ? 'text-emerald-600 dark:text-emerald-400' : verifyResult === 'mismatch' || verifyResult === 'error' ? 'text-red-600 dark:text-red-400' : 'text-amber-600 dark:text-amber-400'}`}>🔐</span>
                                 <div className="flex-1 min-w-0">
-                                    <h3 className="text-xs font-semibold text-amber-800 dark:text-amber-300 mb-1">Challenge Mode Active</h3>
-                                    <p className="text-[11px] text-amber-700/70 dark:text-amber-300/60 mb-2">
+                                    <div className="flex items-center gap-2 mb-1">
+                                        <h3 className={`text-xs font-semibold ${verifyResult === 'match' ? 'text-emerald-800 dark:text-emerald-300' : verifyResult === 'mismatch' || verifyResult === 'error' ? 'text-red-800 dark:text-red-300' : 'text-amber-800 dark:text-amber-300'}`}>Challenge Mode Active</h3>
+                                        {verifying && (
+                                            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-medium rounded-full bg-black/5 dark:bg-white/5 text-black/50 dark:text-white/50">
+                                                <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/></svg>
+                                                Verifying…
+                                            </span>
+                                        )}
+                                        {verifyResult === 'match' && (
+                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400">
+                                                ✓ Match — freshness verified
+                                            </span>
+                                        )}
+                                        {verifyResult === 'mismatch' && (
+                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded-full bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400">
+                                                ✗ Mismatch
+                                            </span>
+                                        )}
+                                        {verifyResult === 'error' && (
+                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded-full bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400">
+                                                ✗ Verification error
+                                            </span>
+                                        )}
+                                    </div>
+                                    <p className={`text-[11px] mb-2 ${verifyResult === 'match' ? 'text-emerald-700/70 dark:text-emerald-300/60' : verifyResult === 'mismatch' || verifyResult === 'error' ? 'text-red-700/70 dark:text-red-300/60' : 'text-amber-700/70 dark:text-amber-300/60'}`}>
                                         This certificate was freshly generated in response to your challenge nonce. The enclave bound your nonce into the SGX quote&apos;s ReportData field.
                                     </p>
-                                    <div className="text-[11px] text-amber-700/70 dark:text-amber-300/60 mb-1">Challenge sent:</div>
-                                    <code className="text-[11px] bg-amber-100/50 dark:bg-amber-900/20 px-2 py-1 rounded block font-mono break-all">
+                                    <div className={`text-[11px] mb-1 ${verifyResult === 'match' ? 'text-emerald-700/70 dark:text-emerald-300/60' : verifyResult === 'mismatch' || verifyResult === 'error' ? 'text-red-700/70 dark:text-red-300/60' : 'text-amber-700/70 dark:text-amber-300/60'}`}>Challenge sent:</div>
+                                    <code className={`text-[11px] px-2 py-1 rounded block font-mono break-all ${verifyResult === 'match' ? 'bg-emerald-100/50 dark:bg-emerald-900/20' : verifyResult === 'mismatch' || verifyResult === 'error' ? 'bg-red-100/50 dark:bg-red-900/20' : 'bg-amber-100/50 dark:bg-amber-900/20'}`}>
                                         {result.challenge}
                                     </code>
-                                    <p className="text-[11px] text-amber-700/60 dark:text-amber-300/50 mt-2">
-                                        <strong>To verify:</strong> Compute SHA-512( SHA-256(public_key_DER) ‖ your_nonce ) and compare with the Report Data in the SGX Quote below. A match confirms the enclave generated this certificate <em>specifically</em> for your request.
-                                    </p>
                                 </div>
                             </div>
                         </section>
@@ -1049,8 +1130,8 @@ function AttestationTab({ appId, token }: { appId: string; token: string }) {
                                     ...(result.quote.mr_enclave ? [{ label: 'MRENCLAVE', value: result.quote.mr_enclave, desc: 'Hash of the enclave code and initial data. Uniquely identifies the enclave build.' }] : []),
                                     ...(result.quote.mr_signer ? [{ label: 'MRSIGNER', value: result.quote.mr_signer, desc: 'Hash of the enclave signer\'s public key. Identifies who built the enclave.' }] : []),
                                     ...(result.quote.report_data ? [{ label: 'Report Data', value: result.quote.report_data, desc: result.challenge_mode
-                                        ? 'ReportData = SHA-512( SHA-256(public_key) ‖ challenge_nonce ). Compare this with your own computation using the Public Key SHA-256 and your challenge nonce to verify freshness.'
-                                        : 'ReportData = SHA-512( SHA-256(public_key) ‖ timestamp ). Deterministic binding — the certificate\'s NotBefore timestamp is used as the binding value.' }] : []),
+                                        ? 'SHA-512( SHA-256(public_key_DER) ‖ challenge_nonce ). A match proves the certificate was generated for your specific request.'
+                                        : 'SHA-512( SHA-256(public_key_DER) ‖ timestamp ). Deterministic binding — the certificate\'s NotBefore timestamp is the nonce.' }] : []),
                                     { label: 'OID', value: result.quote.oid, desc: 'Object Identifier of the x.509 extension containing the quote.' }
                                 ].map((field) => (
                                     <div key={field.label}>
@@ -1068,6 +1149,44 @@ function AttestationTab({ appId, token }: { appId: string; token: string }) {
                                             {field.value}
                                         </code>
                                         <p className="text-[11px] text-black/35 dark:text-white/35 mt-0.5">{field.desc}</p>
+                                        {field.label === 'Report Data' && result.challenge_mode && result.challenge && (
+                                            <div className="mt-1.5 flex items-center gap-2">
+                                                {verifying && (
+                                                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 text-[11px] font-medium rounded-full bg-black/5 dark:bg-white/5 text-black/50 dark:text-white/50">
+                                                        <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/></svg>
+                                                        Verifying…
+                                                    </span>
+                                                )}
+                                                {verifyResult === 'match' && (
+                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium rounded-full bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400">
+                                                        ✓ Verified
+                                                    </span>
+                                                )}
+                                                {verifyResult === 'mismatch' && (
+                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium rounded-full bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400">
+                                                        ✗ Mismatch
+                                                    </span>
+                                                )}
+                                                {verifyResult === 'error' && (
+                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium rounded-full bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400">
+                                                        ✗ Error
+                                                    </span>
+                                                )}
+                                            </div>
+                                        )}
+                                        {field.label === 'Report Data' && verifyDebug && verifyResult === 'mismatch' && (
+                                            <div className="mt-2 p-3 rounded-lg bg-red-50/50 dark:bg-red-900/10 border border-red-200/50 dark:border-red-800/30 space-y-1.5">
+                                                <div className="text-[11px] font-medium text-red-700 dark:text-red-400">Debug — hash comparison</div>
+                                                <div>
+                                                    <span className="text-[10px] text-red-600/60 dark:text-red-400/60">Computed: SHA-512(pubkey_sha256 ‖ challenge)</span>
+                                                    <code className="text-[10px] bg-red-100/50 dark:bg-red-900/20 px-1.5 py-0.5 rounded block mt-0.5 font-mono break-all text-red-800 dark:text-red-300">{verifyDebug.computed}</code>
+                                                </div>
+                                                <div>
+                                                    <span className="text-[10px] text-red-600/60 dark:text-red-400/60">Actual: quote.report_data</span>
+                                                    <code className="text-[10px] bg-red-100/50 dark:bg-red-900/20 px-1.5 py-0.5 rounded block mt-0.5 font-mono break-all text-red-800 dark:text-red-300">{verifyDebug.actual}</code>
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
                                 ))}
                             </div>
@@ -1095,7 +1214,9 @@ function AttestationTab({ appId, token }: { appId: string; token: string }) {
                                             </button>
                                         </div>
                                         <code className="text-[11px] bg-black/5 dark:bg-white/5 px-2 py-1 rounded block mt-1 font-mono break-all">
-                                            {ext.value_hex}
+                                            {TEXT_OIDS.has(ext.oid) && hexToText(ext.value_hex)
+                                                ? <><span className="text-black/70 dark:text-white/70">{hexToText(ext.value_hex)}</span> <span className="text-black/25 dark:text-white/25">({ext.value_hex})</span></>
+                                                : ext.value_hex}
                                         </code>
                                         <div className="flex items-center gap-2 mt-1">
                                             <span className="text-[10px] text-black/30 dark:text-white/30 font-mono">{ext.oid}</span>
@@ -1130,7 +1251,9 @@ function AttestationTab({ appId, token }: { appId: string; token: string }) {
                                             </button>
                                         </div>
                                         <code className="text-[11px] bg-black/5 dark:bg-white/5 px-2 py-1 rounded block mt-1 font-mono break-all">
-                                            {ext.value_hex}
+                                            {TEXT_OIDS.has(ext.oid) && hexToText(ext.value_hex)
+                                                ? <><span className="text-black/70 dark:text-white/70">{hexToText(ext.value_hex)}</span> <span className="text-black/25 dark:text-white/25">({ext.value_hex})</span></>
+                                                : ext.value_hex}
                                         </code>
                                         <div className="flex items-center gap-2 mt-1">
                                             <span className="text-[10px] text-black/30 dark:text-white/30 font-mono">{ext.oid}</span>
@@ -1192,6 +1315,77 @@ function AttestationTab({ appId, token }: { appId: string; token: string }) {
                             </div>
                             <pre className="text-[11px] bg-black/5 dark:bg-white/5 p-3 rounded-lg font-mono break-all whitespace-pre-wrap max-h-48 overflow-y-auto">
                                 {result.app_pem}
+                            </pre>
+                        </section>
+                    )}
+
+                    {/* Console Verification Snippet */}
+                    {result.challenge_mode && result.challenge && result.certificate?.public_key_sha256 && (
+                        <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">
+                            <div className="flex items-center justify-between mb-3">
+                                <h2 className="text-sm font-semibold">Verification Code</h2>
+                                <button
+                                    onClick={() => {
+                                        const snippet = `// Report Data verification — paste in browser console
+const pubkeySha256 = "${result.certificate.public_key_sha256}";
+const challenge   = "${result.challenge}";
+const reportData  = "${result.quote?.report_data ?? ''}";
+
+const hex2buf = h => new Uint8Array(h.match(/.{2}/g).map(b => parseInt(b, 16)));
+const buf2hex = b => [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join('');
+
+(async () => {
+  const input = new Uint8Array([...hex2buf(pubkeySha256), ...hex2buf(challenge)]);
+  const hash  = await crypto.subtle.digest('SHA-512', input);
+  const computed = buf2hex(hash);
+  const actual   = reportData.toLowerCase();
+  console.log("pubkey_sha256:", pubkeySha256);
+  console.log("challenge:    ", challenge);
+  console.log("computed:     ", computed);
+  console.log("report_data:  ", actual);
+  console.log(computed === actual ? "✓ MATCH" : "✗ MISMATCH");
+  if (computed !== actual) {
+    for (let i = 0; i < Math.max(computed.length, actual.length); i += 2) {
+      if (computed.slice(i, i+2) !== actual.slice(i, i+2)) {
+        console.log(\`First diff at byte \${i/2}: computed=\${computed.slice(i, i+2)} actual=\${actual.slice(i, i+2)}\`);
+        break;
+      }
+    }
+  }
+})();`;
+                                        navigator.clipboard.writeText(snippet);
+                                        setCopied('console-snippet');
+                                        setTimeout(() => setCopied(null), 2000);
+                                    }}
+                                    className="text-xs text-black/40 dark:text-white/40 hover:text-black/70 dark:hover:text-white/70"
+                                >
+                                    {copied === 'console-snippet' ? 'Copied!' : 'Copy'}
+                                </button>
+                            </div>
+                            <p className="text-xs text-black/40 dark:text-white/40 mb-3">
+                                Independent verification — copy and run in your browser&apos;s developer console to confirm <code className="text-[11px]">SHA-512(pubkey_sha256 ‖ challenge) == report_data</code>.
+                            </p>
+                            <pre className="text-[11px] bg-black/5 dark:bg-white/5 p-3 rounded-lg font-mono break-all whitespace-pre-wrap max-h-56 overflow-y-auto">
+                                {[
+                                    `const pubkeySha256 = "${result.certificate.public_key_sha256}";`,
+                                    `const challenge   = "${result.challenge}";`,
+                                    `const reportData  = "${result.quote?.report_data ?? ''}";`,
+                                    '',
+                                    'const hex2buf = h => new Uint8Array(h.match(/.{2}/g).map(b => parseInt(b, 16)));',
+                                    'const buf2hex = b => [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, \'0\')).join(\'\');',
+                                    '',
+                                    '(async () => {',
+                                    '  const input = new Uint8Array([...hex2buf(pubkeySha256), ...hex2buf(challenge)]);',
+                                    '  const hash  = await crypto.subtle.digest(\'SHA-512\', input);',
+                                    '  const computed = buf2hex(hash);',
+                                    '  const actual   = reportData.toLowerCase();',
+                                    '  console.log("pubkey_sha256:", pubkeySha256);',
+                                    '  console.log("challenge:    ", challenge);',
+                                    '  console.log("computed:     ", computed);',
+                                    '  console.log("report_data:  ", actual);',
+                                    '  console.log(computed === actual ? "✓ MATCH" : "✗ MISMATCH");',
+                                    '})();'
+                                ].join('\n')}
                             </pre>
                         </section>
                     )}

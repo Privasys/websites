@@ -78,7 +78,7 @@ The module abstracts hardware-specific logic behind an `Attester` interface. Eac
 **Deterministic path (cached):**
 
 1. An ECDSA P-256 key pair is generated inside the TEE.
-2. `ReportData = SHA-512( SHA-256(DER public key) || creation_time )`, where `creation_time` is `NotBefore` truncated to minute precision.
+2. `ReportData = SHA-512( SHA-256(SPKI_DER) || creation_time )`, where `SPKI_DER` is the DER-encoded `SubjectPublicKeyInfo` of the leaf public key, and `creation_time` is `NotBefore` truncated to minute precision.
 3. A TEE quote is obtained from the configured backend (e.g. `/sys/kernel/config/tsm/report` for TDX).
 4. An X.509 certificate is signed by the operator-provisioned intermediary CA, embedding the quote and OID extensions.
 5. The certificate is cached by certmagic and auto-renewed.
@@ -87,7 +87,7 @@ The module abstracts hardware-specific logic behind an `Attester` interface. Eac
 
 1. The client sends a random nonce in a TLS `ClientHello` extension (`0xFFBB`).
 2. A fresh ECDSA P-256 key pair is generated.
-3. `ReportData = SHA-512( SHA-256(DER public key) || nonce )`.
+3. `ReportData = SHA-512( SHA-256(SPKI_DER) || nonce )`.
 4. A short-lived certificate (5 minutes) is signed by the same CA.
 
 ### SNI-Based Routing
