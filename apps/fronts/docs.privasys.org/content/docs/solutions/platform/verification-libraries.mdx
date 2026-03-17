@@ -41,7 +41,7 @@ All clients follow the same verification logic described in [Attestation](/techn
          │
          ▼
 6. Recompute ReportData:
-   SHA-512(SHA-256(cert_pubkey) || binding)
+   SHA-512(SHA-256(SPKI_DER) || binding)
    and compare with quote's ReportData
          │
          ▼

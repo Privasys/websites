@@ -51,8 +51,10 @@ out
 /out-tsc
 
 # Deploy state
-/deploy-stage
+/deploy-stage*
 deploy-*.zip
+developer-*.tar
+tar_*.txt
 
 # Dependencies
 node_modules
