@@ -152,6 +152,56 @@ export async function sendToApp(token: string, appId: string, payload: unknown):
     });
 }
 
+export interface WitType {
+    kind: string;
+    element?: WitType;
+    inner?: WitType;
+    ok?: WitType;
+    err?: WitType;
+    fields?: { name: string; type: WitType }[];
+    cases?: { name: string; type?: WitType }[];
+    elements?: WitType[];
+    names?: string[];
+}
+
+export interface ParamSchema {
+    name: string;
+    type: WitType;
+}
+
+export interface FunctionSchema {
+    name: string;
+    params: ParamSchema[];
+    results: ParamSchema[];
+}
+
+export interface InterfaceSchema {
+    name: string;
+    functions: FunctionSchema[];
+}
+
+export interface AppSchema {
+    name: string;
+    hostname: string;
+    functions: FunctionSchema[];
+    interfaces: InterfaceSchema[];
+}
+
+export async function getAppSchema(token: string, appId: string): Promise<AppSchema> {
+    const resp = await request<{ status: string; schema: AppSchema }>(`/api/v1/apps/${encodeURIComponent(appId)}/schema`, token);
+    if (resp.status !== 'schema') {
+        throw new ApiError((resp as unknown as { message?: string }).message || 'Failed to fetch schema', 500);
+    }
+    return resp.schema;
+}
+
+export async function rpcCall(token: string, appId: string, func: string, params: unknown): Promise<unknown> {
+    return request<unknown>(`/api/v1/apps/${encodeURIComponent(appId)}/rpc/${encodeURIComponent(func)}`, token, {
+        method: 'POST',
+        body: JSON.stringify(params)
+    });
+}
+
 // ---------------------------------------------------------------------------
 // User info
 // ---------------------------------------------------------------------------
