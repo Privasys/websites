@@ -805,7 +805,12 @@ function AttestationTab({ appId, token, deployments, versions }: { appId: string
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [copied, setCopied] = useState<string | null>(null);
-    const [challenge, setChallenge] = useState<string>('');
+    const [challenge, setChallenge] = useState<string>(() => {
+        if (typeof window === 'undefined') return '';
+        const bytes = new Uint8Array(32);
+        crypto.getRandomValues(bytes);
+        return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+    });
 
     async function inspect() {
         setLoading(true);
