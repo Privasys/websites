@@ -90,6 +90,7 @@ export type AppStatus =
     | 'approved'
     | 'rejected'
     | 'building'
+    | 'built'
     | 'deployed'
     | 'undeployed'
     | 'failed';
@@ -100,6 +101,7 @@ export const STATUS_LABELS: Record<AppStatus, string> = {
     approved: 'Approved',
     rejected: 'Rejected',
     building: 'Building',
+    built: 'Built',
     deployed: 'Deployed',
     undeployed: 'Undeployed',
     failed: 'Failed'
@@ -111,6 +113,7 @@ export const STATUS_COLORS: Record<AppStatus, string> = {
     approved: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300',
     rejected: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300',
     building: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300',
+    built: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300',
     deployed: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300',
     undeployed: 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-300',
     failed: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300'

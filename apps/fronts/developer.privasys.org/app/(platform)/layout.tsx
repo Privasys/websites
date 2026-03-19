@@ -15,6 +15,7 @@ const STATUS_DOT: Record<string, string> = {
     deployed: 'bg-emerald-500',
     building: 'bg-indigo-500 animate-pulse',
     approved: 'bg-green-500',
+    built: 'bg-emerald-500',
     submitted: 'bg-yellow-500',
     failed: 'bg-red-500',
     rejected: 'bg-red-400',
