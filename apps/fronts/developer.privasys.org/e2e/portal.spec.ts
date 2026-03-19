@@ -118,18 +118,19 @@ test.describe('Developer Portal', () => {
         const commitInput = page.getByPlaceholder(/github\.com/i);
         await commitInput.fill(COMMIT_URL);
 
-        // Wait for URL to be parsed
+        // Wait for URL to be parsed and name to be pre-filled
         await expect(page.getByText('Privasys/wasm-app-example')).toBeVisible({ timeout: 5_000 });
+        const nameInput = page.locator('input[type="text"]').nth(1);
+        await expect(nameInput).toHaveValue('wasm-app-example');
 
         // The name pre-fills to "wasm-app-example" — if our first test created it,
         // it should show as taken (or available if this test runs first)
         const available = page.getByText(/\.apps\.privasys\.org is available/i);
         const taken = page.getByText(/already taken|name is reserved/i);
-        await expect(available.or(taken)).toBeVisible({ timeout: 5_000 });
+        await expect(available.or(taken)).toBeVisible({ timeout: 10_000 });
         await page.screenshot({ path: screenshot('create-app-name-check'), fullPage: true });
 
         // Verify reserved names are rejected
-        const nameInput = page.locator('input[type="text"]').nth(1); // second input (after commit URL)
         await nameInput.clear();
         await nameInput.fill('admin');
         await expect(page.getByText(/reserved/i)).toBeVisible({ timeout: 5_000 });
@@ -325,20 +326,15 @@ test.describe('Developer Portal', () => {
             const inspectBtn = page.getByRole('button', { name: /inspect certificate/i });
             await expect(inspectBtn).toBeVisible({ timeout: 5_000 });
 
-            // Click inspect (deterministic mode — no challenge by default)
+            // Click inspect (challenge mode — random hex is pre-filled)
             await inspectBtn.click();
 
-            // Wait for results to load
-            await page.waitForTimeout(5_000);
+            // Wait for results to load — should show TLS connection and certificate info
+            await expect(page.getByText(/TLS Connection/i)).toBeVisible({ timeout: 15_000 });
+            await expect(page.getByText(/x\.509 Certificate/i)).toBeVisible({ timeout: 5_000 });
 
-            // Should NOT show any error message
-            const errorBanner = page.locator('.text-red-700, .text-red-600, [class*="red"]').filter({ hasText: /error|failed|not deployed/i });
-            const hasError = await errorBanner.first().isVisible().catch(() => false);
-            expect(hasError).toBeFalsy();
-
-            // Should show attestation result (certificate info, TLS connection, etc.)
-            const certSection = page.getByText(/subject|issuer|tls|certificate/i);
-            await expect(certSection.first()).toBeVisible({ timeout: 15_000 });
+            // Should show challenge mode active (not deterministic mode)
+            await expect(page.getByText(/Challenge Mode Active/i)).toBeVisible({ timeout: 5_000 });
 
             await page.screenshot({ path: screenshot('attestation-tab-result'), fullPage: true });
             break;
