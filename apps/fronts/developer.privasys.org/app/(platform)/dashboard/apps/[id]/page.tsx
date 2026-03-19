@@ -484,7 +484,7 @@ export default function AppDetailPage() {
                     />
                 )}
                 {tab === 'store' && session?.accessToken && (
-                    <AppStoreTab app={app} token={session.accessToken} onSave={(updated) => setApp(updated)} />
+                    <AppStoreTab app={app} token={session.accessToken} deployments={activeDeployments} onSave={(updated) => setApp(updated)} />
                 )}
                 {tab === 'attestation' && session?.accessToken && (
                     <AttestationTab appId={app.id} token={session.accessToken} deployments={activeDeployments} versions={versions} />
@@ -2101,7 +2101,7 @@ const STORE_CATEGORIES = [
     'Education', 'Entertainment', 'Business', 'Social', 'Utilities', 'Other'
 ];
 
-function AppStoreTab({ app, token, onSave }: { app: App; token: string; onSave: (updated: App) => void }) {
+function AppStoreTab({ app, token, deployments, onSave }: { app: App; token: string; deployments: AppDeployment[]; onSave: (updated: App) => void }) {
     const [saving, setSaving] = useState(false);
     const [saved, setSaved] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -2118,7 +2118,8 @@ function AppStoreTab({ app, token, onSave }: { app: App; token: string; onSave: 
     const [keywords, setKeywords] = useState(app.store_keywords);
     const [newScreenshot, setNewScreenshot] = useState('');
 
-    const isDeployed = app.status === 'deployed';
+    const isDeployed = deployments.length > 0 || app.status === 'deployed';
+    const liveHostname = deployments[0]?.hostname || app.hostname;
 
     async function handleSave() {
         setSaving(true);
@@ -2174,13 +2175,13 @@ function AppStoreTab({ app, token, onSave }: { app: App; token: string; onSave: 
                 </div>
             )}
 
-            {isDeployed && app.hostname && (
+            {isDeployed && liveHostname && (
                 <div className="flex items-center gap-2 p-3 rounded-lg bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-200 dark:border-emerald-800/30 text-xs text-emerald-700 dark:text-emerald-400">
                     <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                     <span>Your app is live. &nbsp;</span>
-                    <a href={`https://${app.hostname}`} target="_blank" rel="noopener noreferrer" className="font-medium hover:underline">
+                    <a href={`https://${liveHostname}`} target="_blank" rel="noopener noreferrer" className="font-medium hover:underline">
                         View on App Store &rarr;
                     </a>
                 </div>
