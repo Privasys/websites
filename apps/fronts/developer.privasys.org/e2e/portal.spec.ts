@@ -1,9 +1,52 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, Page } from '@playwright/test';
 import path from 'path';
 
 const screenshot = (name: string) => path.join(__dirname, 'test-results', `${name}.png`);
 
 const COMMIT_URL = 'https://github.com/Privasys/wasm-app-example/commit/f0eefca8adf131a8ab763641c06ac83e1ca1feef';
+
+/** Delete an app by navigating to its Overview tab and using the Danger Zone. */
+async function deleteAppByName(page: Page, appName: string) {
+    await page.goto('/dashboard/');
+    await page.waitForSelector('nav', { timeout: 5_000 });
+    const link = page.locator('nav a', { hasText: appName });
+    try { await link.waitFor({ state: 'visible', timeout: 5_000 }); } catch { return; }
+    await link.click();
+    await page.waitForURL('**/dashboard/apps/**');
+    await page.waitForTimeout(2_000);
+
+    // Try tabbed view first (Overview → Danger Zone)
+    const overviewTab = page.getByRole('button', { name: 'Overview' });
+    try {
+        await overviewTab.waitFor({ state: 'visible', timeout: 5_000 });
+        await overviewTab.click();
+        await page.waitForTimeout(1_000);
+    } catch { /* pipeline view — no tabs */ }
+
+    // Accept the confirm() dialog triggered by handleDelete
+    page.once('dialog', dialog => dialog.accept());
+
+    // Find delete confirmation input and fill it
+    const deleteInput = page.locator('input[placeholder="' + appName + '"]');
+    try {
+        await deleteInput.waitFor({ state: 'visible', timeout: 5_000 });
+        await deleteInput.fill(appName);
+        await page.waitForTimeout(300);
+        await page.locator('button', { hasText: 'Delete application' }).click();
+        // window.location.href redirect — wait generously for full page reload
+        await page.waitForURL('**/dashboard', { timeout: 15_000 }).catch(() => {});
+        return;
+    } catch { /* try pipeline view fallback */ }
+
+    // Pipeline view — delete button with confirm() dialog
+    const deleteBtn = page.getByRole('button', { name: /delete application/i });
+    try {
+        await deleteBtn.waitFor({ state: 'visible', timeout: 3_000 });
+        page.once('dialog', dialog => dialog.accept());
+        await deleteBtn.click();
+        await page.waitForURL('**/dashboard', { timeout: 15_000 }).catch(() => {});
+    } catch { /* could not delete */ }
+}
 
 test.describe('Developer Portal', () => {
     test.describe.configure({ mode: 'serial' });
@@ -93,8 +136,8 @@ test.describe('Developer Portal', () => {
         await page.screenshot({ path: screenshot('create-app-reserved'), fullPage: true });
     });
 
-    test('build completes and app transitions to Ready', async ({ page }) => {
-        test.setTimeout(180_000); // 3 minutes — build takes ~55s
+    test('build completes and deploy to enclave', async ({ page }) => {
+        test.setTimeout(240_000); // 4 minutes — build + deploy
 
         // Create a fresh app with a unique name to test the full flow
         await page.goto('/dashboard/new/');
@@ -107,7 +150,7 @@ test.describe('Developer Portal', () => {
         await expect(page.getByText('Privasys/wasm-app-example')).toBeVisible({ timeout: 5_000 });
 
         // Use a unique name to avoid conflicts
-        const uniqueName = `e2e-build-${Date.now().toString(36).slice(-6)}`;
+        const uniqueName = `e2e-full-${Date.now().toString(36).slice(-6)}`;
         const nameInput = page.locator('input[type="text"]').nth(1);
         await nameInput.clear();
         await nameInput.fill(uniqueName);
@@ -127,95 +170,73 @@ test.describe('Developer Portal', () => {
         // Should initially show pipeline view
         await page.screenshot({ path: screenshot('build-pipeline-start'), fullPage: true });
 
-        // Wait for the tabbed view to appear — the build completes and SSE pushes
-        // the status to "built", which triggers the frontend to show tabs
-        const overviewTab = page.getByRole('button', { name: 'Overview' });
-        await expect(overviewTab).toBeVisible({ timeout: 120_000 });
+        try {
+            // --- Phase 1: Wait for build to complete ---
+            const overviewTab = page.getByRole('button', { name: 'Overview' });
+            await expect(overviewTab).toBeVisible({ timeout: 120_000 });
 
-        // Verify the app is in the tabbed view with all expected tabs
-        await expect(page.getByRole('button', { name: 'Deployments' })).toBeVisible();
-        await expect(page.getByRole('button', { name: 'App Store' })).toBeVisible();
+            // Verify the app is in the tabbed view with all expected tabs
+            const deploymentsTab = page.getByRole('button', { name: 'Deployments' });
+            await expect(deploymentsTab).toBeVisible();
+            await expect(page.getByRole('button', { name: 'App Store' })).toBeVisible();
 
-        await page.screenshot({ path: screenshot('build-complete-ready'), fullPage: true });
-    });
+            await page.screenshot({ path: screenshot('build-complete-ready'), fullPage: true });
 
-    test('deploy app to enclave and verify active deployment', async ({ page }) => {
-        test.setTimeout(180_000); // 3 minutes — build takes ~55s + deploy
+            // --- Phase 2: Deploy the app ---
+            await deploymentsTab.click();
+            await page.screenshot({ path: screenshot('deploy-tab-before'), fullPage: true });
 
-        // Create a fresh app with a unique name
-        await page.goto('/dashboard/new/');
-        await expect(page.locator('h1')).toContainText(/new application/i);
+            // Select version (should have v1 ready from auto-build)
+            const versionSelect = page.locator('select').first();
+            await expect(versionSelect).toBeVisible({ timeout: 5_000 });
+            const versionOptions = versionSelect.locator('option:not([value=""])');
+            const versionCount = await versionOptions.count();
+            expect(versionCount).toBeGreaterThan(0);
+            const versionValue = await versionOptions.first().getAttribute('value');
+            await versionSelect.selectOption(versionValue!);
 
-        const commitInput = page.getByPlaceholder(/github\.com/i);
-        await commitInput.fill(COMMIT_URL);
-        await expect(page.getByText('Privasys/wasm-app-example')).toBeVisible({ timeout: 5_000 });
+            // Select enclave/location
+            const locationSelect = page.locator('select').nth(1);
+            await expect(locationSelect).toBeVisible();
+            const locationOptions = locationSelect.locator('option:not([value=""])');
+            const locationCount = await locationOptions.count();
+            expect(locationCount).toBeGreaterThan(0);
+            const locationValue = await locationOptions.first().getAttribute('value');
+            await locationSelect.selectOption(locationValue!);
 
-        const uniqueName = `e2e-deploy-${Date.now().toString(36).slice(-6)}`;
-        const nameInput = page.locator('input[type="text"]').nth(1);
-        await nameInput.clear();
-        await nameInput.fill(uniqueName);
-        await expect(page.getByText(/\.apps\.privasys\.org is available/i)).toBeVisible({ timeout: 5_000 });
+            // Click Deploy
+            const deployBtn = page.getByRole('button', { name: /^deploy$/i });
+            await expect(deployBtn).toBeEnabled();
+            await deployBtn.click();
 
-        const createBtn = page.getByRole('button', { name: /create application/i });
-        await expect(createBtn).toBeEnabled();
-        await createBtn.click();
+            // Wait for deployment to appear — should show as active or deploying
+            const activeOrDeploying = page.locator('text=Active').or(page.locator('text=Deploying'));
+            await expect(activeOrDeploying).toBeVisible({ timeout: 30_000 });
 
-        await expect(page.getByText(/application submitted/i)).toBeVisible({ timeout: 15_000 });
-        await page.waitForURL('**/dashboard/apps/**', { timeout: 10_000 });
+            await page.screenshot({ path: screenshot('deploy-active'), fullPage: true });
 
-        // Wait for build to complete — tabbed view appears
-        const deploymentsTab = page.getByRole('button', { name: 'Deployments' });
-        await expect(deploymentsTab).toBeVisible({ timeout: 120_000 });
+            // Verify deployment history section appears
+            await expect(page.getByText('Deployment history')).toBeVisible();
 
-        // Go to Deployments tab
-        await deploymentsTab.click();
-        await page.screenshot({ path: screenshot('deploy-tab-before'), fullPage: true });
+            // Verify the hostname link is shown for active deployments
+            const hostnameLink = page.locator(`a[href*="${uniqueName}"]`);
+            const hasHostname = await hostnameLink.isVisible({ timeout: 5_000 }).catch(() => false);
+            if (hasHostname) {
+                await expect(hostnameLink).toContainText(uniqueName);
+            }
 
-        // Select version (should have v1 ready from auto-build)
-        const versionSelect = page.locator('select').first();
-        await expect(versionSelect).toBeVisible({ timeout: 5_000 });
-        // Pick the first non-empty option
-        const versionOptions = versionSelect.locator('option:not([value=""])');
-        const versionCount = await versionOptions.count();
-        expect(versionCount).toBeGreaterThan(0);
-        const versionValue = await versionOptions.first().getAttribute('value');
-        await versionSelect.selectOption(versionValue!);
+            // Verify Stop button exists for the active deployment
+            const stopBtn = page.getByRole('button', { name: /stop/i });
+            await expect(stopBtn).toBeVisible();
 
-        // Select enclave/location
-        const locationSelect = page.locator('select').nth(1);
-        await expect(locationSelect).toBeVisible();
-        const locationOptions = locationSelect.locator('option:not([value=""])');
-        const locationCount = await locationOptions.count();
-        expect(locationCount).toBeGreaterThan(0);
-        const locationValue = await locationOptions.first().getAttribute('value');
-        await locationSelect.selectOption(locationValue!);
-
-        // Click Deploy
-        const deployBtn = page.getByRole('button', { name: /^deploy$/i });
-        await expect(deployBtn).toBeEnabled();
-        await deployBtn.click();
-
-        // Wait for deployment to appear — should show as active or deploying
-        const activeOrDeploying = page.locator('text=Active').or(page.locator('text=Deploying'));
-        await expect(activeOrDeploying).toBeVisible({ timeout: 30_000 });
-
-        await page.screenshot({ path: screenshot('deploy-active'), fullPage: true });
-
-        // Verify deployment history section appears
-        await expect(page.getByText('Deployment history')).toBeVisible();
-
-        // Verify the hostname link is shown for active deployments
-        const hostnameLink = page.locator(`a[href*="${uniqueName}"]`);
-        const hasHostname = await hostnameLink.isVisible({ timeout: 5_000 }).catch(() => false);
-        if (hasHostname) {
-            await expect(hostnameLink).toContainText(uniqueName);
+            await page.screenshot({ path: screenshot('deploy-complete'), fullPage: true });
+        } catch (e) {
+            // On failure, clean up immediately
+            await deleteAppByName(page, uniqueName);
+            throw e;
         }
-
-        // Verify Stop button exists for the active deployment
-        const stopBtn = page.getByRole('button', { name: /stop/i });
-        await expect(stopBtn).toBeVisible();
-
-        await page.screenshot({ path: screenshot('deploy-complete'), fullPage: true });
+        // On success, leave the deployed app alive for subsequent tests (App Store, Attestation, API Testing).
+        // The cleanup test at the end will delete all remaining apps.
     });
 
     test('App Store tab shows live banner for deployed app', async ({ page }) => {
@@ -304,18 +325,19 @@ test.describe('Developer Portal', () => {
             const inspectBtn = page.getByRole('button', { name: /inspect certificate/i });
             await expect(inspectBtn).toBeVisible({ timeout: 5_000 });
 
-            // Click inspect and wait for results
+            // Click inspect (deterministic mode — no challenge by default)
             await inspectBtn.click();
 
-            // Should NOT show "app is not deployed to an enclave" error
-            const notDeployedError = page.getByText('app is not deployed to an enclave');
-            // Wait a bit for the response, then check
-            await page.waitForTimeout(3_000);
-            const hasNotDeployedError = await notDeployedError.isVisible().catch(() => false);
-            expect(hasNotDeployedError).toBeFalsy();
+            // Wait for results to load
+            await page.waitForTimeout(5_000);
 
-            // Should show some attestation result (certificate info, verification, etc.)
-            const certSection = page.getByText(/certificate|attestation|quote|subject/i);
+            // Should NOT show any error message
+            const errorBanner = page.locator('.text-red-700, .text-red-600, [class*="red"]').filter({ hasText: /error|failed|not deployed/i });
+            const hasError = await errorBanner.first().isVisible().catch(() => false);
+            expect(hasError).toBeFalsy();
+
+            // Should show attestation result (certificate info, TLS connection, etc.)
+            const certSection = page.getByText(/subject|issuer|tls|certificate/i);
             await expect(certSection.first()).toBeVisible({ timeout: 15_000 });
 
             await page.screenshot({ path: screenshot('attestation-tab-result'), fullPage: true });
@@ -464,7 +486,7 @@ test.describe('Developer Portal', () => {
         await page.screenshot({ path: screenshot('store-tab'), fullPage: true });
     });
 
-    test('overview tab has Danger Zone with delete', async ({ page }) => {
+    test('overview tab has delete option', async ({ page }) => {
         await page.goto('/dashboard/');
         await page.waitForSelector('nav', { timeout: 5_000 });
         await page.waitForTimeout(2_000);
@@ -476,12 +498,12 @@ test.describe('Developer Portal', () => {
         await appLinks.first().click();
         await page.waitForURL('**/dashboard/apps/**');
 
-        // If tabbed view, check Overview has Danger Zone
+        // If tabbed view, check Overview has delete section
         const overviewTab = page.getByRole('button', { name: 'Overview' });
         try {
             await overviewTab.waitFor({ state: 'visible', timeout: 10_000 });
             await overviewTab.click();
-            await expect(page.getByText('Danger Zone')).toBeVisible();
+            await expect(page.getByText('Delete this application')).toBeVisible();
             await expect(page.getByRole('button', { name: /delete/i })).toBeVisible();
         } catch { /* pipeline view */ }
         await page.screenshot({ path: screenshot('overview-danger'), fullPage: true });
@@ -539,5 +561,33 @@ test.describe('Developer Portal', () => {
         await page.goto('/dashboard/new/');
         await expect(page.getByText(/upload manually/i)).toBeVisible();
         await page.screenshot({ path: screenshot('new-app-upload'), fullPage: true });
+    });
+
+    test('cleanup: delete all test apps', async ({ page }) => {
+        test.setTimeout(120_000);
+        await page.goto('/dashboard/');
+        await page.waitForSelector('nav', { timeout: 5_000 });
+        await page.waitForTimeout(1_000);
+
+        // Collect all app names from the sidebar
+        const appLinks = page.locator('nav a[href*="/dashboard/apps/"]');
+        const count = await appLinks.count();
+        const names: string[] = [];
+        for (let i = 0; i < count; i++) {
+            const text = (await appLinks.nth(i).textContent())?.trim();
+            if (text) names.push(text);
+        }
+
+        // Delete each app
+        for (const name of names) {
+            await deleteAppByName(page, name);
+        }
+
+        // Verify dashboard is empty
+        await page.goto('/dashboard/');
+        await page.waitForSelector('nav', { timeout: 5_000 });
+        await page.waitForTimeout(1_000);
+        const remaining = await page.locator('nav a[href*="/dashboard/apps/"]').count();
+        expect(remaining).toBe(0);
     });
 });

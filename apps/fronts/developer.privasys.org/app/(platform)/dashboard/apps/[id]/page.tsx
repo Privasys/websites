@@ -547,24 +547,20 @@ function OverviewTab({ app, versions, builds, deployments, deleting, onDelete }:
                             </div>
                         </>
                     )}
-                </div>
-            </section>
-
-            {/* Latest version pipeline */}
-            {latestVersion && (
-                <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">
-                    <div className="flex items-center justify-between mb-4">
-                        <h2 className="text-sm font-semibold">Latest version &middot; v{latestVersion.version_number}</h2>
-                        <StatusBadge status={latestVersion.status} labels={VERSION_STATUS_LABELS} colors={VERSION_STATUS_COLORS} />
-                    </div>
-                    <VersionPipeline version={latestVersion} builds={builds} />
-                    {latestVersion.github_commit && (
-                        <div className="mt-3 text-xs text-black/40 dark:text-white/40">
-                            Commit: <code className="font-mono">{latestVersion.github_commit.slice(0, 12)}</code>
+                    {app.cwasm_hash && (
+                        <div className="col-span-2">
+                            <div className="text-xs text-black/50 dark:text-white/50">WASM module SHA-256</div>
+                            <code className="text-xs bg-black/5 dark:bg-white/5 px-2 py-1 rounded break-all block mt-1 font-mono">{app.cwasm_hash}</code>
                         </div>
                     )}
-                </section>
-            )}
+                    {app.cwasm_size != null && (
+                        <div>
+                            <div className="text-xs text-black/50 dark:text-white/50">Module size</div>
+                            <div className="mt-0.5">{(app.cwasm_size / 1024).toFixed(1)} KB</div>
+                        </div>
+                    )}
+                </div>
+            </section>
 
             {/* Active deployments */}
             {activeDeployments.length > 0 && (
@@ -627,23 +623,6 @@ function OverviewTab({ app, versions, builds, deployments, deleting, onDelete }:
                 </section>
             )}
 
-            {/* CWASM info */}
-            {app.cwasm_hash && (
-                <section className="p-5 rounded-xl border border-black/10 dark:border-white/10 space-y-2">
-                    <h2 className="text-sm font-semibold">WASM module</h2>
-                    <div className="text-sm">
-                        <div className="text-xs text-black/50 dark:text-white/50">SHA-256</div>
-                        <code className="text-xs bg-black/5 dark:bg-white/5 px-2 py-1 rounded break-all block mt-1 font-mono">{app.cwasm_hash}</code>
-                    </div>
-                    {app.cwasm_size != null && (
-                        <div className="text-sm">
-                            <div className="text-xs text-black/50 dark:text-white/50">Size</div>
-                            <div className="mt-0.5">{(app.cwasm_size / 1024).toFixed(1)} KB</div>
-                        </div>
-                    )}
-                </section>
-            )}
-
             {/* Recent builds */}
             {builds.length > 0 && (
                 <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">
@@ -683,40 +662,35 @@ function DangerZone({ app, deleting, onDelete }: { app: App; deleting: boolean; 
     const isDeployed = app.status === 'deployed' || app.status === 'deploying';
 
     return (
-        <section className="p-5 rounded-xl border border-red-200 dark:border-red-800/40 bg-red-50/30 dark:bg-red-900/5">
-            <div className="flex items-center gap-2 mb-4">
-                <svg className="w-5 h-5 text-red-500 dark:text-red-400" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
-                </svg>
-                <h2 className="text-sm font-semibold text-red-700 dark:text-red-400">Danger Zone</h2>
-            </div>
-
-            <div className="p-4 rounded-lg border border-red-200/60 dark:border-red-800/30 bg-white/60 dark:bg-white/[0.02]">
-                <h3 className="text-sm font-medium text-red-800 dark:text-red-300">Delete this application</h3>
+        <section className="pt-6">
+            <div className="border-t border-red-200 dark:border-red-800/40 pt-6">
+                <h3 className="text-sm font-medium text-red-700 dark:text-red-400">Delete this application</h3>
                 <p className="mt-1 text-xs text-black/50 dark:text-white/50 leading-relaxed">
-                    Once deleted, the application, all versions, build history, and deployment records are <strong>permanently removed</strong>. This action cannot be undone.
-                    {isDeployed && <> Active deployments will be <strong>automatically stopped</strong> before deletion.</>}
+                    Once deleted, the application, all versions, build history, and deployment records are permanently removed. This action cannot be undone.
+                    {isDeployed && <> Active deployments will be automatically stopped before deletion.</>}
                 </p>
 
-                <div className="mt-3">
-                    <label className="text-xs text-black/50 dark:text-white/50 block mb-1.5">
-                        Type <strong className="text-black dark:text-white font-mono">{app.name}</strong> to confirm
-                    </label>
-                    <input
-                        type="text"
-                        value={confirmName}
-                        onChange={e => setConfirmName(e.target.value)}
-                        placeholder={app.name}
-                        className="w-full max-w-xs px-3 py-2 text-sm font-mono rounded-lg border border-red-200 dark:border-red-800/50 bg-white dark:bg-white/5 focus:outline-none focus:ring-2 focus:ring-red-500/30 dark:focus:ring-red-400/30 placeholder:text-black/20 dark:placeholder:text-white/20"
-                    />
+                <div className="mt-3 flex items-end gap-3">
+                    <div className="flex-1 max-w-xs">
+                        <label className="text-xs text-black/50 dark:text-white/50 block mb-1.5">
+                            Type <strong className="text-black dark:text-white font-mono">{app.name}</strong> to confirm
+                        </label>
+                        <input
+                            type="text"
+                            value={confirmName}
+                            onChange={e => setConfirmName(e.target.value)}
+                            placeholder={app.name}
+                            className="w-full px-3 py-2 text-sm font-mono rounded-lg border border-black/10 dark:border-white/10 bg-transparent focus:outline-none focus:ring-2 focus:ring-red-500/30 dark:focus:ring-red-400/30 placeholder:text-black/20 dark:placeholder:text-white/20"
+                        />
+                    </div>
+                    <button
+                        onClick={onDelete}
+                        disabled={!confirmed || deleting}
+                        className="px-4 py-2 text-sm font-medium rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    >
+                        {deleting ? 'Deleting…' : 'Delete application'}
+                    </button>
                 </div>
-                <button
-                    onClick={onDelete}
-                    disabled={!confirmed || deleting}
-                    className="mt-3 px-4 py-2 text-sm font-medium rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                >
-                    {deleting ? 'Deleting…' : 'Permanently delete this application'}
-                </button>
             </div>
         </section>
     );
@@ -831,11 +805,7 @@ function AttestationTab({ appId, token, deployments, versions }: { appId: string
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [copied, setCopied] = useState<string | null>(null);
-    const [challenge, setChallenge] = useState<string>(() => {
-        const bytes = new Uint8Array(32);
-        if (typeof window !== 'undefined') crypto.getRandomValues(bytes);
-        return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
-    });
+    const [challenge, setChallenge] = useState<string>('');
 
     async function inspect() {
         setLoading(true);
