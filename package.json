@@ -14,7 +14,9 @@
         "lint": "nx affected --target=lint --base=main",
         "nx": "nx",
         "prepare": "is-ci || husky install",
-        "test": "nx affected --target=test --base=main"
+        "test": "nx affected --target=test --base=main",
+        "e2e": "cd apps/fronts/developer.privasys.org/e2e && npx playwright test",
+        "e2e:ui": "cd apps/fronts/developer.privasys.org/e2e && npx playwright test --ui"
     },
     "resolutions": {
         "cssnano": "^6",
@@ -63,6 +65,7 @@
         "@nx/react": "21.4.1",
         "@nx/web": "21.4.1",
         "@nx/workspace": "21.4.1",
+        "@playwright/test": "^1.58.2",
         "@stylistic/eslint-plugin": "^5.3.1",
         "@swc/core": "1.13.5",
         "@swc/jest": "0.2.39",

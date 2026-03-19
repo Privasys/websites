@@ -13,12 +13,18 @@ export default function LoginPage() {
 
     useEffect(() => {
         if (status === 'authenticated') router.replace('/dashboard');
+        // Auto-redirect to Zitadel — GitHub is the only auth method,
+        // no need to show a login page with a single button.
+        if (status === 'unauthenticated') {
+            signIn('zitadel', { callbackUrl: '/dashboard' });
+        }
     }, [status, router]);
 
-    if (status === 'loading' || status === 'authenticated') {
+    // Show loading spinner while checking session or redirecting
+    if (status === 'loading' || status === 'authenticated' || status === 'unauthenticated') {
         return (
             <div className="min-h-screen flex items-center justify-center">
-                <div className="animate-pulse text-sm text-black/50 dark:text-white/50">Loading…</div>
+                <div className="animate-pulse text-sm text-black/50 dark:text-white/50">Redirecting…</div>
             </div>
         );
     }
