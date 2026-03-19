@@ -382,26 +382,32 @@ export default function AppDetailPage() {
                     );
                 })()}
 
-                {/* Actions for failed/rejected apps */}
-                {(app.status === 'failed' || app.status === 'rejected') && (
-                    <div className="mt-8 p-5 rounded-xl border border-black/10 dark:border-white/10">
-                        <h2 className="text-sm font-semibold mb-2">
-                            {app.status === 'failed' ? 'Build failed' : 'Application rejected'}
-                        </h2>
-                        <p className="text-sm text-black/50 dark:text-white/50 mb-4">
-                            {app.status === 'failed'
-                                ? 'The build did not complete successfully. You can delete this application and submit a new one with a fixed commit.'
-                                : 'Your application was not approved for deployment. You can delete it and submit a new version.'}
-                        </p>
-                        <button
-                            onClick={handleDelete}
-                            disabled={deleting}
-                            className="px-4 py-2 text-sm font-medium rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 transition-colors"
-                        >
-                            {deleting ? 'Deleting…' : 'Delete application'}
-                        </button>
-                    </div>
-                )}
+                {/* Actions — always visible in pipeline view so the user is never stuck */}
+                <div className="mt-8 p-5 rounded-xl border border-black/10 dark:border-white/10">
+                    <h2 className="text-sm font-semibold mb-2">
+                        {app.status === 'failed' ? 'Build failed'
+                            : app.status === 'rejected' ? 'Application rejected'
+                            : 'Actions'}
+                    </h2>
+                    <p className="text-sm text-black/50 dark:text-white/50 mb-4">
+                        {app.status === 'failed'
+                            ? 'The build did not complete successfully. You can delete this application and submit a new one with a fixed commit.'
+                            : app.status === 'rejected'
+                                ? 'Your application was not approved for deployment. You can delete it and submit a new version.'
+                                : app.status === 'building'
+                                    ? 'Your application is being built. If the build is stuck, you can delete the application and resubmit.'
+                                    : app.status === 'approved'
+                                        ? 'Your application has been approved and is waiting for the build to start. You can delete it if you want to resubmit.'
+                                        : 'Your application is being processed. You can delete it if you want to start over.'}
+                    </p>
+                    <button
+                        onClick={handleDelete}
+                        disabled={deleting}
+                        className="px-4 py-2 text-sm font-medium rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 transition-colors"
+                    >
+                        {deleting ? 'Deleting…' : 'Delete application'}
+                    </button>
+                </div>
 
             </div>
         );

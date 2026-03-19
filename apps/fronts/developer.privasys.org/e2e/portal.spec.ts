@@ -30,8 +30,27 @@ test.describe('Developer Portal', () => {
         const commitInput = page.getByPlaceholder(/github\.com/i);
         await commitInput.fill(COMMIT_URL);
 
-        // Wait for URL to be parsed — app name and commit info should appear
-        await expect(page.getByText('wasm-app-example', { exact: true })).toBeVisible({ timeout: 5_000 });
+        // Wait for URL to be parsed — repo and commit info should appear
+        await expect(page.getByText('Privasys/wasm-app-example')).toBeVisible({ timeout: 5_000 });
+
+        // Name field should be pre-filled from repo name and editable
+        const nameInput = page.locator('input[value="wasm-app-example"]');
+        await expect(nameInput).toBeVisible({ timeout: 3_000 });
+
+        // The name availability check should show a result (available or taken)
+        const available = page.getByText(/\.apps\.privasys\.org is available/i);
+        const taken = page.getByText(/already taken|name is reserved/i);
+        await expect(available.or(taken)).toBeVisible({ timeout: 5_000 });
+
+        // If name is taken, change it to a unique variant
+        if (await taken.isVisible().catch(() => false)) {
+            const uniqueName = `wasm-app-example-${Date.now().toString(36).slice(-4)}`;
+            await nameInput.clear();
+            await nameInput.fill(uniqueName);
+            // Wait for availability check on the new name
+            await expect(page.getByText(/\.apps\.privasys\.org is available/i)).toBeVisible({ timeout: 5_000 });
+        }
+
         await page.screenshot({ path: screenshot('create-app-parsed'), fullPage: true });
 
         // Submit
@@ -39,20 +58,39 @@ test.describe('Developer Portal', () => {
         await expect(createBtn).toBeEnabled();
         await createBtn.click();
 
-        // Either success or "already exists" error (another user owns this name)
-        const submitted = page.getByText(/application submitted/i);
-        const conflict = page.getByText(/already exists/i);
-        await expect(submitted.or(conflict)).toBeVisible({ timeout: 15_000 });
+        // Should succeed — we verified the name was available
+        await expect(page.getByText(/application submitted/i)).toBeVisible({ timeout: 15_000 });
+        await page.screenshot({ path: screenshot('create-app-submitted'), fullPage: true });
 
-        if (await submitted.isVisible().catch(() => false)) {
-            await page.screenshot({ path: screenshot('create-app-submitted'), fullPage: true });
-            // Wait for auto-redirect to app detail page
-            await page.waitForURL('**/dashboard/apps/**', { timeout: 10_000 });
-        } else {
-            // Name taken by another user — that's fine, just screenshot the state
-            await page.screenshot({ path: screenshot('create-app-conflict'), fullPage: true });
-        }
+        // Wait for auto-redirect to app detail page
+        await page.waitForURL('**/dashboard/apps/**', { timeout: 10_000 });
         await page.screenshot({ path: screenshot('create-app-detail'), fullPage: true });
+    });
+
+    test('create app shows name taken when name conflicts', async ({ page }) => {
+        // Try to create an app with a name that's already in use
+        await page.goto('/dashboard/new/');
+        await expect(page.locator('h1')).toContainText(/new application/i);
+
+        const commitInput = page.getByPlaceholder(/github\.com/i);
+        await commitInput.fill(COMMIT_URL);
+
+        // Wait for URL to be parsed
+        await expect(page.getByText('Privasys/wasm-app-example')).toBeVisible({ timeout: 5_000 });
+
+        // The name pre-fills to "wasm-app-example" — if our first test created it,
+        // it should show as taken (or available if this test runs first)
+        const available = page.getByText(/\.apps\.privasys\.org is available/i);
+        const taken = page.getByText(/already taken|name is reserved/i);
+        await expect(available.or(taken)).toBeVisible({ timeout: 5_000 });
+        await page.screenshot({ path: screenshot('create-app-name-check'), fullPage: true });
+
+        // Verify reserved names are rejected
+        const nameInput = page.locator('input[type="text"]').nth(1); // second input (after commit URL)
+        await nameInput.clear();
+        await nameInput.fill('admin');
+        await expect(page.getByText(/reserved/i)).toBeVisible({ timeout: 5_000 });
+        await page.screenshot({ path: screenshot('create-app-reserved'), fullPage: true });
     });
 
     test('dashboard loads with sidebar and nav elements', async ({ page }) => {
@@ -76,6 +114,8 @@ test.describe('Developer Portal', () => {
 
     test('app detail page shows tabs for built/approved apps', async ({ page }) => {
         await page.goto('/dashboard/');
+        await page.waitForSelector('nav', { timeout: 5_000 });
+        await page.waitForTimeout(2_000);
 
         // Find any app in the sidebar
         const appLinks = page.locator('nav a[href*="/dashboard/apps/"]');
@@ -113,6 +153,8 @@ test.describe('Developer Portal', () => {
 
     test('built app shows Deployments and App Store tabs', async ({ page }) => {
         await page.goto('/dashboard/');
+        await page.waitForSelector('nav', { timeout: 5_000 });
+        await page.waitForTimeout(2_000);
 
         const appLinks = page.locator('nav a[href*="/dashboard/apps/"]');
         const count = await appLinks.count();
@@ -141,6 +183,8 @@ test.describe('Developer Portal', () => {
 
     test('overview tab has Danger Zone with delete', async ({ page }) => {
         await page.goto('/dashboard/');
+        await page.waitForSelector('nav', { timeout: 5_000 });
+        await page.waitForTimeout(2_000);
 
         const appLinks = page.locator('nav a[href*="/dashboard/apps/"]');
         const count = await appLinks.count();
@@ -157,6 +201,45 @@ test.describe('Developer Portal', () => {
             await expect(page.getByRole('button', { name: /delete/i })).toBeVisible();
         }
         await page.screenshot({ path: screenshot('overview-danger'), fullPage: true });
+    });
+
+    test('pipeline view always has a delete action button', async ({ page }) => {
+        await page.goto('/dashboard/');
+        await page.waitForSelector('nav', { timeout: 5_000 });
+        await page.waitForTimeout(2_000);
+
+        const appLinks = page.locator('nav a[href*="/dashboard/apps/"]');
+        const count = await appLinks.count();
+        test.skip(count === 0, 'No apps exist');
+
+        // Check every app — if it shows the pipeline, it must have a delete button
+        for (let i = 0; i < count; i++) {
+            await page.goto('/dashboard/');
+            await page.waitForSelector('nav a[href*="/dashboard/apps/"]', { timeout: 5_000 });
+            const link = page.locator('nav a[href*="/dashboard/apps/"]').nth(i);
+            const appName = (await link.textContent())?.trim() || `app-${i}`;
+            await link.click();
+            await page.waitForURL('**/dashboard/apps/**');
+
+            // Determine if pipeline view (non-terminal status)
+            const pipelineMarker = page.locator('text=Application submitted');
+            const isPipeline = await pipelineMarker.isVisible({ timeout: 3_000 }).catch(() => false);
+
+            if (isPipeline) {
+                // Pipeline view — there MUST be a delete button so the user is never stuck
+                const deleteBtn = page.getByRole('button', { name: /delete application/i });
+                await expect(deleteBtn).toBeVisible({ timeout: 3_000 });
+                await page.screenshot({ path: screenshot(`pipeline-action-${appName}`), fullPage: true });
+            } else {
+                // Tabbed view — Danger Zone delete is in the Overview tab
+                const overviewTab = page.getByRole('button', { name: 'Overview' });
+                if (await overviewTab.isVisible({ timeout: 2_000 }).catch(() => false)) {
+                    await overviewTab.click();
+                }
+                const deleteBtn = page.getByRole('button', { name: /delete/i });
+                await expect(deleteBtn).toBeVisible({ timeout: 3_000 });
+            }
+        }
     });
 
     test('settings page shows identity and profile', async ({ page }) => {

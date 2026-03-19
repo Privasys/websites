@@ -25,7 +25,7 @@ Provide a container image reference. The platform deploys it inside **Enclave OS
 
 ## Authentication
 
-Developers sign in with their **GitHub identity** via OIDC. No custom credentials to manage. After the initial sign-in, developers can optionally activate a **Passkey** for passwordless access.
+Developers sign in with their **GitHub identity** via OIDC. The login page automatically redirects to the identity provider — no extra clicks required. Returning users with an existing session skip the login form entirely thanks to the `select_account` OIDC prompt. After the initial sign-in, developers can optionally activate a **Passkey** for passwordless access.
 
 ## Workflow
 
