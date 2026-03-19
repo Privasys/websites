@@ -26,6 +26,17 @@ export interface App {
     domain_verified: boolean;
     current_build_id?: string;
     enclave_id?: string;
+    // App Store listing
+    store_tagline: string;
+    store_description: string;
+    store_category: string;
+    store_icon_url: string;
+    store_screenshots: string[];
+    store_privacy_url: string;
+    store_tos_url: string;
+    store_website_url: string;
+    store_support_email: string;
+    store_keywords: string;
     created_at: string;
     updated_at: string;
 }

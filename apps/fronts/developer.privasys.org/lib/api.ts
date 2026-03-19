@@ -145,6 +145,28 @@ export function attestApp(token: string, appId: string, challenge?: string): Pro
     return request<AttestationResult>(`/api/v1/apps/${encodeURIComponent(appId)}/attest${qs}`, token);
 }
 
+export interface QuoteVerifyResult {
+    success: boolean;
+    status: string;
+    teeType?: string;
+    mrenclave?: string;
+    mrsigner?: string;
+    mrtd?: string;
+    isvProdId?: number;
+    isvSvn?: number;
+    tcbDate?: string;
+    advisoryIds?: string[];
+    message?: string;
+    error?: string;
+}
+
+export function verifyQuote(token: string, quoteBase64: string): Promise<QuoteVerifyResult> {
+    return request<QuoteVerifyResult>('/api/v1/verify-quote', token, {
+        method: 'POST',
+        body: JSON.stringify({ quote: quoteBase64 })
+    });
+}
+
 export async function sendToApp(token: string, appId: string, payload: unknown): Promise<unknown> {
     return request<unknown>(`/api/v1/apps/${encodeURIComponent(appId)}/send`, token, {
         method: 'POST',
@@ -212,6 +234,9 @@ export interface UserInfo {
     name: string;
     display_name: string;
     display_email: string;
+    company_name: string;
+    company_domain: string;
+    is_individual: boolean;
     roles: string[];
     is_admin: boolean;
 }
@@ -220,10 +245,16 @@ export function getUserInfo(token: string): Promise<UserInfo> {
     return request<UserInfo>('/api/v1/me', token);
 }
 
-export function updateProfile(token: string, displayName: string, displayEmail: string): Promise<UserInfo> {
+export function updateProfile(token: string, profile: {
+    display_name: string;
+    display_email: string;
+    company_name: string;
+    company_domain: string;
+    is_individual: boolean;
+}): Promise<UserInfo> {
     return request<UserInfo>('/api/v1/me', token, {
         method: 'PUT',
-        body: JSON.stringify({ display_name: displayName, display_email: displayEmail })
+        body: JSON.stringify(profile)
     });
 }
 
@@ -328,6 +359,40 @@ export function adminDeployVersion(token: string, appId: string, versionId: stri
 
 export function listDeployments(token: string, appId: string): Promise<AppDeployment[]> {
     return request<AppDeployment[]>(`/api/v1/apps/${encodeURIComponent(appId)}/deployments`, token);
+}
+
+export function deployVersion(token: string, appId: string, versionId: string, enclaveId: string): Promise<AppDeployment> {
+    return request<AppDeployment>(`/api/v1/apps/${encodeURIComponent(appId)}/versions/${encodeURIComponent(versionId)}/deploy`, token, {
+        method: 'POST',
+        body: JSON.stringify({ enclave_id: enclaveId })
+    });
+}
+
+export function stopDeployment(token: string, appId: string, deploymentId: string): Promise<AppDeployment> {
+    return request<AppDeployment>(`/api/v1/apps/${encodeURIComponent(appId)}/deployments/${encodeURIComponent(deploymentId)}/stop`, token, {
+        method: 'POST',
+        body: JSON.stringify({})
+    });
+}
+
+export interface StoreListingUpdate {
+    store_tagline: string;
+    store_description: string;
+    store_category: string;
+    store_icon_url: string;
+    store_screenshots: string[];
+    store_privacy_url: string;
+    store_tos_url: string;
+    store_website_url: string;
+    store_support_email: string;
+    store_keywords: string;
+}
+
+export function updateStoreListing(token: string, appId: string, listing: StoreListingUpdate): Promise<App> {
+    return request<App>(`/api/v1/apps/${encodeURIComponent(appId)}/store`, token, {
+        method: 'PUT',
+        body: JSON.stringify(listing)
+    });
 }
 
 export function adminStopDeployment(token: string, appId: string, deploymentId: string): Promise<AppDeployment> {

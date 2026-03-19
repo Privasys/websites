@@ -4,10 +4,10 @@ import Link from 'next/link';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { useEffect, useState, useCallback } from 'react';
-import { getApp, listBuilds, listVersions, listDeployments, deleteApp, createVersion, attestApp, getAppSchema, rpcCall } from '~/lib/api';
-import type { AppSchema, FunctionSchema, WitType } from '~/lib/api';
+import { getApp, listBuilds, listVersions, listDeployments, listEnclaves, deleteApp, deployVersion, stopDeployment, attestApp, verifyQuote, getAppSchema, rpcCall, updateStoreListing } from '~/lib/api';
+import type { AppSchema, FunctionSchema, WitType, QuoteVerifyResult, StoreListingUpdate } from '~/lib/api';
 import { useSSE } from '~/lib/use-sse';
-import type { App, BuildJob, AppVersion, AppDeployment, AttestationResult } from '~/lib/types';
+import type { App, BuildJob, AppVersion, AppDeployment, Enclave, AttestationResult } from '~/lib/types';
 import { STATUS_LABELS, STATUS_COLORS, VERSION_STATUS_LABELS, VERSION_STATUS_COLORS, DEPLOYMENT_STATUS_LABELS, DEPLOYMENT_STATUS_COLORS } from '~/lib/types';
 
 function StatusBadge({ status, labels, colors }: { status: string; labels: Record<string, string>; colors: Record<string, string> }) {
@@ -113,10 +113,10 @@ function VersionPipeline({ version, builds }: { version: AppVersion; builds: Bui
     );
 }
 
-type Tab = 'overview' | 'versions' | 'deployments' | 'attestation' | 'api';
+type Tab = 'overview' | 'deployments' | 'store' | 'attestation' | 'api' | 'settings';
 
 // Terminal states that show the full detail view
-const TERMINAL_STATUSES = new Set(['deployed', 'undeployed']);
+const TERMINAL_STATUSES = new Set(['deployed', 'undeployed', 'built']);
 
 // App-level pipeline (vertical, like the wizard)
 function AppPipelineStep({ step, active, done, failed, last, children }: {
@@ -171,15 +171,11 @@ function AppPipeline({ app, builds }: { app: App; builds: BuildJob[] }) {
     const reviewActive = s === 'submitted' || s === 'under_review';
     const reviewFailed = s === 'rejected';
 
-    const buildDone = ['deploying', 'deployed', 'undeployed'].includes(s) || (s === 'approved' && !!app.cwasm_hash);
+    const buildDone = ['deploying', 'deployed', 'undeployed', 'built'].includes(s) || (s === 'approved' && !!app.cwasm_hash);
     const buildActive = s === 'building';
     const buildFailed = s === 'failed' && !!latestBuild?.status && latestBuild.status !== 'success';
 
-    const deployReady = !!app.cwasm_hash || buildDone;
-    const deployDone = s === 'deployed' || s === 'deploying';
-    const deployActive = s === 'deploying';
-
-    const liveDone = s === 'deployed';
+    const readyDone = buildDone && !buildActive && !buildFailed;
 
     // What should the user know / do next?
     const needsBuild = s === 'approved' && !app.cwasm_hash && builds.length === 0;
@@ -225,23 +221,12 @@ function AppPipeline({ app, builds }: { app: App; builds: BuildJob[] }) {
                 </div>
             </AppPipelineStep>
 
-            <AppPipelineStep step={4} active={deployReady && !deployDone && !buildActive && !needsBuild && reviewDone && !reviewFailed && !buildFailed} done={deployDone}>
-                <h2 className="text-lg font-semibold">Deploy to enclave</h2>
+            <AppPipelineStep step={4} active={false} done={readyDone} last>
+                <h2 className="text-lg font-semibold">Ready</h2>
                 <div className="mt-1 text-sm text-black/50 dark:text-white/50">
-                    {deployActive
-                        ? 'Deploying to enclave…'
-                        : deployDone
-                            ? 'Deployed successfully.'
-                            : 'Select a deployment location for your enclave.'}
-                </div>
-            </AppPipelineStep>
-
-            <AppPipelineStep step={5} active={false} done={liveDone} last>
-                <h2 className="text-lg font-semibold">Live &amp; attested</h2>
-                <div className="mt-1 text-sm text-black/50 dark:text-white/50">
-                    {liveDone
-                        ? <>Your application is live.{app.hostname && <> <a href={`https://${app.hostname}`} target="_blank" rel="noopener noreferrer" className="text-emerald-600 dark:text-emerald-400 hover:underline">{app.hostname}</a></>}</>
-                        : 'Your application will be live and remotely attested.'}
+                    {readyDone
+                        ? 'Your application is built and ready to deploy.'
+                        : 'Your application will be ready for deployment once the build completes.'}
                 </div>
             </AppPipelineStep>
         </div>
@@ -257,11 +242,10 @@ export default function AppDetailPage() {
     const [builds, setBuilds] = useState<BuildJob[]>([]);
     const [versions, setVersions] = useState<AppVersion[]>([]);
     const [deployments, setDeployments] = useState<AppDeployment[]>([]);
+    const [enclaves, setEnclaves] = useState<Enclave[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [deleting, setDeleting] = useState(false);
-    const [newCommitUrl, setNewCommitUrl] = useState('');
-    const [submittingVersion, setSubmittingVersion] = useState(false);
 
     const tab = (searchParams.get('tab') as Tab) || 'overview';
     const setTab = (t: Tab) => router.push(`/dashboard/apps/${id}?tab=${t}`);
@@ -269,16 +253,18 @@ export default function AppDetailPage() {
     const load = useCallback(async () => {
         if (!session?.accessToken || !id) return;
         try {
-            const [appData, buildsData, versionsData, deploymentsData] = await Promise.all([
+            const [appData, buildsData, versionsData, deploymentsData, enclavesData] = await Promise.all([
                 getApp(session.accessToken, id),
                 listBuilds(session.accessToken, id),
                 listVersions(session.accessToken, id),
-                listDeployments(session.accessToken, id)
+                listDeployments(session.accessToken, id),
+                listEnclaves(session.accessToken)
             ]);
             setApp(appData);
             setBuilds(buildsData);
             setVersions(versionsData);
             setDeployments(deploymentsData);
+            setEnclaves(enclavesData);
         } catch (e) {
             setError(e instanceof Error ? e.message : 'Failed to load');
         } finally {
@@ -305,21 +291,6 @@ export default function AppDetailPage() {
         }
     }
 
-    async function handleSubmitVersion() {
-        if (!session?.accessToken || !id || !newCommitUrl.trim()) return;
-        setSubmittingVersion(true);
-        setError(null);
-        try {
-            await createVersion(session.accessToken, id, newCommitUrl.trim());
-            setNewCommitUrl('');
-            load();
-        } catch (e) {
-            setError(e instanceof Error ? e.message : 'Failed to submit version');
-        } finally {
-            setSubmittingVersion(false);
-        }
-    }
-
     if (loading) {
         return (
             <div className="max-w-4xl">
@@ -340,7 +311,6 @@ export default function AppDetailPage() {
     }
 
     const activeDeployments = deployments.filter(d => d.status === 'active');
-    const canDelete = app.status !== 'deployed' && app.status !== 'deploying';
     const showPipeline = !TERMINAL_STATUSES.has(app.status);
 
     // Pipeline view — shown while the app is still progressing through the flow
@@ -410,36 +380,22 @@ export default function AppDetailPage() {
                     );
                 })()}
 
-                {/* Delete option for non-deployed apps */}
-                {canDelete && (
-                    <section className="mt-12 p-5 rounded-xl border border-red-200 dark:border-red-800/50">
-                        <h2 className="text-sm font-semibold text-red-700 dark:text-red-400">Danger zone</h2>
-                        <p className="mt-1 text-sm text-black/60 dark:text-white/60">
-                            Permanently delete this application and all its associated data.
-                        </p>
-                        <button
-                            onClick={handleDelete}
-                            disabled={deleting}
-                            className="mt-3 px-4 py-2 text-sm font-medium rounded-lg border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-40 transition-colors"
-                        >
-                            {deleting ? 'Deleting…' : 'Delete application'}
-                        </button>
-                    </section>
-                )}
+
             </div>
         );
     }
 
     // Full detail view — shown once the app has reached a terminal state
-    const isDeployed = app.status === 'deployed';
-    const TABS: { key: Tab; label: string; count?: number }[] = [
+    const hasActiveDeployment = activeDeployments.length > 0;
+    const TABS: { key: Tab; label: string; count?: number; danger?: boolean }[] = [
         { key: 'overview', label: 'Overview' },
-        { key: 'versions', label: 'Versions', count: versions.length },
         { key: 'deployments', label: 'Deployments', count: activeDeployments.length },
-        ...(isDeployed ? [
+        { key: 'store', label: 'App Store' },
+        ...(hasActiveDeployment ? [
             { key: 'attestation' as Tab, label: 'Attestation' },
             { key: 'api' as Tab, label: 'API Testing' }
-        ] : [])
+        ] : []),
+        { key: 'settings', label: 'Settings' }
     ];
 
     return (
@@ -490,44 +446,29 @@ export default function AppDetailPage() {
                 {tab === 'overview' && (
                     <OverviewTab app={app} versions={versions} builds={builds} deployments={deployments} />
                 )}
-                {tab === 'versions' && (
-                    <VersionsTab
+                {tab === 'deployments' && session?.accessToken && (
+                    <DeploymentsTab
                         app={app}
+                        deployments={deployments}
                         versions={versions}
-                        builds={builds}
-                        newCommitUrl={newCommitUrl}
-                        onCommitUrlChange={setNewCommitUrl}
-                        onSubmitVersion={handleSubmitVersion}
-                        submitting={submittingVersion}
+                        enclaves={enclaves}
+                        token={session.accessToken}
+                        onRefresh={load}
                     />
                 )}
-                {tab === 'deployments' && (
-                    <DeploymentsTab deployments={deployments} versions={versions} />
+                {tab === 'store' && session?.accessToken && (
+                    <AppStoreTab app={app} token={session.accessToken} onSave={(updated) => setApp(updated)} />
                 )}
                 {tab === 'attestation' && session?.accessToken && (
-                    <AttestationTab appId={app.id} token={session.accessToken} />
+                    <AttestationTab appId={app.id} token={session.accessToken} deployments={activeDeployments} versions={versions} />
                 )}
                 {tab === 'api' && session?.accessToken && (
-                    <ApiTestingTab appId={app.id} token={session.accessToken} />
+                    <ApiTestingTab appId={app.id} token={session.accessToken} deployments={activeDeployments} versions={versions} />
+                )}
+                {tab === 'settings' && (
+                    <SettingsTab app={app} deleting={deleting} onDelete={handleDelete} />
                 )}
             </div>
-
-            {/* Danger zone */}
-            {canDelete && (
-                <section className="mt-12 p-5 rounded-xl border border-red-200 dark:border-red-800/50">
-                    <h2 className="text-sm font-semibold text-red-700 dark:text-red-400">Danger zone</h2>
-                    <p className="mt-1 text-sm text-black/60 dark:text-white/60">
-                        Permanently delete this application and all its associated data.
-                    </p>
-                    <button
-                        onClick={handleDelete}
-                        disabled={deleting}
-                        className="mt-3 px-4 py-2 text-sm font-medium rounded-lg border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-40 transition-colors"
-                    >
-                        {deleting ? 'Deleting…' : 'Delete application'}
-                    </button>
-                </section>
-            )}
         </div>
     );
 }
@@ -806,8 +747,99 @@ function VersionsTab({ app, versions, builds, newCommitUrl, onCommitUrlChange, o
     );
 }
 
+// ------- Settings Tab -------
+function SettingsTab({ app, deleting, onDelete }: { app: App; deleting: boolean; onDelete: () => void }) {
+    const [confirmName, setConfirmName] = useState('');
+    const confirmed = confirmName === app.name;
+    const isDeployed = app.status === 'deployed' || app.status === 'deploying';
+
+    return (
+        <div className="space-y-8">
+            {/* App info (read-only summary) */}
+            <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">
+                <h2 className="text-sm font-semibold mb-3">Application Info</h2>
+                <div className="space-y-3 text-sm">
+                    <div className="flex items-center justify-between">
+                        <span className="text-black/50 dark:text-white/50">Name</span>
+                        <span className="font-mono text-xs">{app.name}</span>
+                    </div>
+                    {app.display_name && app.display_name !== app.name && (
+                        <div className="flex items-center justify-between">
+                            <span className="text-black/50 dark:text-white/50">Display Name</span>
+                            <span>{app.display_name}</span>
+                        </div>
+                    )}
+                    <div className="flex items-center justify-between">
+                        <span className="text-black/50 dark:text-white/50">Source</span>
+                        <span>{app.source_type === 'github' ? 'GitHub' : 'Upload'}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                        <span className="text-black/50 dark:text-white/50">Status</span>
+                        <StatusBadge status={app.status} labels={STATUS_LABELS} colors={STATUS_COLORS} />
+                    </div>
+                    <div className="flex items-center justify-between">
+                        <span className="text-black/50 dark:text-white/50">Created</span>
+                        <span className="text-xs">{new Date(app.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                    </div>
+                    {app.commit_url && (
+                        <div className="flex items-center justify-between">
+                            <span className="text-black/50 dark:text-white/50">Commit</span>
+                            <a href={app.commit_url} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 dark:text-blue-400 hover:underline truncate max-w-[240px]">
+                                {app.github_commit?.slice(0, 12) || 'View commit'}
+                            </a>
+                        </div>
+                    )}
+                </div>
+            </section>
+
+            {/* Danger zone */}
+            <section className="p-5 rounded-xl border border-red-200 dark:border-red-800/40 bg-red-50/30 dark:bg-red-900/5">
+                <div className="flex items-center gap-2 mb-4">
+                    <svg className="w-5 h-5 text-red-500 dark:text-red-400" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+                    </svg>
+                    <h2 className="text-sm font-semibold text-red-700 dark:text-red-400">Danger Zone</h2>
+                </div>
+
+                <div className="p-4 rounded-lg border border-red-200/60 dark:border-red-800/30 bg-white/60 dark:bg-white/[0.02]">
+                    <h3 className="text-sm font-medium text-red-800 dark:text-red-300">Delete this application</h3>
+                    <p className="mt-1 text-xs text-black/50 dark:text-white/50 leading-relaxed">
+                        Once deleted, the application, all versions, build history, and deployment records are <strong>permanently removed</strong>. This action cannot be undone.
+                        {isDeployed && <> Active deployments will be <strong>automatically stopped</strong> before deletion.</>}
+                    </p>
+
+                    <div className="mt-3">
+                        <label className="text-xs text-black/50 dark:text-white/50 block mb-1.5">
+                            Type <strong className="text-black dark:text-white font-mono">{app.name}</strong> to confirm
+                        </label>
+                        <input
+                            type="text"
+                            value={confirmName}
+                            onChange={e => setConfirmName(e.target.value)}
+                            placeholder={app.name}
+                            className="w-full max-w-xs px-3 py-2 text-sm font-mono rounded-lg border border-red-200 dark:border-red-800/50 bg-white dark:bg-white/5 focus:outline-none focus:ring-2 focus:ring-red-500/30 dark:focus:ring-red-400/30 placeholder:text-black/20 dark:placeholder:text-white/20"
+                        />
+                    </div>
+                    <button
+                        onClick={onDelete}
+                        disabled={!confirmed || deleting}
+                        className="mt-3 px-4 py-2 text-sm font-medium rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    >
+                        {deleting ? 'Deleting…' : 'Permanently delete this application'}
+                    </button>
+                </div>
+            </section>
+        </div>
+    );
+}
+
 // ------- Attestation Tab -------
-function AttestationTab({ appId, token }: { appId: string; token: string }) {
+function AttestationTab({ appId, token, deployments, versions }: { appId: string; token: string; deployments: AppDeployment[]; versions: AppVersion[] }) {
+    const versionMap = Object.fromEntries(versions.map(v => [v.id, v]));
+    const [selectedDeploymentId, setSelectedDeploymentId] = useState<string>(deployments[0]?.id ?? '');
+    const selectedDeployment = deployments.find(d => d.id === selectedDeploymentId);
+    const selectedVersion = selectedDeployment ? versionMap[selectedDeployment.version_id] : undefined;
+
     const [result, setResult] = useState<AttestationResult | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -822,6 +854,8 @@ function AttestationTab({ appId, token }: { appId: string; token: string }) {
         setLoading(true);
         setError(null);
         setVerifyResult(null);
+        setQuoteVerifyResult(null);
+        setQuoteVerifyError(null);
         try {
             const trimmed = challenge.trim();
             if (trimmed && !/^[0-9a-fA-F]{32,128}$/.test(trimmed)) {
@@ -851,6 +885,26 @@ function AttestationTab({ appId, token }: { appId: string; token: string }) {
     const [verifyResult, setVerifyResult] = useState<string | null>(null);
     const [verifying, setVerifying] = useState(false);
     const [verifyDebug, setVerifyDebug] = useState<{ computed: string; actual: string } | null>(null);
+
+    // Quote verification via attestation server
+    const [quoteVerifyResult, setQuoteVerifyResult] = useState<QuoteVerifyResult | null>(null);
+    const [quoteVerifying, setQuoteVerifying] = useState(false);
+    const [quoteVerifyError, setQuoteVerifyError] = useState<string | null>(null);
+
+    async function verifyQuoteSignature() {
+        const raw = result?.quote?.raw_base64;
+        if (!raw) return;
+        setQuoteVerifying(true);
+        setQuoteVerifyError(null);
+        try {
+            const res = await verifyQuote(token, raw);
+            setQuoteVerifyResult(res);
+        } catch (e) {
+            setQuoteVerifyError(e instanceof Error ? e.message : 'Quote verification failed');
+        } finally {
+            setQuoteVerifying(false);
+        }
+    }
 
     function downloadPem() {
         if (!result?.pem) return;
@@ -913,6 +967,14 @@ function AttestationTab({ appId, token }: { appId: string; token: string }) {
 
     }, [result]);
 
+    // Auto-verify quote signature via attestation server
+    useEffect(() => {
+        if (result?.quote?.raw_base64 && !result.quote.is_mock) {
+            verifyQuoteSignature();
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [result]);
+
     const OID_DESCRIPTIONS: Record<string, string> = {
         'Config Merkle Root': 'Hash of the enclave configuration tree. Changes if any config parameter is modified.',
         'Egress CA Hash': 'Hash of the CA certificate used for egress TLS connections from the enclave.',
@@ -929,6 +991,35 @@ function AttestationTab({ appId, token }: { appId: string; token: string }) {
 
     return (
         <div className="space-y-6">
+            {/* Deployment / version selector */}
+            {deployments.length > 1 && (
+                <section className="flex items-center gap-3">
+                    <label className="text-xs font-medium text-black/50 dark:text-white/50 shrink-0">Target deployment</label>
+                    <select
+                        value={selectedDeploymentId}
+                        onChange={(e) => { setSelectedDeploymentId(e.target.value); setResult(null); }}
+                        className="flex-1 px-3 py-2 text-sm rounded-lg border border-black/10 dark:border-white/10 bg-transparent focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/20"
+                    >
+                        {deployments.map(d => {
+                            const v = versionMap[d.version_id];
+                            return (
+                                <option key={d.id} value={d.id}>
+                                    {d.hostname || `${d.enclave_host}:${d.enclave_port}`}
+                                    {v ? ` (v${v.version_number})` : ''}
+                                </option>
+                            );
+                        })}
+                    </select>
+                </section>
+            )}
+            {selectedDeployment && (
+                <div className="flex items-center gap-2 text-xs text-black/40 dark:text-white/40">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                    {selectedDeployment.hostname || `${selectedDeployment.enclave_host}:${selectedDeployment.enclave_port}`}
+                    {selectedVersion && <span>&middot; v{selectedVersion.version_number}</span>}
+                </div>
+            )}
+
             {/* Challenge input + Inspect button */}
             {!result && (
                 <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">
@@ -1120,6 +1211,27 @@ function AttestationTab({ appId, token }: { appId: string; token: string }) {
                                 {result.quote.is_mock && (
                                     <span className="px-2 py-0.5 text-[10px] font-medium rounded-full bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300">
                                         Mock
+                                    </span>
+                                )}
+                                {quoteVerifying && (
+                                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-medium rounded-full bg-black/5 dark:bg-white/5 text-black/50 dark:text-white/50">
+                                        <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/></svg>
+                                        Verifying…
+                                    </span>
+                                )}
+                                {quoteVerifyResult?.success && (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400">
+                                        ✓ Verified — {quoteVerifyResult.message || `${quoteVerifyResult.teeType?.toUpperCase()} signature valid`}
+                                    </span>
+                                )}
+                                {quoteVerifyResult && !quoteVerifyResult.success && (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded-full bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400">
+                                        ✗ {quoteVerifyResult.error || 'Verification failed'}
+                                    </span>
+                                )}
+                                {quoteVerifyError && (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
+                                        ⚠ {quoteVerifyError}
                                     </span>
                                 )}
                             </div>
@@ -1405,6 +1517,73 @@ const buf2hex = b => [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, 
                             </pre>
                         </section>
                     )}
+
+                    {/* Quote Verification Console Snippet */}
+                    {result.quote?.raw_base64 && !result.quote.is_mock && (
+                        <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">
+                            <div className="flex items-center justify-between mb-3">
+                                <h2 className="text-sm font-semibold">Quote Verification Code</h2>
+                                <button
+                                    onClick={() => {
+                                        const snippet = `// SGX/TDX Quote signature verification — paste in browser console
+// This sends the raw quote to the Privasys Attestation Server for cryptographic verification.
+const ATTESTATION_SERVER = "${typeof window !== 'undefined' ? window.location.origin : ''}/api/v1/verify-quote";
+const TOKEN = "YOUR_ACCESS_TOKEN"; // Replace with your bearer token
+
+const quoteBase64 = "${result.quote!.raw_base64}";
+
+(async () => {
+  console.log("Verifying quote with attestation server...");
+  console.log("Quote (first 80 chars):", quoteBase64.substring(0, 80) + "...");
+  const resp = await fetch(ATTESTATION_SERVER, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Authorization": "Bearer " + TOKEN },
+    body: JSON.stringify({ quote: quoteBase64 })
+  });
+  const result = await resp.json();
+  if (result.success) {
+    console.log("%c✓ QUOTE VERIFIED", "color: green; font-weight: bold");
+    console.log("TEE type:   ", result.teeType);
+    if (result.mrenclave) console.log("MRENCLAVE:  ", result.mrenclave);
+    if (result.mrsigner)  console.log("MRSIGNER:   ", result.mrsigner);
+    if (result.mrtd)      console.log("MRTD:       ", result.mrtd);
+    console.log("Status:     ", result.status);
+    if (result.message)   console.log("Message:    ", result.message);
+  } else {
+    console.log("%c✗ VERIFICATION FAILED", "color: red; font-weight: bold");
+    console.log("Status:", result.status);
+    console.log("Error: ", result.error);
+  }
+})();`;
+                                        navigator.clipboard.writeText(snippet);
+                                        setCopied('quote-verify-snippet');
+                                        setTimeout(() => setCopied(null), 2000);
+                                    }}
+                                    className="text-xs text-black/40 dark:text-white/40 hover:text-black/70 dark:hover:text-white/70"
+                                >
+                                    {copied === 'quote-verify-snippet' ? 'Copied!' : 'Copy'}
+                                </button>
+                            </div>
+                            <p className="text-xs text-black/40 dark:text-white/40 mb-3">
+                                Copy this snippet and paste it in your browser&apos;s developer console to independently verify the SGX/TDX quote signature and certificate chain via the Privasys Attestation Server.
+                            </p>
+                            <pre className="text-[11px] bg-black/5 dark:bg-white/5 p-3 rounded-lg font-mono break-all whitespace-pre-wrap max-h-56 overflow-y-auto">
+                                {[
+                                    `const ATTESTATION_SERVER = "${typeof window !== 'undefined' ? window.location.origin : ''}/api/v1/verify-quote";`,
+                                    `const TOKEN = "YOUR_ACCESS_TOKEN";`,
+                                    `const quoteBase64 = "${result.quote!.raw_base64!.substring(0, 40)}...";`,
+                                    '',
+                                    'const resp = await fetch(ATTESTATION_SERVER, {',
+                                    '  method: "POST",',
+                                    '  headers: { "Content-Type": "application/json", "Authorization": "Bearer " + TOKEN },',
+                                    '  body: JSON.stringify({ quote: quoteBase64 })',
+                                    '});',
+                                    'const result = await resp.json();',
+                                    'console.log(result.success ? "✓ VERIFIED" : "✗ FAILED", result);'
+                                ].join('\n')}
+                            </pre>
+                        </section>
+                    )}
                 </>
             )}
         </div>
@@ -1541,7 +1720,12 @@ interface CallHistoryEntry {
     timestamp: Date;
 }
 
-function ApiTestingTab({ appId, token }: { appId: string; token: string }) {
+function ApiTestingTab({ appId, token, deployments, versions }: { appId: string; token: string; deployments: AppDeployment[]; versions: AppVersion[] }) {
+    const versionMap = Object.fromEntries(versions.map(v => [v.id, v]));
+    const [selectedDeploymentId, setSelectedDeploymentId] = useState<string>(deployments[0]?.id ?? '');
+    const selectedDeployment = deployments.find(d => d.id === selectedDeploymentId);
+    const selectedVersion = selectedDeployment ? versionMap[selectedDeployment.version_id] : undefined;
+
     const [schema, setSchema] = useState<AppSchema | null>(null);
     const [schemaLoading, setSchemaLoading] = useState(true);
     const [schemaError, setSchemaError] = useState<string | null>(null);
@@ -1715,6 +1899,35 @@ function ApiTestingTab({ appId, token }: { appId: string; token: string }) {
 
     return (
         <div className="space-y-4">
+            {/* Deployment / version selector */}
+            {deployments.length > 1 && (
+                <section className="flex items-center gap-3">
+                    <label className="text-xs font-medium text-black/50 dark:text-white/50 shrink-0">Target deployment</label>
+                    <select
+                        value={selectedDeploymentId}
+                        onChange={(e) => setSelectedDeploymentId(e.target.value)}
+                        className="flex-1 px-3 py-2 text-sm rounded-lg border border-black/10 dark:border-white/10 bg-transparent focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/20"
+                    >
+                        {deployments.map(d => {
+                            const v = versionMap[d.version_id];
+                            return (
+                                <option key={d.id} value={d.id}>
+                                    {d.hostname || `${d.enclave_host}:${d.enclave_port}`}
+                                    {v ? ` (v${v.version_number})` : ''}
+                                </option>
+                            );
+                        })}
+                    </select>
+                </section>
+            )}
+            {selectedDeployment && (
+                <div className="flex items-center gap-2 text-xs text-black/40 dark:text-white/40">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                    {selectedDeployment.hostname || `${selectedDeployment.enclave_host}:${selectedDeployment.enclave_port}`}
+                    {selectedVersion && <span>&middot; v{selectedVersion.version_number}</span>}
+                </div>
+            )}
+
             {/* ── Request Builder ─────────────────────────────── */}
             <section className="rounded-xl border border-black/10 dark:border-white/10 overflow-hidden">
                 {/* Endpoint bar — like Postman URL bar */}
@@ -1894,62 +2107,445 @@ function ApiTestingTab({ appId, token }: { appId: string; token: string }) {
     );
 }
 
-// ------- Deployments Tab -------
-function DeploymentsTab({ deployments, versions }: { deployments: AppDeployment[]; versions: AppVersion[] }) {
-    const versionMap = Object.fromEntries(versions.map(v => [v.id, v]));
+// ------- App Store Tab -------
+const STORE_CATEGORIES = [
+    'Productivity', 'Finance', 'Healthcare', 'AI & Machine Learning',
+    'Security & Privacy', 'Communication', 'Developer Tools', 'Data Analytics',
+    'Education', 'Entertainment', 'Business', 'Social', 'Utilities', 'Other'
+];
+
+function AppStoreTab({ app, token, onSave }: { app: App; token: string; onSave: (updated: App) => void }) {
+    const [saving, setSaving] = useState(false);
+    const [saved, setSaved] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    const [tagline, setTagline] = useState(app.store_tagline);
+    const [description, setDescription] = useState(app.store_description);
+    const [category, setCategory] = useState(app.store_category);
+    const [iconURL, setIconURL] = useState(app.store_icon_url);
+    const [screenshots, setScreenshots] = useState<string[]>(app.store_screenshots || []);
+    const [privacyURL, setPrivacyURL] = useState(app.store_privacy_url);
+    const [tosURL, setTosURL] = useState(app.store_tos_url);
+    const [websiteURL, setWebsiteURL] = useState(app.store_website_url);
+    const [supportEmail, setSupportEmail] = useState(app.store_support_email);
+    const [keywords, setKeywords] = useState(app.store_keywords);
+    const [newScreenshot, setNewScreenshot] = useState('');
+
+    const isDeployed = app.status === 'deployed';
+
+    async function handleSave() {
+        setSaving(true);
+        setError(null);
+        setSaved(false);
+        try {
+            const updated = await updateStoreListing(token, app.id, {
+                store_tagline: tagline,
+                store_description: description,
+                store_category: category,
+                store_icon_url: iconURL,
+                store_screenshots: screenshots,
+                store_privacy_url: privacyURL,
+                store_tos_url: tosURL,
+                store_website_url: websiteURL,
+                store_support_email: supportEmail,
+                store_keywords: keywords,
+            });
+            onSave(updated);
+            setSaved(true);
+            setTimeout(() => setSaved(false), 3000);
+        } catch (e) {
+            setError(e instanceof Error ? e.message : 'Failed to save');
+        } finally {
+            setSaving(false);
+        }
+    }
+
+    function addScreenshot() {
+        const url = newScreenshot.trim();
+        if (url && !screenshots.includes(url)) {
+            setScreenshots([...screenshots, url]);
+            setNewScreenshot('');
+        }
+    }
+
+    function removeScreenshot(idx: number) {
+        setScreenshots(screenshots.filter((_, i) => i !== idx));
+    }
+
+    const labelClass = "text-xs font-medium text-black/60 dark:text-white/60 block mb-1.5";
+    const inputClass = "w-full px-3 py-2 text-sm rounded-lg border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/20 placeholder:text-black/25 dark:placeholder:text-white/25";
 
     return (
-        <div className="space-y-4">
+        <div className="space-y-6">
+            {/* Store visibility notice */}
+            {!isDeployed && (
+                <div className="flex items-center gap-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/15 border border-amber-200 dark:border-amber-800/30 text-xs text-amber-700 dark:text-amber-400">
+                    <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+                    </svg>
+                    Your app must be deployed before it can appear on the App Store. You can fill in the listing details now and they will go live once deployed.
+                </div>
+            )}
+
+            {isDeployed && app.hostname && (
+                <div className="flex items-center gap-2 p-3 rounded-lg bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-200 dark:border-emerald-800/30 text-xs text-emerald-700 dark:text-emerald-400">
+                    <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span>Your app is live. &nbsp;</span>
+                    <a href={`https://${app.hostname}`} target="_blank" rel="noopener noreferrer" className="font-medium hover:underline">
+                        View on App Store &rarr;
+                    </a>
+                </div>
+            )}
+
+            {error && (
+                <div className="p-3 rounded-lg bg-red-50 dark:bg-red-900/20 text-sm text-red-700 dark:text-red-300">{error}</div>
+            )}
+
+            {/* Icon & identity */}
+            <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">
+                <h2 className="text-sm font-semibold mb-4">App Identity</h2>
+                <div className="flex gap-6">
+                    {/* Icon preview */}
+                    <div className="shrink-0">
+                        <label className={labelClass}>App Icon</label>
+                        <div className="w-24 h-24 rounded-2xl border-2 border-dashed border-black/10 dark:border-white/10 flex items-center justify-center overflow-hidden bg-black/[0.02] dark:bg-white/[0.02]">
+                            {iconURL ? (
+                                <img src={iconURL} alt="App icon" className="w-full h-full object-cover rounded-2xl" />
+                            ) : (
+                                <svg className="w-8 h-8 text-black/15 dark:text-white/15" fill="none" stroke="currentColor" strokeWidth="1" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0022.5 18.75V5.25A2.25 2.25 0 0020.25 3H3.75A2.25 2.25 0 001.5 5.25v13.5A2.25 2.25 0 003.75 21z" />
+                                </svg>
+                            )}
+                        </div>
+                    </div>
+                    <div className="flex-1 space-y-3">
+                        <div>
+                            <label className={labelClass}>Icon URL</label>
+                            <input type="text" value={iconURL} onChange={e => setIconURL(e.target.value)} placeholder="https://example.com/icon.png" className={inputClass} />
+                        </div>
+                        <div>
+                            <label className={labelClass}>Tagline</label>
+                            <input type="text" value={tagline} onChange={e => setTagline(e.target.value)} placeholder="A short description of your app" maxLength={120} className={inputClass} />
+                            <div className="mt-1 text-[10px] text-black/30 dark:text-white/30 text-right">{tagline.length}/120</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            {/* Description */}
+            <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">
+                <h2 className="text-sm font-semibold mb-4">Description</h2>
+                <div>
+                    <label className={labelClass}>About this app</label>
+                    <textarea
+                        value={description}
+                        onChange={e => setDescription(e.target.value)}
+                        placeholder="Tell users what your app does, what problems it solves, and why they should use it. Describe the key features and privacy guarantees…"
+                        rows={6}
+                        maxLength={4000}
+                        className={`${inputClass} resize-y`}
+                    />
+                    <div className="mt-1 text-[10px] text-black/30 dark:text-white/30 text-right">{description.length}/4000</div>
+                </div>
+            </section>
+
+            {/* Screenshots */}
+            <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">
+                <h2 className="text-sm font-semibold mb-4">Screenshots</h2>
+                <p className="text-xs text-black/40 dark:text-white/40 mb-3">
+                    Add up to 8 screenshot URLs to showcase your app.
+                </p>
+
+                {screenshots.length > 0 && (
+                    <div className="flex gap-3 overflow-x-auto pb-3 mb-3">
+                        {screenshots.map((url, i) => (
+                            <div key={i} className="group relative shrink-0 w-48 h-28 rounded-lg border border-black/10 dark:border-white/10 overflow-hidden bg-black/[0.02] dark:bg-white/[0.02]">
+                                <img src={url} alt={`Screenshot ${i + 1}`} className="w-full h-full object-cover" />
+                                <button
+                                    onClick={() => removeScreenshot(i)}
+                                    className="absolute top-1 right-1 w-5 h-5 flex items-center justify-center rounded-full bg-red-500 text-white text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                                >
+                                    &times;
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                )}
+
+                {screenshots.length < 8 && (
+                    <div className="flex gap-2">
+                        <input
+                            type="text"
+                            value={newScreenshot}
+                            onChange={e => setNewScreenshot(e.target.value)}
+                            onKeyDown={e => e.key === 'Enter' && addScreenshot()}
+                            placeholder="https://example.com/screenshot.png"
+                            className={`flex-1 ${inputClass}`}
+                        />
+                        <button
+                            onClick={addScreenshot}
+                            disabled={!newScreenshot.trim()}
+                            className="px-3 py-2 text-sm font-medium rounded-lg border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-30 transition-colors"
+                        >
+                            Add
+                        </button>
+                    </div>
+                )}
+            </section>
+
+            {/* Category & Keywords */}
+            <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">
+                <h2 className="text-sm font-semibold mb-4">Categorization</h2>
+                <div className="grid grid-cols-2 gap-4">
+                    <div>
+                        <label className={labelClass}>Category</label>
+                        <select value={category} onChange={e => setCategory(e.target.value)} className={inputClass}>
+                            <option value="">Select a category…</option>
+                            {STORE_CATEGORIES.map(c => (
+                                <option key={c} value={c}>{c}</option>
+                            ))}
+                        </select>
+                    </div>
+                    <div>
+                        <label className={labelClass}>Keywords</label>
+                        <input type="text" value={keywords} onChange={e => setKeywords(e.target.value)} placeholder="privacy, encryption, ai, health…" className={inputClass} />
+                        <div className="mt-1 text-[10px] text-black/30 dark:text-white/30">Comma-separated tags to help users find your app</div>
+                    </div>
+                </div>
+            </section>
+
+            {/* Links & Contact */}
+            <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">
+                <h2 className="text-sm font-semibold mb-4">Links &amp; Support</h2>
+                <div className="grid grid-cols-2 gap-4">
+                    <div>
+                        <label className={labelClass}>Website</label>
+                        <input type="url" value={websiteURL} onChange={e => setWebsiteURL(e.target.value)} placeholder="https://yourapp.com" className={inputClass} />
+                    </div>
+                    <div>
+                        <label className={labelClass}>Support Email</label>
+                        <input type="email" value={supportEmail} onChange={e => setSupportEmail(e.target.value)} placeholder="support@yourapp.com" className={inputClass} />
+                    </div>
+                    <div>
+                        <label className={labelClass}>Privacy Policy</label>
+                        <input type="url" value={privacyURL} onChange={e => setPrivacyURL(e.target.value)} placeholder="https://yourapp.com/privacy" className={inputClass} />
+                    </div>
+                    <div>
+                        <label className={labelClass}>Terms of Service</label>
+                        <input type="url" value={tosURL} onChange={e => setTosURL(e.target.value)} placeholder="https://yourapp.com/terms" className={inputClass} />
+                    </div>
+                </div>
+            </section>
+
+            {/* Save */}
+            <div className="flex items-center gap-3">
+                <button
+                    onClick={handleSave}
+                    disabled={saving}
+                    className="px-5 py-2 text-sm font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-80 disabled:opacity-40 transition-opacity"
+                >
+                    {saving ? 'Saving…' : 'Save Listing'}
+                </button>
+                {saved && (
+                    <span className="text-sm text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                        </svg>
+                        Saved
+                    </span>
+                )}
+            </div>
+        </div>
+    );
+}
+
+// ------- Deployments Tab -------
+function DeploymentsTab({ app, deployments, versions, enclaves, token, onRefresh }: {
+    app: App; deployments: AppDeployment[]; versions: AppVersion[]; enclaves: Enclave[]; token: string; onRefresh: () => void;
+}) {
+    const versionMap = Object.fromEntries(versions.map(v => [v.id, v]));
+    const readyVersions = versions.filter(v => v.status === 'ready');
+    const activeEnclaves = enclaves.filter(e => e.status === 'active');
+    const [selectedVersion, setSelectedVersion] = useState('');
+    const [selectedEnclave, setSelectedEnclave] = useState('');
+    const [deploying, setDeploying] = useState(false);
+    const [stopping, setStopping] = useState<string | null>(null);
+    const [error, setError] = useState<string | null>(null);
+
+    async function handleDeploy() {
+        if (!selectedVersion || !selectedEnclave) return;
+        setDeploying(true);
+        setError(null);
+        try {
+            await deployVersion(token, app.id, selectedVersion, selectedEnclave);
+            setSelectedVersion('');
+            setSelectedEnclave('');
+            onRefresh();
+        } catch (e) {
+            setError(e instanceof Error ? e.message : 'Deployment failed');
+        } finally {
+            setDeploying(false);
+        }
+    }
+
+    async function handleStop(depId: string) {
+        setStopping(depId);
+        setError(null);
+        try {
+            await stopDeployment(token, app.id, depId);
+            onRefresh();
+        } catch (e) {
+            setError(e instanceof Error ? e.message : 'Failed to stop deployment');
+        } finally {
+            setStopping(null);
+        }
+    }
+
+    return (
+        <div className="space-y-6">
+            {error && (
+                <div className="p-3 rounded-lg bg-red-50 dark:bg-red-900/20 text-sm text-red-700 dark:text-red-300">
+                    {error}
+                </div>
+            )}
+
+            {/* Deploy new version */}
+            <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">
+                <h2 className="text-sm font-semibold mb-1">Deploy a version</h2>
+                <p className="text-xs text-black/40 dark:text-white/40 mb-4">
+                    Select a built version and a location to deploy your application to an enclave.
+                </p>
+
+                {readyVersions.length === 0 ? (
+                    <div className="text-xs text-black/40 dark:text-white/40 py-2">
+                        No deployable versions yet. Submit a version and wait for the build to complete.
+                    </div>
+                ) : (
+                    <div className="space-y-3">
+                        <div className="grid grid-cols-2 gap-3">
+                            <div>
+                                <label className="text-xs text-black/50 dark:text-white/50 block mb-1">Version</label>
+                                <select
+                                    value={selectedVersion}
+                                    onChange={e => setSelectedVersion(e.target.value)}
+                                    className="w-full px-3 py-2 text-sm rounded-lg border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/20"
+                                >
+                                    <option value="">Select version…</option>
+                                    {readyVersions.map(v => (
+                                        <option key={v.id} value={v.id}>
+                                            v{v.version_number} — {v.github_commit?.slice(0, 8) || 'upload'}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="text-xs text-black/50 dark:text-white/50 block mb-1">Location</label>
+                                <select
+                                    value={selectedEnclave}
+                                    onChange={e => setSelectedEnclave(e.target.value)}
+                                    className="w-full px-3 py-2 text-sm rounded-lg border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/20"
+                                >
+                                    <option value="">Select location…</option>
+                                    {activeEnclaves.map(e => (
+                                        <option key={e.id} value={e.id}>
+                                            {e.name} — {e.region || e.country || 'Unknown'}
+                                            {e.provider ? ` (${e.provider})` : ''}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                        </div>
+                        <button
+                            onClick={handleDeploy}
+                            disabled={deploying || !selectedVersion || !selectedEnclave}
+                            className="px-4 py-2 text-sm font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
+                        >
+                            {deploying ? 'Deploying…' : 'Deploy'}
+                        </button>
+                    </div>
+                )}
+            </section>
+
+            {/* Existing deployments */}
             {deployments.length === 0 ? (
-                <div className="text-center py-12 text-sm text-black/40 dark:text-white/40">
+                <div className="text-center py-8 text-sm text-black/40 dark:text-white/40">
                     No deployments yet.
                 </div>
             ) : (
-                deployments.map((dep) => {
-                    const version = versionMap[dep.version_id];
-                    return (
-                        <section key={dep.id} className="p-5 rounded-xl border border-black/10 dark:border-white/10">
-                            <div className="flex items-center justify-between mb-3">
-                                <div className="flex items-center gap-3">
-                                    <span className={`w-2 h-2 rounded-full ${
-                                        dep.status === 'active' ? 'bg-emerald-500' :
-                                            dep.status === 'deploying' ? 'bg-blue-500 animate-pulse' :
-                                                dep.status === 'failed' ? 'bg-red-500' :
-                                                    dep.status === 'stopped' ? 'bg-gray-400' :
-                                                        'bg-yellow-500'
-                                    }`} />
-                                    <span className="text-sm font-medium">
-                                        {dep.hostname || `${dep.enclave_host}:${dep.enclave_port}`}
-                                    </span>
-                                    {version && (
-                                        <span className="text-xs text-black/40 dark:text-white/40">
-                                            v{version.version_number}
+                <div className="space-y-4">
+                    <h2 className="text-sm font-semibold">Deployment history</h2>
+                    {deployments.map((dep) => {
+                        const version = versionMap[dep.version_id];
+                        const isActive = dep.status === 'active' || dep.status === 'deploying';
+                        return (
+                            <section key={dep.id} className={`p-5 rounded-xl border ${isActive ? 'border-emerald-200 dark:border-emerald-800/40 bg-emerald-50/30 dark:bg-emerald-900/5' : 'border-black/10 dark:border-white/10'}`}>
+                                <div className="flex items-center justify-between mb-3">
+                                    <div className="flex items-center gap-3">
+                                        <span className={`w-2 h-2 rounded-full ${
+                                            dep.status === 'active' ? 'bg-emerald-500' :
+                                                dep.status === 'deploying' ? 'bg-blue-500 animate-pulse' :
+                                                    dep.status === 'failed' ? 'bg-red-500' :
+                                                        dep.status === 'stopped' ? 'bg-gray-400' :
+                                                            'bg-yellow-500'
+                                        }`} />
+                                        <span className="text-sm font-medium">
+                                            {dep.hostname || `${dep.enclave_host}:${dep.enclave_port}`}
                                         </span>
+                                        {version && (
+                                            <span className="text-xs text-black/40 dark:text-white/40">
+                                                v{version.version_number}
+                                            </span>
+                                        )}
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                        <StatusBadge status={dep.status} labels={DEPLOYMENT_STATUS_LABELS} colors={DEPLOYMENT_STATUS_COLORS} />
+                                        {isActive && (
+                                            <button
+                                                onClick={() => handleStop(dep.id)}
+                                                disabled={stopping === dep.id}
+                                                className="px-3 py-1 text-xs font-medium rounded-lg border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-40 transition-colors"
+                                            >
+                                                {stopping === dep.id ? 'Stopping…' : 'Stop'}
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-3 gap-3 text-xs text-black/50 dark:text-white/50">
+                                    <div>
+                                        <div className="text-[10px] uppercase tracking-wider text-black/30 dark:text-white/30">Enclave</div>
+                                        <div className="mt-0.5">{dep.enclave_host}:{dep.enclave_port}</div>
+                                    </div>
+                                    {dep.deployed_at && (
+                                        <div>
+                                            <div className="text-[10px] uppercase tracking-wider text-black/30 dark:text-white/30">Deployed</div>
+                                            <div className="mt-0.5">{new Date(dep.deployed_at).toLocaleString()}</div>
+                                        </div>
+                                    )}
+                                    {dep.stopped_at && (
+                                        <div>
+                                            <div className="text-[10px] uppercase tracking-wider text-black/30 dark:text-white/30">Stopped</div>
+                                            <div className="mt-0.5">{new Date(dep.stopped_at).toLocaleString()}</div>
+                                        </div>
                                     )}
                                 </div>
-                                <StatusBadge status={dep.status} labels={DEPLOYMENT_STATUS_LABELS} colors={DEPLOYMENT_STATUS_COLORS} />
-                            </div>
-                            <div className="grid grid-cols-3 gap-3 text-xs text-black/50 dark:text-white/50">
-                                <div>
-                                    <div className="text-[10px] uppercase tracking-wider text-black/30 dark:text-white/30">Enclave</div>
-                                    <div className="mt-0.5">{dep.enclave_host}:{dep.enclave_port}</div>
-                                </div>
-                                {dep.deployed_at && (
-                                    <div>
-                                        <div className="text-[10px] uppercase tracking-wider text-black/30 dark:text-white/30">Deployed</div>
-                                        <div className="mt-0.5">{new Date(dep.deployed_at).toLocaleString()}</div>
+                                {isActive && dep.hostname && (
+                                    <div className="mt-3 pt-3 border-t border-black/5 dark:border-white/5">
+                                        <a
+                                            href={`https://${dep.hostname}`}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="text-xs text-emerald-600 dark:text-emerald-400 hover:underline"
+                                        >
+                                            https://{dep.hostname} &rarr;
+                                        </a>
                                     </div>
                                 )}
-                                {dep.stopped_at && (
-                                    <div>
-                                        <div className="text-[10px] uppercase tracking-wider text-black/30 dark:text-white/30">Stopped</div>
-                                        <div className="mt-0.5">{new Date(dep.stopped_at).toLocaleString()}</div>
-                                    </div>
-                                )}
-                            </div>
-                        </section>
-                    );
-                })
+                            </section>
+                        );
+                    })}
+                </div>
             )}
         </div>
     );

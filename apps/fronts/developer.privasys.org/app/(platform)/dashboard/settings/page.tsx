@@ -14,6 +14,9 @@ export default function SettingsPage() {
     const [error, setError] = useState('');
     const [displayName, setDisplayName] = useState('');
     const [displayEmail, setDisplayEmail] = useState('');
+    const [companyName, setCompanyName] = useState('');
+    const [companyDomain, setCompanyDomain] = useState('');
+    const [isIndividual, setIsIndividual] = useState(false);
 
     const load = useCallback(async () => {
         if (!session?.accessToken) return;
@@ -22,6 +25,9 @@ export default function SettingsPage() {
             setProfile(data);
             setDisplayName(data.display_name || '');
             setDisplayEmail(data.display_email || '');
+            setCompanyName(data.company_name || '');
+            setCompanyDomain(data.company_domain || '');
+            setIsIndividual(data.is_individual ?? false);
         } catch { /* ignore */ }
         setLoading(false);
     }, [session?.accessToken]);
@@ -34,10 +40,19 @@ export default function SettingsPage() {
         setError('');
         setSuccess('');
         try {
-            const data = await updateProfile(session.accessToken, displayName.trim(), displayEmail.trim());
+            const data = await updateProfile(session.accessToken, {
+                display_name: displayName.trim(),
+                display_email: displayEmail.trim(),
+                company_name: companyName.trim(),
+                company_domain: companyDomain.trim(),
+                is_individual: isIndividual,
+            });
             setProfile(data);
             setDisplayName(data.display_name || '');
             setDisplayEmail(data.display_email || '');
+            setCompanyName(data.company_name || '');
+            setCompanyDomain(data.company_domain || '');
+            setIsIndividual(data.is_individual ?? false);
             setSuccess('Profile updated.');
             setTimeout(() => setSuccess(''), 3000);
         } catch (e) {
@@ -121,21 +136,84 @@ export default function SettingsPage() {
                             />
                             <p className="mt-1 text-xs text-black/40 dark:text-white/40">Leave empty to use your identity provider email.</p>
                         </div>
-
-                        {error && <div className="text-sm text-red-600 dark:text-red-400">{error}</div>}
-                        {success && <div className="text-sm text-emerald-600 dark:text-emerald-400">{success}</div>}
-
-                        <button
-                            type="button"
-                            onClick={handleSave}
-                            disabled={saving}
-                            className="px-5 py-2 text-sm font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-80 transition-opacity disabled:opacity-50"
-                        >
-                            {saving ? 'Saving…' : 'Save changes'}
-                        </button>
                     </div>
                 )}
             </section>
+
+            {/* Organisation */}
+            <section className="mt-10">
+                <h2 className="text-lg font-medium">Organisation</h2>
+                <p className="mt-1 text-sm text-black/50 dark:text-white/50">
+                    Tell us about yourself or your company. This information is shown on the App Store.
+                </p>
+
+                {loading ? (
+                    <div className="mt-4 text-sm text-black/40 dark:text-white/40">Loading…</div>
+                ) : (
+                    <div className="mt-4 space-y-4">
+                        {/* Individual toggle */}
+                        <div className="flex items-center gap-3">
+                            <button
+                                type="button"
+                                role="switch"
+                                aria-checked={isIndividual}
+                                onClick={() => setIsIndividual(!isIndividual)}
+                                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/20 ${isIndividual ? 'bg-black dark:bg-white' : 'bg-black/20 dark:bg-white/20'}`}
+                            >
+                                <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white dark:bg-black shadow ring-0 transition-transform ${isIndividual ? 'translate-x-5' : 'translate-x-0'}`} />
+                            </button>
+                            <label className="text-sm font-medium">I am an individual developer</label>
+                        </div>
+                        <p className="text-xs text-black/40 dark:text-white/40 -mt-2">
+                            {isIndividual
+                                ? 'Your personal name will be shown as the publisher.'
+                                : 'Enter your company details below.'}
+                        </p>
+
+                        {!isIndividual && (
+                            <>
+                                <div>
+                                    <label className="block text-sm font-medium mb-1">Company name</label>
+                                    <input
+                                        type="text"
+                                        value={companyName}
+                                        onChange={e => setCompanyName(e.target.value)}
+                                        placeholder="Acme Corp"
+                                        className="w-full px-3 py-2 text-sm rounded-lg border border-black/10 dark:border-white/10 bg-transparent focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/20"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium mb-1">Company domain</label>
+                                    <input
+                                        type="text"
+                                        value={companyDomain}
+                                        onChange={e => setCompanyDomain(e.target.value)}
+                                        placeholder="acme.com"
+                                        className="w-full px-3 py-2 text-sm rounded-lg border border-black/10 dark:border-white/10 bg-transparent focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/20"
+                                    />
+                                    <p className="mt-1 text-xs text-black/40 dark:text-white/40">Used to verify your organisation.</p>
+                                </div>
+                            </>
+                        )}
+                    </div>
+                )}
+            </section>
+
+            {/* Save */}
+            {!loading && (
+                <section className="mt-8">
+                    {error && <div className="mb-3 text-sm text-red-600 dark:text-red-400">{error}</div>}
+                    {success && <div className="mb-3 text-sm text-emerald-600 dark:text-emerald-400">{success}</div>}
+                    <button
+                        type="button"
+                        onClick={handleSave}
+                        disabled={saving}
+                        className="px-5 py-2 text-sm font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-80 transition-opacity disabled:opacity-50"
+                    >
+                        {saving ? 'Saving…' : 'Save changes'}
+                    </button>
+                </section>
+            )}
 
             {/* Sign out */}
             <section className="mt-10 pt-8 border-t border-black/5 dark:border-white/10">

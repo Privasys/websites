@@ -3,8 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { createApp, uploadCwasm, listEnclaves } from '~/lib/api';
-import type { Enclave } from '~/lib/types';
+import { createApp, uploadCwasm } from '~/lib/api';
 
 type Mode = 'github' | 'manual';
 type WizardState = 'input' | 'submitted';
@@ -81,39 +80,13 @@ export default function NewApplicationPage() {
     const [name, setName] = useState('');
     const [file, setFile] = useState<File | null>(null);
     const fileRef = useRef<HTMLInputElement>(null);
-    const [enclaveId, setEnclaveId] = useState<string | null>(null);
-    const [enclaves, setEnclaves] = useState<Enclave[]>([]);
-    const [enclavesLoading, setEnclavesLoading] = useState(true);
 
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    // Fetch available enclaves
-    useEffect(() => {
-        if (!session?.accessToken) return;
-        listEnclaves(session.accessToken)
-            .then(list => {
-                const active = list.filter(e => e.status === 'active');
-                setEnclaves(active);
-                if (active.length === 1) setEnclaveId(active[0].id);
-            })
-            .catch(() => {})
-            .finally(() => setEnclavesLoading(false));
-    }, [session?.accessToken]);
-
     // Auto-infer app name from commit URL
     const parsed = mode === 'github' ? parseCommitUrl(commitUrl) : null;
     const inferredName = parsed ? repoToAppName(parsed.repo) : '';
-
-    // Auto-submit when a valid commit URL is pasted (with small delay for UX)
-    const [autoSubmitReady, setAutoSubmitReady] = useState(false);
-    useEffect(() => {
-        if (parsed && mode === 'github') {
-            const t = setTimeout(() => setAutoSubmitReady(true), 600);
-            return () => clearTimeout(t);
-        }
-        setAutoSubmitReady(false);
-    }, [parsed, mode]);
 
     const handleSubmit = useCallback(async () => {
         if (!session?.accessToken || submitting) return;
@@ -132,7 +105,6 @@ export default function NewApplicationPage() {
                 name: appName,
                 source_type: mode === 'github' ? 'github' : 'upload',
                 commit_url: mode === 'github' ? commitUrl.trim() : undefined,
-                enclave_id: enclaveId || undefined
             });
 
             if (mode === 'manual' && file) {
@@ -145,18 +117,11 @@ export default function NewApplicationPage() {
             setError(e instanceof Error ? e.message : 'Something went wrong');
             setSubmitting(false);
         }
-    }, [session?.accessToken, mode, inferredName, name, parsed, file, commitUrl, submitting, enclaveId]);
-
-    // Auto-submit effect
-    useEffect(() => {
-        if (autoSubmitReady && enclaveId && !submitting && !error) {
-            handleSubmit();
-        }
-    }, [autoSubmitReady, enclaveId, submitting, error, handleSubmit]);
+    }, [session?.accessToken, mode, inferredName, name, parsed, file, commitUrl, submitting]);
 
     const isGithubValid = mode === 'github' && !!parsed;
     const isManualValid = mode === 'manual' && !!name && !!file;
-    const canSubmit = (isGithubValid || isManualValid) && !!enclaveId && !submitting;
+    const canSubmit = (isGithubValid || isManualValid) && !submitting;
 
     // ── Submitted state: auto-redirect to detail page ──
     useEffect(() => {
@@ -189,7 +154,7 @@ export default function NewApplicationPage() {
                 <div className="space-y-0">
                     {(() => {
                         const s = submittedApp.status;
-                        const stepIdx: number = s === 'deployed' ? 6 : (s === 'deploying' || s === 'built') ? 4 : (s === 'building' || s === 'approved') ? 3 : 2;
+                        const stepIdx: number = s === 'built' ? 4 : (s === 'building' || s === 'approved') ? 3 : 2;
                         return (
                             <>
                                 <PipelineStep step={1} active={stepIdx === 1} done={stepIdx > 1}>
@@ -213,17 +178,10 @@ export default function NewApplicationPage() {
                                     </div>
                                 </PipelineStep>
 
-                                <PipelineStep step={4} active={stepIdx === 4} done={stepIdx > 4}>
-                                    <h2 className="text-lg font-semibold">Deploy to enclave</h2>
+                                <PipelineStep step={4} active={false} done={stepIdx > 3} last>
+                                    <h2 className="text-lg font-semibold">Ready</h2>
                                     <div className="mt-1 text-sm text-black/50 dark:text-white/50">
-                                        {stepIdx === 4 ? 'Deploying to enclave\u2026' : stepIdx > 4 ? 'Deployed successfully.' : 'Automatically deployed to your chosen location.'}
-                                    </div>
-                                </PipelineStep>
-
-                                <PipelineStep step={5} active={stepIdx === 5} done={stepIdx > 5} last>
-                                    <h2 className="text-lg font-semibold">Live &amp; attested</h2>
-                                    <div className="mt-1 text-sm text-black/50 dark:text-white/50">
-                                        Your application is live and remotely attestable.
+                                        Your application is built and ready to deploy.
                                     </div>
                                 </PipelineStep>
                             </>
@@ -266,7 +224,7 @@ export default function NewApplicationPage() {
             )}
 
             <div className="mt-8">
-                <PipelineStep step={1} active={true} done={(isGithubValid || isManualValid) && !!enclaveId}>
+                <PipelineStep step={1} active={true} done={isGithubValid || isManualValid}>
                     <h2 className="text-lg font-semibold mb-1">Application details</h2>
 
                     {mode === 'github' ? (
@@ -301,13 +259,23 @@ export default function NewApplicationPage() {
                                     </div>
                                 </div>
                             )}
-                            <button
-                                type="button"
-                                onClick={() => setMode('manual')}
-                                className="px-4 py-2 text-sm font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-80 transition-opacity"
-                            >
-                                Configure manually instead
-                            </button>
+                            <div className="flex items-center gap-3">
+                                <button
+                                    type="button"
+                                    onClick={handleSubmit}
+                                    disabled={!canSubmit}
+                                    className="px-5 py-2 text-sm font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-80 disabled:opacity-40 transition-opacity"
+                                >
+                                    {submitting ? 'Creating\u2026' : 'Create application'}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setMode('manual')}
+                                    className="text-sm text-black/50 dark:text-white/50 hover:underline"
+                                >
+                                    Upload manually instead
+                                </button>
+                            </div>
                         </div>
                     ) : (
                         <div className="space-y-4">
@@ -372,51 +340,6 @@ export default function NewApplicationPage() {
                             </div>
                         </div>
                     )}
-
-                    {/* Deployment location picker */}
-                    <div className="mt-6 pt-5 border-t border-black/10 dark:border-white/10">
-                        <label className="block text-sm font-medium mb-2">Deployment location</label>
-                        {enclavesLoading ? (
-                            <div className="flex items-center gap-2 text-sm text-black/40 dark:text-white/40">
-                                <div className="w-4 h-4 border-2 border-black/20 dark:border-white/20 border-t-black dark:border-t-white rounded-full animate-spin" />
-                                Loading locations{'\u2026'}
-                            </div>
-                        ) : enclaves.length === 0 ? (
-                            <p className="text-sm text-black/40 dark:text-white/40">No deployment locations available.</p>
-                        ) : (
-                            <div className="space-y-2">
-                                {enclaves.map(e => (
-                                    <button
-                                        key={e.id}
-                                        type="button"
-                                        onClick={() => setEnclaveId(e.id)}
-                                        disabled={submitting}
-                                        className={`w-full text-left p-3 rounded-lg border-2 transition-colors ${
-                                            enclaveId === e.id
-                                                ? 'border-black dark:border-white bg-black/3 dark:bg-white/5'
-                                                : 'border-black/10 dark:border-white/10 hover:border-black/30 dark:hover:border-white/30'
-                                        }`}
-                                    >
-                                        <div className="flex items-center justify-between">
-                                            <div>
-                                                <div className="text-sm font-medium">{e.name}</div>
-                                                <div className="text-xs text-black/50 dark:text-white/50 mt-0.5">
-                                                    {e.region}{e.country ? `, ${e.country}` : ''} {'\u00b7'} {e.provider}
-                                                </div>
-                                            </div>
-                                            {enclaveId === e.id && (
-                                                <div className="w-5 h-5 rounded-full bg-black dark:bg-white flex items-center justify-center shrink-0">
-                                                    <svg className="w-3 h-3 text-white dark:text-black" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24">
-                                                        <path d="M5 13l4 4L19 7" />
-                                                    </svg>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </button>
-                                ))}
-                            </div>
-                        )}
-                    </div>
                 </PipelineStep>
 
                 <PipelineStep step={2} active={false} done={false}>
@@ -433,17 +356,10 @@ export default function NewApplicationPage() {
                     </div>
                 </PipelineStep>
 
-                <PipelineStep step={4} active={false} done={false}>
-                    <h2 className="text-lg font-semibold">Deploy to enclave</h2>
+                <PipelineStep step={4} active={false} done={false} last>
+                    <h2 className="text-lg font-semibold">Ready</h2>
                     <div className="mt-1 text-sm text-black/50 dark:text-white/50">
-                        Automatically deployed to your chosen location.
-                    </div>
-                </PipelineStep>
-
-                <PipelineStep step={5} active={false} done={false} last>
-                    <h2 className="text-lg font-semibold">Live &amp; attested</h2>
-                    <div className="mt-1 text-sm text-black/50 dark:text-white/50">
-                        Your application is live and remotely attestable.
+                        Your application is built and ready to deploy.
                     </div>
                 </PipelineStep>
             </div>
@@ -453,11 +369,6 @@ export default function NewApplicationPage() {
                 <div className="mt-2 flex items-center gap-2 text-sm text-black/50 dark:text-white/50">
                     <div className="w-4 h-4 border-2 border-black/20 dark:border-white/20 border-t-black dark:border-t-white rounded-full animate-spin" />
                     Creating application from {parsed?.owner}/{parsed?.repo}{'\u2026'}
-                </div>
-            )}
-            {!submitting && isGithubValid && !enclaveId && (
-                <div className="mt-2 text-sm text-black/50 dark:text-white/50">
-                    Select a deployment location above to continue.
                 </div>
             )}
         </div>
