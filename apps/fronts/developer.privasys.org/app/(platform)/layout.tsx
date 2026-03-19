@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { useEffect, useState, useCallback } from 'react';
-import { Navbar } from '@privasys/ui';
+import { Navbar, Footer } from '@privasys/ui';
 import { useSession } from 'next-auth/react';
 import { listApps } from '~/lib/api';
 import { useSSE } from '~/lib/use-sse';
@@ -152,16 +152,37 @@ function Sidebar() {
     );
 }
 
+const FOOTER_LINKS = [
+    { label: 'Legal', href: 'https://privasys.org/legal', external: true },
+    { label: 'Privacy', href: 'https://privasys.org/legal/privacy', external: true },
+    { label: 'Terms', href: 'https://privasys.org/legal/terms', external: true },
+    { label: 'Modern Slavery', href: 'https://privasys.org/legal/modern-slavery', external: true },
+    { label: 'GitHub', href: 'https://github.com/Privasys', external: true },
+];
+
+function buildVersionString(): string | undefined {
+    const version = process.env.NEXT_PUBLIC_APP_VERSION;
+    const sha = process.env.NEXT_PUBLIC_GIT_SHA;
+    if (!version) return undefined;
+    return `v${version}${sha ? ` (${sha})` : ''}`;
+}
+
 export default function PlatformLayout({ children }: { children: ReactNode }) {
     return (
         <>
             <Navbar brandSuffix="Developer" items={NAVBAR_ITEMS} fullWidth trailing={<UserMenu />} />
-            <div className="flex pt-14 min-h-screen">
+            <div className="flex flex-1 pt-14">
                 <Sidebar />
                 <main className="flex-1 p-6 lg:p-10 overflow-y-auto">
                     {children}
                 </main>
             </div>
+            <Footer
+                companyLine="Privasys Ltd. Registered Company UK-16866500."
+                links={FOOTER_LINKS}
+                version={buildVersionString()}
+                className="!mt-0"
+            />
         </>
     );
 }
