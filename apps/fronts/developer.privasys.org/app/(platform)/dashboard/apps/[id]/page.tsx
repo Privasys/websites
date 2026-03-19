@@ -113,7 +113,7 @@ function VersionPipeline({ version, builds }: { version: AppVersion; builds: Bui
     );
 }
 
-type Tab = 'overview' | 'deployments' | 'store' | 'attestation' | 'api' | 'settings';
+type Tab = 'overview' | 'deployments' | 'store' | 'attestation' | 'api';
 
 // Terminal states that show the full detail view
 const TERMINAL_STATUSES = new Set(['deployed', 'undeployed', 'built']);
@@ -394,8 +394,7 @@ export default function AppDetailPage() {
         ...(hasActiveDeployment ? [
             { key: 'attestation' as Tab, label: 'Attestation' },
             { key: 'api' as Tab, label: 'API Testing' }
-        ] : []),
-        { key: 'settings', label: 'Settings' }
+        ] : [])
     ];
 
     return (
@@ -444,7 +443,7 @@ export default function AppDetailPage() {
             {/* Tab content */}
             <div className="mt-6">
                 {tab === 'overview' && (
-                    <OverviewTab app={app} versions={versions} builds={builds} deployments={deployments} />
+                    <OverviewTab app={app} versions={versions} builds={builds} deployments={deployments} deleting={deleting} onDelete={handleDelete} />
                 )}
                 {tab === 'deployments' && session?.accessToken && (
                     <DeploymentsTab
@@ -465,16 +464,14 @@ export default function AppDetailPage() {
                 {tab === 'api' && session?.accessToken && (
                     <ApiTestingTab appId={app.id} token={session.accessToken} deployments={activeDeployments} versions={versions} />
                 )}
-                {tab === 'settings' && (
-                    <SettingsTab app={app} deleting={deleting} onDelete={handleDelete} />
-                )}
+
             </div>
         </div>
     );
 }
 
 // ------- Overview Tab -------
-function OverviewTab({ app, versions, builds, deployments }: { app: App; versions: AppVersion[]; builds: BuildJob[]; deployments: AppDeployment[] }) {
+function OverviewTab({ app, versions, builds, deployments, deleting, onDelete }: { app: App; versions: AppVersion[]; builds: BuildJob[]; deployments: AppDeployment[]; deleting: boolean; onDelete: () => void }) {
     const activeDeployments = deployments.filter(d => d.status === 'active');
     const latestVersion = versions[0];
 
@@ -645,7 +642,55 @@ function OverviewTab({ app, versions, builds, deployments }: { app: App; version
                     </div>
                 </section>
             )}
+            {/* Danger zone */}
+            <DangerZone app={app} deleting={deleting} onDelete={onDelete} />
         </div>
+    );
+}
+
+// ------- Danger Zone -------
+function DangerZone({ app, deleting, onDelete }: { app: App; deleting: boolean; onDelete: () => void }) {
+    const [confirmName, setConfirmName] = useState('');
+    const confirmed = confirmName === app.name;
+    const isDeployed = app.status === 'deployed' || app.status === 'deploying';
+
+    return (
+        <section className="p-5 rounded-xl border border-red-200 dark:border-red-800/40 bg-red-50/30 dark:bg-red-900/5">
+            <div className="flex items-center gap-2 mb-4">
+                <svg className="w-5 h-5 text-red-500 dark:text-red-400" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+                </svg>
+                <h2 className="text-sm font-semibold text-red-700 dark:text-red-400">Danger Zone</h2>
+            </div>
+
+            <div className="p-4 rounded-lg border border-red-200/60 dark:border-red-800/30 bg-white/60 dark:bg-white/[0.02]">
+                <h3 className="text-sm font-medium text-red-800 dark:text-red-300">Delete this application</h3>
+                <p className="mt-1 text-xs text-black/50 dark:text-white/50 leading-relaxed">
+                    Once deleted, the application, all versions, build history, and deployment records are <strong>permanently removed</strong>. This action cannot be undone.
+                    {isDeployed && <> Active deployments will be <strong>automatically stopped</strong> before deletion.</>}
+                </p>
+
+                <div className="mt-3">
+                    <label className="text-xs text-black/50 dark:text-white/50 block mb-1.5">
+                        Type <strong className="text-black dark:text-white font-mono">{app.name}</strong> to confirm
+                    </label>
+                    <input
+                        type="text"
+                        value={confirmName}
+                        onChange={e => setConfirmName(e.target.value)}
+                        placeholder={app.name}
+                        className="w-full max-w-xs px-3 py-2 text-sm font-mono rounded-lg border border-red-200 dark:border-red-800/50 bg-white dark:bg-white/5 focus:outline-none focus:ring-2 focus:ring-red-500/30 dark:focus:ring-red-400/30 placeholder:text-black/20 dark:placeholder:text-white/20"
+                    />
+                </div>
+                <button
+                    onClick={onDelete}
+                    disabled={!confirmed || deleting}
+                    className="mt-3 px-4 py-2 text-sm font-medium rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                    {deleting ? 'Deleting…' : 'Permanently delete this application'}
+                </button>
+            </div>
+        </section>
     );
 }
 
@@ -743,92 +788,6 @@ function VersionsTab({ app, versions, builds, newCommitUrl, onCommitUrlChange, o
                     ))}
                 </div>
             )}
-        </div>
-    );
-}
-
-// ------- Settings Tab -------
-function SettingsTab({ app, deleting, onDelete }: { app: App; deleting: boolean; onDelete: () => void }) {
-    const [confirmName, setConfirmName] = useState('');
-    const confirmed = confirmName === app.name;
-    const isDeployed = app.status === 'deployed' || app.status === 'deploying';
-
-    return (
-        <div className="space-y-8">
-            {/* App info (read-only summary) */}
-            <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">
-                <h2 className="text-sm font-semibold mb-3">Application Info</h2>
-                <div className="space-y-3 text-sm">
-                    <div className="flex items-center justify-between">
-                        <span className="text-black/50 dark:text-white/50">Name</span>
-                        <span className="font-mono text-xs">{app.name}</span>
-                    </div>
-                    {app.display_name && app.display_name !== app.name && (
-                        <div className="flex items-center justify-between">
-                            <span className="text-black/50 dark:text-white/50">Display Name</span>
-                            <span>{app.display_name}</span>
-                        </div>
-                    )}
-                    <div className="flex items-center justify-between">
-                        <span className="text-black/50 dark:text-white/50">Source</span>
-                        <span>{app.source_type === 'github' ? 'GitHub' : 'Upload'}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                        <span className="text-black/50 dark:text-white/50">Status</span>
-                        <StatusBadge status={app.status} labels={STATUS_LABELS} colors={STATUS_COLORS} />
-                    </div>
-                    <div className="flex items-center justify-between">
-                        <span className="text-black/50 dark:text-white/50">Created</span>
-                        <span className="text-xs">{new Date(app.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
-                    </div>
-                    {app.commit_url && (
-                        <div className="flex items-center justify-between">
-                            <span className="text-black/50 dark:text-white/50">Commit</span>
-                            <a href={app.commit_url} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 dark:text-blue-400 hover:underline truncate max-w-[240px]">
-                                {app.github_commit?.slice(0, 12) || 'View commit'}
-                            </a>
-                        </div>
-                    )}
-                </div>
-            </section>
-
-            {/* Danger zone */}
-            <section className="p-5 rounded-xl border border-red-200 dark:border-red-800/40 bg-red-50/30 dark:bg-red-900/5">
-                <div className="flex items-center gap-2 mb-4">
-                    <svg className="w-5 h-5 text-red-500 dark:text-red-400" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
-                    </svg>
-                    <h2 className="text-sm font-semibold text-red-700 dark:text-red-400">Danger Zone</h2>
-                </div>
-
-                <div className="p-4 rounded-lg border border-red-200/60 dark:border-red-800/30 bg-white/60 dark:bg-white/[0.02]">
-                    <h3 className="text-sm font-medium text-red-800 dark:text-red-300">Delete this application</h3>
-                    <p className="mt-1 text-xs text-black/50 dark:text-white/50 leading-relaxed">
-                        Once deleted, the application, all versions, build history, and deployment records are <strong>permanently removed</strong>. This action cannot be undone.
-                        {isDeployed && <> Active deployments will be <strong>automatically stopped</strong> before deletion.</>}
-                    </p>
-
-                    <div className="mt-3">
-                        <label className="text-xs text-black/50 dark:text-white/50 block mb-1.5">
-                            Type <strong className="text-black dark:text-white font-mono">{app.name}</strong> to confirm
-                        </label>
-                        <input
-                            type="text"
-                            value={confirmName}
-                            onChange={e => setConfirmName(e.target.value)}
-                            placeholder={app.name}
-                            className="w-full max-w-xs px-3 py-2 text-sm font-mono rounded-lg border border-red-200 dark:border-red-800/50 bg-white dark:bg-white/5 focus:outline-none focus:ring-2 focus:ring-red-500/30 dark:focus:ring-red-400/30 placeholder:text-black/20 dark:placeholder:text-white/20"
-                        />
-                    </div>
-                    <button
-                        onClick={onDelete}
-                        disabled={!confirmed || deleting}
-                        className="mt-3 px-4 py-2 text-sm font-medium rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                    >
-                        {deleting ? 'Deleting…' : 'Permanently delete this application'}
-                    </button>
-                </div>
-            </section>
         </div>
     );
 }
