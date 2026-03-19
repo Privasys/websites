@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { createApp, uploadCwasm } from '~/lib/api';
+import { createApp, uploadCwasm, checkAppName } from '~/lib/api';
 
 type Mode = 'github' | 'manual';
 type WizardState = 'input' | 'submitted';
@@ -84,14 +84,50 @@ export default function NewApplicationPage() {
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
+    // Name availability check
+    const [nameStatus, setNameStatus] = useState<'idle' | 'checking' | 'available' | 'taken'>('idle');
+    const [nameReason, setNameReason] = useState('');
+    const checkTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
     // Auto-infer app name from commit URL
     const parsed = mode === 'github' ? parseCommitUrl(commitUrl) : null;
     const inferredName = parsed ? repoToAppName(parsed.repo) : '';
 
+    // Pre-fill name from repo when commit URL is parsed (only if name is empty or was previously inferred)
+    const prevInferred = useRef('');
+    useEffect(() => {
+        if (mode === 'github' && inferredName && (name === '' || name === prevInferred.current)) {
+            setName(inferredName);
+        }
+        prevInferred.current = inferredName;
+    }, [inferredName, mode]);
+
+    // Debounced name availability check
+    useEffect(() => {
+        if (checkTimer.current) clearTimeout(checkTimer.current);
+        const n = name.trim();
+        if (!n || n.length < 3 || !session?.accessToken) {
+            setNameStatus('idle');
+            setNameReason('');
+            return;
+        }
+        setNameStatus('checking');
+        checkTimer.current = setTimeout(async () => {
+            try {
+                const res = await checkAppName(session.accessToken!, n);
+                setNameStatus(res.available ? 'available' : 'taken');
+                setNameReason(res.reason || '');
+            } catch {
+                setNameStatus('idle');
+            }
+        }, 400);
+        return () => { if (checkTimer.current) clearTimeout(checkTimer.current); };
+    }, [name, session?.accessToken]);
+
     const handleSubmit = useCallback(async () => {
         if (!session?.accessToken || submitting) return;
 
-        const appName = mode === 'github' ? inferredName : name;
+        const appName = name.trim();
         if (!appName) return;
 
         if (mode === 'github' && !parsed) return;
@@ -117,10 +153,10 @@ export default function NewApplicationPage() {
             setError(e instanceof Error ? e.message : 'Something went wrong');
             setSubmitting(false);
         }
-    }, [session?.accessToken, mode, inferredName, name, parsed, file, commitUrl, submitting]);
+    }, [session?.accessToken, mode, name, parsed, file, commitUrl, submitting]);
 
-    const isGithubValid = mode === 'github' && !!parsed;
-    const isManualValid = mode === 'manual' && !!name && !!file;
+    const isGithubValid = mode === 'github' && !!parsed && !!name.trim() && nameStatus !== 'taken';
+    const isManualValid = mode === 'manual' && !!name && !!file && nameStatus !== 'taken';
     const canSubmit = (isGithubValid || isManualValid) && !submitting;
 
     // ── Submitted state: auto-redirect to detail page ──
@@ -244,14 +280,50 @@ export default function NewApplicationPage() {
                                 </p>
                             </div>
                             {parsed && (
-                                <div className="p-3 rounded-lg bg-black/3 dark:bg-white/5 text-sm space-y-1">
+                                <div className="p-3 rounded-lg bg-black/3 dark:bg-white/5 text-sm space-y-3">
                                     <div className="flex items-center gap-2">
                                         <span className="text-black/50 dark:text-white/50">Repo:</span>
                                         <span className="font-medium">{parsed.owner}/{parsed.repo}</span>
                                     </div>
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-black/50 dark:text-white/50">App name:</span>
-                                        <code className="font-mono text-xs px-1.5 py-0.5 rounded bg-black/5 dark:bg-white/10">{inferredName}</code>
+                                    <div>
+                                        <label className="block text-xs font-medium text-black/60 dark:text-white/60 mb-1">Application name</label>
+                                        <div className="relative">
+                                            <input
+                                                type="text"
+                                                value={name}
+                                                onChange={(e) => setName(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
+                                                disabled={submitting}
+                                                className={`w-full px-3 py-2 rounded-lg border bg-transparent text-sm font-mono focus:outline-none focus:ring-2 disabled:opacity-50 ${
+                                                    nameStatus === 'taken'
+                                                        ? 'border-red-400 focus:ring-red-300'
+                                                        : nameStatus === 'available'
+                                                            ? 'border-emerald-400 focus:ring-emerald-300'
+                                                            : 'border-black/10 dark:border-white/10 focus:ring-black/20 dark:focus:ring-white/20'
+                                                }`}
+                                            />
+                                            {nameStatus === 'checking' && (
+                                                <div className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 border-2 border-black/20 dark:border-white/20 border-t-black dark:border-t-white rounded-full animate-spin" />
+                                            )}
+                                            {nameStatus === 'available' && (
+                                                <div className="absolute right-3 top-1/2 -translate-y-1/2 text-emerald-500">
+                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7" /></svg>
+                                                </div>
+                                            )}
+                                            {nameStatus === 'taken' && (
+                                                <div className="absolute right-3 top-1/2 -translate-y-1/2 text-red-500">
+                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" /></svg>
+                                                </div>
+                                            )}
+                                        </div>
+                                        {nameStatus === 'taken' && nameReason && (
+                                            <p className="mt-1 text-xs text-red-500">{nameReason}</p>
+                                        )}
+                                        {nameStatus === 'available' && (
+                                            <p className="mt-1 text-xs text-emerald-600 dark:text-emerald-400">{name}.apps.privasys.org is available</p>
+                                        )}
+                                        {nameStatus === 'idle' && name.length > 0 && name.length < 3 && (
+                                            <p className="mt-1 text-xs text-black/40 dark:text-white/40">Name must be at least 3 characters</p>
+                                        )}
                                     </div>
                                     <div className="flex items-center gap-2">
                                         <span className="text-black/50 dark:text-white/50">Commit:</span>
@@ -281,15 +353,42 @@ export default function NewApplicationPage() {
                         <div className="space-y-4">
                             <div>
                                 <label className="block text-xs font-medium text-black/60 dark:text-white/60 mb-1">Application name</label>
-                                <input
-                                    type="text"
-                                    placeholder="my-confidential-app"
-                                    value={name}
-                                    onChange={(e) => setName(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
-                                    disabled={submitting}
-                                    className="w-full px-3 py-2 rounded-lg border border-black/10 dark:border-white/10 bg-transparent text-sm focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/20 disabled:opacity-50"
-                                    autoFocus
-                                />
+                                <div className="relative">
+                                    <input
+                                        type="text"
+                                        placeholder="my-confidential-app"
+                                        value={name}
+                                        onChange={(e) => setName(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
+                                        disabled={submitting}
+                                        className={`w-full px-3 py-2 rounded-lg border bg-transparent text-sm focus:outline-none focus:ring-2 disabled:opacity-50 ${
+                                            nameStatus === 'taken'
+                                                ? 'border-red-400 focus:ring-red-300'
+                                                : nameStatus === 'available'
+                                                    ? 'border-emerald-400 focus:ring-emerald-300'
+                                                    : 'border-black/10 dark:border-white/10 focus:ring-black/20 dark:focus:ring-white/20'
+                                        }`}
+                                        autoFocus
+                                    />
+                                    {nameStatus === 'checking' && (
+                                        <div className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 border-2 border-black/20 dark:border-white/20 border-t-black dark:border-t-white rounded-full animate-spin" />
+                                    )}
+                                    {nameStatus === 'available' && (
+                                        <div className="absolute right-3 top-1/2 -translate-y-1/2 text-emerald-500">
+                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7" /></svg>
+                                        </div>
+                                    )}
+                                    {nameStatus === 'taken' && (
+                                        <div className="absolute right-3 top-1/2 -translate-y-1/2 text-red-500">
+                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" /></svg>
+                                        </div>
+                                    )}
+                                </div>
+                                {nameStatus === 'taken' && nameReason && (
+                                    <p className="mt-1 text-xs text-red-500">{nameReason}</p>
+                                )}
+                                {nameStatus === 'available' && (
+                                    <p className="mt-1 text-xs text-emerald-600 dark:text-emerald-400">{name}.apps.privasys.org is available</p>
+                                )}
                                 <p className="mt-1 text-xs text-black/40 dark:text-white/40">
                                     3-63 lowercase alphanumeric characters or hyphens, starting with a letter.
                                 </p>

@@ -50,6 +50,10 @@ export function createApp(token: string, body: CreateAppRequest): Promise<App> {
     });
 }
 
+export function checkAppName(token: string, name: string): Promise<{ available: boolean; reason?: string }> {
+    return request<{ available: boolean; reason?: string }>(`/api/v1/apps/check-name?name=${encodeURIComponent(name)}`, token);
+}
+
 export function deleteApp(token: string, id: string): Promise<void> {
     return request<void>(`/api/v1/apps/${encodeURIComponent(id)}`, token, {
         method: 'DELETE'
