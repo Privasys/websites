@@ -86,7 +86,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             authorization: {
                 params: {
                     scope: 'openid profile email offline_access urn:zitadel:iam:org:project:roles',
-                    prompt: 'login'
+                    prompt: 'select_account'
                 }
             }
         })

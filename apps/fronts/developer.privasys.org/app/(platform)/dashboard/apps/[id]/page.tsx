@@ -311,7 +311,9 @@ export default function AppDetailPage() {
     }
 
     const activeDeployments = deployments.filter(d => d.status === 'active');
-    const showPipeline = !TERMINAL_STATUSES.has(app.status);
+    // 'approved' with a cwasm_hash means the build completed (legacy apps before status fix)
+    const effectivelyBuilt = app.status === 'approved' && !!app.cwasm_hash;
+    const showPipeline = !TERMINAL_STATUSES.has(app.status) && !effectivelyBuilt;
 
     // Pipeline view — shown while the app is still progressing through the flow
     if (showPipeline) {

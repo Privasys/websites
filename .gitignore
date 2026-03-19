@@ -76,6 +76,10 @@ jspm_packages
 !.vscode/launch.json
 !.vscode/extensions.json
 
+# E2E / Playwright
+**/e2e/.auth/
+**/test-results/
+
 # Misc
 /.sass-cache
 /connect.lock
