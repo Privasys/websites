@@ -50,6 +50,10 @@ export function useSSE(token: string | undefined, handler: SSEHandler) {
                     });
 
                     if (!resp.ok || !resp.body) {
+                        if (resp.status === 401 && typeof window !== 'undefined') {
+                            window.dispatchEvent(new Event('auth:expired'));
+                            return; // Stop reconnecting — session needs refresh
+                        }
                         throw new Error(`SSE connection failed: ${resp.status}`);
                     }
 

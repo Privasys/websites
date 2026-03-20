@@ -274,6 +274,14 @@ export default function AppDetailPage() {
 
     useEffect(() => { load(); }, [load]);
 
+    // Poll every 5s while app is in a transitional state (SSE fallback)
+    useEffect(() => {
+        const transitional = app && ['building', 'deploying', 'submitted', 'under_review'].includes(app.status);
+        if (!transitional) return;
+        const interval = setInterval(load, 5000);
+        return () => clearInterval(interval);
+    }, [app?.status, load]);
+
     useSSE(session?.accessToken, useCallback((ev) => {
         if (ev.data.app_id === id) load();
     }, [id, load]));
