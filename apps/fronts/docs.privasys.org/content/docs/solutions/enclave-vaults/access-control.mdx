@@ -39,8 +39,8 @@ Each secret carries a policy that is evaluated on every `GetSecret` request via 
 
 | Role | Claim value | Operations |
 |------|------------|------------|
-| `secret-owner` | `privasys-platform:secret-owner` | Store, Delete, Update, List, Get (own secrets) |
-| `secret-manager` | `privasys-platform:secret-manager` | Issue bearer tokens for RA-TLS `GetSecret` |
+| `secret-owner` | `enclave-vault:secret-owner` | Store, Delete, Update, List, Get (own secrets) |
+| `secret-manager` | `enclave-vault:secret-manager` | Issue bearer tokens for RA-TLS `GetSecret` |
 
 ### Token Delivery
 
