@@ -14,7 +14,7 @@ There are three actors in the vault model.
 The owner is the entity that creates, deletes, manages, and lists secrets.
 
 - Authenticates via **OIDC bearer token** (any OIDC provider).
-- Must hold the **`privasys-platform:secret-owner`** role.
+- Must hold the **`enclave-vault:secret-owner`** role.
 - The owner's OIDC `sub` (subject) claim is stored in each secret record, so only the original creator can delete, update, or list their secrets.
 - Operations: `StoreSecret`, `DeleteSecret`, `UpdateSecretPolicy`, `ListSecrets`.
 - Can always retrieve their own secrets via the OIDC path (no RA-TLS required).
@@ -36,7 +36,7 @@ A remote TEE that needs to retrieve a secret authenticates via [mutual RA-TLS](/
 The secret manager is a **separate actor** whose sole role is to issue bearer tokens at `GetSecret` time as defence-in-depth.
 
 - Authenticates via **OIDC bearer token**.
-- Must hold the **`privasys-platform:secret-manager`** role.
+- Must hold the **`enclave-vault:secret-manager`** role.
 - **Cannot** read, write, or delete secrets, and **cannot** update policies.
 - **Only** provides a bearer token that the remote TEE presents alongside its attestation evidence.
 
