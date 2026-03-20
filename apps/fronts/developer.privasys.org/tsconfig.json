@@ -25,5 +25,5 @@
         "next-env.d.ts",
         "../../../dist/apps/fronts/developer.privasys.org/.next/types/**/*.ts"
     ],
-    "exclude": ["node_modules", ".next", "dist", "jest.config.ts"]
+    "exclude": ["node_modules", ".next", "dist", "jest.config.ts", "e2e"]
 }
