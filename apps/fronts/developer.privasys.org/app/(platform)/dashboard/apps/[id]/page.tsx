@@ -333,6 +333,15 @@ export default function AppDetailPage() {
                         <h1 className="text-2xl font-semibold">{app.display_name || app.name}</h1>
                         <p className="mt-1 text-sm text-black/50 dark:text-white/50">
                             {app.name} &middot; {app.source_type === 'github' ? 'GitHub' : 'Upload'}
+                            {app.app_type && (
+                                <span className={`ml-2 inline-block px-2 py-0.5 text-xs font-medium rounded-full ${
+                                    app.app_type === 'container'
+                                        ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
+                                        : 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300'
+                                }`}>
+                                    {app.app_type === 'container' ? 'Container' : 'WASM'}
+                                </span>
+                            )}
                         </p>
                     </div>
                     <StatusBadge status={app.status} labels={STATUS_LABELS} colors={STATUS_COLORS} />

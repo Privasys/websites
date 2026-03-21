@@ -4,7 +4,7 @@ import path from 'path';
 const screenshot = (name: string) => path.join(__dirname, 'test-results', `${name}.png`);
 
 const COMMIT_URL = 'https://github.com/Privasys/wasm-app-example/commit/f0eefca8adf131a8ab763641c06ac83e1ca1feef';
-const CONTAINER_COMMIT_URL = 'https://github.com/Privasys/container-app-example/commit/227bf9a67e2a9ac0b597c66dbd0a41e13a2b1f8f';
+const CONTAINER_COMMIT_URL = 'https://github.com/Privasys/container-app-example/commit/04a44ffc9068a8600a69b7791bde8fd970362502';
 
 /** Delete an app by navigating to its Overview tab and using the Danger Zone. */
 async function deleteAppByName(page: Page, appName: string) {
@@ -16,37 +16,40 @@ async function deleteAppByName(page: Page, appName: string) {
     await page.waitForURL('**/dashboard/apps/**');
     await page.waitForTimeout(2_000);
 
-    // Try tabbed view first (Overview → Danger Zone)
-    const overviewTab = page.getByRole('button', { name: 'Overview' });
-    try {
-        await overviewTab.waitFor({ state: 'visible', timeout: 5_000 });
-        await overviewTab.click();
-        await page.waitForTimeout(1_000);
-    } catch { /* pipeline view — no tabs */ }
+    // Auto-accept any confirm dialogs that appear
+    const dialogHandler = (dialog: import('@playwright/test').Dialog) => dialog.accept().catch(() => {});
+    page.on('dialog', dialogHandler);
 
-    // Accept the confirm() dialog triggered by handleDelete
-    page.once('dialog', dialog => dialog.accept());
-
-    // Find delete confirmation input and fill it
-    const deleteInput = page.locator('input[placeholder="' + appName + '"]');
     try {
-        await deleteInput.waitFor({ state: 'visible', timeout: 5_000 });
-        await deleteInput.fill(appName);
-        await page.waitForTimeout(300);
-        await page.locator('button', { hasText: 'Delete application' }).click();
-        // window.location.href redirect — wait generously for full page reload
-        await page.waitForURL('**/dashboard', { timeout: 15_000 }).catch(() => {});
-        return;
-    } catch { /* try pipeline view fallback */ }
+        // Try tabbed view first (Overview → Danger Zone)
+        const overviewTab = page.getByRole('button', { name: 'Overview' });
+        try {
+            await overviewTab.waitFor({ state: 'visible', timeout: 5_000 });
+            await overviewTab.click();
+            await page.waitForTimeout(1_000);
+        } catch { /* pipeline view — no tabs */ }
 
-    // Pipeline view — delete button with confirm() dialog
-    const deleteBtn = page.getByRole('button', { name: /delete application/i });
-    try {
-        await deleteBtn.waitFor({ state: 'visible', timeout: 3_000 });
-        page.once('dialog', dialog => dialog.accept());
-        await deleteBtn.click();
-        await page.waitForURL('**/dashboard', { timeout: 15_000 }).catch(() => {});
-    } catch { /* could not delete */ }
+        // Find delete confirmation input and fill it
+        const deleteInput = page.locator('input[placeholder="' + appName + '"]');
+        try {
+            await deleteInput.waitFor({ state: 'visible', timeout: 5_000 });
+            await deleteInput.fill(appName);
+            await page.waitForTimeout(300);
+            await page.locator('button', { hasText: 'Delete application' }).click();
+            await page.waitForURL('**/dashboard', { timeout: 15_000 }).catch(() => {});
+            return;
+        } catch { /* try pipeline view fallback */ }
+
+        // Pipeline view — delete button with confirm() dialog
+        const deleteBtn = page.getByRole('button', { name: /delete application/i });
+        try {
+            await deleteBtn.waitFor({ state: 'visible', timeout: 3_000 });
+            await deleteBtn.click();
+            await page.waitForURL('**/dashboard', { timeout: 15_000 }).catch(() => {});
+        } catch { /* could not delete */ }
+    } finally {
+        page.off('dialog', dialogHandler);
+    }
 }
 
 test.describe('Developer Portal', () => {
@@ -590,9 +593,11 @@ test.describe('Developer Portal', () => {
         await commitInput.fill(COMMIT_URL);
         await expect(page.getByText('Privasys/wasm-app-example')).toBeVisible({ timeout: 5_000 });
 
+        // Wait for auto-detection to complete before clicking
+        await expect(page.getByText('(auto-detected)')).toBeVisible({ timeout: 10_000 });
+
         // Click Container button
         const containerBtn = page.getByRole('button', { name: 'Container' });
-        await containerBtn.waitFor({ state: 'visible', timeout: 10_000 });
         await containerBtn.click();
 
         // Container-specific fields should appear
@@ -648,7 +653,7 @@ test.describe('Developer Portal', () => {
             await page.waitForURL('**/dashboard/apps/**');
             await expect(page.getByText('container-app-example')).toBeVisible();
             // Verify container badge
-            await expect(page.getByText('Container')).toBeVisible({ timeout: 5_000 });
+            await expect(page.getByText('Container', { exact: true })).toBeVisible({ timeout: 5_000 });
             await page.screenshot({ path: screenshot('container-app-detail'), fullPage: true });
             return;
         }
@@ -701,7 +706,7 @@ test.describe('Developer Portal', () => {
         await page.waitForURL('**/dashboard/apps/**', { timeout: 10_000 });
 
         // Verify container badge on detail page
-        await expect(page.getByText('Container')).toBeVisible({ timeout: 5_000 });
+        await expect(page.getByText('Container', { exact: true })).toBeVisible({ timeout: 5_000 });
         await page.screenshot({ path: screenshot('container-app-detail'), fullPage: true });
     });
 
@@ -726,7 +731,7 @@ test.describe('Developer Portal', () => {
         } catch { /* pipeline view */ }
 
         // Container badge should be visible
-        await expect(page.getByText('Container')).toBeVisible({ timeout: 5_000 });
+        await expect(page.getByText('Container', { exact: true })).toBeVisible({ timeout: 5_000 });
 
         // WASM-specific elements should NOT be visible
         const cwasmHash = page.getByText('SHA-256');
@@ -737,29 +742,34 @@ test.describe('Developer Portal', () => {
 
     test('cleanup: delete all test apps', async ({ page }) => {
         test.setTimeout(120_000);
+        const API = process.env.NEXT_PUBLIC_API_URL || 'https://api-test.developer.privasys.org';
+
+        // Navigate to establish cookies, then extract the access token from the session
         await page.goto('/dashboard/');
         await page.waitForSelector('nav', { timeout: 5_000 });
-        await page.waitForTimeout(1_000);
+        const session = await page.evaluate(() => fetch('/api/auth/session').then(r => r.json()));
+        const token = session?.accessToken as string;
+        expect(token).toBeTruthy();
 
-        // Collect all app names from the sidebar
-        const appLinks = page.locator('nav a[href*="/dashboard/apps/"]');
-        const count = await appLinks.count();
-        const names: string[] = [];
-        for (let i = 0; i < count; i++) {
-            const text = (await appLinks.nth(i).textContent())?.trim();
-            if (text) names.push(text);
+        // List apps via API
+        const listResp = await page.request.get(`${API}/api/v1/apps`, {
+            headers: { Authorization: `Bearer ${token}` },
+        });
+        expect(listResp.ok()).toBeTruthy();
+        const apps: { id: string; name: string }[] = await listResp.json();
+
+        // Delete each app via API
+        for (const app of apps) {
+            await page.request.delete(`${API}/api/v1/apps/${app.id}`, {
+                headers: { Authorization: `Bearer ${token}` },
+            });
         }
 
-        // Delete each app
-        for (const name of names) {
-            await deleteAppByName(page, name);
-        }
-
-        // Verify dashboard is empty
-        await page.goto('/dashboard/');
-        await page.waitForSelector('nav', { timeout: 5_000 });
-        await page.waitForTimeout(1_000);
-        const remaining = await page.locator('nav a[href*="/dashboard/apps/"]').count();
-        expect(remaining).toBe(0);
+        // Verify via API
+        const verifyResp = await page.request.get(`${API}/api/v1/apps`, {
+            headers: { Authorization: `Bearer ${token}` },
+        });
+        const remaining: unknown[] = await verifyResp.json();
+        expect(remaining.length).toBe(0);
     });
 });
