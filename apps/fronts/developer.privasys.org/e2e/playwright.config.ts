@@ -19,21 +19,21 @@ export default defineConfig({
         screenshot: 'on',
         trace: 'on-first-retry',
         ignoreHTTPSErrors: true,
-        ...devices['Desktop Chrome'],
+        ...devices['Desktop Chrome']
     },
 
     projects: [
         {
             name: 'auth-setup',
-            testMatch: 'auth.setup.ts',
+            testMatch: 'auth.setup.ts'
         },
         {
             name: 'portal',
             testMatch: '**/*.spec.ts',
             dependencies: ['auth-setup'],
             use: {
-                storageState: AUTH_FILE,
-            },
-        },
-    ],
+                storageState: AUTH_FILE
+            }
+        }
+    ]
 });

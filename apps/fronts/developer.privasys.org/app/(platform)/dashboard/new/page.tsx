@@ -91,7 +91,7 @@ export default function NewApplicationPage() {
     const [detecting, setDetecting] = useState(false);
 
     // Container-specific fields
-    const [containerImage, setContainerImage] = useState('');
+    const [containerImage] = useState('');
     const [containerPort, setContainerPort] = useState('');
     const [containerStorage, setContainerStorage] = useState(false);
 
@@ -176,7 +176,7 @@ export default function NewApplicationPage() {
                 app_type: appType,
                 container_image: appType === 'container' && containerImage ? containerImage : undefined,
                 container_port: appType === 'container' && containerPort ? parseInt(containerPort, 10) : undefined,
-                container_storage: appType === 'container' ? containerStorage : undefined,
+                container_storage: appType === 'container' ? containerStorage : undefined
             });
 
             if (mode === 'manual' && file) {

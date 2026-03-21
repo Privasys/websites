@@ -55,7 +55,7 @@ export function getAllPosts(): BlogPost[] {
             author: data.author ?? 'Privasys Team',
             date: data.date ?? '',
             excerpt,
-            content,
+            content
         };
     });
 

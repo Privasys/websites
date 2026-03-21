@@ -34,8 +34,8 @@ setup('authenticate via GitHub', async ({ page }) => {
     // Clean up OTP marker files from previous runs
     const authDir = path.dirname(otpRequestFile);
     fs.mkdirSync(authDir, { recursive: true });
-    try { fs.unlinkSync(otpRequestFile); } catch {}
-    try { fs.unlinkSync(otpResponseFile); } catch {}
+    try { fs.unlinkSync(otpRequestFile); } catch { /* ignore */ }
+    try { fs.unlinkSync(otpResponseFile); } catch { /* ignore */ }
 
     // Go to the portal — login page auto-redirects to Zitadel OIDC
     await page.goto('/dashboard/');
@@ -70,7 +70,7 @@ setup('authenticate via GitHub', async ({ page }) => {
     // Submit the login form using Promise.all to handle navigation
     await Promise.all([
         page.waitForNavigation({ timeout: 15_000 }),
-        page.locator('[name="commit"]').click(),
+        page.locator('[name="commit"]').click()
     ]);
 
     // Post-click screenshot to see what page we landed on
@@ -94,7 +94,7 @@ setup('authenticate via GitHub', async ({ page }) => {
             try {
                 otp = fs.readFileSync(otpResponseFile, 'utf-8').trim();
                 if (otp) break;
-            } catch {}
+            } catch { /* not ready yet */ }
         }
         if (!otp) throw new Error('Timed out waiting for OTP code');
 

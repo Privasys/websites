@@ -395,7 +395,7 @@ export default function AppDetailPage() {
                     <h2 className="text-sm font-semibold mb-2">
                         {app.status === 'failed' ? 'Build failed'
                             : app.status === 'rejected' ? 'Application rejected'
-                            : 'Actions'}
+                                : 'Actions'}
                     </h2>
                     <p className="text-sm text-black/50 dark:text-white/50 mb-4">
                         {app.status === 'failed'
@@ -982,7 +982,7 @@ function AttestationTab({ appId, token, deployments, versions }: { appId: string
         if (result?.quote?.raw_base64 && !result.quote.is_mock) {
             verifyQuoteSignature();
         }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
     }, [result]);
 
     const OID_DESCRIPTIONS: Record<string, string> = {
@@ -1580,7 +1580,7 @@ const quoteBase64 = "${result.quote!.raw_base64}";
                             <pre className="text-[11px] bg-black/5 dark:bg-white/5 p-3 rounded-lg font-mono break-all whitespace-pre-wrap max-h-56 overflow-y-auto">
                                 {[
                                     `const ATTESTATION_SERVER = "${typeof window !== 'undefined' ? window.location.origin : ''}/api/v1/verify-quote";`,
-                                    `const TOKEN = "YOUR_ACCESS_TOKEN";`,
+                                    'const TOKEN = "YOUR_ACCESS_TOKEN";',
                                     `const quoteBase64 = "${result.quote!.raw_base64!.substring(0, 40)}...";`,
                                     '',
                                     'const resp = await fetch(ATTESTATION_SERVER, {',
@@ -2159,7 +2159,7 @@ function AppStoreTab({ app, token, deployments, onSave }: { app: App; token: str
                 store_tos_url: tosURL,
                 store_website_url: websiteURL,
                 store_support_email: supportEmail,
-                store_keywords: keywords,
+                store_keywords: keywords
             });
             onSave(updated);
             setSaved(true);
@@ -2183,8 +2183,8 @@ function AppStoreTab({ app, token, deployments, onSave }: { app: App; token: str
         setScreenshots(screenshots.filter((_, i) => i !== idx));
     }
 
-    const labelClass = "text-xs font-medium text-black/60 dark:text-white/60 block mb-1.5";
-    const inputClass = "w-full px-3 py-2 text-sm rounded-lg border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/20 placeholder:text-black/25 dark:placeholder:text-white/25";
+    const labelClass = 'text-xs font-medium text-black/60 dark:text-white/60 block mb-1.5';
+    const inputClass = 'w-full px-3 py-2 text-sm rounded-lg border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/20 placeholder:text-black/25 dark:placeholder:text-white/25';
 
     return (
         <div className="space-y-6">
