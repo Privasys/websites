@@ -4,6 +4,7 @@ import path from 'path';
 const screenshot = (name: string) => path.join(__dirname, 'test-results', `${name}.png`);
 
 const COMMIT_URL = 'https://github.com/Privasys/wasm-app-example/commit/f0eefca8adf131a8ab763641c06ac83e1ca1feef';
+const CONTAINER_COMMIT_URL = 'https://github.com/Privasys/container-app-example/commit/227bf9a67e2a9ac0b597c66dbd0a41e13a2b1f8f';
 
 /** Delete an app by navigating to its Overview tab and using the Danger Zone. */
 async function deleteAppByName(page: Page, appName: string) {
@@ -557,6 +558,181 @@ test.describe('Developer Portal', () => {
         await page.goto('/dashboard/new/');
         await expect(page.getByText(/upload manually/i)).toBeVisible();
         await page.screenshot({ path: screenshot('new-app-upload'), fullPage: true });
+    });
+
+    test('new app page shows app type selector for GitHub commits', async ({ page }) => {
+        await page.goto('/dashboard/new/');
+        await expect(page.locator('h1')).toContainText(/new application/i);
+
+        const commitInput = page.getByPlaceholder(/github\.com/i);
+        await commitInput.fill(COMMIT_URL);
+
+        // Wait for URL parsing
+        await expect(page.getByText('Privasys/wasm-app-example')).toBeVisible({ timeout: 5_000 });
+
+        // Type toggle should appear with WASM App and Container buttons
+        const wasmBtn = page.getByRole('button', { name: 'WASM App' });
+        const containerBtn = page.getByRole('button', { name: 'Container' });
+        await expect(wasmBtn).toBeVisible({ timeout: 10_000 });
+        await expect(containerBtn).toBeVisible();
+
+        // For the wasm example repo, WASM should be auto-detected and selected
+        await expect(wasmBtn).toHaveClass(/bg-black|bg-white/);
+
+        await page.screenshot({ path: screenshot('app-type-selector-wasm'), fullPage: true });
+    });
+
+    test('selecting container type shows container-specific fields', async ({ page }) => {
+        await page.goto('/dashboard/new/');
+        await expect(page.locator('h1')).toContainText(/new application/i);
+
+        const commitInput = page.getByPlaceholder(/github\.com/i);
+        await commitInput.fill(COMMIT_URL);
+        await expect(page.getByText('Privasys/wasm-app-example')).toBeVisible({ timeout: 5_000 });
+
+        // Click Container button
+        const containerBtn = page.getByRole('button', { name: 'Container' });
+        await containerBtn.waitFor({ state: 'visible', timeout: 10_000 });
+        await containerBtn.click();
+
+        // Container-specific fields should appear
+        await expect(page.getByText('Container port')).toBeVisible({ timeout: 5_000 });
+        await expect(page.getByText(/encrypted persistent storage/i)).toBeVisible();
+
+        // Fill container port
+        const portInput = page.locator('input[type="number"][placeholder="8080"]');
+        await expect(portInput).toBeVisible();
+        await portInput.fill('8080');
+
+        // Toggle storage checkbox
+        const storageCheckbox = page.locator('#storage');
+        await expect(storageCheckbox).toBeVisible();
+        await storageCheckbox.check();
+        expect(await storageCheckbox.isChecked()).toBe(true);
+
+        await page.screenshot({ path: screenshot('container-fields'), fullPage: true });
+    });
+
+    test('container commit URL auto-detects container type', async ({ page }) => {
+        await page.goto('/dashboard/new/');
+        await expect(page.locator('h1')).toContainText(/new application/i);
+
+        const commitInput = page.getByPlaceholder(/github\.com/i);
+        await commitInput.fill(CONTAINER_COMMIT_URL);
+
+        // Wait for URL parsing
+        await expect(page.getByText('Privasys/container-app-example')).toBeVisible({ timeout: 5_000 });
+
+        // Wait for auto-detection — Container button should become selected
+        const containerBtn = page.getByRole('button', { name: 'Container' });
+        await containerBtn.waitFor({ state: 'visible', timeout: 10_000 });
+        await expect(containerBtn).toHaveClass(/bg-black|bg-white/, { timeout: 10_000 });
+
+        // Auto-detected indicator should be visible
+        await expect(page.getByText('(auto-detected)')).toBeVisible({ timeout: 5_000 });
+
+        // Container fields should be visible
+        await expect(page.getByText('Container port')).toBeVisible({ timeout: 5_000 });
+
+        await page.screenshot({ path: screenshot('container-auto-detected'), fullPage: true });
+    });
+
+    test('create container app from GitHub commit', async ({ page }) => {
+        // Check if the app already exists
+        await page.goto('/dashboard/');
+        await page.waitForSelector('nav', { timeout: 5_000 });
+        await page.waitForTimeout(2_000);
+        const existingApp = page.locator('nav a', { hasText: 'container-app-example' });
+        if (await existingApp.isVisible().catch(() => false)) {
+            await existingApp.click();
+            await page.waitForURL('**/dashboard/apps/**');
+            await expect(page.getByText('container-app-example')).toBeVisible();
+            // Verify container badge
+            await expect(page.getByText('Container')).toBeVisible({ timeout: 5_000 });
+            await page.screenshot({ path: screenshot('container-app-detail'), fullPage: true });
+            return;
+        }
+
+        // Navigate to new app page
+        await page.goto('/dashboard/new/');
+        await expect(page.locator('h1')).toContainText(/new application/i);
+
+        const commitInput = page.getByPlaceholder(/github\.com/i);
+        await commitInput.fill(CONTAINER_COMMIT_URL);
+        await expect(page.getByText('Privasys/container-app-example')).toBeVisible({ timeout: 5_000 });
+
+        // Wait for auto-detection to select Container
+        const containerBtn = page.getByRole('button', { name: 'Container' });
+        await containerBtn.waitFor({ state: 'visible', timeout: 10_000 });
+        await expect(containerBtn).toHaveClass(/bg-black|bg-white/, { timeout: 10_000 });
+
+        // Verify name is pre-filled
+        const nameInput = page.locator('input[type="text"]').nth(1);
+        await expect(nameInput).toHaveValue('container-app-example', { timeout: 5_000 });
+
+        // Check name availability
+        const available = page.getByText(/\.apps\.privasys\.org is available/i);
+        const taken = page.getByText(/already taken|name is reserved/i);
+        await expect(available.or(taken)).toBeVisible({ timeout: 5_000 });
+
+        if (await taken.isVisible().catch(() => false)) {
+            const uniqueName = `container-test-${Date.now().toString(36).slice(-4)}`;
+            await nameInput.clear();
+            await nameInput.fill(uniqueName);
+            await expect(page.getByText(/\.apps\.privasys\.org is available/i)).toBeVisible({ timeout: 5_000 });
+        }
+
+        // Set container port
+        const portInput = page.locator('input[type="number"][placeholder="8080"]');
+        await portInput.fill('8080');
+
+        await page.screenshot({ path: screenshot('container-app-before-submit'), fullPage: true });
+
+        // Submit
+        const createBtn = page.getByRole('button', { name: /create application/i });
+        await expect(createBtn).toBeEnabled();
+        await createBtn.click();
+
+        // Should succeed
+        await expect(page.getByText(/application submitted/i)).toBeVisible({ timeout: 15_000 });
+        await page.screenshot({ path: screenshot('container-app-submitted'), fullPage: true });
+
+        // Wait for redirect to detail page
+        await page.waitForURL('**/dashboard/apps/**', { timeout: 10_000 });
+
+        // Verify container badge on detail page
+        await expect(page.getByText('Container')).toBeVisible({ timeout: 5_000 });
+        await page.screenshot({ path: screenshot('container-app-detail'), fullPage: true });
+    });
+
+    test('container app detail shows container badge and no WASM info', async ({ page }) => {
+        await page.goto('/dashboard/');
+        await page.waitForSelector('nav', { timeout: 5_000 });
+        await page.waitForTimeout(2_000);
+        const appLink = page.locator('nav a', { hasText: 'container-app-example' });
+        if (!await appLink.isVisible().catch(() => false)) {
+            test.skip(true, 'Container app not created — skipping detail check');
+            return;
+        }
+        await appLink.click();
+        await page.waitForURL('**/dashboard/apps/**');
+
+        // Click Overview tab if visible
+        const overviewTab = page.getByRole('button', { name: 'Overview' });
+        try {
+            await overviewTab.waitFor({ state: 'visible', timeout: 5_000 });
+            await overviewTab.click();
+            await page.waitForTimeout(1_000);
+        } catch { /* pipeline view */ }
+
+        // Container badge should be visible
+        await expect(page.getByText('Container')).toBeVisible({ timeout: 5_000 });
+
+        // WASM-specific elements should NOT be visible
+        const cwasmHash = page.getByText('SHA-256');
+        expect(await cwasmHash.isVisible().catch(() => false)).toBe(false);
+
+        await page.screenshot({ path: screenshot('container-detail-overview'), fullPage: true });
     });
 
     test('cleanup: delete all test apps', async ({ page }) => {
