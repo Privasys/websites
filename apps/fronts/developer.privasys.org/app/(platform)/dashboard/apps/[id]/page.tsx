@@ -525,6 +525,18 @@ function OverviewTab({ app, versions, builds, deployments, deleting, onDelete }:
                         <div className="text-xs text-black/50 dark:text-white/50">Created</div>
                         <div className="mt-0.5">{new Date(app.created_at).toLocaleDateString()}</div>
                     </div>
+                    <div>
+                        <div className="text-xs text-black/50 dark:text-white/50">Type</div>
+                        <div className="mt-0.5">
+                            <span className={`inline-block px-2 py-0.5 text-xs font-medium rounded-full ${
+                                app.app_type === 'container'
+                                    ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
+                                    : 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300'
+                            }`}>
+                                {app.app_type === 'container' ? 'Container' : 'WASM'}
+                            </span>
+                        </div>
+                    </div>
                     {app.description && (
                         <div className="col-span-2">
                             <div className="text-xs text-black/50 dark:text-white/50">Description</div>
@@ -555,17 +567,45 @@ function OverviewTab({ app, versions, builds, deployments, deleting, onDelete }:
                             </div>
                         </>
                     )}
-                    {app.cwasm_hash && (
-                        <div className="col-span-2">
-                            <div className="text-xs text-black/50 dark:text-white/50">WASM module SHA-256</div>
-                            <code className="text-xs bg-black/5 dark:bg-white/5 px-2 py-1 rounded break-all block mt-1 font-mono">{app.cwasm_hash}</code>
-                        </div>
-                    )}
-                    {app.cwasm_size != null && (
-                        <div>
-                            <div className="text-xs text-black/50 dark:text-white/50">Module size</div>
-                            <div className="mt-0.5">{(app.cwasm_size / 1024).toFixed(1)} KB</div>
-                        </div>
+                    {app.app_type === 'container' ? (
+                        <>
+                            {app.container_image && (
+                                <div className="col-span-2">
+                                    <div className="text-xs text-black/50 dark:text-white/50">Container image</div>
+                                    <code className="text-xs bg-black/5 dark:bg-white/5 px-2 py-1 rounded break-all block mt-1 font-mono">{app.container_image}</code>
+                                </div>
+                            )}
+                            {app.container_port != null && (
+                                <div>
+                                    <div className="text-xs text-black/50 dark:text-white/50">Container port</div>
+                                    <div className="mt-0.5">{app.container_port}</div>
+                                </div>
+                            )}
+                            {app.container_storage && (
+                                <div>
+                                    <div className="text-xs text-black/50 dark:text-white/50">Encrypted storage</div>
+                                    <div className="mt-0.5 flex items-center gap-1.5">
+                                        <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                                        <span className="text-xs text-emerald-700 dark:text-emerald-300">Enabled</span>
+                                    </div>
+                                </div>
+                            )}
+                        </>
+                    ) : (
+                        <>
+                            {app.cwasm_hash && (
+                                <div className="col-span-2">
+                                    <div className="text-xs text-black/50 dark:text-white/50">WASM module SHA-256</div>
+                                    <code className="text-xs bg-black/5 dark:bg-white/5 px-2 py-1 rounded break-all block mt-1 font-mono">{app.cwasm_hash}</code>
+                                </div>
+                            )}
+                            {app.cwasm_size != null && (
+                                <div>
+                                    <div className="text-xs text-black/50 dark:text-white/50">Module size</div>
+                                    <div className="mt-0.5">{(app.cwasm_size / 1024).toFixed(1)} KB</div>
+                                </div>
+                            )}
+                        </>
                     )}
                 </div>
             </section>
@@ -2338,7 +2378,8 @@ function DeploymentsTab({ app, deployments, versions, enclaves, token, onRefresh
 }) {
     const versionMap = Object.fromEntries(versions.map(v => [v.id, v]));
     const readyVersions = versions.filter(v => v.status === 'ready');
-    const activeEnclaves = enclaves.filter(e => e.status === 'active');
+    const compatibleTeeType = app.app_type === 'container' ? 'tdx' : 'sgx';
+    const activeEnclaves = enclaves.filter(e => e.status === 'active' && (!e.tee_type || e.tee_type === compatibleTeeType));
     const [selectedVersion, setSelectedVersion] = useState('');
     const [selectedEnclave, setSelectedEnclave] = useState('');
     const [deploying, setDeploying] = useState(false);
@@ -2423,6 +2464,7 @@ function DeploymentsTab({ app, deployments, versions, enclaves, token, onRefresh
                                         <option key={e.id} value={e.id}>
                                             {e.name} — {e.region || e.country || 'Unknown'}
                                             {e.provider ? ` (${e.provider})` : ''}
+                                            {e.tee_type ? ` [${e.tee_type.toUpperCase()}]` : ''}
                                         </option>
                                     ))}
                                 </select>

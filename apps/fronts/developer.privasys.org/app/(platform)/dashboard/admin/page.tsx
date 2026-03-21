@@ -99,6 +99,7 @@ export default function AdminPage() {
                         <thead>
                             <tr className="border-b border-black/5 dark:border-white/5 bg-black/2 dark:bg-white/2">
                                 <th className="text-left px-4 py-3 font-medium">Name</th>
+                                <th className="text-left px-4 py-3 font-medium">Type</th>
                                 <th className="text-left px-4 py-3 font-medium">Owner</th>
                                 <th className="text-left px-4 py-3 font-medium">Source</th>
                                 <th className="text-left px-4 py-3 font-medium">Status</th>
@@ -113,6 +114,11 @@ export default function AdminPage() {
                                     <td className="px-4 py-3">
                                         <div className="font-medium">{app.display_name || app.name}</div>
                                         <div className="text-xs text-black/40 dark:text-white/40">{app.name}</div>
+                                    </td>
+                                    <td className="px-4 py-3">
+                                        <span className={`inline-block px-2 py-0.5 text-xs font-medium rounded-full ${app.app_type === 'container' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300' : 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300'}`}>
+                                            {app.app_type === 'container' ? 'Container' : 'WASM'}
+                                        </span>
                                     </td>
                                     <td className="px-4 py-3 text-black/60 dark:text-white/60">
                                         {app.owner_name || app.owner_email || app.owner_sub.slice(0, 8) + '…'}
