@@ -207,6 +207,8 @@ export default function AdminAppDetailPage() {
                     <h1 className="text-2xl font-semibold">{app.display_name || app.name}</h1>
                     <p className="mt-1 text-sm text-black/50 dark:text-white/50">
                         {app.name} &middot; {app.source_type === 'github' ? 'GitHub' : 'Upload'} &middot; Owner: {app.owner_name || app.owner_email || app.owner_sub}
+                        {app.app_type === 'container' && <span className="ml-2 inline-block px-2 py-0.5 text-xs font-medium rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">Container</span>}
+                        {app.app_type !== 'container' && <span className="ml-2 inline-block px-2 py-0.5 text-xs font-medium rounded-full bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300">WASM</span>}
                     </p>
                 </div>
                 <StatusBadge status={app.status} labels={STATUS_LABELS} colors={STATUS_COLORS} />
@@ -342,6 +344,28 @@ function OverviewTab({ app, versions, builds, deployments }: { app: App; version
                 </section>
             )}
 
+            {app.app_type === 'container' && app.container_image && (
+                <section className="p-5 rounded-xl border border-black/10 dark:border-white/10 space-y-2">
+                    <h2 className="text-sm font-semibold">Container configuration</h2>
+                    <div className="grid grid-cols-2 gap-y-3 gap-x-8 text-sm">
+                        <div>
+                            <div className="text-xs text-black/50 dark:text-white/50">Image</div>
+                            <code className="text-xs mt-0.5 block">{app.container_image}</code>
+                        </div>
+                        {app.container_port != null && (
+                            <div>
+                                <div className="text-xs text-black/50 dark:text-white/50">Port</div>
+                                <div className="mt-0.5">{app.container_port}</div>
+                            </div>
+                        )}
+                        <div>
+                            <div className="text-xs text-black/50 dark:text-white/50">Persistent storage</div>
+                            <div className="mt-0.5">{app.container_storage ? 'Yes' : 'No'}</div>
+                        </div>
+                    </div>
+                </section>
+            )}
+
             {app.cwasm_hash && (
                 <section className="p-5 rounded-xl border border-black/10 dark:border-white/10 space-y-2">
                     <h2 className="text-sm font-semibold">WASM module (app-level)</h2>
@@ -401,10 +425,11 @@ function VersionsTab({ app, versions, builds, enclaves, actionLoading, onReview,
         <div className="space-y-4">
             {versions.map((version) => {
                 const canReview = version.status === 'submitted';
-                const canBuild = version.status === 'approved' && app.source_type === 'github';
+                const canBuild = version.status === 'approved' && app.source_type === 'github' && app.app_type !== 'container';
                 const canDeploy = version.status === 'ready';
                 const selectedEnclave = deployEnclaveId[version.id] || '';
-                const activeEnclaves = enclaves.filter(e => e.status === 'active');
+                const compatibleTeeType = app.app_type === 'container' ? 'tdx' : 'sgx';
+                const activeEnclaves = enclaves.filter(e => e.status === 'active' && (!e.tee_type || e.tee_type === compatibleTeeType));
 
                 return (
                     <section key={version.id} className="p-5 rounded-xl border border-black/10 dark:border-white/10">
@@ -459,7 +484,7 @@ function VersionsTab({ app, versions, builds, enclaves, actionLoading, onReview,
                                             <select value={selectedEnclave} onChange={(e) => setDeployEnclaveId({ ...deployEnclaveId, [version.id]: e.target.value })}
                                                 className="px-2 py-1.5 text-xs rounded-lg border border-black/10 dark:border-white/10 bg-transparent">
                                                 <option value="">Select enclave…</option>
-                                                {activeEnclaves.map(e => <option key={e.id} value={e.id}>{e.name} ({e.country})</option>)}
+                                                {activeEnclaves.map(e => <option key={e.id} value={e.id}>{e.name} ({e.country}){e.tee_type ? ` [${e.tee_type.toUpperCase()}]` : ''}</option>)}
                                             </select>
                                         )}
                                         <button onClick={() => onDeploy(version.id, selectedEnclave || undefined)} disabled={actionLoading !== null}

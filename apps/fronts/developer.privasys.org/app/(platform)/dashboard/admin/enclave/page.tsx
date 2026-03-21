@@ -5,10 +5,10 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import { adminEnclaveHealth, adminInspectEnclave, adminListEnclaves, adminCreateEnclave, adminUpdateEnclave, adminDeleteEnclave } from '~/lib/api';
 import { useSSE } from '~/lib/use-sse';
 import { COUNTRIES, regionForCountry, countryName } from '~/lib/countries';
-import type { Enclave, CreateEnclaveRequest } from '~/lib/types';
+import type { Enclave, CreateEnclaveRequest, TeeType } from '~/lib/types';
 
 const EMPTY_FORM: CreateEnclaveRequest = {
-    name: '', host: '', port: 8445, mr_enclave: '', country: '', region: '', provider: '', owner: '', max_apps: 0,
+    name: '', host: '', port: 8445, tee_type: 'sgx', mr_enclave: '', country: '', region: '', provider: '', owner: '', max_apps: 0,
 };
 
 const ENC_STATUS_COLORS: Record<string, string> = {
@@ -40,6 +40,7 @@ export default function AdminEnclavePage() {
     const [filterProvider, setFilterProvider] = useState('');
     const [filterStatus, setFilterStatus] = useState('');
     const [filterOwner, setFilterOwner] = useState('');
+    const [filterTeeType, setFilterTeeType] = useState('');
     const [page, setPage] = useState(0);
 
     const isManager = session?.roles?.some((r: string) => r.endsWith(':manager') || r === 'privasys-platform:admin') ?? false;
@@ -66,7 +67,7 @@ export default function AdminEnclavePage() {
         if (!session?.accessToken) return;
         setEnclaveHealth(prev => ({ ...prev, [enc.id]: null })); // loading state
         try {
-            const h = await adminEnclaveHealth(session.accessToken, enc.host, enc.port);
+            const h = await adminEnclaveHealth(session.accessToken, enc.host, enc.port, enc.tee_type);
             setEnclaveHealth(prev => ({ ...prev, [enc.id]: h }));
         } catch {
             setEnclaveHealth(prev => ({ ...prev, [enc.id]: { status: 'unreachable', error: 'Could not reach enclave' } }));
@@ -86,19 +87,20 @@ export default function AdminEnclavePage() {
             if (filterProvider && e.provider !== filterProvider) return false;
             if (filterStatus && e.status !== filterStatus) return false;
             if (filterOwner && e.owner !== filterOwner) return false;
+            if (filterTeeType && e.tee_type !== filterTeeType) return false;
             if (q && !e.name.toLowerCase().includes(q) && !e.host.toLowerCase().includes(q)
                 && !e.country.toLowerCase().includes(q) && !e.provider.toLowerCase().includes(q)
                 && !e.owner.toLowerCase().includes(q) && !e.mr_enclave.toLowerCase().includes(q)) return false;
             return true;
         });
-    }, [enclaves, search, filterCountry, filterProvider, filterStatus, filterOwner]);
+    }, [enclaves, search, filterCountry, filterProvider, filterStatus, filterOwner, filterTeeType]);
 
     // Pagination
     const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
     const pageEnclaves = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
     // Reset page when filters change
-    useEffect(() => { setPage(0); }, [search, filterCountry, filterProvider, filterStatus, filterOwner]);
+    useEffect(() => { setPage(0); }, [search, filterCountry, filterProvider, filterStatus, filterOwner, filterTeeType]);
 
     function openCreate() {
         setForm({ ...EMPTY_FORM });
@@ -108,7 +110,7 @@ export default function AdminEnclavePage() {
 
     function openEdit(enc: Enclave) {
         setForm({
-            name: enc.name, host: enc.host, port: enc.port, mr_enclave: enc.mr_enclave,
+            name: enc.name, host: enc.host, port: enc.port, tee_type: enc.tee_type || 'sgx', mr_enclave: enc.mr_enclave,
             country: enc.country, region: enc.region, gps_lat: enc.gps_lat, gps_lon: enc.gps_lon,
             provider: enc.provider, owner: enc.owner, max_apps: enc.max_apps,
         });
@@ -121,7 +123,7 @@ export default function AdminEnclavePage() {
         setFetchingMr(true);
         setError(null);
         try {
-            const info = await adminInspectEnclave(session.accessToken, form.host, form.port || 8445);
+            const info = await adminInspectEnclave(session.accessToken, form.host, form.port || 8445, form.tee_type);
             if (info.mr_enclave) {
                 setForm(f => ({ ...f, mr_enclave: info.mr_enclave! }));
             } else {
@@ -207,6 +209,14 @@ export default function AdminEnclavePage() {
                                 className={INPUT_CLS} />
                         </div>
                         <div>
+                            <label className="block text-xs font-medium mb-1">TEE type</label>
+                            <select value={form.tee_type ?? 'sgx'} onChange={e => setForm(f => ({ ...f, tee_type: e.target.value as TeeType }))}
+                                className={INPUT_CLS}>
+                                <option value="sgx">SGX</option>
+                                <option value="tdx">TDX</option>
+                            </select>
+                        </div>
+                        <div>
                             <label className="block text-xs font-medium mb-1">Port</label>
                             <input type="number" value={form.port} onChange={e => setForm(f => ({ ...f, port: parseInt(e.target.value) || 8445 }))}
                                 className={INPUT_CLS} />
@@ -228,18 +238,20 @@ export default function AdminEnclavePage() {
                             <input type="number" value={form.max_apps ?? 0} onChange={e => setForm(f => ({ ...f, max_apps: parseInt(e.target.value) || 0 }))}
                                 className={INPUT_CLS} />
                         </div>
-                        <div className="col-span-3">
-                            <label className="block text-xs font-medium mb-1">MR_ENCLAVE</label>
-                            <div className="flex gap-2">
-                                <input value={form.mr_enclave ?? ''} onChange={e => setForm(f => ({ ...f, mr_enclave: e.target.value }))}
-                                    placeholder="Hex-encoded measurement hash"
-                                    className={`${INPUT_CLS} font-mono text-xs flex-1`} />
-                                <button type="button" onClick={fetchMrEnclave} disabled={fetchingMr || !form.host}
-                                    className="px-3 py-2 text-xs font-medium rounded-lg border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-40 transition-colors whitespace-nowrap">
-                                    {fetchingMr ? 'Fetching…' : 'Fetch from enclave'}
-                                </button>
+                        {form.tee_type !== 'tdx' && (
+                            <div className="col-span-3">
+                                <label className="block text-xs font-medium mb-1">MR_ENCLAVE</label>
+                                <div className="flex gap-2">
+                                    <input value={form.mr_enclave ?? ''} onChange={e => setForm(f => ({ ...f, mr_enclave: e.target.value }))}
+                                        placeholder="Hex-encoded measurement hash"
+                                        className={`${INPUT_CLS} font-mono text-xs flex-1`} />
+                                    <button type="button" onClick={fetchMrEnclave} disabled={fetchingMr || !form.host}
+                                        className="px-3 py-2 text-xs font-medium rounded-lg border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-40 transition-colors whitespace-nowrap">
+                                        {fetchingMr ? 'Fetching…' : 'Fetch from enclave'}
+                                    </button>
+                                </div>
                             </div>
-                        </div>
+                        )}
                         <div>
                             <label className="block text-xs font-medium mb-1">Country</label>
                             <select value={form.country ?? ''} onChange={e => setForm(f => ({ ...f, country: e.target.value }))}
@@ -315,6 +327,12 @@ export default function AdminEnclavePage() {
                     <option value="maintenance">Maintenance</option>
                     <option value="retired">Retired</option>
                 </select>
+                <select value={filterTeeType} onChange={e => setFilterTeeType(e.target.value)}
+                    className="px-3 py-2 text-sm rounded-lg border border-black/10 dark:border-white/10 bg-transparent">
+                    <option value="">All TEE types</option>
+                    <option value="sgx">SGX</option>
+                    <option value="tdx">TDX</option>
+                </select>
             </div>
 
             {/* Enclave table */}
@@ -333,6 +351,7 @@ export default function AdminEnclavePage() {
                             <thead>
                                 <tr className="border-b border-black/5 dark:border-white/5 bg-black/[0.02] dark:bg-white/[0.02]">
                                     <th className="text-left px-4 py-3 font-medium">Name</th>
+                                    <th className="text-left px-4 py-3 font-medium">TEE</th>
                                     <th className="text-left px-4 py-3 font-medium">Host</th>
                                     <th className="text-left px-4 py-3 font-medium">Location</th>
                                     <th className="text-left px-4 py-3 font-medium">Owner</th>
@@ -352,6 +371,11 @@ export default function AdminEnclavePage() {
                                         >
                                             <td className="px-4 py-3">
                                                 <div className="font-medium">{enc.name}</div>
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                <span className={`inline-block px-2 py-0.5 text-xs font-medium rounded-full ${enc.tee_type === 'tdx' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300' : 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300'}`}>
+                                                    {(enc.tee_type || 'sgx').toUpperCase()}
+                                                </span>
                                             </td>
                                             <td className="px-4 py-3">
                                                 <code className="text-xs">{enc.host}:{enc.port}</code>
@@ -388,7 +412,7 @@ export default function AdminEnclavePage() {
                                         </tr>
                                         {expandedId === enc.id && (
                                             <tr key={`${enc.id}-detail`}>
-                                                <td colSpan={8} className="bg-black/[0.01] dark:bg-white/[0.01] px-6 py-4 border-b border-black/5 dark:border-white/5">
+                                                <td colSpan={9} className="bg-black/[0.01] dark:bg-white/[0.01] px-6 py-4 border-b border-black/5 dark:border-white/5">
                                                     <div className="grid grid-cols-3 gap-y-3 gap-x-8 text-sm">
                                                         <div className="col-span-3 flex items-center gap-3">
                                                             <button onClick={(e) => { e.stopPropagation(); checkHealth(enc); }}

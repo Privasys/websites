@@ -3,7 +3,8 @@
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { createApp, uploadCwasm, checkAppName } from '~/lib/api';
+import { createApp, uploadCwasm, checkAppName, detectAppType } from '~/lib/api';
+import type { AppType } from '~/lib/types';
 
 type Mode = 'github' | 'manual';
 type WizardState = 'input' | 'submitted';
@@ -84,6 +85,16 @@ export default function NewApplicationPage() {
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
+    // App type (auto-detected from repo or manual)
+    const [appType, setAppType] = useState<AppType>('wasm');
+    const [detectedType, setDetectedType] = useState<AppType | null>(null);
+    const [detecting, setDetecting] = useState(false);
+
+    // Container-specific fields
+    const [containerImage, setContainerImage] = useState('');
+    const [containerPort, setContainerPort] = useState('');
+    const [containerStorage, setContainerStorage] = useState(false);
+
     // Name availability check
     const [nameStatus, setNameStatus] = useState<'idle' | 'checking' | 'available' | 'taken'>('idle');
     const [nameReason, setNameReason] = useState('');
@@ -101,6 +112,27 @@ export default function NewApplicationPage() {
         }
         prevInferred.current = inferredName;
     }, [inferredName, mode]);
+
+    // Auto-detect app type from GitHub commit URL
+    useEffect(() => {
+        if (mode !== 'github' || !parsed || !session?.accessToken) {
+            setDetectedType(null);
+            return;
+        }
+        let cancelled = false;
+        setDetecting(true);
+        detectAppType(session.accessToken, commitUrl.trim())
+            .then(res => {
+                if (!cancelled) {
+                    const t = (res.app_type === 'container' ? 'container' : 'wasm') as AppType;
+                    setDetectedType(t);
+                    setAppType(t);
+                }
+            })
+            .catch(() => { if (!cancelled) setDetectedType(null); })
+            .finally(() => { if (!cancelled) setDetecting(false); });
+        return () => { cancelled = true; };
+    }, [mode, parsed?.owner, parsed?.repo, parsed?.commit, session?.accessToken]);
 
     // Debounced name availability check
     useEffect(() => {
@@ -141,6 +173,10 @@ export default function NewApplicationPage() {
                 name: appName,
                 source_type: mode === 'github' ? 'github' : 'upload',
                 commit_url: mode === 'github' ? commitUrl.trim() : undefined,
+                app_type: appType,
+                container_image: appType === 'container' && containerImage ? containerImage : undefined,
+                container_port: appType === 'container' && containerPort ? parseInt(containerPort, 10) : undefined,
+                container_storage: appType === 'container' ? containerStorage : undefined,
             });
 
             if (mode === 'manual' && file) {
@@ -329,6 +365,70 @@ export default function NewApplicationPage() {
                                         <span className="text-black/50 dark:text-white/50">Commit:</span>
                                         <code className="font-mono text-xs">{parsed.commit.slice(0, 12)}</code>
                                     </div>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-black/50 dark:text-white/50">Type:</span>
+                                        {detecting ? (
+                                            <div className="flex items-center gap-1.5">
+                                                <div className="w-3 h-3 border-2 border-black/20 dark:border-white/20 border-t-black dark:border-t-white rounded-full animate-spin" />
+                                                <span className="text-xs text-black/40 dark:text-white/40">Detecting…</span>
+                                            </div>
+                                        ) : (
+                                            <div className="flex items-center gap-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setAppType('wasm')}
+                                                    className={`px-2 py-0.5 text-xs rounded-md border transition-colors ${
+                                                        appType === 'wasm'
+                                                            ? 'border-black dark:border-white bg-black text-white dark:bg-white dark:text-black'
+                                                            : 'border-black/10 dark:border-white/10 hover:border-black/30 dark:hover:border-white/30'
+                                                    }`}
+                                                >
+                                                    WASM App
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setAppType('container')}
+                                                    className={`px-2 py-0.5 text-xs rounded-md border transition-colors ${
+                                                        appType === 'container'
+                                                            ? 'border-black dark:border-white bg-black text-white dark:bg-white dark:text-black'
+                                                            : 'border-black/10 dark:border-white/10 hover:border-black/30 dark:hover:border-white/30'
+                                                    }`}
+                                                >
+                                                    Container
+                                                </button>
+                                                {detectedType && (
+                                                    <span className="text-xs text-black/40 dark:text-white/40">(auto-detected)</span>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                    {appType === 'container' && (
+                                        <>
+                                            <div>
+                                                <label className="block text-xs font-medium text-black/60 dark:text-white/60 mb-1">Container port</label>
+                                                <input
+                                                    type="number"
+                                                    placeholder="8080"
+                                                    value={containerPort}
+                                                    onChange={(e) => setContainerPort(e.target.value)}
+                                                    disabled={submitting}
+                                                    className="w-32 px-3 py-2 rounded-lg border border-black/10 dark:border-white/10 bg-transparent text-sm focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/20 disabled:opacity-50"
+                                                />
+                                                <p className="mt-1 text-xs text-black/40 dark:text-white/40">The port your container listens on.</p>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <input
+                                                    type="checkbox"
+                                                    id="storage"
+                                                    checked={containerStorage}
+                                                    onChange={(e) => setContainerStorage(e.target.checked)}
+                                                    disabled={submitting}
+                                                    className="rounded border-black/20 dark:border-white/20"
+                                                />
+                                                <label htmlFor="storage" className="text-xs text-black/60 dark:text-white/60">Enable encrypted persistent storage</label>
+                                            </div>
+                                        </>
+                                    )}
                                 </div>
                             )}
                             <div className="flex items-center gap-3">
@@ -449,16 +549,20 @@ export default function NewApplicationPage() {
                 </PipelineStep>
 
                 <PipelineStep step={3} active={false} done={false}>
-                    <h2 className="text-lg font-semibold">Reproducible build</h2>
+                    <h2 className="text-lg font-semibold">{appType === 'container' ? 'Image build' : 'Reproducible build'}</h2>
                     <div className="mt-1 text-sm text-black/50 dark:text-white/50">
-                        Compile your application into a .cwasm artifact via GitHub Actions.
+                        {appType === 'container'
+                            ? 'Build your container image via GitHub Actions.'
+                            : 'Compile your application into a .cwasm artifact via GitHub Actions.'}
                     </div>
                 </PipelineStep>
 
                 <PipelineStep step={4} active={false} done={false} last>
                     <h2 className="text-lg font-semibold">Ready</h2>
                     <div className="mt-1 text-sm text-black/50 dark:text-white/50">
-                        Your application is built and ready to deploy.
+                        {appType === 'container'
+                            ? 'Your container is built and ready to deploy to a TDX enclave.'
+                            : 'Your application is built and ready to deploy.'}
                     </div>
                 </PipelineStep>
             </div>

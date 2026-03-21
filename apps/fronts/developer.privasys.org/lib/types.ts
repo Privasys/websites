@@ -1,3 +1,5 @@
+export type AppType = 'wasm' | 'container';
+
 export interface App {
     id: string;
     name: string;
@@ -6,6 +8,7 @@ export interface App {
     owner_sub: string;
     owner_email: string;
     owner_name: string;
+    app_type: AppType;
     source_type: string;
     commit_url?: string;
     github_commit?: string;
@@ -14,6 +17,11 @@ export interface App {
     cwasm_path?: string;
     cwasm_hash?: string;
     cwasm_size?: number;
+    container_image?: string;
+    container_port?: number;
+    container_env?: string;
+    container_storage?: boolean;
+    container_storage_key?: string;
     status: string;
     review_note?: string;
     reviewer_sub?: string;
@@ -46,8 +54,14 @@ export interface CreateAppRequest {
     display_name?: string;
     description?: string;
     source_type: 'upload' | 'github';
+    app_type?: AppType;
     commit_url?: string;
     enclave_id?: string;
+    container_image?: string;
+    container_port?: number;
+    container_env?: Record<string, string>;
+    container_storage?: boolean;
+    container_storage_key?: string;
 }
 
 export interface ReviewRequest {
@@ -120,11 +134,14 @@ export const STATUS_COLORS: Record<AppStatus, string> = {
 };
 
 // Enclave instance
+export type TeeType = 'sgx' | 'tdx';
+
 export interface Enclave {
     id: string;
     name: string;
     host: string;
     port: number;
+    tee_type: TeeType;
     mr_enclave: string;
     country: string;
     region: string;
@@ -143,6 +160,7 @@ export interface CreateEnclaveRequest {
     name: string;
     host: string;
     port: number;
+    tee_type?: TeeType;
     mr_enclave?: string;
     country?: string;
     region?: string;
@@ -162,10 +180,12 @@ export interface AppVersion {
     github_commit?: string;
     gpg_key_id?: string;
     gpg_verified: boolean;
+    app_type: AppType;
     source_type: string;
     cwasm_path?: string;
     cwasm_hash?: string;
     cwasm_size?: number;
+    container_image?: string;
     status: VersionStatus;
     build_id?: string;
     created_at: string;
