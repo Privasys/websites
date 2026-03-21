@@ -48,7 +48,7 @@ export const metadata: Metadata = {
         },
         {
             rel: 'shortcut icon',
-            url: `${FAVICON}/favicon.ico`
+            url: `${FAVICON}/favicon.svg`
         }
     ],
     manifest: `${FAVICON}/site.webmanifest`
