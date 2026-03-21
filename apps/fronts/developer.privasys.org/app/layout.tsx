@@ -32,7 +32,7 @@ export const metadata: Metadata = {
         { rel: 'apple-touch-icon', sizes: '180x180', url: `${FAVICON}/apple-touch-icon.png` },
         { rel: 'icon', type: 'image/png', sizes: '96x96', url: `${FAVICON}/favicon-96x96.png` },
         { rel: 'icon', type: 'image/svg+xml', url: `${FAVICON}/favicon.svg` },
-        { rel: 'shortcut icon', url: `${FAVICON}/favicon.ico` }
+        { rel: 'shortcut icon', url: `${FAVICON}/favicon.svg` }
     ],
     manifest: `${FAVICON}/site.webmanifest`
 };
