@@ -158,7 +158,7 @@ const FOOTER_LINKS = [
     { label: 'Privacy', href: 'https://privasys.org/legal/privacy', external: true },
     { label: 'Terms', href: 'https://privasys.org/legal/terms', external: true },
     { label: 'Modern Slavery', href: 'https://privasys.org/legal/modern-slavery', external: true },
-    { label: 'GitHub', href: 'https://github.com/Privasys', external: true },
+    { label: 'GitHub', href: 'https://github.com/Privasys', external: true }
 ];
 
 function buildVersionString(): string | undefined {

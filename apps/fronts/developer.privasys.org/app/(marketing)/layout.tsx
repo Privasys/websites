@@ -4,7 +4,7 @@ import { Navbar, Footer } from '@privasys/ui';
 const NAV_ITEMS = [
     { label: 'Docs', href: 'https://docs.privasys.org', external: true },
     { label: 'Website', href: 'https://privasys.org', external: true },
-    { label: 'GitHub', href: 'https://github.com/Privasys', external: true },
+    { label: 'GitHub', href: 'https://github.com/Privasys', external: true }
 ];
 
 const FOOTER_LINKS = [
@@ -12,7 +12,7 @@ const FOOTER_LINKS = [
     { label: 'Privacy', href: 'https://privasys.org/legal/privacy', external: true },
     { label: 'Terms', href: 'https://privasys.org/legal/terms', external: true },
     { label: 'Modern Slavery', href: 'https://privasys.org/legal/modern-slavery', external: true },
-    { label: 'GitHub', href: 'https://github.com/Privasys', external: true },
+    { label: 'GitHub', href: 'https://github.com/Privasys', external: true }
 ];
 
 export default function MarketingLayout({ children }: { children: ReactNode }) {

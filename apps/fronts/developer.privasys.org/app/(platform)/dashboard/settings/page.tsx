@@ -45,7 +45,7 @@ export default function SettingsPage() {
                 display_email: displayEmail.trim(),
                 company_name: companyName.trim(),
                 company_domain: companyDomain.trim(),
-                is_individual: isIndividual,
+                is_individual: isIndividual
             });
             setProfile(data);
             setDisplayName(data.display_name || '');
