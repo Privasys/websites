@@ -2406,11 +2406,11 @@ function DeploymentsTab({ app, deployments, versions, enclaves, token, onRefresh
             await deployVersion(token, app.id, selectedVersion, selectedEnclave);
             setSelectedVersion('');
             setSelectedEnclave('');
-            onRefresh();
         } catch (e) {
             setError(e instanceof Error ? e.message : 'Deployment failed');
         } finally {
             setDeploying(false);
+            onRefresh();
         }
     }
 
