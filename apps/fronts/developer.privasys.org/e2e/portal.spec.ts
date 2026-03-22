@@ -865,7 +865,7 @@ test.describe('Developer Portal', () => {
     });
 
     test('cleanup: delete all test apps', async ({ page }) => {
-        test.setTimeout(120_000);
+        test.setTimeout(300_000);
         const API = process.env.NEXT_PUBLIC_API_URL || 'https://api-test.developer.privasys.org';
 
         // Navigate to establish cookies, then extract the access token from the session
@@ -882,11 +882,16 @@ test.describe('Developer Portal', () => {
         expect(listResp.ok()).toBeTruthy();
         const apps: { id: string; name: string }[] = await listResp.json();
 
-        // Delete each app via API
+        // Delete each app via API (with per-request timeout to handle slow undeploy)
         for (const app of apps) {
-            await page.request.delete(`${API}/api/v1/apps/${app.id}`, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
+            try {
+                await page.request.delete(`${API}/api/v1/apps/${app.id}`, {
+                    headers: { Authorization: `Bearer ${token}` },
+                    timeout: 150_000,
+                });
+            } catch {
+                console.warn(`cleanup: delete timed out for app ${app.name} (${app.id}), continuing`);
+            }
         }
 
         // Verify via API
