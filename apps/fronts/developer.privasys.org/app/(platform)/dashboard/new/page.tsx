@@ -93,7 +93,7 @@ export default function NewApplicationPage() {
     // Container-specific fields
     const [containerImage] = useState('');
     const [containerPort, setContainerPort] = useState('');
-    const [containerStorage, setContainerStorage] = useState(false);
+
 
     // Name availability check
     const [nameStatus, setNameStatus] = useState<'idle' | 'checking' | 'available' | 'taken'>('idle');
@@ -176,7 +176,7 @@ export default function NewApplicationPage() {
                 app_type: appType,
                 container_image: appType === 'container' && containerImage ? containerImage : undefined,
                 container_port: appType === 'container' && containerPort ? parseInt(containerPort, 10) : undefined,
-                container_storage: appType === 'container' ? containerStorage : undefined
+
             });
 
             if (mode === 'manual' && file) {
@@ -244,9 +244,13 @@ export default function NewApplicationPage() {
                                 </PipelineStep>
 
                                 <PipelineStep step={3} active={stepIdx === 3} done={stepIdx > 3}>
-                                    <h2 className="text-lg font-semibold">Reproducible build</h2>
+                                    <h2 className="text-lg font-semibold">{submittedApp.source_type === 'github' && appType === 'container' ? 'Image build' : 'Reproducible build'}</h2>
                                     <div className="mt-1 text-sm text-black/50 dark:text-white/50">
-                                        {stepIdx === 3 ? 'Building via GitHub Actions\u2026' : stepIdx > 3 ? 'Build complete.' : 'Compile your application into a .cwasm artifact.'}
+                                        {stepIdx === 3
+                                            ? (appType === 'container' ? 'Building container image via GitHub Actions\u2026' : 'Building via GitHub Actions\u2026')
+                                            : stepIdx > 3
+                                                ? 'Build complete.'
+                                                : (appType === 'container' ? 'Build your container image via GitHub Actions.' : 'Compile your application into a .cwasm artifact.')}
                                     </div>
                                 </PipelineStep>
 
@@ -415,17 +419,6 @@ export default function NewApplicationPage() {
                                                     className="w-32 px-3 py-2 rounded-lg border border-black/10 dark:border-white/10 bg-transparent text-sm focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/20 disabled:opacity-50"
                                                 />
                                                 <p className="mt-1 text-xs text-black/40 dark:text-white/40">The port your container listens on.</p>
-                                            </div>
-                                            <div className="flex items-center gap-2">
-                                                <input
-                                                    type="checkbox"
-                                                    id="storage"
-                                                    checked={containerStorage}
-                                                    onChange={(e) => setContainerStorage(e.target.checked)}
-                                                    disabled={submitting}
-                                                    className="rounded border-black/20 dark:border-white/20"
-                                                />
-                                                <label htmlFor="storage" className="text-xs text-black/60 dark:text-white/60">Enable encrypted persistent storage</label>
                                             </div>
                                         </>
                                     )}

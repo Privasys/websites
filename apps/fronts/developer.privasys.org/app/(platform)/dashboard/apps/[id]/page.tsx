@@ -171,14 +171,16 @@ function AppPipeline({ app, builds }: { app: App; builds: BuildJob[] }) {
     const reviewActive = s === 'submitted' || s === 'under_review';
     const reviewFailed = s === 'rejected';
 
-    const buildDone = ['deploying', 'deployed', 'undeployed', 'built'].includes(s) || (s === 'approved' && !!app.cwasm_hash);
+    const buildDone = ['deploying', 'deployed', 'undeployed', 'built'].includes(s) || (s === 'approved' && !!(app.cwasm_hash || app.container_image));
     const buildActive = s === 'building';
     const buildFailed = s === 'failed' && !!latestBuild?.status && latestBuild.status !== 'success';
 
     const readyDone = buildDone && !buildActive && !buildFailed;
 
     // What should the user know / do next?
-    const needsBuild = s === 'approved' && !app.cwasm_hash && builds.length === 0;
+    const needsBuild = s === 'approved' && !app.cwasm_hash && !app.container_image && builds.length === 0;
+
+    const isContainer = app.app_type === 'container';
 
     return (
         <div className="max-w-xl">
@@ -203,21 +205,22 @@ function AppPipeline({ app, builds }: { app: App; builds: BuildJob[] }) {
             </AppPipelineStep>
 
             <AppPipelineStep step={3} active={buildActive || needsBuild} done={buildDone} failed={buildFailed}>
-                <h2 className="text-lg font-semibold">Reproducible build</h2>
+                <h2 className="text-lg font-semibold">{isContainer ? 'Image build' : 'Reproducible build'}</h2>
                 <div className="mt-1 text-sm text-black/50 dark:text-white/50">
                     {buildFailed
                         ? <span className="text-red-600 dark:text-red-400">Build failed.{latestBuild?.run_url && <> <a href={latestBuild.run_url} target="_blank" rel="noopener noreferrer" className="underline">View build log</a></>}</span>
                         : buildActive
-                            ? <>Building CWASM module…{latestBuild?.run_url && <> <a href={latestBuild.run_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline">View build</a></>}</>
+                            ? <>{isContainer ? 'Building container image' : 'Building CWASM module'}…{latestBuild?.run_url && <> <a href={latestBuild.run_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline">View build</a></>}</>
                             : buildDone
                                 ? <>
-                                    CWASM compiled.
-                                    {app.cwasm_hash && <code className="text-xs font-mono ml-1">{app.cwasm_hash.slice(0, 16)}…</code>}
+                                    {isContainer ? 'Image built.' : 'CWASM compiled.'}
+                                    {!isContainer && app.cwasm_hash && <code className="text-xs font-mono ml-1">{app.cwasm_hash.slice(0, 16)}…</code>}
+                                    {isContainer && app.container_image && <code className="text-xs font-mono ml-1">{app.container_image}</code>}
                                     {latestBuild?.run_url && <> &middot; <a href={latestBuild.run_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline">View build</a></>}
                                 </>
                                 : needsBuild
                                     ? 'Waiting for build to be triggered.'
-                                    : 'Compile your application into a .cwasm artifact.'}
+                                    : isContainer ? 'Build your container image via GitHub Actions.' : 'Compile your application into a .cwasm artifact.'}
                 </div>
             </AppPipelineStep>
 
