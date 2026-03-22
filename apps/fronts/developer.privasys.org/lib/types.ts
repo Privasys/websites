@@ -265,6 +265,7 @@ export interface AttestationQuote {
     raw_base64?: string;
     mr_enclave?: string;
     mr_signer?: string;
+    mr_td?: string;
     format?: string;
 }
 
