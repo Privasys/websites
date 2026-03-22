@@ -734,6 +734,106 @@ test.describe('Developer Portal', () => {
         await expect(page.getByRole('button', { name: 'Deployments' })).toBeVisible();
     });
 
+    test('container deploy to TDX enclave', async ({ page }) => {
+        test.setTimeout(180_000); // 3 minutes — deploy may timeout against TDX enclave
+
+        await page.goto('/dashboard/');
+        await page.waitForSelector('nav', { timeout: 5_000 });
+        await page.waitForTimeout(2_000);
+        const appLink = page.locator('nav a', { hasText: 'container-app-example' });
+        if (!await appLink.isVisible().catch(() => false)) {
+            test.skip(true, 'Container app not created');
+            return;
+        }
+        await appLink.click();
+        await page.waitForURL('**/dashboard/apps/**');
+
+        // Must be in tabbed view (build done)
+        const deploymentsTab = page.getByRole('button', { name: 'Deployments' });
+        try {
+            await deploymentsTab.waitFor({ state: 'visible', timeout: 10_000 });
+        } catch {
+            test.skip(true, 'Container app not built yet — no Deployments tab');
+            return;
+        }
+        await deploymentsTab.click();
+        await page.waitForTimeout(500);
+
+        // Select version
+        const versionSelect = page.locator('select').first();
+        await expect(versionSelect).toBeVisible({ timeout: 5_000 });
+        const versionOptions = versionSelect.locator('option:not([value=""])');
+        const versionCount = await versionOptions.count();
+        expect(versionCount).toBeGreaterThan(0);
+        const versionValue = await versionOptions.first().getAttribute('value');
+        await versionSelect.selectOption(versionValue!);
+
+        // Check if TDX enclaves are available
+        const locationSelect = page.locator('select').nth(1);
+        await expect(locationSelect).toBeVisible();
+        const locationOptions = locationSelect.locator('option:not([value=""])');
+        const locationCount = await locationOptions.count();
+        if (locationCount === 0) {
+            test.skip(true, 'No TDX enclaves registered — cannot deploy container');
+            return;
+        }
+
+        // Verify location shows [TDX] badge (container apps only show TDX enclaves)
+        const firstOptionText = await locationOptions.first().textContent();
+        expect(firstOptionText).toContain('[TDX]');
+
+        // Select location and deploy
+        const locationValue = await locationOptions.first().getAttribute('value');
+        await locationSelect.selectOption(locationValue!);
+
+        const deployBtn = page.getByRole('button', { name: /^deploy$/i });
+        await expect(deployBtn).toBeEnabled();
+
+        await page.screenshot({ path: screenshot('container-deploy-before'), fullPage: true });
+        await deployBtn.click();
+
+        // The deploy is synchronous — wait for it to complete (up to 2.5 min including TDX enclave timeout)
+        // After clicking, the button shows "Deploying…" while the request is in flight
+        // Then deployments list should refresh showing Active or Failed
+
+        // Wait for the deploying spinner to go away (request completes)
+        const deployingBtn = page.getByRole('button', { name: /deploying/i });
+        try {
+            await deployingBtn.waitFor({ state: 'hidden', timeout: 150_000 });
+        } catch { /* may not be visible if deploy was very fast */ }
+
+        await page.screenshot({ path: screenshot('container-deploy-after'), fullPage: true });
+
+        // Deployment should now appear in the deployment history
+        // It can be Active (success) or Failed (e.g. TDX enclave unreachable)
+        const activeStatus = page.locator('text=Active');
+        const failedStatus = page.locator('text=Failed');
+        const deployingStatus = page.locator('text=Deploying');
+        const errorBanner = page.locator('.bg-red-50, [class*="bg-red"]').filter({ hasText: /fail|error|timeout/i });
+
+        const hasActive = await activeStatus.isVisible({ timeout: 5_000 }).catch(() => false);
+        const hasFailed = await failedStatus.isVisible().catch(() => false);
+        const hasDeploying = await deployingStatus.isVisible().catch(() => false);
+        const hasError = await errorBanner.isVisible().catch(() => false);
+
+        // Must have some result — not stuck with no feedback
+        expect(hasActive || hasFailed || hasDeploying || hasError).toBeTruthy();
+
+        if (hasActive) {
+            // Deployment succeeded — verify Stop button
+            const stopBtn = page.getByRole('button', { name: /stop/i });
+            await expect(stopBtn).toBeVisible();
+        }
+
+        if (hasFailed || hasError) {
+            // Deployment failed — verify there's an error message or deployment shows as failed
+            // This is expected if the TDX enclave is not reachable
+            console.log('Container deployment failed (expected in test environment without TDX enclave)');
+        }
+
+        await page.screenshot({ path: screenshot('container-deploy-result'), fullPage: true });
+    });
+
     test('container app detail shows container badge and no WASM info', async ({ page }) => {
         await page.goto('/dashboard/');
         await page.waitForSelector('nav', { timeout: 5_000 });
