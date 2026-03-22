@@ -602,18 +602,15 @@ test.describe('Developer Portal', () => {
 
         // Container-specific fields should appear
         await expect(page.getByText('Container port')).toBeVisible({ timeout: 5_000 });
-        await expect(page.getByText(/encrypted persistent storage/i)).toBeVisible();
 
         // Fill container port
         const portInput = page.locator('input[type="number"][placeholder="8080"]');
         await expect(portInput).toBeVisible();
         await portInput.fill('8080');
 
-        // Toggle storage checkbox
+        // Storage checkbox should NOT exist — all containers have encrypted storage by default
         const storageCheckbox = page.locator('#storage');
-        await expect(storageCheckbox).toBeVisible();
-        await storageCheckbox.check();
-        expect(await storageCheckbox.isChecked()).toBe(true);
+        expect(await storageCheckbox.isVisible().catch(() => false)).toBe(false);
 
         await page.screenshot({ path: screenshot('container-fields'), fullPage: true });
     });
@@ -708,6 +705,33 @@ test.describe('Developer Portal', () => {
         // Verify container badge on detail page
         await expect(page.getByText('Container', { exact: true })).toBeVisible({ timeout: 5_000 });
         await page.screenshot({ path: screenshot('container-app-detail'), fullPage: true });
+    });
+
+    test('container build completes', async ({ page }) => {
+        test.setTimeout(240_000); // 4 minutes — container image build
+
+        await page.goto('/dashboard/');
+        await page.waitForSelector('nav', { timeout: 5_000 });
+        await page.waitForTimeout(2_000);
+        const appLink = page.locator('nav a', { hasText: 'container-app-example' });
+        if (!await appLink.isVisible().catch(() => false)) {
+            test.skip(true, 'Container app not created — skipping build check');
+            return;
+        }
+        await appLink.click();
+        await page.waitForURL('**/dashboard/apps/**');
+
+        // Wait for the build to complete — tabbed view appears when build is done
+        const overviewTab = page.getByRole('button', { name: 'Overview' });
+        await expect(overviewTab).toBeVisible({ timeout: 180_000 });
+
+        await page.screenshot({ path: screenshot('container-build-complete'), fullPage: true });
+
+        // Verify container badge
+        await expect(page.getByText('Container', { exact: true })).toBeVisible({ timeout: 5_000 });
+
+        // Verify the app has Deployments tab (build is done)
+        await expect(page.getByRole('button', { name: 'Deployments' })).toBeVisible();
     });
 
     test('container app detail shows container badge and no WASM info', async ({ page }) => {
