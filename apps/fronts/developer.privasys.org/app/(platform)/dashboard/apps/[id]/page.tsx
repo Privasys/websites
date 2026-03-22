@@ -1264,6 +1264,7 @@ function AttestationTab({ appId, token, deployments, versions }: { appId: string
                                     ...(result.quote.version != null ? [{ label: 'Version', value: String(result.quote.version), desc: 'Quote structure version number.' }] : []),
                                     ...(result.quote.mr_enclave ? [{ label: 'MRENCLAVE', value: result.quote.mr_enclave, desc: 'Hash of the enclave code and initial data. Uniquely identifies the enclave build.' }] : []),
                                     ...(result.quote.mr_signer ? [{ label: 'MRSIGNER', value: result.quote.mr_signer, desc: 'Hash of the enclave signer\'s public key. Identifies who built the enclave.' }] : []),
+                                    ...(result.quote.mr_td ? [{ label: 'MR_TD', value: result.quote.mr_td, desc: 'Measurement of the Trust Domain (TD). Uniquely identifies the TDX virtual machine image and configuration.' }] : []),
                                     ...(result.quote.report_data ? [{ label: 'Report Data', value: result.quote.report_data, desc: result.challenge_mode
                                         ? 'SHA-512( SHA-256(public_key_DER) ‖ challenge_nonce ). A match proves the certificate was generated for your specific request.'
                                         : 'SHA-512( SHA-256(public_key_DER) ‖ timestamp ). Deterministic binding — the certificate\'s NotBefore timestamp is the nonce.' }] : []),
@@ -2389,6 +2390,7 @@ function DeploymentsTab({ app, deployments, versions, enclaves, token, onRefresh
     app: App; deployments: AppDeployment[]; versions: AppVersion[]; enclaves: Enclave[]; token: string; onRefresh: () => void;
 }) {
     const versionMap = Object.fromEntries(versions.map(v => [v.id, v]));
+    const enclaveMap = Object.fromEntries(enclaves.map(e => [`${e.host}:${e.port}`, e]));
     const readyVersions = versions.filter(v => v.status === 'ready');
     const compatibleTeeType = app.app_type === 'container' ? 'tdx' : 'sgx';
     const activeEnclaves = enclaves.filter(e => e.status === 'active' && (!e.tee_type || e.tee_type === compatibleTeeType));
@@ -2503,6 +2505,8 @@ function DeploymentsTab({ app, deployments, versions, enclaves, token, onRefresh
                     <h2 className="text-sm font-semibold">Deployment history</h2>
                     {deployments.map((dep) => {
                         const version = versionMap[dep.version_id];
+                        const enclave = enclaveMap[`${dep.enclave_host}:${dep.enclave_port}`];
+                        const teeType = enclave?.tee_type;
                         const isActive = dep.status === 'active' || dep.status === 'deploying';
                         return (
                             <section key={dep.id} className={`p-5 rounded-xl border ${isActive ? 'border-emerald-200 dark:border-emerald-800/40 bg-emerald-50/30 dark:bg-emerald-900/5' : 'border-black/10 dark:border-white/10'}`}>
@@ -2521,6 +2525,15 @@ function DeploymentsTab({ app, deployments, versions, enclaves, token, onRefresh
                                         {version && (
                                             <span className="text-xs text-black/40 dark:text-white/40">
                                                 v{version.version_number}
+                                            </span>
+                                        )}
+                                        {teeType && (
+                                            <span className={`px-1.5 py-0.5 text-[10px] font-medium rounded ${
+                                                teeType === 'tdx'
+                                                    ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
+                                                    : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+                                            }`}>
+                                                {teeType.toUpperCase()}
                                             </span>
                                         )}
                                     </div>
@@ -2542,6 +2555,12 @@ function DeploymentsTab({ app, deployments, versions, enclaves, token, onRefresh
                                         <div className="text-[10px] uppercase tracking-wider text-black/30 dark:text-white/30">Enclave</div>
                                         <div className="mt-0.5">{dep.enclave_host}:{dep.enclave_port}</div>
                                     </div>
+                                    {app.app_type === 'container' && app.container_image && (
+                                        <div>
+                                            <div className="text-[10px] uppercase tracking-wider text-black/30 dark:text-white/30">Image</div>
+                                            <div className="mt-0.5 font-mono">{app.container_image}</div>
+                                        </div>
+                                    )}
                                     {dep.deployed_at && (
                                         <div>
                                             <div className="text-[10px] uppercase tracking-wider text-black/30 dark:text-white/30">Deployed</div>
