@@ -441,7 +441,7 @@ export default function AppDetailPage() {
         { key: 'store', label: 'App Store' },
         ...(hasActiveDeployment ? [
             { key: 'attestation' as Tab, label: 'Attestation' },
-            { key: 'api' as Tab, label: 'API Testing' }
+            ...(app.app_type !== 'container' ? [{ key: 'api' as Tab, label: 'API Testing' }] : [])
         ] : [])
     ];
 
@@ -1051,7 +1051,7 @@ function AttestationTab({ appId, token, deployments, versions }: { appId: string
                         </svg>
                         <h2 className="text-lg font-semibold mb-1">Remote Attestation</h2>
                         <p className="text-sm text-black/50 dark:text-white/50 max-w-lg mx-auto">
-                            Connect to the enclave via RA-TLS and inspect the x.509 certificate, SGX quote, and all custom attestation extensions.
+                            Connect to the enclave via RA-TLS and inspect the x.509 certificate, attestation quote, and all custom attestation extensions.
                         </p>
                     </div>
 
@@ -1136,7 +1136,7 @@ function AttestationTab({ appId, token, deployments, versions }: { appId: string
                                         )}
                                     </div>
                                     <p className={`text-[11px] mb-2 ${verifyResult === 'match' ? 'text-emerald-700/70 dark:text-emerald-300/60' : verifyResult === 'mismatch' || verifyResult === 'error' ? 'text-red-700/70 dark:text-red-300/60' : 'text-amber-700/70 dark:text-amber-300/60'}`}>
-                                        This certificate was freshly generated in response to your challenge nonce. The enclave bound your nonce into the SGX quote&apos;s ReportData field.
+                                        This certificate was freshly generated in response to your challenge nonce. The enclave bound your nonce into the quote&apos;s ReportData field.
                                     </p>
                                     <div className={`text-[11px] mb-1 ${verifyResult === 'match' ? 'text-emerald-700/70 dark:text-emerald-300/60' : verifyResult === 'mismatch' || verifyResult === 'error' ? 'text-red-700/70 dark:text-red-300/60' : 'text-amber-700/70 dark:text-amber-300/60'}`}>Challenge sent:</div>
                                     <code className={`text-[11px] px-2 py-1 rounded block font-mono break-all ${verifyResult === 'match' ? 'bg-emerald-100/50 dark:bg-emerald-900/20' : verifyResult === 'mismatch' || verifyResult === 'error' ? 'bg-red-100/50 dark:bg-red-900/20' : 'bg-amber-100/50 dark:bg-amber-900/20'}`}>
@@ -1229,7 +1229,7 @@ function AttestationTab({ appId, token, deployments, versions }: { appId: string
                     {result.quote && (
                         <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">
                             <div className="flex items-center gap-2 mb-3">
-                                <h2 className="text-sm font-semibold">SGX Quote</h2>
+                                <h2 className="text-sm font-semibold">{result.quote.type || 'Attestation Quote'}</h2>
                                 {result.quote.is_mock && (
                                     <span className="px-2 py-0.5 text-[10px] font-medium rounded-full bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300">
                                         Mock
@@ -2558,7 +2558,7 @@ function DeploymentsTab({ app, deployments, versions, enclaves, token, onRefresh
                                     {app.app_type === 'container' && app.container_image && (
                                         <div>
                                             <div className="text-[10px] uppercase tracking-wider text-black/30 dark:text-white/30">Image</div>
-                                            <div className="mt-0.5 font-mono">{app.container_image}</div>
+                                            <div className="mt-0.5 font-mono" style={{ overflowWrap: 'break-word' }}>{app.container_image}</div>
                                         </div>
                                     )}
                                     {dep.deployed_at && (
