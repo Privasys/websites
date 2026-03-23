@@ -1,17 +1,40 @@
-const { FlatCompat } = require('@eslint/eslintrc');
-const js = require('@eslint/js');
 const nx = require('@nx/eslint-plugin');
-
-const compat = new FlatCompat({
-    baseDirectory: __dirname,
-    recommendedConfig: js.configs.recommended
-});
+const tsEslint = require('@typescript-eslint/eslint-plugin');
+const tsParser = require('@typescript-eslint/parser');
 
 module.exports = [
-    ...nx.configs['flat/react'],
+    {
+        plugins: {
+            '@nx': nx,
+            '@typescript-eslint': tsEslint
+        }
+    },
+    {
+        files: ['**/*.ts', '**/*.tsx'],
+        languageOptions: {
+            parser: tsParser,
+            parserOptions: {
+                ecmaFeatures: { jsx: true },
+                sourceType: 'module'
+            }
+        },
+        rules: {
+            '@typescript-eslint/no-unused-vars': 'warn',
+            '@typescript-eslint/no-explicit-any': 'warn'
+        }
+    },
     {
         files: ['**/*.ts', '**/*.tsx', '**/*.js', '**/*.jsx'],
-        rules: {}
+        rules: {
+            '@nx/enforce-module-boundaries': [
+                'error',
+                {
+                    enforceBuildableLibDependency: true,
+                    allow: ['^.*/eslint(\\.base)?\\.config\\.[cm]?js$'],
+                    depConstraints: [{ sourceTag: '*', onlyDependOnLibsWithTags: ['*'] }]
+                }
+            ]
+        }
     },
     { ignores: ['.next/**/*', '.source/**/*', 'dist/**/*'] }
 ];
