@@ -452,6 +452,18 @@ test.describe('Container Deploy to TDX', () => {
         }
         await expect(matchBadge).toBeVisible({ timeout: 5_000 });
 
+        // RTMR values from TDX quote should be displayed
+        const verifierSec = page.locator('section').filter({ hasText: 'Event Log Verification' });
+        await expect(verifierSec.getByRole('heading', { name: /RTMR Values/ })).toBeVisible({ timeout: 5_000 });
+
+        // Key boot measurements should be extracted from event log
+        await expect(verifierSec.getByRole('heading', { name: /Key Boot Measurements/ })).toBeVisible({ timeout: 5_000 });
+
+        // dm-verity status should be shown (either root hash or "not configured")
+        const dmVerityPresent = verifierSec.locator('text=dm-verity root hash');
+        const dmVerityAbsent = verifierSec.locator('text=dm-verity not configured');
+        await expect(dmVerityPresent.or(dmVerityAbsent).first()).toBeVisible({ timeout: 5_000 });
+
         // Should show RTMR[0] through RTMR[3] with event counts
         for (let i = 0; i < 4; i++) {
             await expect(page.locator(`button:has-text("RTMR[${i}]")`)).toBeVisible();

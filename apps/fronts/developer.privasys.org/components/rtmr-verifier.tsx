@@ -47,6 +47,21 @@ const EVENT_TYPE_NAMES: Record<number, string> = {
     0x80000010: 'EV_EFI_HCRTM_EVENT',
 };
 
+// Human-readable RTMR descriptions for vTPM source
+const RTMR_LABELS_TPM: Record<number, string> = {
+    0: 'TD firmware (not in vTPM log)',
+    1: 'Boot config (PCR 0–7)',
+    2: 'OS & kernel (PCR 8–15)',
+    3: 'Runtime (unused)',
+};
+
+const RTMR_LABELS_CCEL: Record<number, string> = {
+    0: 'CC_MR 1',
+    1: 'CC_MR 2',
+    2: 'CC_MR 3',
+    3: 'CC_MR 4',
+};
+
 interface AlgDesc {
     id: number;
     size: number;
@@ -67,6 +82,13 @@ interface RtmrResult {
     pcrValues?: Record<number, string>; // per-PCR replayed values (tpm0 source)
 }
 
+interface BootMeasurement {
+    label: string;
+    value: string;
+    pcr: number;
+    rtmr: number;
+}
+
 interface RtmrVerifierProps {
     eventLogBase64: string;
     eventLogSource: string;
@@ -83,11 +105,10 @@ function hexFromBytes(bytes: Uint8Array): string {
 }
 
 function tryDecodeText(data: Uint8Array): string | null {
-    if (data.length === 0 || data.length > 512) return null;
+    if (data.length === 0 || data.length > 2048) return null;
     for (const b of data) {
         if (b !== 0 && (b < 0x20 || b > 0x7e)) return null;
     }
-    // Filter null bytes
     const filtered = data.filter(b => b !== 0);
     if (filtered.length === 0) return null;
     return new TextDecoder().decode(filtered);
@@ -300,6 +321,74 @@ async function replayRtmrs(
     });
 }
 
+function extractBootMeasurements(events: ParsedEvent[], source: string): {
+    measurements: BootMeasurement[];
+    dmVerityHash: string | null;
+} {
+    const mapFn = source === 'ccel' ? ccelMrToRtmr : tpmPcrToRtmr;
+    const measurements: BootMeasurement[] = [];
+    let dmVerityHash: string | null = null;
+    let foundKernel = false;
+    let cmdlineValue: string | null = null;
+    let cmdlinePcr = 8;
+
+    for (const ev of events) {
+        const text = tryDecodeText(ev.data);
+        if (!text) continue;
+
+        // Firmware version (EV_S_CRTM_VERSION)
+        if (ev.eventType === 0x00000008 && text.trim().length > 0) {
+            if (!measurements.some(m => m.label === 'Firmware')) {
+                measurements.push({
+                    label: 'Firmware',
+                    value: text.trim(),
+                    pcr: ev.pcr,
+                    rtmr: mapFn(ev.pcr),
+                });
+            }
+        }
+
+        // Kernel boot line from GRUB (e.g. "linux /vmlinuz-... root=... ro ...")
+        if (/^(linux|linuxefi)\s+\//.test(text) && !foundKernel) {
+            const parts = text.trim().split(/\s+/);
+            foundKernel = true;
+            measurements.push({
+                label: 'Kernel',
+                value: parts[1],
+                pcr: ev.pcr,
+                rtmr: mapFn(ev.pcr),
+            });
+            cmdlineValue = parts.slice(2).join(' ');
+            cmdlinePcr = ev.pcr;
+        }
+
+        // Kernel cmdline measurement (overrides GRUB line — this is the actual measured value)
+        if (text.startsWith('kernel_cmdline:')) {
+            const cmd = text.replace('kernel_cmdline:', '').trim();
+            const parts = cmd.split(/\s+/);
+            cmdlineValue = parts[0]?.startsWith('/') ? parts.slice(1).join(' ') : cmd;
+            cmdlinePcr = ev.pcr;
+        }
+
+        // dm-verity root hash from anywhere in event text
+        const rootHashMatch = text.match(/roothash=([a-f0-9]+)/i);
+        if (rootHashMatch) {
+            dmVerityHash = rootHashMatch[1];
+        }
+    }
+
+    if (cmdlineValue) {
+        measurements.push({
+            label: 'Kernel cmdline',
+            value: cmdlineValue,
+            pcr: cmdlinePcr,
+            rtmr: mapFn(cmdlinePcr),
+        });
+    }
+
+    return { measurements, dmVerityHash };
+}
+
 function generateConsoleSnippet(eventLogBase64: string, source: string): string {
     const isTpm = source !== 'ccel';
     const replaySection = isTpm
@@ -379,6 +468,8 @@ export function RtmrVerifier({ eventLogBase64, eventLogSource, quoteRtmrs }: Rtm
     const [expanded, setExpanded] = useState(false);
     const [selectedRtmr, setSelectedRtmr] = useState<number | null>(null);
     const [snippetCopied, setSnippetCopied] = useState(false);
+    const [bootMeasurements, setBootMeasurements] = useState<BootMeasurement[]>([]);
+    const [dmVerityHash, setDmVerityHash] = useState<string | null>(null);
 
     useEffect(() => {
         (async () => {
@@ -389,6 +480,9 @@ export function RtmrVerifier({ eventLogBase64, eventLogSource, quoteRtmrs }: Rtm
             }
             const r = await replayRtmrs(events, eventLogSource, quoteRtmrs);
             setResults(r);
+            const extracted = extractBootMeasurements(events, eventLogSource);
+            setBootMeasurements(extracted.measurements);
+            setDmVerityHash(extracted.dmVerityHash);
         })();
     }, [eventLogBase64, eventLogSource, quoteRtmrs]);
 
@@ -426,6 +520,8 @@ export function RtmrVerifier({ eventLogBase64, eventLogSource, quoteRtmrs }: Rtm
     const anyTrue = results.some(r => r.match === true);
     const totalEvents = results.reduce((sum, r) => sum + r.events.length, 0);
     const isTpm = eventLogSource !== 'ccel';
+    const rtmrLabels = isTpm ? RTMR_LABELS_TPM : RTMR_LABELS_CCEL;
+    const quoteArr = [quoteRtmrs.rtmr0, quoteRtmrs.rtmr1, quoteRtmrs.rtmr2, quoteRtmrs.rtmr3];
 
     return (
         <section className={`p-5 rounded-xl border ${
@@ -433,6 +529,7 @@ export function RtmrVerifier({ eventLogBase64, eventLogSource, quoteRtmrs }: Rtm
                 ? 'border-red-200/50 dark:border-red-500/20 bg-red-50/30 dark:bg-red-900/10'
                 : 'border-emerald-200/50 dark:border-emerald-500/20 bg-emerald-50/30 dark:bg-emerald-900/10'
         }`}>
+            {/* Header with badge */}
             <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
                     <h2 className="text-sm font-semibold">Event Log Verification</h2>
@@ -460,14 +557,78 @@ export function RtmrVerifier({ eventLogBase64, eventLogSource, quoteRtmrs }: Rtm
                 </button>
             </div>
 
-            <p className="text-xs text-black/40 dark:text-white/40 mb-4">
+            {/* Trust chain explanation */}
+            <p className="text-xs text-black/50 dark:text-white/50 mb-4">
                 {isTpm
-                    ? `The TCG2 event log (vTPM, ${totalEvents} events) was parsed client-side. Individual PCR hash chains were replayed using SHA-384 to verify event log integrity.`
-                    : `The TCG2 event log (CCEL, ${totalEvents} events) was replayed client-side using SHA-384. Each RTMR value was recomputed by extending from zeros and compared with the TDX quote.`
+                    ? `The TDX hardware quote contains RTMR values that attest the TD state, including the vTPM. The vTPM event log (${totalEvents} events) records what was measured into each PCR during boot. Replaying the hash chains verifies the log is consistent with the measured state.`
+                    : `The TDX hardware quote contains RTMR values. The CCEL event log (${totalEvents} events) records what was measured into each RTMR. Replaying the hash chains and comparing to the quote proves the log is authentic.`
                 }
             </p>
 
-            {/* RTMR/PCR summary */}
+            {/* RTMR values from TDX quote */}
+            <div className="mb-4 p-3 rounded-lg bg-black/[0.03] dark:bg-white/[0.03]">
+                <h3 className="text-[11px] font-medium text-black/60 dark:text-white/60 mb-2">RTMR Values (from TDX quote)</h3>
+                <div className="space-y-1.5">
+                    {quoteArr.map((val, i) => (
+                        <div key={i} className="flex items-start gap-2">
+                            <span className="text-[10px] text-black/50 dark:text-white/50 font-mono shrink-0 w-14">RTMR[{i}]</span>
+                            {val ? (
+                                <code className="text-[10px] font-mono break-all text-black/60 dark:text-white/60 flex-1 min-w-0">
+                                    {val}
+                                </code>
+                            ) : (
+                                <span className="text-[10px] text-black/25 dark:text-white/25 italic">not in quote</span>
+                            )}
+                            <span className="text-[9px] text-black/30 dark:text-white/30 shrink-0 hidden sm:inline">
+                                {rtmrLabels[i]}
+                            </span>
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            {/* Key boot measurements extracted from event log */}
+            {bootMeasurements.length > 0 && (
+                <div className="mb-4 p-3 rounded-lg bg-black/[0.03] dark:bg-white/[0.03]">
+                    <h3 className="text-[11px] font-medium text-black/60 dark:text-white/60 mb-2">Key Boot Measurements (from event log)</h3>
+                    <div className="space-y-1.5">
+                        {bootMeasurements.map((m, i) => (
+                            <div key={i} className="flex items-start gap-2">
+                                <span className="text-[10px] text-black/40 dark:text-white/40 shrink-0 w-24">{m.label}</span>
+                                <code className="text-[10px] font-mono break-all text-black/60 dark:text-white/60 flex-1 min-w-0">
+                                    {m.value.length > 120 ? m.value.slice(0, 120) + '…' : m.value}
+                                </code>
+                                <span className="text-[9px] text-black/25 dark:text-white/25 shrink-0 hidden sm:inline">
+                                    PCR {m.pcr} → RTMR[{m.rtmr}]
+                                </span>
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* dm-verity status */}
+                    <div className={`mt-3 pt-2 border-t border-black/5 dark:border-white/5 ${
+                        dmVerityHash
+                            ? 'text-emerald-700 dark:text-emerald-400'
+                            : 'text-black/40 dark:text-white/40'
+                    }`}>
+                        {dmVerityHash ? (
+                            <div className="flex items-start gap-2">
+                                <span className="text-[10px] shrink-0 font-medium">🔑 dm-verity root hash</span>
+                                <code className="text-[10px] font-mono break-all font-medium flex-1 min-w-0">{dmVerityHash}</code>
+                                <span className="text-[9px] text-emerald-600/60 dark:text-emerald-400/60 shrink-0 hidden sm:inline">
+                                    measured in kernel cmdline → RTMR[2]
+                                </span>
+                            </div>
+                        ) : (
+                            <p className="text-[10px]">
+                                dm-verity not configured — no <code className="font-mono bg-black/5 dark:bg-white/5 px-1 rounded">roothash=</code> found in kernel command line
+                            </p>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* PCR/RTMR detail section with RTMR[0-3] buttons */}
             <div className="space-y-2 mb-4">
                 {results.map((r, i) => (
                     <div key={i}>
