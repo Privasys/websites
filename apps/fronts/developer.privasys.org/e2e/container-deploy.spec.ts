@@ -247,6 +247,12 @@ test.describe('Container Deploy to TDX', () => {
         console.log(`Extensions count: ${result.extensions?.length}`);
         console.log(`App extensions count: ${result.app_extensions?.length}`);
         console.log(`MRTD: ${result.quote?.mr_td}`);
+        console.log(`RTMR0: ${result.quote?.rtmr0}`);
+        console.log(`RTMR1: ${result.quote?.rtmr1}`);
+        console.log(`RTMR2: ${result.quote?.rtmr2}`);
+        console.log(`RTMR3: ${result.quote?.rtmr3}`);
+        console.log(`ReportData: ${result.quote?.report_data}`);
+        console.log(`Challenge mode: ${result.challenge_mode}`);
         if (result.app_extensions?.length > 0) {
             for (const ext of result.app_extensions) {
                 console.log(`  App ext: ${ext.label} (${ext.oid}) = ${ext.value_hex?.substring(0, 64)}...`);
@@ -261,6 +267,16 @@ test.describe('Container Deploy to TDX', () => {
         // Should have non-trivial MRTD (not all zeros)
         expect(result.quote.mr_td).toBeTruthy();
         expect(result.quote.mr_td).not.toMatch(/^0+$/);
+
+        // Should have RTMRs (runtime measurement registers)
+        expect(result.quote.rtmr0).toBeTruthy();
+        expect(result.quote.rtmr1).toBeTruthy();
+        expect(result.quote.rtmr2).toBeTruthy();
+        expect(result.quote.rtmr3).toBeTruthy();
+
+        // Should have ReportData
+        expect(result.quote.report_data).toBeTruthy();
+        expect(result.quote.report_data).toHaveLength(128); // 64 bytes = 128 hex chars
 
         // Should have platform extensions
         expect(result.extensions).toBeTruthy();
@@ -281,7 +297,51 @@ test.describe('Container Deploy to TDX', () => {
         // Should have PEM
         expect(result.pem).toContain('BEGIN CERTIFICATE');
 
-        console.log('Attestation verified: TDX quote with platform extensions');
+        console.log('Attestation verified: TDX quote with MRTD, RTMRs, and ReportData');
+    });
+
+    test('challenge-response attestation verifies report data', async ({ page }) => {
+        test.setTimeout(60_000);
+        token = await getToken(page);
+        if (!appId) appId = await discoverAppId(page, token);
+
+        // Generate a random 32-byte challenge (64 hex chars)
+        const challengeBytes = new Uint8Array(32);
+        for (let i = 0; i < 32; i++) challengeBytes[i] = Math.floor(Math.random() * 256);
+        const challengeHex = Array.from(challengeBytes).map(b => b.toString(16).padStart(2, '0')).join('');
+        console.log(`Challenge nonce: ${challengeHex}`);
+
+        const resp = await page.request.get(`${API}/api/v1/apps/${appId}/attest?challenge=${challengeHex}`, {
+            headers: { Authorization: `Bearer ${token}` },
+            timeout: 30_000,
+        });
+        console.log(`Challenge attest response: ${resp.status()}`);
+        expect(resp.ok()).toBeTruthy();
+
+        const result = await resp.json();
+        console.log(`Challenge mode: ${result.challenge_mode}`);
+        console.log(`Challenge verified: ${result.quote?.challenge_verified}`);
+        console.log(`Deterministic verified: ${result.quote?.deterministic_verified}`);
+        console.log(`ReportData: ${result.quote?.report_data}`);
+
+        // Should be in challenge mode
+        expect(result.challenge_mode).toBe(true);
+        expect(result.challenge).toBe(challengeHex);
+
+        // Quote must have ReportData
+        expect(result.quote).toBeTruthy();
+        expect(result.quote.report_data).toBeTruthy();
+
+        // ReportData must be verified by either challenge or deterministic mode
+        const challengeOk = result.quote.challenge_verified === true;
+        const deterministicOk = result.quote.deterministic_verified === true;
+        expect(challengeOk || deterministicOk).toBe(true);
+
+        if (challengeOk) {
+            console.log('Challenge-response attestation verified (server supports 0xFFBB)');
+        } else {
+            console.log('Deterministic attestation verified (server does not support challenge mode)');
+        }
     });
 
     test('attestation tab renders correctly in UI', async ({ page }) => {
