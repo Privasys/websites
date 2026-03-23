@@ -1266,8 +1266,8 @@ function AttestationTab({ appId, token, deployments, versions }: { appId: string
                                     ...(result.quote.mr_signer ? [{ label: 'MRSIGNER', value: result.quote.mr_signer, desc: 'Hash of the enclave signer\'s public key. Identifies who built the enclave.' }] : []),
                                     ...(result.quote.mr_td ? [{ label: 'MR_TD', value: result.quote.mr_td, desc: 'Measurement of the Trust Domain (TD). Uniquely identifies the TDX virtual machine image and configuration.' }] : []),
                                     ...(result.quote.rtmr0 ? [{ label: 'RTMR[0]', value: result.quote.rtmr0, desc: 'Runtime Measurement Register 0 — measures the TD firmware (TDVF) and its configuration.' }] : []),
-                                    ...(result.quote.rtmr1 ? [{ label: 'RTMR[1]', value: result.quote.rtmr1, desc: 'Runtime Measurement Register 1 — measures the OS kernel, initrd, and boot parameters loaded by the firmware.' }] : []),
-                                    ...(result.quote.rtmr2 ? [{ label: 'RTMR[2]', value: result.quote.rtmr2, desc: 'Runtime Measurement Register 2 — measures the OS runtime components and application layer.' }] : []),
+                                    ...(result.quote.rtmr1 ? [{ label: 'RTMR[1]', value: result.quote.rtmr1, desc: 'Runtime Measurement Register 1 (CC MR 2) — measures the EFI boot path: shim and GRUB binaries.' }] : []),
+                                    ...(result.quote.rtmr2 ? [{ label: 'RTMR[2]', value: result.quote.rtmr2, desc: 'Runtime Measurement Register 2 (CC MR 3) — measures OS boot: kernel, initrd, and kernel command line (including the dm-verity root hash).' }] : []),
                                     ...(result.quote.rtmr3 ? [{ label: 'RTMR[3]', value: result.quote.rtmr3, desc: 'Runtime Measurement Register 3 — available for application-defined measurements.' }] : []),
                                     ...(result.quote.report_data ? [{ label: 'Report Data', value: result.quote.report_data, desc: result.challenge_mode
                                         ? 'SHA-512( SHA-256(public_key_DER) ‖ challenge_nonce ). A match proves the certificate was generated for your specific request.'
@@ -1277,6 +1277,11 @@ function AttestationTab({ appId, token, deployments, versions }: { appId: string
                                     <div key={field.label}>
                                         <div className="flex items-center gap-2">
                                             <span className="text-xs text-black/50 dark:text-white/50">{field.label}</span>
+                                            {/^RTMR\[\d\]$/.test(field.label) && quoteVerifyResult?.success && (
+                                                <span className="inline-flex items-center gap-0.5 px-1.5 py-0 text-[9px] font-medium rounded-full bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400">
+                                                    ✓ Verified
+                                                </span>
+                                            )}
                                             <button
                                                 onClick={() => copyToClipboard(field.value, field.label)}
                                                 className="text-[10px] text-black/30 dark:text-white/30 hover:text-black/60 dark:hover:text-white/60"

@@ -43,10 +43,11 @@ To understand why a hardened image matters, it helps to look at what TDX records
 TDX uses a set of registers to capture the boot chain:
 
 - **MRTD** measures the TD firmware (OVMF/TDVF) loaded by the hypervisor. This is set at VM creation and cannot be changed.
-- **RTMR[0]** measures the firmware configuration.
-- **RTMR[1]** measures the bootloader, kernel, initrd, and kernel command line.
+- **RTMR[0]** measures the firmware configuration (CC MR 1).
+- **RTMR[1]** measures the EFI boot path: shim and GRUB binaries (CC MR 2).
+- **RTMR[2]** measures OS boot: kernel, initrd, and kernel command line including the dm-verity root hash (CC MR 3).
 
-A remote verifier who receives a TDX attestation report can check these registers against known-good values. If the bootloader, kernel, and command line match, the verifier knows that the VM booted with the expected software stack.
+A remote verifier who receives a TDX attestation report can check these registers against known-good values. If the bootloader binaries, kernel, and command line match, the verifier knows that the VM booted with the expected software stack.
 
 But this is where the chain typically ends. Once the kernel is running, the contents of the root filesystem are not measured or verified by the hardware. If the filesystem is writable, anything can change after boot. The RTMR values remain the same regardless of what happens to the userland.
 
@@ -62,7 +63,7 @@ dm-verity is a device-mapper target that provides transparent integrity checking
 
 The critical property: the **root hash** of the dm-verity hash tree is a single 256-bit value that summarises the entire filesystem. If you know the root hash, you can verify the exact contents of every file. If any byte changes, the root hash changes.
 
-By embedding the dm-verity root hash in the kernel command line, and because TDX measures the kernel command line into RTMR[1], the root hash becomes part of the TDX attestation report. A remote verifier who checks RTMR[1] is implicitly verifying the integrity of every file on the root filesystem.
+By embedding the dm-verity root hash in the kernel command line, and because GRUB measures the kernel command line into RTMR[2] (via CC MR 3), the root hash becomes part of the TDX attestation report. A remote verifier who checks RTMR[2] is implicitly verifying the integrity of every file on the root filesystem.
 
 ### erofs: Read-Only by Design
 
@@ -91,9 +92,10 @@ Silicon (TDX hardware)
   > MRTD measures the TD firmware (OVMF/TDVF)
     > RTMR[0] measures the firmware configuration
       > Secure Boot verifies shim > GRUB > kernel
-        > RTMR[1] measures bootloader, kernel, initrd,
-          and cmdline (including dm-verity root hash)
-          > dm-verity verifies every block of the rootfs
+        > RTMR[1] measures the EFI boot path (shim + GRUB binaries)
+          > RTMR[2] measures kernel, initrd, and cmdline
+            (including dm-verity root hash)
+            > dm-verity verifies every block of the rootfs
             > All userland binaries are verified
 ```
 
