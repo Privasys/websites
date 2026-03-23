@@ -9,6 +9,7 @@ import type { AppSchema, FunctionSchema, WitType, QuoteVerifyResult, StoreListin
 import { useSSE } from '~/lib/use-sse';
 import type { App, BuildJob, AppVersion, AppDeployment, Enclave, AttestationResult } from '~/lib/types';
 import { STATUS_LABELS, STATUS_COLORS, VERSION_STATUS_LABELS, VERSION_STATUS_COLORS, DEPLOYMENT_STATUS_LABELS, DEPLOYMENT_STATUS_COLORS } from '~/lib/types';
+import { RtmrVerifier } from '~/components/rtmr-verifier';
 
 function StatusBadge({ status, labels, colors }: { status: string; labels: Record<string, string>; colors: Record<string, string> }) {
     return (
@@ -1336,6 +1337,20 @@ function AttestationTab({ appId, token, deployments, versions }: { appId: string
                                 ))}
                             </div>
                         </section>
+                    )}
+
+                    {/* RTMR Event Log Verification */}
+                    {result.event_log_base64 && result.quote && (result.quote.rtmr0 || result.quote.rtmr1 || result.quote.rtmr2 || result.quote.rtmr3) && (
+                        <RtmrVerifier
+                            eventLogBase64={result.event_log_base64}
+                            eventLogSource={result.event_log_source || 'tpm0'}
+                            quoteRtmrs={{
+                                rtmr0: result.quote.rtmr0,
+                                rtmr1: result.quote.rtmr1,
+                                rtmr2: result.quote.rtmr2,
+                                rtmr3: result.quote.rtmr3,
+                            }}
+                        />
                     )}
 
                     {/* Custom OID Extensions */}
