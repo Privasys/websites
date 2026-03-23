@@ -323,6 +323,7 @@ test.describe('Container Deploy to TDX', () => {
         console.log(`Challenge verified: ${result.quote?.challenge_verified}`);
         console.log(`Deterministic verified: ${result.quote?.deterministic_verified}`);
         console.log(`ReportData: ${result.quote?.report_data}`);
+        console.log(`Cert validity: ${result.certificate?.not_before} -> ${result.certificate?.not_after}`);
 
         // Should be in challenge mode
         expect(result.challenge_mode).toBe(true);
@@ -332,16 +333,10 @@ test.describe('Container Deploy to TDX', () => {
         expect(result.quote).toBeTruthy();
         expect(result.quote.report_data).toBeTruthy();
 
-        // ReportData must be verified by either challenge or deterministic mode
-        const challengeOk = result.quote.challenge_verified === true;
-        const deterministicOk = result.quote.deterministic_verified === true;
-        expect(challengeOk || deterministicOk).toBe(true);
-
-        if (challengeOk) {
-            console.log('Challenge-response attestation verified (server supports 0xFFBB)');
-        } else {
-            console.log('Deterministic attestation verified (server does not support challenge mode)');
-        }
+        // Challenge-response MUST be verified — the enclave must bind the
+        // nonce into the TDX quote's ReportData via the 0xFFBB extension.
+        expect(result.quote.challenge_verified).toBe(true);
+        console.log('Challenge-response attestation verified: ReportData = SHA-512(SHA-256(pubkey) || nonce)');
     });
 
     test('attestation tab renders correctly in UI', async ({ page }) => {

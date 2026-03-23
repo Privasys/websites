@@ -10,11 +10,12 @@ Enclave OS Virtual boots from a minimal, read-only, fully measured VM image buil
 ```
 Silicon (TDX hardware)
   └─ MRTD     measures the TD firmware (OVMF/TDVF) loaded by the hypervisor
-      └─ RTMR[0]     measures the firmware configuration
+      └─ RTMR[0]     measures the firmware configuration (CC MR 1)
           └─ Secure Boot     UEFI verifies shimx64.efi → grubx64.efi → kernel
-              └─ RTMR[1]     measures bootloader, kernel, initrd, cmdline (with dm-verity root hash)
-                  └─ dm-verity     every block of the rootfs verified against the hash tree
-                      └─ All userland binaries     any modification = I/O error + kernel panic
+              └─ RTMR[1]     measures the EFI boot path: shim and GRUB binaries (CC MR 2)
+                  └─ RTMR[2]     measures OS boot: kernel, initrd, cmdline with dm-verity root hash (CC MR 3)
+                      └─ dm-verity     every block of the rootfs verified against the hash tree
+                          └─ All userland binaries     any modification = I/O error + kernel panic
 ```
 
 Every byte of code that executes on the machine is either measured by TDX hardware or verified by dm-verity. There are no gaps in the chain.
@@ -104,7 +105,193 @@ Each tagged release of the base image publishes:
 | **dm-verity root hash** | The SHA-256 root of the hash tree covering every byte on the read-only root filesystem. This is the primary code identity measurement. |
 | **Disk image** | Bootable TDX Confidential VM image (cloud-specific formats produced by CI) |
 
-The dm-verity root hash is embedded in the kernel command line (`roothash=...`) and extended into RTMR[1] at boot. Clients can verify it via RA-TLS by inspecting the TDX quote in the server's certificate.
+The dm-verity root hash is embedded in the kernel command line (`roothash=...`) and measured into **RTMR[2]** at boot (via CC MR 3). RTMR[1] (CC MR 2) measures the boot manager code (shim and GRUB binaries). Together, a remote verifier can confirm the exact bootloader AND root filesystem by checking RTMR[1] and RTMR[2] in the TDX quote.
+
+## RTMR Mapping
+
+On Google Cloud's TDX implementation, the CC Event Log (CCEL) uses **CC Measurement Register** indices that map to TDX RTMRs:
+
+| CC MR | RTMR | TCG PCRs | What it measures |
+|-------|------|----------|------------------|
+| 1 | RTMR[0] | PCR 0 | Firmware code (TDVF/OVMF) |
+| 2 | RTMR[1] | PCR 1–7 | EFI boot path: shim binary, GRUB binary, Secure Boot variables, EFI actions |
+| 3 | RTMR[2] | PCR 8–15 | OS boot: GRUB commands, kernel binary, initrd, kernel command line (including `roothash=`), MOK list |
+| 4 | RTMR[3] | PCR 16+ | Application-defined (unused) |
+
+The dm-verity root hash appears in the kernel command line, which GRUB measures into CC MR 3 (RTMR[2]). RTMR[1] captures the bootloader binaries themselves, it changes when the shim or GRUB is updated, but not when the root filesystem changes.
+
+## Verifying RTMRs from the Event Log
+
+You can independently verify that the RTMR values in a TDX quote match the CC Event Log by replaying the SHA-384 extend operations. Each RTMR starts at all zeros and is extended by each measurement event:
+
+```
+RTMR[i] = SHA-384( RTMR[i] ‖ event_digest )
+```
+
+### Reading the event log
+
+The CCEL event log is available inside the VM at `/sys/firmware/acpi/tables/data/CCEL`. Parse it and replay the extends:
+
+```bash
+# Install tpm2-tools (if not already present)
+sudo apt-get install -y tpm2-tools
+
+# Dump the event log in human-readable format
+sudo tpm2_eventlog /sys/kernel/security/tpm0/binary_bios_measurements
+```
+
+### Finding the dm-verity root hash
+
+Search the event log for the kernel command line event. On a tdx-image-base image, it contains the dm-verity root hash:
+
+```bash
+sudo tpm2_eventlog /sys/kernel/security/tpm0/binary_bios_measurements \
+  | grep -A2 "kernel_cmdline"
+# Example output:
+#   kernel_cmdline: /vmlinuz-6.17.0-1009-gcp root=PARTUUID=... roothash=b93b4ee5...
+```
+
+### Replaying RTMR extends (Go)
+
+The following Go program parses the CCEL event log, replays the SHA-384 extends, and prints the computed RTMR values. Compare the output with the RTMR values from the TDX attestation quote.
+
+```go
+package main
+
+import (
+	"crypto/sha512"
+	"encoding/binary"
+	"encoding/hex"
+	"fmt"
+	"io"
+	"os"
+)
+
+const (
+	algSHA384  = 0x000c
+	sha384Size = 48
+	evNoAction = 0x00000003
+)
+
+// CC MR index → RTMR mapping (CCEL format)
+func ccmrToRTMR(ccmr uint32) int {
+	switch ccmr {
+	case 1:
+		return 0 // RTMR[0]
+	case 2:
+		return 1 // RTMR[1]
+	case 3:
+		return 2 // RTMR[2]
+	case 4:
+		return 3 // RTMR[3]
+	default:
+		return -1
+	}
+}
+
+func main() {
+	path := "/sys/firmware/acpi/tables/data/CCEL"
+	if len(os.Args) > 1 {
+		path = os.Args[1]
+	}
+
+	f, err := os.Open(path)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "open: %v\n", err)
+		os.Exit(1)
+	}
+	defer f.Close()
+
+	// Skip TCG_EfiSpecIDEventStruct header (legacy format)
+	var pcr0 uint32
+	var evType0 uint32
+	var digest0 [20]byte
+	var evSize0 uint32
+	binary.Read(f, binary.LittleEndian, &pcr0)
+	binary.Read(f, binary.LittleEndian, &evType0)
+	io.ReadFull(f, digest0[:])
+	binary.Read(f, binary.LittleEndian, &evSize0)
+	headerData := make([]byte, evSize0)
+	io.ReadFull(f, headerData)
+
+	// Parse algorithm descriptors from SpecID header
+	numAlgs := binary.LittleEndian.Uint32(headerData[24:28])
+	type algDesc struct{ id, size uint16 }
+	algs := make([]algDesc, numAlgs)
+	for i, off := uint32(0), 28; i < numAlgs; i, off = i+1, off+4 {
+		algs[i] = algDesc{
+			binary.LittleEndian.Uint16(headerData[off:]),
+			binary.LittleEndian.Uint16(headerData[off+2:]),
+		}
+	}
+
+	// Replay extends
+	var rtmr [4][sha384Size]byte
+
+	for evNum := 1; ; evNum++ {
+		var ccmr, eventType, digestCount uint32
+		if binary.Read(f, binary.LittleEndian, &ccmr) != nil {
+			break
+		}
+		binary.Read(f, binary.LittleEndian, &eventType)
+		binary.Read(f, binary.LittleEndian, &digestCount)
+
+		var sha384Digest [sha384Size]byte
+		for i := uint32(0); i < digestCount; i++ {
+			var algID uint16
+			binary.Read(f, binary.LittleEndian, &algID)
+			if algID == 0xffff {
+				goto done
+			}
+			var size uint16
+			for _, a := range algs {
+				if a.id == algID {
+					size = a.size
+					break
+				}
+			}
+			digest := make([]byte, size)
+			io.ReadFull(f, digest)
+			if algID == algSHA384 {
+				copy(sha384Digest[:], digest)
+			}
+		}
+
+		var evDataSize uint32
+		binary.Read(f, binary.LittleEndian, &evDataSize)
+		evData := make([]byte, evDataSize)
+		io.ReadFull(f, evData)
+
+		if eventType == evNoAction {
+			continue
+		}
+		idx := ccmrToRTMR(ccmr)
+		if idx < 0 || idx > 3 {
+			continue
+		}
+		h := sha512.New384()
+		h.Write(rtmr[idx][:])
+		h.Write(sha384Digest[:])
+		copy(rtmr[idx][:], h.Sum(nil))
+	}
+done:
+	for i := 0; i < 4; i++ {
+		fmt.Printf("RTMR[%d] = %s\n", i, hex.EncodeToString(rtmr[i][:]))
+	}
+}
+```
+
+Run it on the VM and compare with the attestation quote:
+
+```bash
+go build -o rtmr-replay . && sudo ./rtmr-replay
+# RTMR[0] = 75d9f1d1...
+# RTMR[1] = 9cc6d43f...
+# RTMR[2] = c8a9e472...   ← contains the dm-verity root hash measurement
+# RTMR[3] = 000000000...
+```
+
+If the computed values match the RTMR values in the TDX attestation quote, the event log is authentic and the boot chain is verified.
 
 ## How Updates Work
 
