@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef } from 'react';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
 
@@ -16,19 +16,6 @@ type SSEHandler = (event: SSEEvent) => void;
 export function useSSE(token: string | undefined, handler: SSEHandler) {
     const handlerRef = useRef(handler);
     handlerRef.current = handler;
-
-    const connect = useCallback(() => {
-        if (!token) return undefined;
-
-        const es = new EventSource(`${API_URL}/api/v1/events`, {
-            // EventSource doesn't support headers natively.
-            // We'll use a workaround via fetch-based SSE below.
-        } as EventSourceInit);
-
-        // EventSource doesn't support Authorization headers.
-        // Use a custom implementation with fetch instead.
-        return undefined;
-    }, [token]);
 
     useEffect(() => {
         if (!token) return;
@@ -87,7 +74,7 @@ export function useSSE(token: string | undefined, handler: SSEHandler) {
                             }
                         }
                     }
-                } catch (err) {
+                } catch (_e) {
                     if (cancelled) return;
                     // Reconnect with backoff
                     await new Promise(resolve => setTimeout(resolve, retryDelay));

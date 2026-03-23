@@ -5,10 +5,10 @@ import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { useEffect, useState, useCallback } from 'react';
 import { getApp, listBuilds, listVersions, listDeployments, listEnclaves, deleteApp, deployVersion, stopDeployment, attestApp, verifyQuote, getAppSchema, rpcCall, updateStoreListing } from '~/lib/api';
-import type { AppSchema, FunctionSchema, WitType, QuoteVerifyResult, StoreListingUpdate } from '~/lib/api';
+import type { AppSchema, FunctionSchema, WitType, QuoteVerifyResult } from '~/lib/api';
 import { useSSE } from '~/lib/use-sse';
 import type { App, BuildJob, AppVersion, AppDeployment, Enclave, AttestationResult } from '~/lib/types';
-import { STATUS_LABELS, STATUS_COLORS, VERSION_STATUS_LABELS, VERSION_STATUS_COLORS, DEPLOYMENT_STATUS_LABELS, DEPLOYMENT_STATUS_COLORS } from '~/lib/types';
+import { STATUS_LABELS, STATUS_COLORS, DEPLOYMENT_STATUS_LABELS, DEPLOYMENT_STATUS_COLORS } from '~/lib/types';
 import { RtmrVerifier } from '~/components/rtmr-verifier';
 
 function StatusBadge({ status, labels, colors }: { status: string; labels: Record<string, string>; colors: Record<string, string> }) {
@@ -26,92 +26,6 @@ function BuildStatusDot({ status }: { status: string }) {
                 status === 'running' || status === 'dispatched' ? 'bg-blue-500 animate-pulse' :
                     'bg-yellow-500';
     return <span className={`w-2 h-2 rounded-full inline-block ${color}`} />;
-}
-
-// Build pipeline visualization (like GitHub Actions)
-function VersionPipeline({ version, builds }: { version: AppVersion; builds: BuildJob[] }) {
-    const versionBuilds = builds.filter(b => b.version_id === version.id);
-    const latestBuild = versionBuilds[0];
-
-    const steps = [
-        {
-            label: 'Submitted',
-            done: true,
-            active: version.status === 'submitted',
-            icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z'
-        },
-        {
-            label: 'Approved',
-            done: ['approved', 'building', 'ready'].includes(version.status),
-            active: version.status === 'approved',
-            failed: version.status === 'failed' && !latestBuild,
-            icon: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z'
-        },
-        {
-            label: 'Building',
-            done: version.status === 'ready',
-            active: version.status === 'building',
-            failed: version.status === 'failed' && !!latestBuild,
-            icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z',
-            buildUrl: latestBuild?.run_url
-        },
-        {
-            label: 'Ready',
-            done: version.status === 'ready',
-            active: false,
-            icon: 'M5 13l4 4L19 7'
-        }
-    ];
-
-    return (
-        <div className="flex items-center gap-0">
-            {steps.map((step, i) => (
-                <div key={step.label} className="flex items-center">
-                    <div className="flex flex-col items-center">
-                        <div
-                            className={`w-8 h-8 rounded-full flex items-center justify-center border-2 transition-colors ${
-                                step.failed ? 'border-red-500 bg-red-50 dark:bg-red-900/20' :
-                                    step.done ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20' :
-                                        step.active ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' :
-                                            'border-black/10 dark:border-white/10 bg-black/2 dark:bg-white/2'
-                            }`}
-                        >
-                            {step.failed ? (
-                                <svg className="w-4 h-4 text-red-500" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                                    <path d="M6 18L18 6M6 6l12 12" />
-                                </svg>
-                            ) : step.done ? (
-                                <svg className="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                                    <path d="M5 13l4 4L19 7" />
-                                </svg>
-                            ) : step.active ? (
-                                <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
-                            ) : (
-                                <svg className="w-4 h-4 text-black/20 dark:text-white/20" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                                    <path d={step.icon} />
-                                </svg>
-                            )}
-                        </div>
-                        <span className={`text-[10px] mt-1 ${
-                            step.failed ? 'text-red-600 dark:text-red-400 font-medium' :
-                                step.done || step.active ? 'text-black/70 dark:text-white/70 font-medium' :
-                                    'text-black/30 dark:text-white/30'
-                        }`}>
-                            {step.label}
-                        </span>
-                    </div>
-                    {i < steps.length - 1 && (
-                        <div className={`w-12 h-0.5 mb-4 mx-1 ${
-                            step.done ? 'bg-emerald-500' :
-                                step.active ? 'bg-blue-500' :
-                                    step.failed ? 'bg-red-500' :
-                                        'bg-black/10 dark:bg-white/10'
-                        }`} />
-                    )}
-                </div>
-            ))}
-        </div>
-    );
 }
 
 type Tab = 'overview' | 'deployments' | 'store' | 'attestation' | 'api';
@@ -522,7 +436,6 @@ export default function AppDetailPage() {
 // ------- Overview Tab -------
 function OverviewTab({ app, versions, builds, deployments, deleting, onDelete }: { app: App; versions: AppVersion[]; builds: BuildJob[]; deployments: AppDeployment[]; deleting: boolean; onDelete: () => void }) {
     const activeDeployments = deployments.filter(d => d.status === 'active');
-    const latestVersion = versions[0];
 
     return (
         <div className="space-y-6">
@@ -757,104 +670,6 @@ function DangerZone({ app, deleting, onDelete }: { app: App; deleting: boolean; 
     );
 }
 
-// ------- Versions Tab -------
-function VersionsTab({ app, versions, builds, newCommitUrl, onCommitUrlChange, onSubmitVersion, submitting }: {
-    app: App;
-    versions: AppVersion[];
-    builds: BuildJob[];
-    newCommitUrl: string;
-    onCommitUrlChange: (v: string) => void;
-    onSubmitVersion: () => void;
-    submitting: boolean;
-}) {
-    return (
-        <div className="space-y-6">
-            {/* Submit new version */}
-            {app.source_type === 'github' && (
-                <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">
-                    <h2 className="text-sm font-semibold mb-3">Submit new version</h2>
-                    <div className="flex gap-3">
-                        <input
-                            type="text"
-                            value={newCommitUrl}
-                            onChange={(e) => onCommitUrlChange(e.target.value)}
-                            placeholder="https://github.com/owner/repo/commit/abc123..."
-                            className="flex-1 px-3 py-2 text-sm rounded-lg border border-black/10 dark:border-white/10 bg-transparent focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/20"
-                        />
-                        <button
-                            onClick={onSubmitVersion}
-                            disabled={submitting || !newCommitUrl.trim()}
-                            className="px-4 py-2 text-sm font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-80 disabled:opacity-40 transition-opacity"
-                        >
-                            {submitting ? 'Submitting…' : 'Submit'}
-                        </button>
-                    </div>
-                    <p className="mt-2 text-xs text-black/40 dark:text-white/40">
-                        Submit a GPG-signed commit URL to create a new version. The commit will be verified automatically.
-                    </p>
-                </section>
-            )}
-
-            {/* Version list */}
-            {versions.length === 0 ? (
-                <div className="text-center py-12 text-sm text-black/40 dark:text-white/40">
-                    No versions yet. Submit a commit to create the first version.
-                </div>
-            ) : (
-                <div className="space-y-4">
-                    {versions.map((version) => (
-                        <section key={version.id} className="p-5 rounded-xl border border-black/10 dark:border-white/10">
-                            <div className="flex items-center justify-between mb-4">
-                                <div className="flex items-center gap-3">
-                                    <h3 className="text-sm font-semibold">v{version.version_number}</h3>
-                                    {version.github_commit && (
-                                        <code className="text-xs text-black/40 dark:text-white/40 font-mono">
-                                            {version.github_commit.slice(0, 12)}
-                                        </code>
-                                    )}
-                                </div>
-                                <StatusBadge status={version.status} labels={VERSION_STATUS_LABELS} colors={VERSION_STATUS_COLORS} />
-                            </div>
-
-                            {/* Pipeline */}
-                            <VersionPipeline version={version} builds={builds} />
-
-                            {/* Version details */}
-                            <div className="mt-4 grid grid-cols-2 gap-3 text-xs text-black/50 dark:text-white/50">
-                                {version.commit_url && (
-                                    <div className="col-span-2">
-                                        <a
-                                            href={version.commit_url}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="text-blue-600 dark:text-blue-400 hover:underline break-all"
-                                        >
-                                            {version.commit_url}
-                                        </a>
-                                    </div>
-                                )}
-                                <div>Created: {new Date(version.created_at).toLocaleString()}</div>
-                                {version.gpg_verified && (
-                                    <div className="flex items-center gap-1">
-                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                                        GPG verified
-                                    </div>
-                                )}
-                                {version.cwasm_hash && (
-                                    <div className="col-span-2">
-                                        Module: <code className="font-mono">{version.cwasm_hash.slice(0, 16)}…</code>
-                                        {version.cwasm_size != null && ` (${(version.cwasm_size / 1024).toFixed(1)} KB)`}
-                                    </div>
-                                )}
-                            </div>
-                        </section>
-                    ))}
-                </div>
-            )}
-        </div>
-    );
-}
-
 // ------- Attestation Tab -------
 function AttestationTab({ appId, token, deployments, versions }: { appId: string; token: string; deployments: AppDeployment[]; versions: AppVersion[] }) {
     const versionMap = Object.fromEntries(versions.map(v => [v.id, v]));
@@ -975,7 +790,7 @@ function AttestationTab({ appId, token, deployments, versions }: { appId: string
             } else {
                 setVerifyResult('mismatch');
             }
-        } catch (e) {
+        } catch (_e) {
             setVerifyResult('error');
         } finally {
             setVerifying(false);
@@ -1348,7 +1163,7 @@ function AttestationTab({ appId, token, deployments, versions }: { appId: string
                                 rtmr0: result.quote.rtmr0,
                                 rtmr1: result.quote.rtmr1,
                                 rtmr2: result.quote.rtmr2,
-                                rtmr3: result.quote.rtmr3,
+                                rtmr3: result.quote.rtmr3
                             }}
                         />
                     )}
