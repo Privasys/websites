@@ -1,0 +1,503 @@
+'use client';
+
+import { useState, useEffect, useCallback } from 'react';
+
+// TCG2 event log constants
+const ALG_SHA384 = 0x000c;
+const ALG_SHA256 = 0x000b;
+const ALG_SHA1 = 0x0004;
+const SHA384_SIZE = 48;
+const SHA1_SIZE = 20;
+const EV_NO_ACTION = 0x00000003;
+
+// Well-known TCG event type names
+const EVENT_TYPE_NAMES: Record<number, string> = {
+    0x00000000: 'EV_PREBOOT_CERT',
+    0x00000001: 'EV_POST_CODE',
+    0x00000002: 'EV_UNUSED',
+    0x00000003: 'EV_NO_ACTION',
+    0x00000004: 'EV_SEPARATOR',
+    0x00000005: 'EV_ACTION',
+    0x00000006: 'EV_EVENT_TAG',
+    0x00000007: 'EV_S_CRTM_CONTENTS',
+    0x00000008: 'EV_S_CRTM_VERSION',
+    0x00000009: 'EV_CPU_MICROCODE',
+    0x0000000a: 'EV_PLATFORM_CONFIG_FLAGS',
+    0x0000000b: 'EV_TABLE_OF_DEVICES',
+    0x0000000c: 'EV_COMPACT_HASH',
+    0x0000000d: 'EV_IPL',
+    0x0000000e: 'EV_IPL_PARTITION_DATA',
+    0x0000000f: 'EV_NONHOST_CODE',
+    0x00000010: 'EV_NONHOST_CONFIG',
+    0x00000011: 'EV_NONHOST_INFO',
+    0x00000012: 'EV_OMIT_BOOT_DEVICE_EVENTS',
+    0x80000001: 'EV_EFI_VARIABLE_DRIVER_CONFIG',
+    0x80000002: 'EV_EFI_VARIABLE_BOOT',
+    0x80000003: 'EV_EFI_BOOT_SERVICES_APPLICATION',
+    0x80000004: 'EV_EFI_BOOT_SERVICES_DRIVER',
+    0x80000005: 'EV_EFI_RUNTIME_SERVICES_DRIVER',
+    0x80000006: 'EV_EFI_GPT_EVENT',
+    0x80000007: 'EV_EFI_ACTION',
+    0x80000008: 'EV_EFI_PLATFORM_FIRMWARE_BLOB',
+    0x80000009: 'EV_EFI_HANDOFF_TABLES',
+    0x8000000a: 'EV_EFI_PLATFORM_FIRMWARE_BLOB2',
+    0x8000000b: 'EV_EFI_HANDOFF_TABLES2',
+    0x8000000c: 'EV_EFI_VARIABLE_BOOT2',
+    0x8000000e: 'EV_EFI_SPDM_FIRMWARE_BLOB',
+    0x80000010: 'EV_EFI_HCRTM_EVENT',
+};
+
+interface AlgDesc {
+    id: number;
+    size: number;
+}
+
+interface ParsedEvent {
+    num: number;
+    pcr: number;
+    eventType: number;
+    sha384: Uint8Array;
+    data: Uint8Array;
+}
+
+interface RtmrResult {
+    value: string;
+    events: ParsedEvent[];
+    match: boolean | null; // null = no quote to compare
+}
+
+interface RtmrVerifierProps {
+    eventLogBase64: string;
+    eventLogSource: string;
+    quoteRtmrs: {
+        rtmr0?: string;
+        rtmr1?: string;
+        rtmr2?: string;
+        rtmr3?: string;
+    };
+}
+
+function hexFromBytes(bytes: Uint8Array): string {
+    return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+function tryDecodeText(data: Uint8Array): string | null {
+    if (data.length === 0 || data.length > 512) return null;
+    for (const b of data) {
+        if (b !== 0 && (b < 0x20 || b > 0x7e)) return null;
+    }
+    // Filter null bytes
+    const filtered = data.filter(b => b !== 0);
+    if (filtered.length === 0) return null;
+    return new TextDecoder().decode(filtered);
+}
+
+function ccelMrToRtmr(pcr: number): number {
+    switch (pcr) {
+        case 1: return 0;
+        case 2: return 1;
+        case 3: return 2;
+        case 4: return 3;
+        default: return -1;
+    }
+}
+
+function tpmPcrToRtmr(pcr: number): number {
+    if (pcr === 0) return 0;
+    if (pcr >= 1 && pcr <= 7) return 1;
+    if (pcr >= 8 && pcr <= 15) return 2;
+    return 3;
+}
+
+function parseEventLog(base64: string, source: string): { events: ParsedEvent[]; error?: string } {
+    let raw: Uint8Array;
+    try {
+        raw = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+    } catch {
+        return { events: [], error: 'Invalid base64 encoding' };
+    }
+
+    const view = new DataView(raw.buffer, raw.byteOffset, raw.byteLength);
+    let offset = 0;
+
+    function readU16(): number {
+        const v = view.getUint16(offset, true);
+        offset += 2;
+        return v;
+    }
+    function readU32(): number {
+        const v = view.getUint32(offset, true);
+        offset += 4;
+        return v;
+    }
+    function readBytes(n: number): Uint8Array {
+        const slice = raw.slice(offset, offset + n);
+        offset += n;
+        return slice;
+    }
+
+    try {
+        // Legacy header event: PCR (4) + eventType (4) + SHA1 digest (20) + eventSize (4) + eventData
+        const _pcr0 = readU32();
+        const _evType0 = readU32();
+        readBytes(SHA1_SIZE); // SHA-1 digest
+        const evSize0 = readU32();
+        const headerData = readBytes(evSize0);
+
+        // Parse SpecID to get algorithm descriptors
+        // Skip: signature(16) + platformClass(4) + specVersion(3) + uintnSize(1) = 24
+        if (headerData.length < 28) {
+            return { events: [], error: 'Header too short' };
+        }
+        const headerView = new DataView(headerData.buffer, headerData.byteOffset, headerData.byteLength);
+        const numAlgs = headerView.getUint32(24, true);
+
+        const algs: AlgDesc[] = [];
+        let algOffset = 28;
+        for (let i = 0; i < numAlgs; i++) {
+            if (algOffset + 4 > headerData.length) {
+                return { events: [], error: 'Header too short for algorithm descriptors' };
+            }
+            algs.push({
+                id: headerView.getUint16(algOffset, true),
+                size: headerView.getUint16(algOffset + 2, true),
+            });
+            algOffset += 4;
+        }
+
+        // Parse crypto-agile events
+        const events: ParsedEvent[] = [];
+        let evNum = 1;
+
+        while (offset < raw.length - 8) {
+            const startOffset = offset;
+            let pcr: number, eventType: number, digestCount: number;
+            try {
+                pcr = readU32();
+                eventType = readU32();
+                digestCount = readU32();
+            } catch {
+                break;
+            }
+
+            // Sanity check
+            if (digestCount > 16 || digestCount === 0) break;
+
+            let sha384Digest = new Uint8Array(SHA384_SIZE);
+            let valid = true;
+
+            for (let i = 0; i < digestCount; i++) {
+                if (offset + 2 > raw.length) { valid = false; break; }
+                const algID = readU16();
+
+                // End-of-log padding
+                if (algID === 0xffff) return { events };
+
+                const algDesc = algs.find(a => a.id === algID);
+                if (!algDesc) { valid = false; break; }
+
+                if (offset + algDesc.size > raw.length) { valid = false; break; }
+                const digest = readBytes(algDesc.size);
+                if (algID === ALG_SHA384) {
+                    sha384Digest = new Uint8Array(digest);
+                }
+            }
+
+            if (!valid) {
+                offset = startOffset;
+                break;
+            }
+
+            if (offset + 4 > raw.length) break;
+            const eventDataSize = readU32();
+            if (offset + eventDataSize > raw.length) break;
+            const eventData = readBytes(eventDataSize);
+
+            events.push({
+                num: evNum,
+                pcr,
+                eventType,
+                sha384: sha384Digest,
+                data: eventData,
+            });
+            evNum++;
+        }
+
+        return { events };
+    } catch (e) {
+        return { events: [], error: `Parse error: ${e instanceof Error ? e.message : String(e)}` };
+    }
+}
+
+async function replayRtmrs(
+    events: ParsedEvent[],
+    source: string,
+    quoteRtmrs: RtmrVerifierProps['quoteRtmrs']
+): Promise<RtmrResult[]> {
+    const rtmr = [
+        new Uint8Array(SHA384_SIZE),
+        new Uint8Array(SHA384_SIZE),
+        new Uint8Array(SHA384_SIZE),
+        new Uint8Array(SHA384_SIZE),
+    ];
+    const rtmrEvents: ParsedEvent[][] = [[], [], [], []];
+    const mapFn = source === 'ccel' ? ccelMrToRtmr : tpmPcrToRtmr;
+
+    for (const ev of events) {
+        if (ev.eventType === EV_NO_ACTION) continue;
+        const idx = mapFn(ev.pcr);
+        if (idx < 0 || idx > 3) continue;
+
+        // RTMR[i] = SHA-384(RTMR[i] || digest)
+        const concat = new Uint8Array(SHA384_SIZE * 2);
+        concat.set(rtmr[idx], 0);
+        concat.set(ev.sha384, SHA384_SIZE);
+        const hash = await crypto.subtle.digest('SHA-384', concat);
+        rtmr[idx] = new Uint8Array(hash);
+        rtmrEvents[idx].push(ev);
+    }
+
+    const quoteArr = [quoteRtmrs.rtmr0, quoteRtmrs.rtmr1, quoteRtmrs.rtmr2, quoteRtmrs.rtmr3];
+    return rtmr.map((val, i) => {
+        const hex = hexFromBytes(val);
+        const q = quoteArr[i];
+        return {
+            value: hex,
+            events: rtmrEvents[i],
+            match: q ? hex === q : null,
+        };
+    });
+}
+
+function generateConsoleSnippet(eventLogBase64: string, source: string): string {
+    return `// RTMR Replay — paste in browser console (uses SubtleCrypto)
+(async () => {
+  const b64 = "${eventLogBase64.length > 200 ? eventLogBase64.slice(0, 100) + '...' : eventLogBase64}";
+  // Full base64 is ${eventLogBase64.length} chars — copy from the attestation response
+  const raw = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+  const view = new DataView(raw.buffer);
+  let off = 0;
+  const r16 = () => { const v = view.getUint16(off, true); off += 2; return v; };
+  const r32 = () => { const v = view.getUint32(off, true); off += 4; return v; };
+  const rB = n => { const s = raw.slice(off, off + n); off += n; return s; };
+  const hex = b => Array.from(b).map(x => x.toString(16).padStart(2, '0')).join('');
+
+  // Parse legacy header
+  r32(); r32(); rB(20); const hs = r32(); const hd = rB(hs);
+  const hdv = new DataView(hd.buffer, hd.byteOffset, hd.byteLength);
+  const nA = hdv.getUint32(24, true);
+  const algs = [];
+  let ao = 28;
+  for (let i = 0; i < nA; i++) { algs.push({id: hdv.getUint16(ao, true), sz: hdv.getUint16(ao+2, true)}); ao += 4; }
+
+  // Parse events & replay
+  const rtmr = [new Uint8Array(48), new Uint8Array(48), new Uint8Array(48), new Uint8Array(48)];
+  const map = ${source === 'ccel'
+        ? 'p => p === 1 ? 0 : p === 2 ? 1 : p === 3 ? 2 : p === 4 ? 3 : -1'
+        : 'p => p === 0 ? 0 : p <= 7 ? 1 : p <= 15 ? 2 : 3'};
+  let evNum = 0;
+  while (off < raw.length - 8) {
+    const pcr = r32(), evType = r32(), dc = r32();
+    if (dc > 16 || dc === 0) break;
+    let sha384 = new Uint8Array(48);
+    for (let i = 0; i < dc; i++) {
+      const aid = r16(); if (aid === 0xffff) { off = raw.length; break; }
+      const a = algs.find(x => x.id === aid); if (!a) break;
+      const d = rB(a.sz); if (aid === 0x000c) sha384 = d;
+    }
+    const eds = r32(), ed = rB(eds);
+    if (evType === 3) continue; // EV_NO_ACTION
+    const idx = map(pcr);
+    if (idx < 0 || idx > 3) continue;
+    const c = new Uint8Array(96); c.set(rtmr[idx]); c.set(sha384, 48);
+    rtmr[idx] = new Uint8Array(await crypto.subtle.digest('SHA-384', c));
+    evNum++;
+  }
+  console.log('RTMR replay from ${source} event log (' + evNum + ' events):');
+  rtmr.forEach((v, i) => console.log('  RTMR[' + i + '] = ' + hex(v)));
+})();`;
+}
+
+export function RtmrVerifier({ eventLogBase64, eventLogSource, quoteRtmrs }: RtmrVerifierProps) {
+    const [results, setResults] = useState<RtmrResult[] | null>(null);
+    const [parseError, setParseError] = useState<string | null>(null);
+    const [expanded, setExpanded] = useState(false);
+    const [selectedRtmr, setSelectedRtmr] = useState<number | null>(null);
+    const [snippetCopied, setSnippetCopied] = useState(false);
+
+    useEffect(() => {
+        (async () => {
+            const { events, error } = parseEventLog(eventLogBase64, eventLogSource);
+            if (error) {
+                setParseError(error);
+                return;
+            }
+            const r = await replayRtmrs(events, eventLogSource, quoteRtmrs);
+            setResults(r);
+        })();
+    }, [eventLogBase64, eventLogSource, quoteRtmrs]);
+
+    const copySnippet = useCallback(() => {
+        const snippet = generateConsoleSnippet(eventLogBase64, eventLogSource);
+        navigator.clipboard.writeText(snippet).then(() => {
+            setSnippetCopied(true);
+            setTimeout(() => setSnippetCopied(false), 2000);
+        });
+    }, [eventLogBase64, eventLogSource]);
+
+    if (parseError) {
+        return (
+            <section className="p-5 rounded-xl border border-amber-200/50 dark:border-amber-500/20 bg-amber-50/30 dark:bg-amber-900/10">
+                <h2 className="text-sm font-semibold mb-2">RTMR Verification</h2>
+                <p className="text-xs text-amber-700 dark:text-amber-400">Failed to parse event log: {parseError}</p>
+            </section>
+        );
+    }
+
+    if (!results) {
+        return (
+            <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">
+                <h2 className="text-sm font-semibold mb-2">RTMR Verification</h2>
+                <div className="flex items-center gap-2 text-xs text-black/50 dark:text-white/50">
+                    <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/></svg>
+                    Replaying event log…
+                </div>
+            </section>
+        );
+    }
+
+    const allMatch = results.every(r => r.match === true || r.match === null);
+    const anyMismatch = results.some(r => r.match === false);
+    const totalEvents = results.reduce((sum, r) => sum + r.events.length, 0);
+
+    return (
+        <section className={`p-5 rounded-xl border ${
+            anyMismatch
+                ? 'border-red-200/50 dark:border-red-500/20 bg-red-50/30 dark:bg-red-900/10'
+                : 'border-emerald-200/50 dark:border-emerald-500/20 bg-emerald-50/30 dark:bg-emerald-900/10'
+        }`}>
+            <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                    <h2 className="text-sm font-semibold">RTMR Verification</h2>
+                    {allMatch && !anyMismatch && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400">
+                            ✓ All RTMRs match event log replay
+                        </span>
+                    )}
+                    {anyMismatch && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded-full bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400">
+                            ✗ RTMR mismatch detected
+                        </span>
+                    )}
+                </div>
+                <button
+                    onClick={() => setExpanded(!expanded)}
+                    className="text-[10px] text-black/40 dark:text-white/40 hover:text-black/60 dark:hover:text-white/60"
+                >
+                    {expanded ? '▾ Collapse' : '▸ Details'}
+                </button>
+            </div>
+
+            <p className="text-xs text-black/40 dark:text-white/40 mb-4">
+                The TCG2 event log ({eventLogSource === 'ccel' ? 'CCEL' : 'vTPM'}, {totalEvents} events) was replayed client-side using SHA-384.
+                Each RTMR value was recomputed by extending from zeros and compared with the TDX quote.
+            </p>
+
+            {/* RTMR summary */}
+            <div className="space-y-2 mb-4">
+                {results.map((r, i) => (
+                    <div key={i}>
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={() => setSelectedRtmr(selectedRtmr === i ? null : i)}
+                                className="text-xs text-black/50 dark:text-white/50 hover:text-black/70 dark:hover:text-white/70"
+                            >
+                                {selectedRtmr === i ? '▾' : '▸'} RTMR[{i}]
+                            </button>
+                            <span className="text-[10px] text-black/30 dark:text-white/30">
+                                {r.events.length} event{r.events.length !== 1 ? 's' : ''}
+                            </span>
+                            {r.match === true && (
+                                <span className="text-[9px] px-1.5 py-0 rounded-full bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 font-medium">
+                                    ✓ Match
+                                </span>
+                            )}
+                            {r.match === false && (
+                                <span className="text-[9px] px-1.5 py-0 rounded-full bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 font-medium">
+                                    ✗ Mismatch
+                                </span>
+                            )}
+                            {r.match === null && r.events.length === 0 && (
+                                <span className="text-[9px] text-black/25 dark:text-white/25">no events</span>
+                            )}
+                        </div>
+                        <code className="text-[10px] bg-black/5 dark:bg-white/5 px-2 py-0.5 rounded block mt-0.5 font-mono break-all text-black/60 dark:text-white/60">
+                            {r.value}
+                        </code>
+
+                        {/* Event table for selected RTMR */}
+                        {selectedRtmr === i && r.events.length > 0 && (
+                            <div className="mt-2 ml-4 space-y-1">
+                                {r.events.map((ev) => {
+                                    const text = tryDecodeText(ev.data);
+                                    const hasRootHash = text ? /roothash=/.test(text) : false;
+                                    const typeName = EVENT_TYPE_NAMES[ev.eventType] || `0x${ev.eventType.toString(16).padStart(8, '0')}`;
+                                    return (
+                                        <div
+                                            key={ev.num}
+                                            className={`text-[10px] font-mono p-1.5 rounded ${
+                                                hasRootHash
+                                                    ? 'bg-amber-100/80 dark:bg-amber-900/30 border border-amber-300/50 dark:border-amber-600/30'
+                                                    : 'bg-black/3 dark:bg-white/3'
+                                            }`}
+                                        >
+                                            <div className="flex items-center gap-2 text-black/50 dark:text-white/50">
+                                                <span>#{ev.num}</span>
+                                                <span>{eventLogSource === 'ccel' ? `CC_MR=${ev.pcr}` : `PCR=${ev.pcr}`}</span>
+                                                <span className={hasRootHash ? 'text-amber-800 dark:text-amber-300 font-semibold' : ''}>{typeName}</span>
+                                            </div>
+                                            <div className="text-black/40 dark:text-white/40 break-all mt-0.5">
+                                                digest: {hexFromBytes(ev.sha384).slice(0, 32)}…
+                                            </div>
+                                            {text && (
+                                                <div className={`mt-0.5 break-all ${
+                                                    hasRootHash
+                                                        ? 'text-amber-900 dark:text-amber-200 font-medium'
+                                                        : 'text-black/35 dark:text-white/35'
+                                                }`}>
+                                                    {hasRootHash ? '🔑 ' : ''}data: {text.length > 200 ? text.slice(0, 200) + '…' : text}
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
+                ))}
+            </div>
+
+            {/* Console snippet */}
+            {expanded && (
+                <div className="mt-4 pt-4 border-t border-black/5 dark:border-white/5">
+                    <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-medium text-black/60 dark:text-white/60">Verify independently</span>
+                        <button
+                            onClick={copySnippet}
+                            className="text-[10px] px-2 py-0.5 rounded bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 text-black/50 dark:text-white/50"
+                        >
+                            {snippetCopied ? '✓ Copied' : 'Copy snippet'}
+                        </button>
+                    </div>
+                    <p className="text-[11px] text-black/35 dark:text-white/35 mb-2">
+                        Paste this in your browser console to independently replay the event log and verify the RTMR values match the TDX quote.
+                        The snippet uses only the Web Crypto API (SubtleCrypto SHA-384) — no external dependencies.
+                    </p>
+                    <pre className="text-[10px] bg-black/5 dark:bg-white/5 p-3 rounded-lg overflow-x-auto font-mono text-black/60 dark:text-white/60 max-h-48 overflow-y-auto">
+                        {generateConsoleSnippet(eventLogBase64, eventLogSource)}
+                    </pre>
+                </div>
+            )}
+        </section>
+    );
+}

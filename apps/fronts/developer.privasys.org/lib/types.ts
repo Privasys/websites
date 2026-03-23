@@ -299,4 +299,7 @@ export interface AttestationResult {
     challenge?: string;
     // Stored CWASM hash for verification against APP_CODE_HASH_OID (3.2)
     cwasm_hash?: string;
+    // TCG2 event log for RTMR replay verification (TDX only)
+    event_log_base64?: string;
+    event_log_source?: string;
 }
