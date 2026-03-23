@@ -1,0 +1,11 @@
+{
+    "title": "Developer Platform",
+    "defaultOpen": true,
+    "pages": [
+        "getting-started",
+        "deploy-wasm",
+        "deploy-container",
+        "attestation",
+        "app-lifecycle"
+    ]
+}

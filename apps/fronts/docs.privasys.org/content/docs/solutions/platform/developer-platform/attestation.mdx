@@ -1,0 +1,112 @@
+---
+title: Attestation and Verification
+description: Verify that your application is running inside genuine hardware enclaves using the Developer Platform's built-in attestation tools.
+---
+
+Every application deployed on the Privasys Platform is protected by hardware-based attestation. The Developer Platform provides an interactive attestation panel so you can inspect and verify your deployment without writing any code.
+
+## What is attestation?
+
+Remote attestation lets a client confirm three things:
+
+1. **The hardware is genuine** — the CPU is a real Intel SGX or TDX processor, verified by Intel's provisioning infrastructure.
+2. **The software is the expected version** — the measurements (MRENCLAVE for SGX, RTMR registers for TDX) match a known-good build.
+3. **The connection is end-to-end encrypted** — the TLS certificate is bound to the enclave identity, so there is no proxy or intermediary that can read the traffic.
+
+This is achieved through **RA-TLS** (Remote Attestation TLS), which embeds a hardware-signed quote inside the TLS certificate.
+
+## Using the attestation panel
+
+Each deployed application has an **Attestation** tab in the Developer Platform. The panel provides:
+
+### Certificate details
+
+| Field | Description |
+|-------|-------------|
+| **Subject** | The common name of the application |
+| **Issuer** | Self-signed by the enclave |
+| **Valid from / to** | Certificate validity window |
+| **Fingerprint** | SHA-256 fingerprint of the certificate |
+
+The certificate is self-signed because the enclave is its own root of trust — the trust chain goes through the hardware quote, not a traditional CA.
+
+### Quote data
+
+The attestation quote is the hardware-signed evidence. The panel shows:
+
+#### For SGX (WASM apps)
+
+| Field | Description |
+|-------|-------------|
+| **MRENCLAVE** | SHA-256 hash of the enclave binary. Uniquely identifies the exact code and data loaded into the enclave. |
+| **MRSIGNER** | Hash of the enclave signing key. Identifies the enclave publisher. |
+| **ISV Product ID** | Product identifier assigned by the signer |
+| **ISV SVN** | Security version number |
+| **Quote status** | Result of verifying the quote signature against Intel's root CA |
+
+#### For TDX (Container apps)
+
+| Field | Description |
+|-------|-------------|
+| **MRTD** | Measurement of the initial TD contents |
+| **RTMR[0]** | UEFI firmware measurement |
+| **RTMR[1]** | OS kernel and initrd measurement |
+| **RTMR[2]** | OS configuration measurement |
+| **RTMR[3]** | Application-layer measurement |
+| **SEAMSVN** | TDX module security version |
+
+### Platform extensions (WASM)
+
+For WASM applications, the RA-TLS certificate includes custom X.509 extensions under Privasys OIDs that describe the platform configuration:
+
+| OID | Content |
+|-----|---------|
+| `1.3.6.1.4.1.65230.1.1` | Config Merkle root (covers all enclave settings) |
+| `1.3.6.1.4.1.65230.1.2` | Config Merkle tree (full tree for verification) |
+| `1.3.6.1.4.1.65230.1.3` | Server configuration hash |
+| `1.3.6.1.4.1.65230.1.4` | RA-TLS certificate hash |
+
+### Workload extensions (WASM)
+
+Each deployed WASM application adds its own extensions:
+
+| OID | Content |
+|-----|---------|
+| `1.3.6.1.4.1.65230.2.1` | Application name |
+| `1.3.6.1.4.1.65230.2.2` | Route prefix |
+| `1.3.6.1.4.1.65230.2.3` | SHA-256 code hash of the WASM binary |
+
+This means the certificate attests not just the enclave, but the specific application running inside it.
+
+## Verification actions
+
+The attestation panel provides buttons to:
+
+- **Request fresh certificates** — triggers a new RA-TLS handshake. Useful to confirm the enclave is still live and measurements have not changed.
+- **Challenge mode** — sends a random nonce. The enclave signs the nonce with the RA-TLS certificate private key, proving that the quote and the TLS session are bound together. This defeats replay attacks.
+- **Download PEM** — downloads the RA-TLS certificate for offline inspection or integration with verification tooling.
+- **View raw quote** — shows the hex-encoded attestation quote for manual inspection.
+
+## Programmatic verification
+
+Beyond the UI, you can verify attestation programmatically using the [verification libraries](/solutions/platform/verification-libraries):
+
+- **JavaScript / TypeScript** — `@aspect-apps/ra-tls-verify`
+- **Go** — `github.com/aspect-apps/ra-tls-verify-go`
+
+These libraries connect to your deployed application, validate the RA-TLS certificate, extract the quote, and verify it against Intel's root of trust.
+
+Example verification flow:
+
+1. Connect to the application endpoint over HTTPS
+2. Extract the RA-TLS certificate from the TLS handshake
+3. Parse the X.509 extensions to get the attestation quote
+4. Verify the quote signature against Intel's provisioning certificate chain
+5. Compare MRENCLAVE or RTMR values against expected measurements
+6. (For WASM) compare the code hash extension against the expected build output
+
+## Next steps
+
+- [Verification libraries](/solutions/platform/verification-libraries) for client-side integration
+- [Deploy WASM](/solutions/platform/developer-platform/deploy-wasm) to understand how code hashes are generated
+- [Deploy containers](/solutions/platform/developer-platform/deploy-container) to understand TDX measurements

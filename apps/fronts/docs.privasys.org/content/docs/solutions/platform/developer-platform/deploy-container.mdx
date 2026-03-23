@@ -1,0 +1,83 @@
+---
+title: Deploy Containers
+description: Deploy a container application on the Privasys Developer Platform inside Enclave OS Virtual (TDX).
+---
+
+Container applications run inside **Enclave OS Virtual** on Intel TDX hardware, providing hardware-level memory encryption and attestation for standard Docker/OCI images.
+
+## Prerequisites
+
+- A GitHub account (for authentication)
+- A publicly accessible container image (from GitHub Container Registry, Docker Hub, or any OCI registry)
+
+## Submitting a container application
+
+1. Go to **Dashboard > New Application**
+2. Select **Container** as the application type
+3. Provide the container image reference (e.g. `ghcr.io/org/app:v1.0.0`)
+4. Configure the deployment settings (see below)
+5. Submit the application
+
+### Container settings
+
+| Setting | Description |
+|---------|-------------|
+| **Image reference** | Full image URI including tag or digest. Use a digest (`@sha256:...`) for reproducibility. |
+| **Port** | The port your container listens on. Only one HTTP port is exposed through the RA-TLS proxy. |
+| **Environment variables** | Key-value pairs injected at runtime. Secrets are delivered over the RA-TLS channel. |
+| **Encrypted storage** | Toggle to enable an encrypted filesystem volume for persistent data. |
+
+## What happens on deployment
+
+When a container application is deployed:
+
+1. Enclave OS Virtual boots on a TDX-enabled node
+2. The UEFI firmware measures the OS image into TDX **RTMR** registers
+3. The container image is pulled over an attested channel
+4. The container starts with the configured port, environment variables, and storage
+5. An RA-TLS proxy terminates TLS in front of your container, serving certificates that include TDX attestation evidence
+6. The deployment is complete when the container passes a health check
+
+### Attestation for containers
+
+Container deployments are attested through TDX RTMR registers:
+
+| Register | Measures |
+|----------|----------|
+| RTMR[0] | UEFI firmware |
+| RTMR[1] | OS kernel and initrd |
+| RTMR[2] | OS configuration and runtime |
+| RTMR[3] | Application layer (container image digest, environment hash) |
+
+Clients can verify the full boot chain from firmware through to your application. The RA-TLS certificate includes quotes signed by the TDX hardware, which can be validated against Intel's provisioning certificates.
+
+## Image best practices
+
+**Pin to a digest.** Tags like `:latest` or `:v1` can change. Using a digest (`@sha256:abc123...`) ensures that attestation measurements remain stable and verifiable.
+
+**Minimise the image.** Smaller images reduce the attack surface. Use multi-stage builds and distroless or scratch base images where possible.
+
+**Do not embed secrets in the image.** Use environment variables delivered via the platform's encrypted channel instead.
+
+## Encrypted storage
+
+When encrypted storage is enabled, the container receives a mounted volume that is:
+
+- Encrypted at rest using keys derived inside the enclave
+- Bound to the enclave identity (sealed data)
+- Transparent to the application (standard filesystem operations)
+
+Data persists across container restarts on the same enclave but is inaccessible outside that specific enclave instance.
+
+## Networking
+
+Traffic to and from the container flows through the RA-TLS proxy:
+
+- **Inbound:** Clients connect over HTTPS. The proxy terminates TLS using the RA-TLS certificate (which embeds the TDX attestation quote). Requests are forwarded to your container on the configured port.
+- **Outbound:** The container can make outbound connections. DNS resolution and egress work normally.
+
+## Next steps
+
+- [Attestation and verification](/solutions/platform/developer-platform/attestation)
+- [Application lifecycle](/solutions/platform/developer-platform/app-lifecycle)
+- [Enclave OS Virtual architecture](/solutions/enclave-os/enclave-os-virtual/architecture)

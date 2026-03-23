@@ -1,0 +1,94 @@
+---
+title: Application Lifecycle
+description: Understand the states an application moves through from submission to deployment on the Privasys Developer Platform.
+---
+
+Every application on the Developer Platform follows a defined lifecycle from submission through to deployment. This page explains each state and what to expect at each stage.
+
+## Lifecycle states
+
+```
+submitted → under_review → approved → building → built → deployed
+```
+
+| State | Description |
+|-------|-------------|
+| **Submitted** | The application has been submitted via the dashboard. It appears in your application list. |
+| **Under review** | A platform administrator is reviewing the submission for compliance and correctness. |
+| **Approved** | The application has passed review. A build is triggered automatically. |
+| **Building** | A reproducible build is running (WASM via GitHub Actions, or container image pull for containers). Progress is visible in the Builds tab. |
+| **Built** | The build has completed successfully. The artefact is ready for deployment. |
+| **Deployed** | The application is live inside an enclave. The attestation tab is active and the endpoint is reachable. |
+
+## Submission
+
+When you submit an application, you provide:
+
+- **Application type** — WASM module or container
+- **Source** — GitHub commit URL (WASM), `.cwasm` upload (WASM), or container image reference (Container)
+- **Metadata** — name, description, and deployment configuration
+
+The application enters the **submitted** state and appears in your dashboard immediately.
+
+## Review
+
+Applications go through a review process before they are deployed. During review, the platform checks:
+
+- The source is reachable and valid
+- The application type matches the provided source
+- No policy violations
+
+While the application is under review, you can view its details but cannot modify the submission.
+
+## Builds
+
+For WASM applications linked to a GitHub commit, the platform triggers a build:
+
+1. A GitHub Actions workflow checks out the repository at the specified commit
+2. The WASM module is compiled using `cargo component build --release`
+3. The output is AOT-compiled to `.cwasm` using Wasmtime
+4. The build hash (SHA-256) is recorded
+
+Build logs and status are visible in the application's **Builds** tab. Each build is associated with a specific commit hash, making it fully auditable.
+
+For container applications, the "build" step pulls and validates the container image. No compilation is performed.
+
+## Deployment
+
+Once built, the application is deployed to an available enclave:
+
+- **WASM** apps are deployed to an SGX enclave running Enclave OS Mini
+- **Container** apps are deployed to a TDX VM running Enclave OS Virtual
+
+The platform handles hardware allocation, certificate generation, and network configuration. When deployment completes, the application's endpoint becomes reachable and the attestation tab populates with live measurement data.
+
+## Versioning
+
+You can submit new versions of an existing application:
+
+1. Go to the application's detail page
+2. Submit a new GitHub commit or upload a new `.cwasm`
+3. The new version goes through the same build and review process
+4. Once approved and built, it replaces the running version
+
+Each version retains its build hash and commit reference. Previous versions are visible in the Builds tab for audit purposes.
+
+## Status indicators
+
+The dashboard shows status badges for each application:
+
+| Badge | Meaning |
+|-------|---------|
+| Submitted | Awaiting review |
+| Under review | Being reviewed |
+| Approved | Passed review, build pending or in progress |
+| Building | Build currently running |
+| Built | Build complete, deployment pending |
+| Deployed | Live and reachable |
+| Failed | Build or deployment error (see logs) |
+
+## Next steps
+
+- [Getting started](/solutions/platform/developer-platform/getting-started) for the setup workflow
+- [Deploy WASM](/solutions/platform/developer-platform/deploy-wasm) for WASM-specific details
+- [Deploy containers](/solutions/platform/developer-platform/deploy-container) for container-specific details

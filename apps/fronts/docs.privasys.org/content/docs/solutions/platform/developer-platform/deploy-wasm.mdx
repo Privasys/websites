@@ -1,0 +1,106 @@
+---
+title: Deploy WASM
+description: Deploy a WebAssembly application on the Privasys Developer Platform with reproducible builds and hardware attestation.
+---
+
+WASM applications run inside **Enclave OS Mini** (Intel SGX), providing the smallest possible trust boundary. The Developer Platform handles compilation, deployment, and attestation.
+
+## Prerequisites
+
+To deploy a WASM application, you need:
+
+- A GitHub account (for authentication and source linking)
+- A Rust project targeting `wasm32-wasip2` that implements `wasi:http/incoming-handler`
+
+If you are building your first WASM app, see [Build a WASM App](/solutions/enclave-os/enclave-os-mini/guides/build-wasm-app) for a step-by-step guide.
+
+## Submission methods
+
+### GitHub commit (recommended)
+
+Link a specific GitHub commit URL. The platform triggers a reproducible build via GitHub Actions.
+
+1. Go to **Dashboard > New Application**
+2. Select **WASM Module** as the application type
+3. Paste a GitHub commit URL in the format: `https://github.com/owner/repo/commit/abc123...`
+4. The platform auto-detects the app type and infers a name from the repository
+5. Submit the application
+
+**Why a specific commit?** Pinning to a commit ensures reproducibility. Anyone can check out the same commit and verify that the compiled output matches the deployed binary.
+
+### Manual upload
+
+Upload a pre-compiled `.cwasm` file directly.
+
+1. Go to **Dashboard > New Application**
+2. Select **WASM Module** as the application type
+3. Switch to the **Upload** tab
+4. Drag and drop or select your `.cwasm` file
+5. Enter a name and description
+6. Submit the application
+
+Manual upload is useful for testing or when the source is not on GitHub. For production deployments, GitHub commit linking is recommended because it enables reproducible builds.
+
+## Reproducible builds
+
+When you link a GitHub commit, the platform triggers a build pipeline via GitHub Actions:
+
+1. The repository is checked out at the exact commit you specified
+2. The WASM module is compiled using `cargo component build --release`
+3. The output is pre-compiled to `.cwasm` using Wasmtime AOT compilation
+4. The resulting binary is stored and its SHA-256 hash is recorded
+
+**Reproducibility guarantee:** The build runs in a deterministic environment. Anyone can clone the repository at the same commit, run the same build commands, and verify that the output matches the deployed binary hash. This is critical for trust: the code hash in the attestation certificate is only meaningful if the build is auditable.
+
+The build status, commit hash, and a link to the GitHub Actions run are all visible in the application's detail page under **Builds**.
+
+## What happens on deployment
+
+When a WASM application is deployed to an SGX enclave:
+
+1. The `.cwasm` bytecode is delivered to the enclave over an RA-TLS connection
+2. The enclave computes the **SHA-256 code hash** of the WASM binary
+3. The code hash is added as a leaf in the Config Merkle tree
+4. The RA-TLS certificate is **regenerated** with the updated Merkle root and WASM OID extensions
+5. All subsequent TLS connections serve the new certificate, attesting to the deployed application
+
+The deployed application's code hash is embedded in every RA-TLS certificate under these OIDs:
+
+| OID | Content |
+|-----|---------|
+| `1.3.6.1.4.1.65230.2.1` | Application name |
+| `1.3.6.1.4.1.65230.2.2` | Route prefix |
+| `1.3.6.1.4.1.65230.2.3` | SHA-256 code hash |
+
+Clients can verify not just the enclave identity (MRENCLAVE) but the exact application code running inside it.
+
+## Testing your deployed app
+
+Once deployed, the Developer Platform provides an **API Explorer** tab (WASM apps only) that lets you:
+
+- Discover the exported functions of your WASM module
+- Build and send requests with parameter inputs
+- View responses and error messages
+
+This is useful for quick smoke testing without writing client code.
+
+## WASM capabilities
+
+Your WASM module has access to the following interfaces inside the enclave:
+
+| Interface | Description |
+|-----------|-------------|
+| `wasi:http/incoming-handler` | Entry point: the enclave routes HTTPS requests to your module |
+| `wasi:keyvalue/store` | Encrypted KV store with automatic namespace isolation |
+| `wasi:clocks/wall-clock` | Current time |
+| `wasi:logging/logging` | Log messages (streamed to host) |
+| `wasi:random/random` | Cryptographic randomness (SGX RDRAND) |
+| `wasi:cli/environment` | Environment variables (app name, version) |
+
+See [WASM Runtime](/solutions/enclave-os/enclave-os-mini/wasm-runtime) for more detail on capabilities and isolation.
+
+## Next steps
+
+- [Attestation and verification](/solutions/platform/developer-platform/attestation)
+- [Application lifecycle](/solutions/platform/developer-platform/app-lifecycle)
+- [Build a WASM App from scratch](/solutions/enclave-os/enclave-os-mini/guides/build-wasm-app)

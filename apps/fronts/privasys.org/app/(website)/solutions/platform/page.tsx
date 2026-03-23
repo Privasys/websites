@@ -11,43 +11,70 @@ export default function Platform() {
                 <p className='text-sm font-medium tracking-wide uppercase text-[#1d1d1f]/50 dark:text-[#f5f5f7]/50 mb-4'>Solution</p>
                 <h1 className='text-5xl lg:text-[4rem]'>Privasys Platform</h1>
                 <p className='hero-intro mt-8'>
-                    Confidential computing made simple.
-                    Bring your application, whether it is a lightweight module or a full container.
-                    Our platform handles attestation, encryption, and verification, so you can focus on building.
+                    Deploy confidential applications in minutes.
+                    Bring your code as a lightweight WASM module or a full container.
+                    Our platform handles attestation, encryption, reproducible builds, and verification, so you can focus on building.
                 </p>
             </section>
 
             <section className='mt-20 lg:mt-40'>
                 <h2 className='text-2xl lg:text-4xl'>
-                    <Balancer>Two sides of the same platform.</Balancer>
+                    <Balancer>Get started in four steps.</Balancer>
+                </h2>
+                <div className='mt-16 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-10 lg:gap-x-16'>
+                    <div>
+                        <p className='text-sm font-medium tracking-wide uppercase text-[#1d1d1f]/50 dark:text-[#f5f5f7]/50 mb-2'>Step 1</p>
+                        <h3 className='text-xl lg:text-2xl'>Sign in with GitHub</h3>
+                        <p className='mt-2'>Authenticate via OIDC. No account to create, no forms to fill.</p>
+                    </div>
+                    <div>
+                        <p className='text-sm font-medium tracking-wide uppercase text-[#1d1d1f]/50 dark:text-[#f5f5f7]/50 mb-2'>Step 2</p>
+                        <h3 className='text-xl lg:text-2xl'>Create an application</h3>
+                        <p className='mt-2'>Choose WASM or Container, name your app, and pick your deployment target.</p>
+                    </div>
+                    <div>
+                        <p className='text-sm font-medium tracking-wide uppercase text-[#1d1d1f]/50 dark:text-[#f5f5f7]/50 mb-2'>Step 3</p>
+                        <h3 className='text-xl lg:text-2xl'>Upload or link your code</h3>
+                        <p className='mt-2'>Link a GitHub commit for reproducible builds, or upload a pre-compiled WASM module directly.</p>
+                    </div>
+                    <div>
+                        <p className='text-sm font-medium tracking-wide uppercase text-[#1d1d1f]/50 dark:text-[#f5f5f7]/50 mb-2'>Step 4</p>
+                        <h3 className='text-xl lg:text-2xl'>Deploy and verify</h3>
+                        <p className='mt-2'>Your app runs in hardware-protected infrastructure. Every connection is attested and verifiable.</p>
+                    </div>
+                </div>
+                <div className='mt-10'>
+                    <a href='https://developer.privasys.org'
+                        className='px-6 py-2.5 font-bold border rounded-full text-black dark:text-white hover:bg-black hover:text-white dark:border-white dark:hover:bg-white dark:hover:text-black transition-colors'>
+                        Open the Developer Platform
+                    </a>
+                </div>
+            </section>
+
+            <section className='mt-20 lg:mt-40'>
+                <h2 className='text-2xl lg:text-4xl'>
+                    <Balancer>Two deployment targets. Same guarantees.</Balancer>
                 </h2>
                 <div className='mt-16 grid grid-cols-1 lg:grid-cols-2 gap-16 lg:gap-x-32 lg:gap-y-20'>
                     <div>
-                        <h3 className='text-xl lg:text-3xl'>Developer Platform</h3>
+                        <h3 className='text-xl lg:text-3xl'>WASM modules</h3>
                         <p>
                             <Balancer>
-                                A self-service interface for building, deploying, and managing confidential applications.
-                                Sign in with GitHub, choose your deployment target, upload your code, and your application runs inside hardware-protected infrastructure with attestation built in.
+                                Link a GitHub repository and the platform compiles your code via reproducible GitHub Actions builds, then deploys it inside Enclave OS Mini (Intel SGX).
+                                The smallest trust boundary available: just your code and the minimal runtime needed to execute it.
+                                Ideal for cryptographic operations, secrets management, and high-assurance workloads.
                             </Balancer>
                         </p>
-                        <a href='https://developer.privasys.org'
-                            className='inline-block mt-4 text-sm font-medium underline underline-offset-4'>
-                            developer.privasys.org &rarr;
-                        </a>
                     </div>
                     <div>
-                        <h3 className='text-xl lg:text-3xl'>App Store</h3>
+                        <h3 className='text-xl lg:text-3xl'>Containers</h3>
                         <p>
                             <Balancer>
-                                A public catalogue of verified confidential applications.
-                                Every listing is backed by hardware attestation evidence that anyone can verify independently.
-                                Discover services you can trust, or list your own.
+                                Provide a container image and the platform deploys it inside Enclave OS Virtual with hardware-encrypted memory and full attestation.
+                                Standard Linux workflows, standard tooling, no code changes required.
+                                Ideal for existing applications, AI/ML inference, and data processing pipelines.
                             </Balancer>
                         </p>
-                        <a href='/uk/apps'
-                            className='inline-block mt-4 text-sm font-medium underline underline-offset-4'>
-                            Browse the App Store &rarr;
-                        </a>
                     </div>
                 </div>
             </section>
@@ -88,26 +115,26 @@ export default function Platform() {
 
             <section className='mt-20 lg:mt-40'>
                 <h2 className='text-2xl lg:text-4xl'>
-                    <Balancer>Bring your app. We handle the rest.</Balancer>
+                    <Balancer>What the platform provides.</Balancer>
                 </h2>
                 <div className='mt-16 grid grid-cols-1 lg:grid-cols-2 gap-16 lg:gap-x-32 lg:gap-y-20'>
                     <div>
-                        <h3 className='text-xl lg:text-3xl'>Lightweight modules</h3>
+                        <h3 className='text-xl lg:text-3xl'>Reproducible builds</h3>
                         <p>
                             <Balancer>
-                                Deploy your application as a portable module inside Enclave OS Mini.
-                                The smallest trust boundary available: just your code and the minimal runtime needed to execute it.
-                                Ideal for cryptographic operations, secrets management, and high-assurance workloads.
+                                Link a GitHub commit and the platform builds your code via automated GitHub Actions pipelines.
+                                Every build is reproducible: anyone can rebuild from the same commit and verify the output matches bit-for-bit.
+                                No hidden steps, no opaque toolchains.
                             </Balancer>
                         </p>
                     </div>
                     <div>
-                        <h3 className='text-xl lg:text-3xl'>Containers</h3>
+                        <h3 className='text-xl lg:text-3xl'>Built-in attestation</h3>
                         <p>
                             <Balancer>
-                                Run your existing containers inside Enclave OS Virtual.
-                                Standard Linux workflows, standard tooling, with hardware-encrypted memory and full attestation.
-                                No rewrite needed. Your container, our confidential infrastructure.
+                                Every deployment automatically receives RA-TLS certificates that carry hardware attestation evidence.
+                                Clients verify the attestation during a standard TLS handshake.
+                                The platform also provides an interactive attestation panel for inspecting certificates, quotes, and measurements.
                             </Balancer>
                         </p>
                     </div>

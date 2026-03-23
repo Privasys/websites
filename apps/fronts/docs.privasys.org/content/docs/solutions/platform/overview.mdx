@@ -1,70 +1,60 @@
 ---
 title: Overview
-description: The Privasys Platform is a Developer Platform and an App Store for confidential applications, backed by hardware attestation.
+description: Deploy confidential applications in minutes with the Privasys Platform. Choose between WASM modules for the smallest trust boundary or containers for standard tooling.
 ---
 
-The Privasys Platform is the complete infrastructure for building, deploying, and discovering confidential applications. It consists of two core components:
+The Privasys Platform at [developer.privasys.org](https://developer.privasys.org) is the fastest way to deploy confidential applications. Sign in with GitHub, bring your application as a WASM module or a container image, and the platform handles hardware allocation, reproducible builds, attestation, and networking.
 
-- **[Developer Platform](/docs/solutions/platform/developer-platform)** -- A self-service interface at [developer.privasys.org](https://developer.privasys.org) for deploying WASM modules and containers on hardware-protected infrastructure.
-- **[App Store](/docs/solutions/platform/app-store)** -- A country-scoped catalogue at [privasys.org/uk/apps](https://privasys.org/uk/apps) where verified confidential applications are listed and discoverable.
+Under the hood, the platform runs on [Enclave OS](/solutions/enclave-os/presentation), our open-source confidential operating system. You do not need to build or operate Enclave OS yourself. The platform abstracts that away and gives you a self-service deployment experience.
 
-Both components are built on top of Privasys's confidential computing stack: Enclave OS, hardware attestation, and RA-TLS verification.
+## Two deployment targets
 
-## How the Platform Works
+The platform supports two deployment models, each backed by a different edition of Enclave OS:
 
-The platform runs applications inside **Confidential Virtual Machines** (Intel TDX, AMD SEV-SNP) or **SGX enclaves** (Intel SGX), and exposes them over **attested HTTPS**. An attested reverse proxy terminates TLS inside the trusted execution environment:
+### WASM modules (small TCB)
 
-1. Generates TLS keys **inside the TEE**
-2. Embeds a **hardware attestation quote** in the X.509 certificate
-3. Terminates TLS and proxies traffic to your backend application
-4. Clients see a standard HTTPS connection with attestation evidence in the certificate
+Your application is compiled to WebAssembly and runs inside an **Intel SGX enclave** powered by [Enclave OS Mini](/solutions/enclave-os/enclave-os-mini/architecture). The Trusted Computing Base is approximately 4 MB. The enclave computes a SHA-256 hash of your WASM binary and embeds it in every RA-TLS certificate, so clients can verify the exact code running inside.
 
-```
-┌──────────────────────────────────────────────┐
-│          Confidential VM (TDX / SEV)         │
-│                                              │
-│  ┌──────────────┐     ┌───────────────────┐  │
-│  │   Caddy      │────►│  Your Application │  │
-│  │  (RA-TLS)    │     │  (unmodified)     │  │
-│  └──────┬───────┘     └───────────────────┘  │
-│         │ TLS termination                    │
-│         │ inside the TEE                     │
-└─────────┼────────────────────────────────────┘
-          │
-    ┌─────┴─────┐
-    │  Client   │  Standard HTTPS connection
-    │           │  (attestation in X.509 cert)
-    └───────────┘
-```
+- Smallest possible attack surface
+- Per-application code hash in the attestation certificate
+- [Reproducible builds](/solutions/platform/developer-platform/deploy-wasm) via GitHub Actions
+- Encrypted key-value store, sealed configuration, cryptographic randomness
 
-## When to Use the Platform
+### Containers (standard tooling)
 
-| Scenario | Why? |
-|----------|------|
-| **Existing web applications** | No code changes. Add an attested reverse proxy, enable attested connections. |
-| **Container-based deployments** | Your Docker/Kubernetes workloads run as-is inside the Confidential VM. |
-| **Quick adoption** | Standard Linux, standard toolchains, standard deployment. No SGX SDK. |
-| **TDX/SEV cloud instances** | Available on Google Cloud, Azure, and OVH Cloud. |
+Your existing container image runs inside a **Confidential VM** powered by [Enclave OS Virtual](/solutions/enclave-os/enclave-os-virtual/architecture) on Intel TDX hardware. No code changes needed. An RA-TLS proxy terminates TLS inside the VM and embeds the TDX attestation quote in the certificate.
 
-## Compared to Enclave OS
+- Standard Linux, standard Docker images
+- No code changes or special SDKs
+- Hardware-encrypted memory (TDX)
+- Optional encrypted storage
 
-For maximum security with the smallest Trusted Computing Base, use [Enclave OS (Mini)](/docs/solutions/enclave-os/enclave-os-mini/architecture) (Intel SGX). For container workloads in Confidential VMs, use [Enclave OS (Virtual)](/docs/solutions/enclave-os/enclave-os-virtual/architecture).
+### Choosing a target
 
-| | **Platform** (Confidential VMs) | **Enclave OS** (SGX) |
-|--|---------------------------|----------------|
-| **TEE** | Intel TDX / AMD SEV-SNP | Intel SGX |
-| **TCB** | Full VM (kernel + all apps) | ~4 MB enclave binary |
-| **Code changes** | None | Application built as WASM module |
-| **Deployment** | Standard Linux + attested proxy | Custom Rust build + SGX SDK |
-| **Best for** | Existing applications, quick adoption | Security-critical, minimal TCB |
+| | **WASM** | **Container** |
+|--|----------|---------------|
+| **Runs on** | Enclave OS Mini (Intel SGX) | Enclave OS Virtual (Intel TDX) |
+| **TCB size** | ~4 MB | Full VM |
+| **Code changes** | Build as WASM component | None |
+| **Attestation granularity** | Enclave identity + per-app code hash | VM boot chain (RTMR registers) |
+| **Best for** | New apps, security-critical workloads | Existing apps, quick adoption |
 
-See [Trust Model](/docs/technology/confidential-computing/trust-model) for a deeper comparison.
+See [Trust Model](/technology/confidential-computing/trust-model) for a deeper comparison of TEE technologies.
+
+## What the platform provides
+
+Regardless of which target you choose, every deployment gets:
+
+1. **Hardware protection** with keys generated inside the TEE and memory that is inaccessible to the host.
+2. **RA-TLS certificates** that embed a hardware-signed attestation quote, so any client can verify the deployment over a standard HTTPS connection.
+3. **Built-in verification** through an [interactive attestation panel](/solutions/platform/developer-platform/attestation) in the dashboard.
+4. **Reproducible builds** (WASM) so the deployed binary hash is auditable against the source.
 
 ## Platform Components
 
 | Component | Description |
 |-----------|-------------|
-| [Developer Platform](/docs/solutions/platform/developer-platform) | Self-service interface for deploying WASM modules and containers on confidential infrastructure. |
-| [App Store](/docs/solutions/platform/app-store) | Verified catalogue of confidential applications, backed by hardware attestation. |
-| [Verification Libraries](/docs/solutions/platform/verification-libraries) | Libraries in Python, Go, Rust, TypeScript, and C# for verifying attested connections with a single function call. |
-| [Attestation Server](/docs/technology/attestation/attestation-server) | A standalone service that independently verifies hardware attestation quotes from Intel and AMD platforms. |
+| [Developer Platform](/solutions/platform/developer-platform) | Self-service interface for deploying WASM modules and containers. Sign in at [developer.privasys.org](https://developer.privasys.org). |
+| [App Store](/solutions/platform/app-store) | Verified catalogue of confidential applications at [privasys.org/uk/apps](https://privasys.org/uk/apps), backed by hardware attestation. |
+| [Verification Libraries](/solutions/platform/verification-libraries) | Libraries in Python, Go, Rust, TypeScript, and C# for verifying attested connections with a single function call. |
+| [Attestation Server](/technology/attestation/attestation-server) | A standalone service that independently verifies hardware attestation quotes from Intel and AMD platforms. |

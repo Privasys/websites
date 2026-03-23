@@ -3,7 +3,7 @@ title: Verification Libraries
 description: Multi-language libraries for verifying attested connections, available in Python, Go, Rust, TypeScript, and C#.
 ---
 
-The **RA-TLS Clients** provide verification libraries in five languages, enabling any application to connect to an RA-TLS server and verify its attestation, whether it's an [Enclave OS](/solutions/enclave-os/presentation) instance or a [Privasys Platform](/solutions/platform/overview) server.
+The **RA-TLS Clients** provide verification libraries in five languages, enabling any application to connect to an RA-TLS server and verify its attestation, whether it is an [Enclave OS](/solutions/enclave-os/presentation) instance or a [Privasys Platform](/solutions/platform/overview) deployment.
 
 **Repositories**: [ratls-client-go](https://github.com/Privasys/ratls-client-go)  [ratls-client-rs](https://github.com/Privasys/ratls-client-rs)  [ratls-client-py](https://github.com/Privasys/ratls-client-py)
 
@@ -201,29 +201,4 @@ result = verifier.verify_certificate(cert)
 assert result.mrenclave == "expected_test_mrenclave..."
 ```
 
-## Architecture
-
-```
-ra-tls-clients/
-├── python/           # Python package (ra-tls-verify)
-│   ├── ra_tls_verify/
-│   │   ├── verifier.py
-│   │   ├── quote_parser.py
-│   │   └── policy.py
-│   └── tests/
-├── go/               # Go module (ratls)
-│   ├── ratls/
-│   │   ├── verifier.go
-│   │   ├── quote.go
-│   │   └── policy.go
-│   └── ratls_test.go
-├── rust/             # Rust crate (ra-tls-verify)
-│   └── src/
-├── typescript/       # npm package (@privasys/ra-tls)
-│   └── src/
-├── csharp/           # NuGet package (Privasys.RaTls)
-│   └── src/
-└── test-certs/       # Shared test certificates
-```
-
-Each client is independently packaged and published to the respective language's package registry. They share the same verification logic and test certificates, ensuring consistent behavior across languages.
+Each client is independently packaged and published to the respective language's package registry.

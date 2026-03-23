@@ -19,7 +19,7 @@ export default function PrivacyPolicy() {
                 <h2 className='text-2xl mt-12 mb-4'>The type of personal information we collect</h2>
                 <p>Privasys currently collects and processes the following information:</p>
                 <ul className='mt-4 list-disc pl-6 space-y-2'>
-                    <li><strong>Account information</strong> (e.g. your login details via GitHub OIDC, information stored on your account, and other details about your use of our services).</li>
+                    <li><strong>Account information</strong> (e.g. your login details via GitHub, information stored on your account, and other details about your use of our services).</li>
                     <li><strong>Technical data</strong> (e.g. internet protocol (IP) address, browser type and version, time zone setting and location, operating system and platform, and other technology on the devices you use to access our websites).</li>
                     <li><strong>Usage data</strong> (e.g. information about how you use our websites and services and engage with our content).</li>
                     <li><strong>Communications data</strong> (e.g. when you contact us, subscribe to updates, or request information about our services).</li>
@@ -37,7 +37,7 @@ export default function PrivacyPolicy() {
                 <p className='mt-4'>We use the information that you have given us to:</p>
                 <ul className='mt-4 list-disc pl-6 space-y-2'>
                     <li>Provide and maintain our services</li>
-                    <li>Authenticate your identity via OIDC (GitHub)</li>
+                    <li>Authenticate your identity via GitHub (through Zitadel, our identity provider)</li>
                     <li>Maintain developer communication and support</li>
                     <li>Improve our websites and services</li>
                 </ul>
@@ -47,7 +47,7 @@ export default function PrivacyPolicy() {
                     Your information is securely stored. We keep account information for as long as necessary to fulfil the purposes we collected it for, including for the purpose of satisfying any legal, accounting, or reporting requirements.
                 </p>
                 <p className='mt-4'>
-                    Authentication is handled via GitHub OIDC. Privasys does not store passwords. Account identifiers and metadata are kept for as long as your account is active.
+                    Authentication is handled via GitHub through Zitadel (our OIDC identity provider). Privasys does not store passwords. Account identifiers and metadata are kept for as long as your account is active.
                 </p>
                 <p className='mt-4'>
                     We keep basic information about visitors, usage data, and technical data that is tracked for routine administration and maintenance purposes only.
