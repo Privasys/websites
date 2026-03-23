@@ -389,7 +389,7 @@ function extractBootMeasurements(events: ParsedEvent[], source: string): {
     return { measurements, dmVerityHash };
 }
 
-function generateConsoleSnippet(eventLogBase64: string, source: string): string {
+function generateConsoleSnippet(eventLogBase64: string, source: string, truncateForDisplay = false): string {
     const isTpm = source !== 'ccel';
     const replaySection = isTpm
         ? `  // Parse events & replay per-PCR
@@ -438,10 +438,13 @@ function generateConsoleSnippet(eventLogBase64: string, source: string): string 
   console.log('RTMR replay from ${source} event log (' + evNum + ' events):');
   rtmr.forEach((v, i) => console.log('  RTMR[' + i + '] = ' + hex(v)))`;
 
+    const b64Display = truncateForDisplay && eventLogBase64.length > 200
+        ? eventLogBase64.slice(0, 80) + `... (${eventLogBase64.length} chars — full data is included when you click "Copy snippet")`
+        : eventLogBase64;
+
     return `// ${isTpm ? 'PCR' : 'RTMR'} Replay — paste in browser console (uses SubtleCrypto)
 (async () => {
-  const b64 = "${eventLogBase64.length > 200 ? eventLogBase64.slice(0, 100) + '...' : eventLogBase64}";
-  // Full base64 is ${eventLogBase64.length} chars — copy from the attestation response
+  const b64 = "${b64Display}";
   const raw = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
   const view = new DataView(raw.buffer);
   let off = 0;
@@ -735,7 +738,7 @@ export function RtmrVerifier({ eventLogBase64, eventLogSource, quoteRtmrs }: Rtm
                         The snippet uses only the Web Crypto API (SubtleCrypto SHA-384) — no external dependencies.
                     </p>
                     <pre className="text-[10px] bg-black/5 dark:bg-white/5 p-3 rounded-lg overflow-x-auto font-mono text-black/60 dark:text-white/60 max-h-48 overflow-y-auto">
-                        {generateConsoleSnippet(eventLogBase64, eventLogSource)}
+                        {generateConsoleSnippet(eventLogBase64, eventLogSource, true)}
                     </pre>
                 </div>
             )}

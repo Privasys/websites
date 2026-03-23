@@ -8,6 +8,7 @@ This is an [Nx](https://nx.dev/) monorepo containing all public websites develop
 
 | Site | Path | URL |
 |------|------|-----|
+| Developer portal | [`apps/fronts/developer.privasys.org`](apps/fronts/developer.privasys.org) | [developer.privasys.org](https://developer.privasys.org/) |
 | Main website | [`apps/fronts/privasys.org`](apps/fronts/privasys.org) | [privasys.org](https://privasys.org/) |
 | Documentation | [`apps/fronts/docs.privasys.org`](apps/fronts/docs.privasys.org) | [docs.privasys.org](https://docs.privasys.org/) |
 
