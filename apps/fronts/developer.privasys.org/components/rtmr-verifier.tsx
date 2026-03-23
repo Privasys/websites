@@ -4,8 +4,6 @@ import { useState, useEffect, useCallback } from 'react';
 
 // TCG2 event log constants
 const ALG_SHA384 = 0x000c;
-const ALG_SHA256 = 0x000b;
-const ALG_SHA1 = 0x0004;
 const SHA384_SIZE = 48;
 const SHA1_SIZE = 20;
 const EV_NO_ACTION = 0x00000003;
@@ -44,7 +42,7 @@ const EVENT_TYPE_NAMES: Record<number, string> = {
     0x8000000b: 'EV_EFI_HANDOFF_TABLES2',
     0x8000000c: 'EV_EFI_VARIABLE_BOOT2',
     0x8000000e: 'EV_EFI_SPDM_FIRMWARE_BLOB',
-    0x80000010: 'EV_EFI_HCRTM_EVENT',
+    0x80000010: 'EV_EFI_HCRTM_EVENT'
 };
 
 // Human-readable RTMR descriptions for vTPM source
@@ -52,14 +50,14 @@ const RTMR_LABELS_TPM: Record<number, string> = {
     0: 'TD firmware (not in vTPM log)',
     1: 'Boot config (PCR 0–7)',
     2: 'OS & kernel (PCR 8–15)',
-    3: 'Runtime (unused)',
+    3: 'Runtime (unused)'
 };
 
 const RTMR_LABELS_CCEL: Record<number, string> = {
     0: 'CC_MR 1',
     1: 'CC_MR 2',
     2: 'CC_MR 3',
-    3: 'CC_MR 4',
+    3: 'CC_MR 4'
 };
 
 interface AlgDesc {
@@ -161,8 +159,6 @@ function parseEventLog(base64: string, source: string): { events: ParsedEvent[];
 
     try {
         // Legacy header event: PCR (4) + eventType (4) + SHA1 digest (20) + eventSize (4) + eventData
-        const _pcr0 = readU32();
-        const _evType0 = readU32();
         readBytes(SHA1_SIZE); // SHA-1 digest
         const evSize0 = readU32();
         const headerData = readBytes(evSize0);
@@ -183,7 +179,7 @@ function parseEventLog(base64: string, source: string): { events: ParsedEvent[];
             }
             algs.push({
                 id: headerView.getUint16(algOffset, true),
-                size: headerView.getUint16(algOffset + 2, true),
+                size: headerView.getUint16(algOffset + 2, true)
             });
             algOffset += 4;
         }
@@ -241,7 +237,7 @@ function parseEventLog(base64: string, source: string): { events: ParsedEvent[];
                 pcr,
                 eventType,
                 sha384: sha384Digest,
-                data: eventData,
+                data: eventData
             });
             evNum++;
         }
@@ -261,7 +257,7 @@ async function replayRtmrs(
         new Uint8Array(SHA384_SIZE),
         new Uint8Array(SHA384_SIZE),
         new Uint8Array(SHA384_SIZE),
-        new Uint8Array(SHA384_SIZE),
+        new Uint8Array(SHA384_SIZE)
     ];
     const rtmrEvents: ParsedEvent[][] = [[], [], [], []];
     const mapFn = source === 'ccel' ? ccelMrToRtmr : tpmPcrToRtmr;
@@ -316,7 +312,7 @@ async function replayRtmrs(
         return {
             value: hex,
             events: rtmrEvents[i],
-            match: q ? hex === q : null,
+            match: q ? hex === q : null
         };
     });
 }
@@ -343,7 +339,7 @@ function extractBootMeasurements(events: ParsedEvent[], source: string): {
                     label: 'Firmware',
                     value: text.trim(),
                     pcr: ev.pcr,
-                    rtmr: mapFn(ev.pcr),
+                    rtmr: mapFn(ev.pcr)
                 });
             }
         }
@@ -356,7 +352,7 @@ function extractBootMeasurements(events: ParsedEvent[], source: string): {
                 label: 'Kernel',
                 value: parts[1],
                 pcr: ev.pcr,
-                rtmr: mapFn(ev.pcr),
+                rtmr: mapFn(ev.pcr)
             });
             cmdlineValue = parts.slice(2).join(' ');
             cmdlinePcr = ev.pcr;
@@ -382,7 +378,7 @@ function extractBootMeasurements(events: ParsedEvent[], source: string): {
             label: 'Kernel cmdline',
             value: cmdlineValue,
             pcr: cmdlinePcr,
-            rtmr: mapFn(cmdlinePcr),
+            rtmr: mapFn(cmdlinePcr)
         });
     }
 
