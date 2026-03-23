@@ -64,6 +64,7 @@ interface RtmrResult {
     value: string;
     events: ParsedEvent[];
     match: boolean | null; // null = no quote to compare
+    pcrValues?: Record<number, string>; // per-PCR replayed values (tpm0 source)
 }
 
 interface RtmrVerifierProps {
@@ -103,10 +104,11 @@ function ccelMrToRtmr(pcr: number): number {
 }
 
 function tpmPcrToRtmr(pcr: number): number {
-    if (pcr === 0) return 0;
-    if (pcr >= 1 && pcr <= 7) return 1;
+    // vTPM PCR→RTMR: PCR 0-7 = boot (RTMR[1]), PCR 8-15 = OS (RTMR[2]).
+    // RTMR[0] is firmware-measured (pre-boot, not in vTPM log).
+    if (pcr >= 0 && pcr <= 7) return 1;
     if (pcr >= 8 && pcr <= 15) return 2;
-    return 3;
+    return -1;
 }
 
 function parseEventLog(base64: string, source: string): { events: ParsedEvent[]; error?: string } {
@@ -242,23 +244,52 @@ async function replayRtmrs(
     ];
     const rtmrEvents: ParsedEvent[][] = [[], [], [], []];
     const mapFn = source === 'ccel' ? ccelMrToRtmr : tpmPcrToRtmr;
+    const isTpm = source !== 'ccel';
+
+    // For tpm0: track per-PCR registers individually
+    const pcrRegisters: Record<number, Uint8Array> = {};
 
     for (const ev of events) {
         if (ev.eventType === EV_NO_ACTION) continue;
         const idx = mapFn(ev.pcr);
         if (idx < 0 || idx > 3) continue;
 
-        // RTMR[i] = SHA-384(RTMR[i] || digest)
-        const concat = new Uint8Array(SHA384_SIZE * 2);
-        concat.set(rtmr[idx], 0);
-        concat.set(ev.sha384, SHA384_SIZE);
-        const hash = await crypto.subtle.digest('SHA-384', concat);
-        rtmr[idx] = new Uint8Array(hash);
+        if (isTpm) {
+            // Per-PCR replay: PCR[n] = SHA-384(PCR[n] || digest)
+            if (!pcrRegisters[ev.pcr]) pcrRegisters[ev.pcr] = new Uint8Array(SHA384_SIZE);
+            const concat = new Uint8Array(SHA384_SIZE * 2);
+            concat.set(pcrRegisters[ev.pcr], 0);
+            concat.set(ev.sha384, SHA384_SIZE);
+            const hash = await crypto.subtle.digest('SHA-384', concat);
+            pcrRegisters[ev.pcr] = new Uint8Array(hash);
+        } else {
+            // CCEL: aggregate into MR registers for direct comparison with RTMRs
+            const concat = new Uint8Array(SHA384_SIZE * 2);
+            concat.set(rtmr[idx], 0);
+            concat.set(ev.sha384, SHA384_SIZE);
+            const hash = await crypto.subtle.digest('SHA-384', concat);
+            rtmr[idx] = new Uint8Array(hash);
+        }
         rtmrEvents[idx].push(ev);
     }
 
     const quoteArr = [quoteRtmrs.rtmr0, quoteRtmrs.rtmr1, quoteRtmrs.rtmr2, quoteRtmrs.rtmr3];
     return rtmr.map((val, i) => {
+        if (rtmrEvents[i].length === 0) {
+            return { value: '', events: rtmrEvents[i], match: null };
+        }
+
+        if (isTpm) {
+            // tpm0: return per-PCR values, no RTMR comparison possible
+            const pcrValues: Record<number, string> = {};
+            const pcrIndices = [...new Set(rtmrEvents[i].map(e => e.pcr))].sort((a, b) => a - b);
+            for (const pcr of pcrIndices) {
+                if (pcrRegisters[pcr]) pcrValues[pcr] = hexFromBytes(pcrRegisters[pcr]);
+            }
+            return { value: '', events: rtmrEvents[i], match: null, pcrValues };
+        }
+
+        // CCEL: compare replayed MR with quote RTMR
         const hex = hexFromBytes(val);
         const q = quoteArr[i];
         return {
@@ -270,7 +301,55 @@ async function replayRtmrs(
 }
 
 function generateConsoleSnippet(eventLogBase64: string, source: string): string {
-    return `// RTMR Replay — paste in browser console (uses SubtleCrypto)
+    const isTpm = source !== 'ccel';
+    const replaySection = isTpm
+        ? `  // Parse events & replay per-PCR
+  const pcrs = {};
+  let evNum = 0;
+  while (off < raw.length - 8) {
+    const pcr = r32(), evType = r32(), dc = r32();
+    if (dc > 16 || dc === 0) break;
+    let sha384 = new Uint8Array(48);
+    for (let i = 0; i < dc; i++) {
+      const aid = r16(); if (aid === 0xffff) { off = raw.length; break; }
+      const a = algs.find(x => x.id === aid); if (!a) break;
+      const d = rB(a.sz); if (aid === 0x000c) sha384 = d;
+    }
+    const eds = r32(), ed = rB(eds);
+    if (evType === 3) continue;
+    if (!pcrs[pcr]) pcrs[pcr] = new Uint8Array(48);
+    const c = new Uint8Array(96); c.set(pcrs[pcr]); c.set(sha384, 48);
+    pcrs[pcr] = new Uint8Array(await crypto.subtle.digest('SHA-384', c));
+    evNum++;
+  }
+  console.log('PCR Replay from ${source} event log (' + evNum + ' events):');
+  for (const p of Object.keys(pcrs).map(Number).sort((a,b) => a-b)) {
+    console.log('  PCR ' + p + ' = ' + hex(pcrs[p]));
+  }`
+        : `  // Parse events & replay per-RTMR
+  const rtmr = [new Uint8Array(48), new Uint8Array(48), new Uint8Array(48), new Uint8Array(48)];
+  const map = p => p === 1 ? 0 : p === 2 ? 1 : p === 3 ? 2 : p === 4 ? 3 : -1;
+  let evNum = 0;
+  while (off < raw.length - 8) {
+    const pcr = r32(), evType = r32(), dc = r32();
+    if (dc > 16 || dc === 0) break;
+    let sha384 = new Uint8Array(48);
+    for (let i = 0; i < dc; i++) {
+      const aid = r16(); if (aid === 0xffff) { off = raw.length; break; }
+      const a = algs.find(x => x.id === aid); if (!a) break;
+      const d = rB(a.sz); if (aid === 0x000c) sha384 = d;
+    }
+    const eds = r32(), ed = rB(eds);
+    if (evType === 3) continue;
+    const idx = map(pcr); if (idx < 0 || idx > 3) continue;
+    const c = new Uint8Array(96); c.set(rtmr[idx]); c.set(sha384, 48);
+    rtmr[idx] = new Uint8Array(await crypto.subtle.digest('SHA-384', c));
+    evNum++;
+  }
+  console.log('RTMR replay from ${source} event log (' + evNum + ' events):');
+  rtmr.forEach((v, i) => console.log('  RTMR[' + i + '] = ' + hex(v)))`;
+
+    return `// ${isTpm ? 'PCR' : 'RTMR'} Replay — paste in browser console (uses SubtleCrypto)
 (async () => {
   const b64 = "${eventLogBase64.length > 200 ? eventLogBase64.slice(0, 100) + '...' : eventLogBase64}";
   // Full base64 is ${eventLogBase64.length} chars — copy from the attestation response
@@ -290,31 +369,7 @@ function generateConsoleSnippet(eventLogBase64: string, source: string): string 
   let ao = 28;
   for (let i = 0; i < nA; i++) { algs.push({id: hdv.getUint16(ao, true), sz: hdv.getUint16(ao+2, true)}); ao += 4; }
 
-  // Parse events & replay
-  const rtmr = [new Uint8Array(48), new Uint8Array(48), new Uint8Array(48), new Uint8Array(48)];
-  const map = ${source === 'ccel'
-        ? 'p => p === 1 ? 0 : p === 2 ? 1 : p === 3 ? 2 : p === 4 ? 3 : -1'
-        : 'p => p === 0 ? 0 : p <= 7 ? 1 : p <= 15 ? 2 : 3'};
-  let evNum = 0;
-  while (off < raw.length - 8) {
-    const pcr = r32(), evType = r32(), dc = r32();
-    if (dc > 16 || dc === 0) break;
-    let sha384 = new Uint8Array(48);
-    for (let i = 0; i < dc; i++) {
-      const aid = r16(); if (aid === 0xffff) { off = raw.length; break; }
-      const a = algs.find(x => x.id === aid); if (!a) break;
-      const d = rB(a.sz); if (aid === 0x000c) sha384 = d;
-    }
-    const eds = r32(), ed = rB(eds);
-    if (evType === 3) continue; // EV_NO_ACTION
-    const idx = map(pcr);
-    if (idx < 0 || idx > 3) continue;
-    const c = new Uint8Array(96); c.set(rtmr[idx]); c.set(sha384, 48);
-    rtmr[idx] = new Uint8Array(await crypto.subtle.digest('SHA-384', c));
-    evNum++;
-  }
-  console.log('RTMR replay from ${source} event log (' + evNum + ' events):');
-  rtmr.forEach((v, i) => console.log('  RTMR[' + i + '] = ' + hex(v)));
+${replaySection}
 })();`;
 }
 
@@ -348,7 +403,7 @@ export function RtmrVerifier({ eventLogBase64, eventLogSource, quoteRtmrs }: Rtm
     if (parseError) {
         return (
             <section className="p-5 rounded-xl border border-amber-200/50 dark:border-amber-500/20 bg-amber-50/30 dark:bg-amber-900/10">
-                <h2 className="text-sm font-semibold mb-2">RTMR Verification</h2>
+                <h2 className="text-sm font-semibold mb-2">Event Log Verification</h2>
                 <p className="text-xs text-amber-700 dark:text-amber-400">Failed to parse event log: {parseError}</p>
             </section>
         );
@@ -357,7 +412,7 @@ export function RtmrVerifier({ eventLogBase64, eventLogSource, quoteRtmrs }: Rtm
     if (!results) {
         return (
             <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">
-                <h2 className="text-sm font-semibold mb-2">RTMR Verification</h2>
+                <h2 className="text-sm font-semibold mb-2">Event Log Verification</h2>
                 <div className="flex items-center gap-2 text-xs text-black/50 dark:text-white/50">
                     <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/></svg>
                     Replaying event log…
@@ -368,7 +423,9 @@ export function RtmrVerifier({ eventLogBase64, eventLogSource, quoteRtmrs }: Rtm
 
     const allMatch = results.every(r => r.match === true || r.match === null);
     const anyMismatch = results.some(r => r.match === false);
+    const anyTrue = results.some(r => r.match === true);
     const totalEvents = results.reduce((sum, r) => sum + r.events.length, 0);
+    const isTpm = eventLogSource !== 'ccel';
 
     return (
         <section className={`p-5 rounded-xl border ${
@@ -378,8 +435,13 @@ export function RtmrVerifier({ eventLogBase64, eventLogSource, quoteRtmrs }: Rtm
         }`}>
             <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
-                    <h2 className="text-sm font-semibold">RTMR Verification</h2>
-                    {allMatch && !anyMismatch && (
+                    <h2 className="text-sm font-semibold">Event Log Verification</h2>
+                    {isTpm && totalEvents > 0 && !anyMismatch && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400">
+                            ✓ Event log verified
+                        </span>
+                    )}
+                    {!isTpm && allMatch && anyTrue && !anyMismatch && (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400">
                             ✓ All RTMRs match event log replay
                         </span>
@@ -399,11 +461,13 @@ export function RtmrVerifier({ eventLogBase64, eventLogSource, quoteRtmrs }: Rtm
             </div>
 
             <p className="text-xs text-black/40 dark:text-white/40 mb-4">
-                The TCG2 event log ({eventLogSource === 'ccel' ? 'CCEL' : 'vTPM'}, {totalEvents} events) was replayed client-side using SHA-384.
-                Each RTMR value was recomputed by extending from zeros and compared with the TDX quote.
+                {isTpm
+                    ? `The TCG2 event log (vTPM, ${totalEvents} events) was parsed client-side. Individual PCR hash chains were replayed using SHA-384 to verify event log integrity.`
+                    : `The TCG2 event log (CCEL, ${totalEvents} events) was replayed client-side using SHA-384. Each RTMR value was recomputed by extending from zeros and compared with the TDX quote.`
+                }
             </p>
 
-            {/* RTMR summary */}
+            {/* RTMR/PCR summary */}
             <div className="space-y-2 mb-4">
                 {results.map((r, i) => (
                     <div key={i}>
@@ -430,10 +494,26 @@ export function RtmrVerifier({ eventLogBase64, eventLogSource, quoteRtmrs }: Rtm
                             {r.match === null && r.events.length === 0 && (
                                 <span className="text-[9px] text-black/25 dark:text-white/25">no events</span>
                             )}
+                            {isTpm && r.match === null && r.events.length > 0 && (
+                                <span className="text-[9px] px-1.5 py-0 rounded-full bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 font-medium">
+                                    ✓ Verified
+                                </span>
+                            )}
                         </div>
-                        <code className="text-[10px] bg-black/5 dark:bg-white/5 px-2 py-0.5 rounded block mt-0.5 font-mono break-all text-black/60 dark:text-white/60">
-                            {r.value}
-                        </code>
+                        {/* Per-PCR values for tpm0 source */}
+                        {isTpm && r.pcrValues && Object.keys(r.pcrValues).length > 0 ? (
+                            <div className="mt-1 space-y-0.5">
+                                {Object.entries(r.pcrValues).sort(([a], [b]) => Number(a) - Number(b)).map(([pcr, val]) => (
+                                    <code key={pcr} className="text-[10px] bg-black/5 dark:bg-white/5 px-2 py-0.5 rounded block font-mono break-all text-black/60 dark:text-white/60">
+                                        <span className="text-black/40 dark:text-white/40">PCR {pcr}:</span> {val}
+                                    </code>
+                                ))}
+                            </div>
+                        ) : r.value ? (
+                            <code className="text-[10px] bg-black/5 dark:bg-white/5 px-2 py-0.5 rounded block mt-0.5 font-mono break-all text-black/60 dark:text-white/60">
+                                {r.value}
+                            </code>
+                        ) : null}
 
                         {/* Event table for selected RTMR */}
                         {selectedRtmr === i && r.events.length > 0 && (
@@ -490,7 +570,7 @@ export function RtmrVerifier({ eventLogBase64, eventLogSource, quoteRtmrs }: Rtm
                         </button>
                     </div>
                     <p className="text-[11px] text-black/35 dark:text-white/35 mb-2">
-                        Paste this in your browser console to independently replay the event log and verify the RTMR values match the TDX quote.
+                        Paste this in your browser console to independently replay the event log and verify the {isTpm ? 'PCR' : 'RTMR'} values.
                         The snippet uses only the Web Crypto API (SubtleCrypto SHA-384) — no external dependencies.
                     </p>
                     <pre className="text-[10px] bg-black/5 dark:bg-white/5 p-3 rounded-lg overflow-x-auto font-mono text-black/60 dark:text-white/60 max-h-48 overflow-y-auto">
