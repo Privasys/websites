@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WASM App Explorer — Privasys</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Header -->
+    <header class="app-header">
+        <a class="logo" href="#">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 2l7 4v5c0 5.25-3.5 9.74-7 11-3.5-1.26-7-5.75-7-11V6l7-4z"/>
+                <path d="M9.5 12l2 2 3.5-4" stroke-width="2"/>
+            </svg>
+            WASM App Explorer
+        </a>
+        <span class="sep"></span>
+        <span class="header-connected text-xs text-muted" id="connection-info"></span>
+        <button class="header-connected btn btn-outline btn-sm" style="margin-left:auto" onclick="location.reload()">Disconnect</button>
+    </header>
+
+    <!-- Connection screen -->
+    <div class="connect-screen" id="connect-screen">
+        <div class="connect-card">
+            <h2>Connect to a WASM App</h2>
+            <p class="subtitle">Enter the management service URL to explore a deployed WASM application's attestation and API.</p>
+
+            <fieldset class="connect-section">
+                <legend>Endpoint</legend>
+                <label for="endpoint-input">Full endpoint URL</label>
+                <input type="text" id="endpoint-input" placeholder="https://api.developer.privasys.org/api/v1/apps/wasm-app-example">
+
+                <div class="or-separator">or</div>
+
+                <label for="base-url-input">Base URL</label>
+                <input type="text" id="base-url-input" placeholder="https://api.developer.privasys.org">
+
+                <label for="app-name-input">App name</label>
+                <input type="text" id="app-name-input" placeholder="wasm-app-example">
+            </fieldset>
+
+            <fieldset class="connect-section">
+                <legend>Authentication</legend>
+                <label for="auth-token-input">Bearer Token <span class="optional">(optional)</span></label>
+                <input type="password" id="auth-token-input" placeholder="eyJhbGciOi...">
+                <div class="field-hint">Required for authenticated management service endpoints (schema, RPC calls).</div>
+            </fieldset>
+
+            <fieldset class="connect-section">
+                <legend>Quote Verification</legend>
+                <label for="attestation-url-input">Attestation Server URL <span class="optional">(optional)</span></label>
+                <input type="text" id="attestation-url-input" placeholder="https://as.privasys.org">
+
+                <label for="attestation-token-input">Attestation Server Token <span class="optional">(optional)</span></label>
+                <input type="password" id="attestation-token-input" placeholder="eyJhbGciOi...">
+                <div class="field-hint">When provided, the SGX/TDX quote signature will be verified via the attestation server.</div>
+            </fieldset>
+
+            <button class="connect-btn" id="connect-btn">Connect</button>
+
+            <div class="example">
+                <strong>Examples:</strong>
+                <code>https://api.developer.privasys.org/api/v1/apps/wasm-app-example</code>
+            </div>
+        </div>
+    </div>
+
+    <!-- Connected view -->
+    <div id="connected-view" class="hidden">
+        <div class="main-content" id="tab-container"></div>
+    </div>
+
+    <script src="explorer.js"></script>
+</body>
+</html>
