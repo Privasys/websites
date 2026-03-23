@@ -185,7 +185,7 @@ export default function NewApplicationPage() {
                 commit_url: mode === 'github' ? commitUrl.trim() : undefined,
                 app_type: appType,
                 container_image: appType === 'container' && containerImage ? containerImage : undefined,
-                container_port: appType === 'container' && containerPort ? parseInt(containerPort, 10) : undefined,
+                container_port: appType === 'container' && containerPort ? parseInt(containerPort, 10) : undefined
 
             });
 
