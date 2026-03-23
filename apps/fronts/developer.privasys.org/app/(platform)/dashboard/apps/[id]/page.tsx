@@ -1265,6 +1265,10 @@ function AttestationTab({ appId, token, deployments, versions }: { appId: string
                                     ...(result.quote.mr_enclave ? [{ label: 'MRENCLAVE', value: result.quote.mr_enclave, desc: 'Hash of the enclave code and initial data. Uniquely identifies the enclave build.' }] : []),
                                     ...(result.quote.mr_signer ? [{ label: 'MRSIGNER', value: result.quote.mr_signer, desc: 'Hash of the enclave signer\'s public key. Identifies who built the enclave.' }] : []),
                                     ...(result.quote.mr_td ? [{ label: 'MR_TD', value: result.quote.mr_td, desc: 'Measurement of the Trust Domain (TD). Uniquely identifies the TDX virtual machine image and configuration.' }] : []),
+                                    ...(result.quote.rtmr0 ? [{ label: 'RTMR[0]', value: result.quote.rtmr0, desc: 'Runtime Measurement Register 0 — measures the TD firmware (TDVF) and its configuration.' }] : []),
+                                    ...(result.quote.rtmr1 ? [{ label: 'RTMR[1]', value: result.quote.rtmr1, desc: 'Runtime Measurement Register 1 — measures the OS kernel, initrd, and boot parameters loaded by the firmware.' }] : []),
+                                    ...(result.quote.rtmr2 ? [{ label: 'RTMR[2]', value: result.quote.rtmr2, desc: 'Runtime Measurement Register 2 — measures the OS runtime components and application layer.' }] : []),
+                                    ...(result.quote.rtmr3 ? [{ label: 'RTMR[3]', value: result.quote.rtmr3, desc: 'Runtime Measurement Register 3 — available for application-defined measurements.' }] : []),
                                     ...(result.quote.report_data ? [{ label: 'Report Data', value: result.quote.report_data, desc: result.challenge_mode
                                         ? 'SHA-512( SHA-256(public_key_DER) ‖ challenge_nonce ). A match proves the certificate was generated for your specific request.'
                                         : 'SHA-512( SHA-256(public_key_DER) ‖ timestamp ). Deterministic binding — the certificate\'s NotBefore timestamp is the nonce.' }] : []),

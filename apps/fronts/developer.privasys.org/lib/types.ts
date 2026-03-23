@@ -266,6 +266,10 @@ export interface AttestationQuote {
     mr_enclave?: string;
     mr_signer?: string;
     mr_td?: string;
+    rtmr0?: string;
+    rtmr1?: string;
+    rtmr2?: string;
+    rtmr3?: string;
     format?: string;
 }
 
