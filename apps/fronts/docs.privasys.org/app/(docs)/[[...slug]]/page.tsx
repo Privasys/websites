@@ -38,7 +38,7 @@ const folderRedirects: Record<string, string> = {
     'solutions/enclave-vaults': '/solutions/enclave-vaults/overview',
     'solutions/enclave-agent': '/solutions/enclave-agent/overview',
     'solutions/platform': '/solutions/platform/overview',
-    'solutions/platform/deploy': '/solutions/platform/deploy/google-cloud'
+    'solutions/platform/developer-platform': '/solutions/platform/developer-platform/getting-started'
 };
 
 export default async function Page(props: {

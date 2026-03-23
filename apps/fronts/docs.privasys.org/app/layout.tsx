@@ -73,7 +73,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
                 <footer className="border-t py-6 text-center text-sm text-fd-muted-foreground">
                     <p>© {new Date().getFullYear()} Privasys Ltd. All rights reserved.</p>
                     <p className="mt-1">
-                        v0.1.0 · Licensed under{' '}
+                        v0.2.0 · Licensed under{' '}
                         <a
                             href="https://github.com/Privasys/websites/blob/main/LICENSE"
                             className="underline hover:text-fd-foreground"

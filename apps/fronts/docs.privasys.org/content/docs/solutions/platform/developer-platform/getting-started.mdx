@@ -1,0 +1,66 @@
+---
+title: Getting Started
+description: Deploy your first confidential application on the Privasys Developer Platform in minutes.
+---
+
+The Privasys Developer Platform at [developer.privasys.org](https://developer.privasys.org) is a self-service interface for building, deploying, and managing confidential applications. You can go from code to a live, hardware-attested deployment in minutes.
+
+## Quick start
+
+| Step | Action |
+|------|--------|
+| **1** | Go to [developer.privasys.org](https://developer.privasys.org) and sign in with GitHub |
+| **2** | Click **New Application** and choose a deployment target (WASM or Container) |
+| **3** | Link a GitHub commit or upload a pre-compiled `.cwasm` file |
+| **4** | The platform builds, deploys, and attests your application automatically |
+| **5** | Clients verify your service through a standard RA-TLS connection |
+
+## Authentication
+
+Sign in with your **GitHub identity** via OIDC. The login page redirects to the identity provider automatically. Returning users with an existing session skip the login form entirely.
+
+No separate account is required. Your GitHub identity is all you need to start deploying.
+
+## Choosing a deployment target
+
+The platform supports two deployment models, each with different trade-offs:
+
+### WASM modules (Enclave OS Mini)
+
+Your application runs as a WebAssembly module inside an Intel SGX enclave. This provides:
+
+- The smallest possible Trusted Computing Base (~4 MB enclave binary)
+- Per-application code identity (SHA-256 hash) embedded in the attestation certificate
+- Ideal for cryptographic operations, secrets management, key custody, and high-assurance workloads
+
+See [Deploy WASM](/solutions/platform/developer-platform/deploy-wasm) for the full workflow.
+
+### Containers (Enclave OS Virtual)
+
+Your application runs as a standard Linux container inside a Confidential VM (Intel TDX). This provides:
+
+- Standard Linux containers with standard tooling, no code changes required
+- Hardware-encrypted memory with full hardware attestation
+- Ideal for existing web applications, AI/ML inference, and data processing pipelines
+
+See [Deploy Container](/solutions/platform/developer-platform/deploy-container) for the full workflow.
+
+## What happens after deployment
+
+Once deployed, your application:
+
+1. **Runs inside hardware-protected infrastructure.** WASM apps run inside SGX enclaves. Containers run inside TDX Confidential VMs. Neither the host OS nor the cloud provider can access your data.
+
+2. **Gets automatic RA-TLS certificates.** The platform generates TLS certificates that carry hardware attestation evidence. Clients see a standard HTTPS connection with proof of what is running.
+
+3. **Is verifiable by anyone.** Using our [verification libraries](/solutions/platform/verification-libraries) in Python, Go, Rust, TypeScript, or C#, any client can verify the attestation with a single function call.
+
+4. **Has a live attestation panel.** The Developer Platform provides an interactive attestation tab where you can inspect certificates, hardware quotes, measurements, and challenge-response proofs for your deployed application.
+
+## Next steps
+
+- [Deploy a WASM module](/solutions/platform/developer-platform/deploy-wasm)
+- [Deploy a container](/solutions/platform/developer-platform/deploy-container)
+- [Attestation and verification](/solutions/platform/developer-platform/attestation)
+- [Application lifecycle](/solutions/platform/developer-platform/app-lifecycle)
+- [Verification libraries](/solutions/platform/verification-libraries)

@@ -100,6 +100,27 @@ export default function EnclaveOS() {
 
             <section className='mt-20 lg:mt-40'>
                 <h2 className='text-2xl lg:text-4xl'>
+                    <Balancer>Deploy on the Privasys Platform.</Balancer>
+                </h2>
+                <p className='mt-8 text-lg'>
+                    The fastest way to run your application on Enclave OS is through the <a href='https://developer.privasys.org' className='underline'>Developer Platform</a>.
+                    Sign in with GitHub, link your repository or upload a pre-compiled module, and your code is deployed to hardware-protected infrastructure in minutes.
+                    Builds are reproducible, and every deployment is automatically attested.
+                </p>
+                <div className='mt-10 flex flex-wrap gap-4'>
+                    <a href='https://developer.privasys.org'
+                        className='px-6 py-2.5 font-bold border rounded-full text-black dark:text-white hover:bg-black hover:text-white dark:border-white dark:hover:bg-white dark:hover:text-black transition-colors'>
+                        Open the Developer Platform
+                    </a>
+                    <a href='https://docs.privasys.org/solutions/platform/developer-platform/getting-started'
+                        className='px-6 py-2.5 font-bold border rounded-full text-black dark:text-white hover:bg-black hover:text-white dark:border-white dark:hover:bg-white dark:hover:text-black transition-colors'>
+                        Read the getting started guide
+                    </a>
+                </div>
+            </section>
+
+            <section className='mt-20 lg:mt-40'>
+                <h2 className='text-2xl lg:text-4xl'>
                     <Balancer>Open source. Auditable. No lock-in.</Balancer>
                 </h2>
                 <p className='mt-8 text-lg'>

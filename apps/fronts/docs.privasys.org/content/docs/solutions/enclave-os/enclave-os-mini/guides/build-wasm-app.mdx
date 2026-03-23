@@ -178,3 +178,16 @@ Clients can verify not just the enclave identity (MRENCLAVE) but the exact appli
 ## Building Enclave OS with WASM Support
 
 To build the enclave with WASM runtime enabled, see [Deploy Enclave OS](/solutions/enclave-os/guides/deploy#build-with-wasm-runtime).
+
+## Deploy to the Privasys Platform
+
+The fastest way to deploy your WASM app is through the [Developer Platform](https://developer.privasys.org). Instead of building Enclave OS from source and managing SGX hardware yourself, the platform handles everything:
+
+1. **Sign in** at [developer.privasys.org](https://developer.privasys.org) with your GitHub account
+2. **Submit your app** by pasting a GitHub commit URL or uploading your `.cwasm` file
+3. **Reproducible build** - When linked to a GitHub commit, the platform runs a deterministic build via GitHub Actions. Anyone can check out the same commit, run the same build, and verify the output matches the deployed binary hash.
+4. **Automatic deployment** - Your app is deployed to an SGX enclave with RA-TLS certificates and attestation
+
+The build reproducibility is key: the SHA-256 code hash embedded in the RA-TLS certificate is only trustworthy if the build pipeline is auditable. The platform makes this the default.
+
+See the [Developer Platform guide](/solutions/platform/developer-platform/deploy-wasm) for the full deployment workflow.

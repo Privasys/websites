@@ -74,6 +74,48 @@ export default function Home() {
 
                 <section className='mt-30 lg:mt-60'>
                     <h2 className='text-2xl lg:text-4xl'>
+                        Deploy confidential applications in minutes.
+                    </h2>
+                    <p className='mt-8 text-lg'>
+                        Our Developer Platform is live at <a href='https://developer.privasys.org' className='underline'>developer.privasys.org</a>.
+                        Sign in with GitHub, create an application, upload your code, and it runs on hardware-protected infrastructure with remote attestation built in.
+                    </p>
+                    <div className='mt-16 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-10 lg:gap-x-16'>
+                        <div>
+                            <p className='text-sm font-medium tracking-wide uppercase text-[#1d1d1f]/50 dark:text-[#f5f5f7]/50 mb-2'>Step 1</p>
+                            <h3 className='text-xl'>Sign in</h3>
+                            <p className='mt-1'>Authenticate via GitHub OIDC. No extra accounts to create.</p>
+                        </div>
+                        <div>
+                            <p className='text-sm font-medium tracking-wide uppercase text-[#1d1d1f]/50 dark:text-[#f5f5f7]/50 mb-2'>Step 2</p>
+                            <h3 className='text-xl'>Create an app</h3>
+                            <p className='mt-1'>Choose WASM or Container and name your application.</p>
+                        </div>
+                        <div>
+                            <p className='text-sm font-medium tracking-wide uppercase text-[#1d1d1f]/50 dark:text-[#f5f5f7]/50 mb-2'>Step 3</p>
+                            <h3 className='text-xl'>Upload your code</h3>
+                            <p className='mt-1'>Link a GitHub commit for reproducible builds, or upload a pre-compiled module.</p>
+                        </div>
+                        <div>
+                            <p className='text-sm font-medium tracking-wide uppercase text-[#1d1d1f]/50 dark:text-[#f5f5f7]/50 mb-2'>Step 4</p>
+                            <h3 className='text-xl'>Deploy and attest</h3>
+                            <p className='mt-1'>Your app runs inside a hardware enclave. Every connection is verifiable.</p>
+                        </div>
+                    </div>
+                    <div className='mt-10 flex gap-4 flex-wrap'>
+                        <a href='https://developer.privasys.org'
+                            className='px-6 py-2.5 font-bold border-1 rounded-full text-black dark:text-white hover:bg-black hover:text-white dark:border-white dark:hover:bg-white dark:hover:text-black'>
+                            Get started
+                        </a>
+                        <a href='https://docs.privasys.org/solutions/platform/developer-platform/getting-started'
+                            className='px-6 py-2.5 font-bold border-1 rounded-full text-black dark:text-white hover:bg-black hover:text-white dark:border-white dark:hover:bg-white dark:hover:text-black'>
+                            Read the guide
+                        </a>
+                    </div>
+                </section>
+
+                <section className='mt-30 lg:mt-60'>
+                    <h2 className='text-2xl lg:text-4xl'>
                         Privacy that is verifiable, not promised.
                     </h2>
                     <div className='mt-20 grid grid-cols-1 lg:grid-cols-2 gap-16 lg:gap-x-32 lg:gap-y-20'>
@@ -81,14 +123,13 @@ export default function Home() {
                             <h3 className='text-xl lg:text-3xl'>Always verifiable</h3>
                             <p>
                                 <Balancer>
-                                    We guarantee process integrity with cryptographic guarantees.
-                                    Anyone can attest the security and privacy guarantees of our services.
-                                    We enforce verifiable transparency, shifting the need to trust a service provider to verifying technical evidence of integrity.
+                                    Every connection carries cryptographic evidence of what code is running and that it is running inside genuine secure hardware.
+                                    Clients verify security through hardware-signed attestation quotes, not promises.
                                 </Balancer>
                             </p>
                         </div>
                         <div>
-                            <h3 className='text-xl lg:text-3xl'>Open source by design</h3>
+                            <h3 className='text-xl lg:text-3xl'>Open source</h3>
                             <p>
                                 <Balancer>
                                     Every component is published under the AGPL-3.0 licence.
@@ -100,8 +141,7 @@ export default function Home() {
                         <div className='lg:col-span-2'>
                             <h3 className='text-xl lg:text-3xl'>Building the future of data self-sovereignty</h3>
                             <p>
-                                We have one of the strongest data protection engineering teams.
-                                Over the last few years, our experts have won all international privacy competitions in the financial sector:
+                                In recent years, our team has won every major international privacy competition in the financial sector:
                             </p>
                             <div className='mt-1'>
                                 <ul>
@@ -131,17 +171,16 @@ export default function Home() {
 
                 <section className='mt-30 lg:mt-60'>
                     <h2 className='text-2xl lg:text-4xl'>
-                        We derive intelligence from private data with complete transparency and zero compromise on confidentiality.
-                        By connecting secure processing to private siloed data, we unlock powerful insights to solve the world&rsquo;s most complex challenges.
+                        Process sensitive data across organisational boundaries without exposing it.
+                        Secure enclaves enable collaborative analytics on private, siloed data.
                     </h2>
                     <div className='mt-20 grid grid-cols-1 lg:grid-cols-2 gap-16 lg:gap-x-32 lg:gap-y-20'>
                         <div>
                             <h3 className='text-xl lg:text-3xl'>Programmable insights</h3>
                             <p>
                                 <Balancer>
-                                    Our technology connects sensitive data to secure processing, with no middlemen or blind trust.
-                                    It empowers data holders to unlock powerful insights while preserving privacy.
-                                    We support programmable business logic, enabling you to design sophisticated workflows.
+                                    Connect sensitive data sources to secure processing inside hardware enclaves.
+                                    Define custom business logic that runs over private data without exposing it.
                                 </Balancer>
                             </p>
                         </div>
@@ -161,8 +200,8 @@ export default function Home() {
 
                 <section className='mt-30 lg:mt-60'>
                     <h2 className='text-2xl lg:text-4xl'>
-                        We power Confidential AI: an intelligence system explicitly designed to allow LLMs and SLMs to securely process private data.
-                        We enable you to run AI applications without sacrificing sovereignty over your data or model.
+                        Run AI models on private data without exposing it.
+                        LLMs, retrieval pipelines, and AI agents operate inside hardware-protected environments with full attestation.
                     </h2>
                     <div className='mt-20 grid grid-cols-1 lg:grid-cols-2 gap-16 lg:gap-x-32 lg:gap-y-20'>
                         <div>

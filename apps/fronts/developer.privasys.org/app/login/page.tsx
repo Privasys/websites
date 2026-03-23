@@ -57,29 +57,7 @@ export default function LoginPage() {
                     {loading ? 'Redirecting…' : 'Continue with GitHub'}
                 </button>
 
-                <div className="mt-4 flex items-center gap-3">
-                    <div className="flex-1 h-px bg-black/10 dark:bg-white/10" />
-                    <span className="text-xs text-black/30 dark:text-white/30">or</span>
-                    <div className="flex-1 h-px bg-black/10 dark:bg-white/10" />
-                </div>
-
-                <button
-                    type="button"
-                    disabled
-                    className="mt-4 w-full flex items-center justify-center gap-2.5 px-4 py-2.5 text-sm font-medium rounded-lg border border-black/10 dark:border-white/10 opacity-50 cursor-not-allowed"
-                >
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                        <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-                    </svg>
-                    Sign in with Passkey
-                </button>
-
                 <p className="mt-6 text-xs text-center text-black/40 dark:text-white/40">
-                    Sign in with GitHub first, then activate a Passkey in your account settings for passwordless access.
-                </p>
-
-                <p className="mt-4 text-xs text-center text-black/40 dark:text-white/40">
                     By signing in, you agree to the{' '}
                     <a href="https://privasys.org/legal/terms" target="_blank" rel="noopener noreferrer" className="underline">Terms of Service</a>
                     {' '}and{' '}

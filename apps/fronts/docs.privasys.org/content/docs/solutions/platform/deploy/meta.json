@@ -1,9 +1,0 @@
-{
-    "title": "Deploy",
-    "defaultOpen": false,
-    "pages": [
-        "google-cloud",
-        "azure",
-        "ovh-cloud"
-    ]
-}
