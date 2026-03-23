@@ -27,6 +27,23 @@ async function deleteAppIfExists(page: import('@playwright/test').Page, token: s
     const apps: { id: string; name: string }[] = await resp.json();
     const existing = apps.find(a => a.name === TEST_APP_NAME);
     if (existing) {
+        // Stop any active deployments first (ensures enclave cleans up containers + snapshots)
+        const depsResp = await page.request.get(`${API}/api/v1/apps/${existing.id}/deployments`, {
+            headers: { Authorization: `Bearer ${token}` },
+        });
+        if (depsResp.ok()) {
+            const deps: { id: string; status: string }[] = await depsResp.json();
+            const activeDeps = deps.filter(d => d.status === 'active');
+            for (const dep of activeDeps) {
+                await page.request.post(`${API}/api/v1/apps/${existing.id}/deployments/${dep.id}/stop`, {
+                    headers: { Authorization: `Bearer ${token}` },
+                    timeout: 30_000,
+                });
+                console.log(`Stopped deployment ${dep.id}`);
+            }
+            // Wait for the enclave manager to fully clean up containers + snapshots
+            if (activeDeps.length > 0) await page.waitForTimeout(5_000);
+        }
         await page.request.delete(`${API}/api/v1/apps/${existing.id}`, {
             headers: { Authorization: `Bearer ${token}` },
         });
@@ -189,15 +206,11 @@ test.describe('Container Deploy to TDX', () => {
     });
 
     test('deployment visible in portal UI', async ({ page }) => {
-        test.setTimeout(30_000);
+        test.setTimeout(60_000);
+        token = await getToken(page);
+        if (!appId) appId = await discoverAppId(page, token);
 
-        await page.goto('/dashboard/');
-        await page.waitForSelector('nav', { timeout: 5_000 });
-
-        // Find and click the container app
-        const appLink = page.locator('nav a').filter({ hasText: new RegExp(TEST_APP_NAME, 'i') });
-        await appLink.first().click();
-        await page.waitForURL('**/dashboard/apps/**');
+        await page.goto(`/dashboard/apps/${appId}`);
 
         // Go to Deployments tab
         const deploymentsTab = page.getByRole('button', { name: 'Deployments' });
@@ -211,13 +224,13 @@ test.describe('Container Deploy to TDX', () => {
 
     test('API Testing tab is NOT shown for container apps', async ({ page }) => {
         test.setTimeout(15_000);
+        if (!appId) {
+            token = await getToken(page);
+            appId = await discoverAppId(page, token);
+        }
 
-        await page.goto('/dashboard/');
+        await page.goto(`/dashboard/apps/${appId}`);
         await page.waitForSelector('nav', { timeout: 5_000 });
-
-        const appLink = page.locator('nav a').filter({ hasText: new RegExp(TEST_APP_NAME, 'i') });
-        await appLink.first().click();
-        await page.waitForURL('**/dashboard/apps/**');
 
         // Attestation tab should be visible (has active deployment)
         await expect(page.getByRole('button', { name: 'Attestation' })).toBeVisible({ timeout: 5_000 });
@@ -341,13 +354,13 @@ test.describe('Container Deploy to TDX', () => {
 
     test('attestation tab renders correctly in UI', async ({ page }) => {
         test.setTimeout(60_000);
+        if (!appId) {
+            token = await getToken(page);
+            appId = await discoverAppId(page, token);
+        }
 
-        await page.goto('/dashboard/');
+        await page.goto(`/dashboard/apps/${appId}`);
         await page.waitForSelector('nav', { timeout: 5_000 });
-
-        const appLink = page.locator('nav a').filter({ hasText: new RegExp(TEST_APP_NAME, 'i') });
-        await appLink.first().click();
-        await page.waitForURL('**/dashboard/apps/**');
 
         // Click attestation tab
         await page.getByRole('button', { name: 'Attestation' }).click();
@@ -371,6 +384,98 @@ test.describe('Container Deploy to TDX', () => {
 
         await page.screenshot({ path: screenshot('container-attestation-tdx'), fullPage: true });
         console.log('Attestation UI verified: TDX Quote heading displayed correctly');
+    });
+
+    test('attestation includes event log for RTMR verification', async ({ page }) => {
+        test.setTimeout(60_000);
+        token = await getToken(page);
+        if (!appId) appId = await discoverAppId(page, token);
+
+        const resp = await page.request.get(`${API}/api/v1/apps/${appId}/attest`, {
+            headers: { Authorization: `Bearer ${token}` },
+            timeout: 30_000,
+        });
+        expect(resp.ok()).toBeTruthy();
+
+        const result = await resp.json();
+        console.log(`Event log source: ${result.event_log_source}`);
+        console.log(`Event log base64 length: ${result.event_log_base64?.length}`);
+
+        // Event log must be present for TDX attestations
+        expect(result.event_log_base64).toBeTruthy();
+        expect(result.event_log_source).toBeTruthy();
+        expect(result.event_log_source).toMatch(/^(tpm0|ccel)$/);
+
+        // Base64 should decode to a non-trivial binary (at least 1KB)
+        const raw = Buffer.from(result.event_log_base64, 'base64');
+        console.log(`Event log raw size: ${raw.length} bytes`);
+        expect(raw.length).toBeGreaterThan(1024);
+
+        console.log('Event log present in attestation response');
+    });
+
+    test('RTMR verifier renders in attestation UI', async ({ page }) => {
+        test.setTimeout(90_000);
+        if (!appId) {
+            token = await getToken(page);
+            appId = await discoverAppId(page, token);
+        }
+
+        await page.goto(`/dashboard/apps/${appId}`);
+        await page.waitForSelector('nav', { timeout: 5_000 });
+
+        // Click attestation tab
+        await page.getByRole('button', { name: 'Attestation' }).click();
+        await page.waitForTimeout(500);
+
+        // Click Inspect Certificate
+        await page.getByRole('button', { name: 'Inspect Certificate' }).click();
+
+        // Wait for attestation results
+        await expect(page.locator('text=TLS Connection')).toBeVisible({ timeout: 30_000 });
+
+        // Event Log Verification section should appear after event log is parsed
+        const verifierHeading = page.locator('h2:has-text("Event Log Verification")');
+        await expect(verifierHeading).toBeVisible({ timeout: 15_000 });
+
+        // Wait for event log replay to complete — RTMR buttons only appear after processing
+        await expect(page.locator('button:has-text("RTMR[0]")')).toBeVisible({ timeout: 30_000 });
+
+        // Should show "Event log verified" badge (or diagnostic)
+        const matchBadge = page.locator('text=Event log verified');
+        const mismatchBadge = page.locator('text=RTMR mismatch detected');
+        const hasBadge = await matchBadge.or(mismatchBadge).first().isVisible({ timeout: 5_000 }).catch(() => false);
+        if (!hasBadge) {
+            // Capture diagnostic info
+            const sectionText = await verifierHeading.locator('..').locator('..').textContent();
+            console.log('RTMR Verifier section text:', sectionText?.substring(0, 500));
+        }
+        await expect(matchBadge).toBeVisible({ timeout: 5_000 });
+
+        // Should show RTMR[0] through RTMR[3] with event counts
+        for (let i = 0; i < 4; i++) {
+            await expect(page.locator(`button:has-text("RTMR[${i}]")`)).toBeVisible();
+        }
+
+        // Click "Details" to expand the console snippet section (within Event Log Verification)
+        const verifierSectionForClick = page.locator('section').filter({ hasText: 'Event Log Verification' });
+        const detailsBtn = verifierSectionForClick.locator('button:has-text("Details")');
+        await detailsBtn.click();
+
+        // "Verify independently" section should now be visible
+        await expect(verifierSectionForClick.locator('text=Verify independently')).toBeVisible({ timeout: 5_000 });
+
+        // Copy snippet button should be visible
+        await expect(verifierSectionForClick.locator('button:has-text("Copy snippet")')).toBeVisible();
+
+        // The console snippet should contain PCR replay code (scoped to Event Log section)
+        const verifierSection = page.locator('section').filter({ hasText: 'Event Log Verification' });
+        const snippet = verifierSection.locator('pre');
+        await expect(snippet).toContainText('PCR Replay');
+        await expect(snippet).toContainText('crypto.subtle.digest');
+
+        await page.screenshot({ path: screenshot('container-rtmr-verifier'), fullPage: true });
+        console.log('RTMR verifier UI rendered correctly with console snippet');
     });
 
     test('stop the deployment', async ({ page }) => {
