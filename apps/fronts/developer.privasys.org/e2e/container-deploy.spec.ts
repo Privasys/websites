@@ -4,7 +4,11 @@ import path from 'path';
 const screenshot = (name: string) => path.join(__dirname, 'test-results', `${name}.png`);
 const API = process.env.NEXT_PUBLIC_API_URL || 'https://api-test.developer.privasys.org';
 
-/** Helper: get the access token from the authenticated portal session.  */
+const TEST_APP_NAME = 'e2e-container-test';
+const TEST_COMMIT_URL = 'https://github.com/Privasys/container-app-example/commit/04a44ffc9068a8600a69b7791bde8fd970362502';
+const TEST_CONTAINER_PORT = 8080;
+
+/** Helper: get the access token from the authenticated portal session. */
 async function getToken(page: import('@playwright/test').Page): Promise<string> {
     await page.goto('/dashboard/');
     await page.waitForSelector('nav', { timeout: 10_000 });
@@ -12,6 +16,22 @@ async function getToken(page: import('@playwright/test').Page): Promise<string> 
     const token = session?.accessToken as string;
     expect(token).toBeTruthy();
     return token;
+}
+
+/** Helper: delete app by name if it exists (cleanup). */
+async function deleteAppIfExists(page: import('@playwright/test').Page, token: string) {
+    const resp = await page.request.get(`${API}/api/v1/apps`, {
+        headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!resp.ok()) return;
+    const apps: { id: string; name: string }[] = await resp.json();
+    const existing = apps.find(a => a.name === TEST_APP_NAME);
+    if (existing) {
+        await page.request.delete(`${API}/api/v1/apps/${existing.id}`, {
+            headers: { Authorization: `Bearer ${token}` },
+        });
+        console.log(`Cleaned up existing app ${existing.id}`);
+    }
 }
 
 test.describe('Container Deploy to TDX', () => {
@@ -22,44 +42,110 @@ test.describe('Container Deploy to TDX', () => {
     let versionId: string;
     let enclaveId: string;
 
-    test('authenticate and discover app', async ({ page }) => {
-        token = await getToken(page);
-
-        // Find the container-app
+    /** Discover the test app's ID by name (for when tests run in isolation). */
+    async function discoverAppId(page: import('@playwright/test').Page, t: string): Promise<string> {
         const resp = await page.request.get(`${API}/api/v1/apps`, {
-            headers: { Authorization: `Bearer ${token}` },
+            headers: { Authorization: `Bearer ${t}` },
         });
         expect(resp.ok()).toBeTruthy();
-        const apps: { id: string; name: string; app_type: string }[] = await resp.json();
-        const containerApp = apps.find(a => a.app_type === 'container');
-        expect(containerApp).toBeTruthy();
-        appId = containerApp!.id;
-        console.log(`Found container app: ${containerApp!.name} (${appId})`);
+        const apps: { id: string; name: string }[] = await resp.json();
+        const app = apps.find(a => a.name === TEST_APP_NAME);
+        expect(app).toBeTruthy();
+        return app!.id;
+    }
+
+    test('cleanup and create container app with valid port', async ({ page }) => {
+        test.setTimeout(30_000);
+        token = await getToken(page);
+
+        // Delete any leftover app from a previous run
+        await deleteAppIfExists(page, token);
+
+        // Create a container app with a valid port
+        const createResp = await page.request.post(`${API}/api/v1/apps`, {
+            headers: {
+                Authorization: `Bearer ${token}`,
+                'Content-Type': 'application/json',
+            },
+            data: {
+                name: TEST_APP_NAME,
+                source_type: 'github',
+                commit_url: TEST_COMMIT_URL,
+                app_type: 'container',
+                container_port: TEST_CONTAINER_PORT,
+                container_storage: false,
+            },
+        });
+
+        console.log(`Create response: ${createResp.status()}`);
+        const createBody = await createResp.json();
+        console.log(`Create body: ${JSON.stringify(createBody)}`);
+
+        expect(createResp.ok()).toBeTruthy();
+        expect(createBody.app_type).toBe('container');
+        expect(createBody.container_port).toBe(TEST_CONTAINER_PORT);
+        expect(createBody.container_storage).toBe(false);
+        appId = createBody.id;
+        console.log(`Created container app: ${TEST_APP_NAME} (${appId})`);
     });
 
-    test('app has a ready version', async ({ page }) => {
+    test('creating container app without port is rejected', async ({ page }) => {
         token = await getToken(page);
 
-        const resp = await page.request.get(`${API}/api/v1/apps/${appId}`, {
+        const resp = await page.request.post(`${API}/api/v1/apps`, {
+            headers: {
+                Authorization: `Bearer ${token}`,
+                'Content-Type': 'application/json',
+            },
+            data: {
+                name: 'e2e-no-port-test',
+                source_type: 'github',
+                commit_url: TEST_COMMIT_URL,
+                app_type: 'container',
+                // No container_port
+            },
+        });
+
+        expect(resp.status()).toBe(400);
+        const body = await resp.json();
+        expect(body.error).toContain('container_port');
+        console.log(`Correctly rejected: ${body.error}`);
+    });
+
+    test('app has correct port and a ready version', async ({ page }) => {
+        test.setTimeout(360_000); // 6 minutes — build can take a while
+        token = await getToken(page);
+        if (!appId) appId = await discoverAppId(page, token);
+
+        // Verify port is persisted
+        const appResp = await page.request.get(`${API}/api/v1/apps/${appId}`, {
             headers: { Authorization: `Bearer ${token}` },
         });
-        expect(resp.ok()).toBeTruthy();
-        const app = await resp.json();
+        expect(appResp.ok()).toBeTruthy();
+        const app = await appResp.json();
+        expect(app.container_port).toBe(TEST_CONTAINER_PORT);
 
-        // Verify port is set
-        expect(app.container_port).toBeGreaterThan(0);
-        console.log(`Container port: ${app.container_port}`);
-
-        // Get versions
-        const versionsResp = await page.request.get(`${API}/api/v1/apps/${appId}/versions`, {
-            headers: { Authorization: `Bearer ${token}` },
-        });
-        expect(versionsResp.ok()).toBeTruthy();
-        const versions: { id: string; label: string; status: string }[] = await versionsResp.json();
-        const readyVersion = versions.find(v => v.status === 'ready');
-        expect(readyVersion).toBeTruthy();
-        versionId = readyVersion!.id;
-        console.log(`Ready version: ${readyVersion!.label} (${versionId})`);
+        // Wait for build to complete and version to be ready
+        // The app was just created — it will trigger a build via GitHub Actions.
+        // For the test, we poll for a ready version (the build can take a while).
+        let ready = false;
+        for (let i = 0; i < 60; i++) {
+            const versionsResp = await page.request.get(`${API}/api/v1/apps/${appId}/versions`, {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            if (versionsResp.ok()) {
+                const versions: { id: string; status: string }[] = await versionsResp.json();
+                const readyVersion = versions.find(v => v.status === 'ready');
+                if (readyVersion) {
+                    versionId = readyVersion.id;
+                    ready = true;
+                    break;
+                }
+            }
+            await page.waitForTimeout(5_000);
+        }
+        expect(ready).toBeTruthy();
+        console.log(`Ready version: ${versionId}`);
     });
 
     test('TDX enclave is available', async ({ page }) => {
@@ -77,8 +163,9 @@ test.describe('Container Deploy to TDX', () => {
     });
 
     test('deploy container to TDX enclave via API', async ({ page }) => {
-        test.setTimeout(180_000); // 3 minutes
+        test.setTimeout(180_000);
         token = await getToken(page);
+        if (!appId) appId = await discoverAppId(page, token);
 
         const resp = await page.request.post(
             `${API}/api/v1/apps/${appId}/versions/${versionId}/deploy`,
@@ -108,7 +195,7 @@ test.describe('Container Deploy to TDX', () => {
         await page.waitForSelector('nav', { timeout: 5_000 });
 
         // Find and click the container app
-        const appLink = page.locator('nav a').filter({ hasText: /container/ });
+        const appLink = page.locator('nav a').filter({ hasText: new RegExp(TEST_APP_NAME, 'i') });
         await appLink.first().click();
         await page.waitForURL('**/dashboard/apps/**');
 
@@ -122,9 +209,119 @@ test.describe('Container Deploy to TDX', () => {
         await page.screenshot({ path: screenshot('container-deploy-active'), fullPage: true });
     });
 
+    test('API Testing tab is NOT shown for container apps', async ({ page }) => {
+        test.setTimeout(15_000);
+
+        await page.goto('/dashboard/');
+        await page.waitForSelector('nav', { timeout: 5_000 });
+
+        const appLink = page.locator('nav a').filter({ hasText: new RegExp(TEST_APP_NAME, 'i') });
+        await appLink.first().click();
+        await page.waitForURL('**/dashboard/apps/**');
+
+        // Attestation tab should be visible (has active deployment)
+        await expect(page.getByRole('button', { name: 'Attestation' })).toBeVisible({ timeout: 5_000 });
+
+        // API Testing tab should NOT be shown for container apps
+        await expect(page.getByRole('button', { name: 'API Testing' })).not.toBeVisible();
+        await page.screenshot({ path: screenshot('container-no-api-testing-tab'), fullPage: true });
+        console.log('Confirmed: API Testing tab hidden for container app');
+    });
+
+    test('attestation shows TDX quote (not SGX)', async ({ page }) => {
+        test.setTimeout(60_000);
+        token = await getToken(page);
+        if (!appId) appId = await discoverAppId(page, token);
+
+        // Call the attestation API directly
+        const resp = await page.request.get(`${API}/api/v1/apps/${appId}/attest`, {
+            headers: { Authorization: `Bearer ${token}` },
+            timeout: 30_000,
+        });
+        console.log(`Attest response: ${resp.status()}`);
+        expect(resp.ok()).toBeTruthy();
+
+        const result = await resp.json();
+        console.log(`Quote type: ${result.quote?.type}`);
+        console.log(`Quote OID: ${result.quote?.oid}`);
+        console.log(`Extensions count: ${result.extensions?.length}`);
+        console.log(`App extensions count: ${result.app_extensions?.length}`);
+        console.log(`MRTD: ${result.quote?.mr_td}`);
+        if (result.app_extensions?.length > 0) {
+            for (const ext of result.app_extensions) {
+                console.log(`  App ext: ${ext.label} (${ext.oid}) = ${ext.value_hex?.substring(0, 64)}...`);
+            }
+        }
+
+        // Quote should exist and be TDX
+        expect(result.quote).toBeTruthy();
+        expect(result.quote.type).toBe('TDX Quote');
+        expect(result.quote.is_mock).toBe(false);
+
+        // Should have non-trivial MRTD (not all zeros)
+        expect(result.quote.mr_td).toBeTruthy();
+        expect(result.quote.mr_td).not.toMatch(/^0+$/);
+
+        // Should have platform extensions
+        expect(result.extensions).toBeTruthy();
+        expect(result.extensions.length).toBeGreaterThan(0);
+
+        // Should have workload extensions (3.x OIDs)
+        expect(result.app_extensions).toBeTruthy();
+        expect(result.app_extensions.length).toBeGreaterThan(0);
+
+        // Should have TLS info
+        expect(result.tls).toBeTruthy();
+        expect(result.tls.version).toBeTruthy();
+
+        // Should have certificate
+        expect(result.certificate).toBeTruthy();
+        expect(result.certificate.not_before).toBeTruthy();
+
+        // Should have PEM
+        expect(result.pem).toContain('BEGIN CERTIFICATE');
+
+        console.log('Attestation verified: TDX quote with platform extensions');
+    });
+
+    test('attestation tab renders correctly in UI', async ({ page }) => {
+        test.setTimeout(60_000);
+
+        await page.goto('/dashboard/');
+        await page.waitForSelector('nav', { timeout: 5_000 });
+
+        const appLink = page.locator('nav a').filter({ hasText: new RegExp(TEST_APP_NAME, 'i') });
+        await appLink.first().click();
+        await page.waitForURL('**/dashboard/apps/**');
+
+        // Click attestation tab
+        await page.getByRole('button', { name: 'Attestation' }).click();
+        await page.waitForTimeout(500);
+
+        // Click Inspect Certificate
+        await page.getByRole('button', { name: 'Inspect Certificate' }).click();
+
+        // Wait for results to load
+        await expect(page.locator('text=TLS Connection')).toBeVisible({ timeout: 30_000 });
+
+        // The quote heading should say "TDX Quote", NOT "SGX Quote"
+        await expect(page.locator('h2:has-text("TDX Quote")')).toBeVisible({ timeout: 5_000 });
+        await expect(page.locator('h2:has-text("SGX Quote")')).not.toBeVisible();
+
+        // Platform attestation extensions should be visible
+        await expect(page.locator('text=Platform Attestation Extensions')).toBeVisible({ timeout: 5_000 });
+
+        // Certificate section should be visible
+        await expect(page.locator('text=x.509 Certificate')).toBeVisible();
+
+        await page.screenshot({ path: screenshot('container-attestation-tdx'), fullPage: true });
+        console.log('Attestation UI verified: TDX Quote heading displayed correctly');
+    });
+
     test('stop the deployment', async ({ page }) => {
         test.setTimeout(60_000);
         token = await getToken(page);
+        if (!appId) appId = await discoverAppId(page, token);
 
         // Get active deployments
         const depsResp = await page.request.get(`${API}/api/v1/apps/${appId}/deployments`, {
@@ -149,5 +346,10 @@ test.describe('Container Deploy to TDX', () => {
         const body = await stopResp.json();
         expect(body.status).toBe('stopped');
         console.log(`Deployment stopped successfully`);
+    });
+
+    test('cleanup: delete test app', async ({ page }) => {
+        token = await getToken(page);
+        await deleteAppIfExists(page, token);
     });
 });

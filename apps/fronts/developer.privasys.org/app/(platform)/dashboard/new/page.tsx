@@ -92,7 +92,7 @@ export default function NewApplicationPage() {
 
     // Container-specific fields
     const [containerImage] = useState('');
-    const [containerPort, setContainerPort] = useState('');
+    const [containerPort, setContainerPort] = useState('8080');
 
 
     // Name availability check
@@ -168,6 +168,16 @@ export default function NewApplicationPage() {
         setSubmitting(true);
         setError(null);
 
+        // Validate container port
+        if (appType === 'container') {
+            const port = parseInt(containerPort, 10);
+            if (!port || port < 1 || port > 65535) {
+                setError('Container port must be between 1 and 65535');
+                setSubmitting(false);
+                return;
+            }
+        }
+
         try {
             const app = await createApp(session.accessToken, {
                 name: appName,
@@ -189,7 +199,7 @@ export default function NewApplicationPage() {
             setError(e instanceof Error ? e.message : 'Something went wrong');
             setSubmitting(false);
         }
-    }, [session?.accessToken, mode, name, parsed, file, commitUrl, submitting]);
+    }, [session?.accessToken, mode, name, parsed, file, commitUrl, submitting, appType, containerPort, containerImage]);
 
     const isGithubValid = mode === 'github' && !!parsed && !!name.trim() && nameStatus !== 'taken';
     const isManualValid = mode === 'manual' && !!name && !!file && nameStatus !== 'taken';
