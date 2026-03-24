@@ -302,4 +302,15 @@ export interface AttestationResult {
     // TCG2 event log for RTMR replay verification (TDX only)
     event_log_base64?: string;
     event_log_source?: string;
+    // Application-level RTMR[3] events from the enclave manager
+    app_events?: AppEvent[];
+}
+
+export interface AppEvent {
+    timestamp: string;
+    pcr: number;
+    digest_sha384: string;
+    digest_sha256: string;
+    type: string;        // "container_load" | "container_unload"
+    description: string;
 }

@@ -1165,6 +1165,7 @@ function AttestationTab({ appId, token, deployments, versions }: { appId: string
                                 rtmr2: result.quote.rtmr2,
                                 rtmr3: result.quote.rtmr3
                             }}
+                            appEvents={result.app_events}
                         />
                     )}
 
