@@ -24,6 +24,11 @@
         "build": {
             "dependsOn": ["copy-logo", "copy-fonts"],
             "executor": "@nx/next:build",
+            "inputs": [
+                "production",
+                "^production",
+                { "runtime": "git rev-parse --short HEAD" }
+            ],
             "outputs": ["{options.outputPath}"],
             "defaultConfiguration": "production",
             "options": {
