@@ -19,10 +19,24 @@ const otpResponseFile = path.join(__dirname, '.auth', 'otp-code');
 setup('authenticate via GitHub', async ({ page }) => {
     setup.setTimeout(180_000); // 3 min — gives time for OTP to be provided
 
-    // Skip if auth state already exists (re-run with --force-auth to redo)
+    // Skip if auth state already exists AND the token is still valid
     if (fs.existsSync(stateFile) && !process.env.FORCE_AUTH) {
-        console.log('Auth state already exists, skipping login. Set FORCE_AUTH=1 to redo.');
-        return;
+        // Restore saved state and verify the token still works
+        await page.context().addCookies(
+            JSON.parse(fs.readFileSync(stateFile, 'utf-8')).cookies ?? []
+        );
+        await page.goto('/dashboard/');
+        await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {});
+        if (page.url().includes('/dashboard') && !page.url().includes('/login')) {
+            const session = await page.evaluate(() => fetch('/api/auth/session').then(r => r.json()));
+            if (session?.accessToken) {
+                console.log('Existing auth state is still valid, reusing.');
+                return;
+            }
+        }
+        console.log('Auth state expired — re-authenticating...');
+        fs.unlinkSync(stateFile);
+        await page.context().clearCookies();
     }
 
     const email = process.env.E2E_USER_EMAIL;
@@ -75,6 +89,22 @@ setup('authenticate via GitHub', async ({ page }) => {
     }
 
     if (page.url().includes('auth.privasys.org')) {
+        // Handle account selection page (Zitadel shows known accounts)
+        const accountEntry = page.locator('button, a, [role="button"]').filter({ hasText: /privasys\.org/ }).first();
+        if (await accountEntry.isVisible({ timeout: 3_000 }).catch(() => false)) {
+            console.log('Zitadel account picker detected — selecting account.');
+            await accountEntry.click();
+            await page.waitForURL(/\/dashboard/, { timeout: 30_000 });
+            await page.waitForLoadState('networkidle');
+            const session = await page.evaluate(() => fetch('/api/auth/session').then(r => r.json()));
+            if (session?.accessToken) {
+                console.log('Authenticated via Zitadel account picker, saving state.');
+                await page.context().storageState({ path: stateFile });
+                return;
+            }
+        }
+
+        // Otherwise look for GitHub IDP button
         const githubBtn = page.getByRole('button', { name: /github/i });
         if (await githubBtn.isVisible({ timeout: 5_000 }).catch(() => false)) {
             await githubBtn.click();
