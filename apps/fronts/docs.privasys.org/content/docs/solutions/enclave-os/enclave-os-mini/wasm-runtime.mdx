@@ -120,6 +120,14 @@ cargo build --target wasm32-wasip2 --release
 
 And deployed to the enclave, where its SHA-256 hash is automatically included in the attestation certificate.
 
+## MCP Tool Generation
+
+Every WASM application deployed in the enclave is automatically exposed as an **MCP (Model Context Protocol) tool server**. The enclave introspects each module's WIT types and `///` doc comments to generate a standard MCP tool manifest — one tool per exported function, with JSON Schema inputs derived from the WIT parameter types.
+
+This means AI agents can discover and call your enclave functions through the standard MCP protocol, with full hardware attestation on every connection. No separate MCP server to build, no manifest to maintain.
+
+See [MCP Tools](/solutions/enclave-os/enclave-os-mini/mcp-tools) for the full protocol reference, manifest structure, and WIT-to-JSON-Schema mapping.
+
 ## wasmtime Inside SGX: Challenges
 
 Running wasmtime inside an SGX enclave required solving several challenges:
