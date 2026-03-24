@@ -55,6 +55,7 @@ Regardless of which target you choose, every deployment gets:
 | Component | Description |
 |-----------|-------------|
 | [Developer Platform](/solutions/platform/developer-platform) | Self-service interface for deploying WASM modules and containers. Sign in at [developer.privasys.org](https://developer.privasys.org). |
+| [Gateway](/solutions/platform/gateway) | Transparent L4 proxy that routes `*.apps.privasys.org` traffic to the correct enclave. TLS terminates inside the TEE — the gateway never sees plaintext. |
 | [App Store](/solutions/platform/app-store) | Verified catalogue of confidential applications at [privasys.org/uk/apps](https://privasys.org/uk/apps), backed by hardware attestation. |
 | [Verification Libraries](/solutions/platform/verification-libraries) | Libraries in Python, Go, Rust, TypeScript, and C# for verifying attested connections with a single function call. |
 | [Attestation Server](/technology/attestation/attestation-server) | A standalone service that independently verifies hardware attestation quotes from Intel and AMD platforms. |

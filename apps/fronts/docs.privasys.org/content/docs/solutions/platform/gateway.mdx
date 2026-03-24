@@ -1,0 +1,90 @@
+---
+title: Gateway
+description: An SNI-based L4 gateway that routes traffic to confidential applications without terminating TLS. The gateway never sees your data.
+---
+
+Every application deployed on the Privasys Platform receives its own hostname under `*.apps.privasys.org`. Traffic reaches the correct enclave through a transparent **L4 gateway** that inspects only the TLS handshake header to determine the destination. TLS terminates inside the hardware enclave itself — the gateway never sees plaintext.
+
+## How it works
+
+```
+Client ──TLS ClientHello──► Gateway (L4) ──TCP──► Enclave Machine
+                              │                     (SGX or TDX)
+                              │ polls routes
+                              ▼
+                        Management Service
+```
+
+1. A client opens a TLS connection to `myapp.apps.privasys.org`.
+2. DNS resolves the hostname to one of the gateway instances (round-robin).
+3. The gateway reads the **SNI hostname** from the TLS ClientHello message.
+4. It looks up the hostname in its routing table and finds the target enclave machine.
+5. The gateway opens a TCP connection to the enclave and **splices** the two connections together, forwarding raw encrypted bytes in both directions.
+6. The TLS handshake completes end-to-end between the client and the enclave. The gateway is never part of the TLS session.
+
+The gateway adds approximately one round trip of latency (~1–5 ms intra-region) for the initial connection. Once established, the stream splice has zero per-byte overhead.
+
+## What the gateway does not do
+
+The gateway is deliberately minimal:
+
+- **No TLS termination.** It never holds a private key for your application and never decrypts any traffic.
+- **No HTTP parsing.** It operates at TCP level. It does not inspect headers, rewrite URLs, or inject middleware.
+- **No session state.** Every gateway instance is stateless and interchangeable. There is no sticky routing.
+- **No authentication at the gateway layer.** Authentication and authorization happen inside the enclave, enforced by RA-TLS and OIDC.
+
+## Route synchronisation
+
+Each gateway instance polls the management service for the current routing table:
+
+```
+GET /api/v1/internal/routes
+Authorization: Bearer <token>
+If-None-Match: "sha256:abc123..."
+```
+
+The management service returns a list of `(sni, upstream)` pairs derived from all currently deployed applications. Routes are updated atomically in memory. The gateway uses **ETag-based polling**, so unchanged route tables return `304 Not Modified` with no body.
+
+When an application is deployed or undeployed through the [Developer Platform](/solutions/platform/developer-platform), the routing table updates automatically. No manual DNS or gateway configuration is needed.
+
+## Multi-region availability
+
+Multiple gateway instances run across geographically distributed regions. DNS resolves `*.apps.privasys.org` to all available gateways using round-robin A records. Because every instance is stateless and syncs the same routing table, failover is automatic — if one gateway becomes unavailable, DNS health checks route traffic to the remaining instances.
+
+| Region | Location |
+|--------|----------|
+| Europe West (Paris) | `europe-west9-a` |
+| Europe West (London) | `europe-west2-a` |
+
+## Unknown hostnames
+
+If a client connects with an SNI hostname that does not match any deployed application, the gateway completes a TLS handshake using an ephemeral self-signed certificate and returns an **HTTP 404** response. This provides a clear signal to the client rather than silently dropping the connection.
+
+## Application hostnames
+
+Every application deployed through the Developer Platform automatically receives a hostname:
+
+```
+<app-name>.apps.privasys.org
+```
+
+This hostname is usable immediately after deployment. No DNS configuration is required from the developer. The management service registers the route and all gateway instances pick it up within seconds.
+
+## Connecting to your application
+
+Because the gateway is a transparent L4 proxy, the TLS session is end-to-end between the client and the enclave. Clients must use an [RA-TLS client library](/solutions/platform/verification-libraries) to verify the attestation during the handshake:
+
+```python
+from ratls_client import RaTlsClient
+
+client = RaTlsClient("myapp.apps.privasys.org", 443)
+response = client.get("/api/hello")
+```
+
+Standard TLS clients like `curl` or web browsers cannot complete the handshake because the enclave presents an RA-TLS certificate with hardware attestation extensions rather than a certificate signed by a public CA.
+
+## Next steps
+
+- [Getting started](/solutions/platform/developer-platform/getting-started) — deploy your first application
+- [Verification libraries](/solutions/platform/verification-libraries) — connect to your application with RA-TLS
+- [Attestation](/solutions/platform/developer-platform/attestation) — inspect certificates and hardware quotes
