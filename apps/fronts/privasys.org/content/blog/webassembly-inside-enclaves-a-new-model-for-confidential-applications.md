@@ -142,6 +142,7 @@ This means the ecosystem of existing WASI tooling, libraries, and documentation 
 
 ## What's Next
 
+- **MCP tool server.** Every WASM app deployed on the platform is now an attested [MCP](https://modelcontextprotocol.io/) tool server. WIT `///` doc comments become tool descriptions, WIT types become JSON Schema inputs, and AI agents can discover and call enclave functions over the same attested channel. Read more in [From WIT to MCP](/blog/from-wit-to-mcp-how-wasm-enclaves-become-attested-tool-servers).
 - **WASM-to-WASM composition.** Link multiple components together inside the enclave, each with its own namespace and capabilities.
 - **GPU integration.** With the [recent Linux 6.19 advances in Confidential GPU support](/blog/confidential-ai-from-isolated-enclaves-to-a-unified-fabric), WASM components will be able to dispatch inference workloads to attested GPUs.
 - **Package registry.** A curated registry of WASM components verified for enclave compatibility — with reproducible builds and published code hashes.
