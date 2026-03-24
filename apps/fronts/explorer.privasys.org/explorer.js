@@ -9,6 +9,8 @@
     let attestationServerUrl = '';
     let attestationServerToken = '';
     let currentTab = 'attestation';
+    const DEFAULT_BASE_URL = 'https://api.developer.privasys.org';
+    const GATEWAY_DOMAIN = 'apps.privasys.org';
 
     // Attestation state
     let attestResult = null;
@@ -169,19 +171,26 @@
                 baseUrl = fullInput;
                 appName = nameInput;
             }
-        } else if (baseInput && nameInput) {
+        } else if (nameInput) {
+            // Default: just app name → use default management service
+            baseUrl = baseInput || DEFAULT_BASE_URL;
+            appName = nameInput;
+        } else if (baseInput) {
             baseUrl = baseInput;
             appName = nameInput;
         }
 
         if (!baseUrl || !appName) {
-            alert('Provide a base URL and app name.');
+            alert('Enter an app name to connect.');
             return;
         }
 
+        var gatewayUrl = appName + '.' + GATEWAY_DOMAIN;
         document.body.classList.add('connected');
         $('#connected-view').classList.remove('hidden');
-        $('#connection-info').textContent = appName + ' — ' + baseUrl;
+        $('#connection-info').innerHTML = '';
+        $('#connection-info').appendChild(h('span', {}, appName + ' — ' + baseUrl));
+        $('#connection-info').appendChild(h('span', { className: 'gateway-badge', title: 'Direct RA-TLS gateway endpoint for this app' }, gatewayUrl + ':443'));
         renderTabs();
         switchTab('attestation');
     }
@@ -840,11 +849,25 @@
             if (el) el.addEventListener('keydown', function (e) { if (e.key === 'Enter') handleConnect(); });
         }
 
+        // Advanced section toggle
+        var toggle = $('#advanced-toggle');
+        if (toggle) {
+            toggle.addEventListener('click', function () {
+                var section = $('#advanced-section');
+                if (section) section.classList.toggle('collapsed');
+            });
+        }
+
         // Pre-fill from URL params
         var params = new URLSearchParams(window.location.search);
-        if (params.get('base')) $('#base-url-input').value = params.get('base');
+        if (params.get('name')) $('#app-name-input').value = params.get('name');
         if (params.get('app')) $('#app-name-input').value = params.get('app');
-        if (params.get('url')) $('#endpoint-input').value = params.get('url');
+        if (params.get('base')) $('#base-url-input').value = params.get('base');
+        if (params.get('url')) {
+            var section = $('#advanced-section');
+            if (section) section.classList.remove('collapsed');
+            $('#endpoint-input').value = params.get('url');
+        }
         if (params.get('as')) $('#attestation-url-input').value = params.get('as');
     });
 })();

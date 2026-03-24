@@ -25,20 +25,30 @@
     <div class="connect-screen" id="connect-screen">
         <div class="connect-card">
             <h2>Connect to a WASM App</h2>
-            <p class="subtitle">Enter the management service URL to explore a deployed WASM application's attestation and API.</p>
+            <p class="subtitle">Enter an app name to explore its attestation and API through the Privasys gateway.</p>
 
             <fieldset class="connect-section">
-                <legend>Endpoint</legend>
-                <label for="endpoint-input">Full endpoint URL</label>
-                <input type="text" id="endpoint-input" placeholder="https://api.developer.privasys.org/api/v1/apps/wasm-app-example">
-
-                <div class="or-separator">or</div>
-
-                <label for="base-url-input">Base URL</label>
-                <input type="text" id="base-url-input" placeholder="https://api.developer.privasys.org">
-
+                <legend>Application</legend>
                 <label for="app-name-input">App name</label>
-                <input type="text" id="app-name-input" placeholder="wasm-app-example">
+                <input type="text" id="app-name-input" placeholder="wasm-app-example" autofocus>
+                <div class="field-hint">The app name as deployed on the platform (e.g. <code>wasm-app-example</code>).</div>
+            </fieldset>
+
+            <fieldset class="connect-section collapsed" id="advanced-section">
+                <legend>
+                    <button type="button" class="toggle-btn" id="advanced-toggle">
+                        Advanced
+                        <svg class="toggle-chevron" viewBox="0 0 16 16" width="12" height="12"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+                    </button>
+                </legend>
+                <div class="collapsible-body">
+                    <label for="endpoint-input">Full endpoint URL</label>
+                    <input type="text" id="endpoint-input" placeholder="https://api.developer.privasys.org/api/v1/apps/wasm-app-example">
+                    <div class="field-hint">Overrides the default management service if provided.</div>
+
+                    <label for="base-url-input">Management service URL</label>
+                    <input type="text" id="base-url-input" placeholder="https://api.developer.privasys.org" value="https://api.developer.privasys.org">
+                </div>
             </fieldset>
 
             <fieldset class="connect-section">
@@ -61,8 +71,9 @@
             <button class="connect-btn" id="connect-btn">Connect</button>
 
             <div class="example">
-                <strong>Examples:</strong>
-                <code>https://api.developer.privasys.org/api/v1/apps/wasm-app-example</code>
+                <strong>Quick connect:</strong> Just enter an app name like <code>wasm-app-example</code> and hit Connect.
+                <br>
+                <strong>Direct URL:</strong> Expand Advanced to use a custom management service URL.
             </div>
         </div>
     </div>
