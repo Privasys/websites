@@ -40,7 +40,7 @@ export default function Platform() {
                     <div>
                         <p className='text-sm font-medium tracking-wide uppercase text-[#1d1d1f]/50 dark:text-[#f5f5f7]/50 mb-2'>Step 4</p>
                         <h3 className='text-xl lg:text-2xl'>Deploy and verify</h3>
-                        <p className='mt-2'>Your app runs in hardware-protected infrastructure. Every connection is attested and verifiable.</p>
+                        <p className='mt-2'>Your app gets its own domain, runs in hardware-protected infrastructure, and every connection is attested and verifiable.</p>
                     </div>
                 </div>
                 <div className='mt-10'>
@@ -154,6 +154,43 @@ export default function Platform() {
                             <Balancer>
                                 Client libraries in six languages (Python, Go, Rust, TypeScript, C#, and .NET) let anyone verify the attestation of your service with a single function call.
                                 Your users can confirm exactly what is running, without trusting anyone.
+                            </Balancer>
+                        </p>
+                    </div>
+                </div>
+            </section>
+
+            <section className='mt-20 lg:mt-40'>
+                <h2 className='text-2xl lg:text-4xl'>
+                    <Balancer>Your app. Your domain. Zero trust routing.</Balancer>
+                </h2>
+                <p className='mt-8 text-lg'>
+                    Every application deployed on the platform receives its own hostname
+                    under <code className='text-base bg-[#1d1d1f]/5 dark:bg-[#f5f5f7]/10 px-1.5 py-0.5 rounded'>*.apps.privasys.org</code>.
+                    Traffic is routed through our global gateway infrastructure, which inspects only the TLS handshake header to determine the destination.
+                    The gateway never terminates TLS and never sees your data.
+                    Encryption ends inside the hardware enclave itself.
+                </p>
+                <div className='mt-16 grid grid-cols-1 lg:grid-cols-2 gap-16 lg:gap-x-32 lg:gap-y-20'>
+                    <div>
+                        <h3 className='text-xl lg:text-3xl'>L4 transparent proxy</h3>
+                        <p>
+                            <Balancer>
+                                The gateway operates at TCP level. It reads the SNI hostname from the TLS ClientHello,
+                                looks up the correct enclave, and splices the connection through.
+                                No TLS termination, no HTTP parsing, no middleware.
+                                Just raw, encrypted bytes forwarded straight to the hardware enclave.
+                            </Balancer>
+                        </p>
+                    </div>
+                    <div>
+                        <h3 className='text-xl lg:text-3xl'>Multi-region availability</h3>
+                        <p>
+                            <Balancer>
+                                Multiple gateways run across geographically distributed regions.
+                                DNS resolves your application to the nearest available gateway.
+                                Every gateway is stateless and syncs its routing table from the management service,
+                                so failover is automatic with zero configuration.
                             </Balancer>
                         </p>
                     </div>
