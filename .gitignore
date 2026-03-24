@@ -57,6 +57,8 @@ deploy-*.tar
 deploy-*.tar.gz
 developer-*.tar
 tar_*.txt
+portal-*.tar
+/docker-portal-ctx
 
 # Dependencies
 node_modules
