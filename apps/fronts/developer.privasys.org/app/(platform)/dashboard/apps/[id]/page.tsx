@@ -1155,9 +1155,9 @@ function AttestationTab({ appId, token, deployments, versions }: { appId: string
                     )}
 
                     {/* RTMR Event Log Verification */}
-                    {result.event_log_base64 && result.quote && (result.quote.rtmr0 || result.quote.rtmr1 || result.quote.rtmr2 || result.quote.rtmr3) && (
+                    {result.event_log_events && result.quote && (result.quote.rtmr0 || result.quote.rtmr1 || result.quote.rtmr2 || result.quote.rtmr3) && (
                         <RtmrVerifier
-                            eventLogBase64={result.event_log_base64}
+                            events={result.event_log_events}
                             eventLogSource={result.event_log_source || 'tpm0'}
                             quoteRtmrs={{
                                 rtmr0: result.quote.rtmr0,
