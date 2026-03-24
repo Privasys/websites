@@ -40,8 +40,40 @@ setup('authenticate via GitHub', async ({ page }) => {
     // Go to the portal — login page auto-redirects to Zitadel OIDC
     await page.goto('/dashboard/');
 
-    // Zitadel either auto-redirects to GitHub or shows IDP picker
-    await page.waitForURL(/auth\.privasys\.org|github\.com/, { timeout: 30_000 });
+    // Zitadel either auto-redirects to GitHub, shows IDP picker,
+    // or completes the OIDC flow instantly if sessions are still valid.
+    await page.waitForURL(/auth\.privasys\.org|github\.com|\/dashboard/, { timeout: 30_000 });
+
+    // If we landed on /dashboard (OIDC flow completed instantly), check session
+    if (page.url().includes('/dashboard')) {
+        // Wait for the page to fully hydrate
+        await page.waitForLoadState('networkidle');
+        const session = await page.evaluate(() => fetch('/api/auth/session').then(r => r.json()));
+        console.log('Session after auto-redirect:', JSON.stringify(session).substring(0, 200));
+        if (session?.accessToken) {
+            console.log('Already authenticated (valid OIDC session), saving state.');
+            await page.context().storageState({ path: stateFile });
+            return;
+        }
+        // No token — stale session. Clear cookies and let OIDC re-authenticate.
+        console.log('Stale session detected — clearing cookies and re-authenticating.');
+        await page.context().clearCookies();
+        await page.goto('/login');
+        // Wait for login page which should redirect to Zitadel
+        await page.waitForURL(/auth\.privasys\.org|github\.com|\/dashboard/, { timeout: 30_000 });
+        if (page.url().includes('/dashboard')) {
+            await page.waitForLoadState('networkidle');
+            const fresh = await page.evaluate(() => fetch('/api/auth/session').then(r => r.json()));
+            console.log('Session after re-auth:', JSON.stringify(fresh).substring(0, 200));
+            if (fresh?.accessToken) {
+                console.log('Re-authenticated via OIDC auto-login, saving state.');
+                await page.context().storageState({ path: stateFile });
+                return;
+            }
+            throw new Error('Failed to obtain access token after OIDC re-authentication');
+        }
+    }
+
     if (page.url().includes('auth.privasys.org')) {
         const githubBtn = page.getByRole('button', { name: /github/i });
         if (await githubBtn.isVisible({ timeout: 5_000 }).catch(() => false)) {

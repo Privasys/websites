@@ -159,6 +159,8 @@ function parseEventLog(base64: string, source: string): { events: ParsedEvent[];
 
     try {
         // Legacy header event: PCR (4) + eventType (4) + SHA1 digest (20) + eventSize (4) + eventData
+        readU32(); // PCR index (skip)
+        readU32(); // event type (skip)
         readBytes(SHA1_SIZE); // SHA-1 digest
         const evSize0 = readU32();
         const headerData = readBytes(evSize0);
