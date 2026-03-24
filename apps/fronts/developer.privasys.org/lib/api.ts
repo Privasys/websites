@@ -236,6 +236,33 @@ export async function rpcCall(token: string, appId: string, func: string, params
 }
 
 // ---------------------------------------------------------------------------
+// MCP tools
+// ---------------------------------------------------------------------------
+
+export interface McpToolParam {
+    name: string;
+    description: string;
+    schema: Record<string, unknown>;
+    required: boolean;
+}
+
+export interface McpTool {
+    name: string;
+    description: string;
+    parameters: McpToolParam[];
+}
+
+export interface McpManifest {
+    status: string;
+    app: string;
+    tools: McpTool[];
+}
+
+export function getAppMcp(token: string, appId: string): Promise<McpManifest> {
+    return request<McpManifest>(`/api/v1/apps/${encodeURIComponent(appId)}/mcp`, token);
+}
+
+// ---------------------------------------------------------------------------
 // User info
 // ---------------------------------------------------------------------------
 

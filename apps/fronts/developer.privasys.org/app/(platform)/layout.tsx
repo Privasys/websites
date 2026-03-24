@@ -122,6 +122,33 @@ function Sidebar() {
                     Settings
                 </Link>
 
+                {/* Resources section */}
+                <div className="pt-4 pb-1 px-3">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-black/30 dark:text-white/30">Resources</span>
+                </div>
+                <a
+                    href="https://docs.privasys.org/docs/solutions/enclave-os/enclave-os-mini/mcp-tools"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors hover:bg-black/3 dark:hover:bg-white/5 text-black/60 dark:text-white/60"
+                >
+                    <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+                        <path d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                    MCP Tools Guide
+                </a>
+                <a
+                    href="https://docs.privasys.org"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors hover:bg-black/3 dark:hover:bg-white/5 text-black/60 dark:text-white/60"
+                >
+                    <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+                        <path d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                    </svg>
+                    Documentation
+                </a>
+
                 {isManager && (
                     <>
                         <div className="pt-4 pb-1 px-3">

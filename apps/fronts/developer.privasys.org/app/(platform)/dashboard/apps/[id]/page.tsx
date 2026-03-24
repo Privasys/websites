@@ -4,8 +4,8 @@ import Link from 'next/link';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { useEffect, useState, useCallback } from 'react';
-import { getApp, listBuilds, listVersions, listDeployments, listEnclaves, deleteApp, deployVersion, stopDeployment, attestApp, verifyQuote, getAppSchema, rpcCall, updateStoreListing } from '~/lib/api';
-import type { AppSchema, FunctionSchema, WitType, QuoteVerifyResult } from '~/lib/api';
+import { getApp, listBuilds, listVersions, listDeployments, listEnclaves, deleteApp, deployVersion, stopDeployment, attestApp, verifyQuote, getAppSchema, rpcCall, updateStoreListing, getAppMcp } from '~/lib/api';
+import type { AppSchema, FunctionSchema, WitType, QuoteVerifyResult, McpManifest, McpTool } from '~/lib/api';
 import { useSSE } from '~/lib/use-sse';
 import type { App, BuildJob, AppVersion, AppDeployment, Enclave, AttestationResult } from '~/lib/types';
 import { STATUS_LABELS, STATUS_COLORS, DEPLOYMENT_STATUS_LABELS, DEPLOYMENT_STATUS_COLORS } from '~/lib/types';
@@ -28,7 +28,7 @@ function BuildStatusDot({ status }: { status: string }) {
     return <span className={`w-2 h-2 rounded-full inline-block ${color}`} />;
 }
 
-type Tab = 'overview' | 'deployments' | 'store' | 'attestation' | 'api';
+type Tab = 'overview' | 'deployments' | 'store' | 'attestation' | 'api' | 'mcp';
 
 // Terminal states that show the full detail view
 const TERMINAL_STATUSES = new Set(['deployed', 'undeployed', 'built']);
@@ -356,7 +356,10 @@ export default function AppDetailPage() {
         { key: 'store', label: 'App Store' },
         ...(hasActiveDeployment ? [
             { key: 'attestation' as Tab, label: 'Attestation' },
-            ...(app.app_type !== 'container' ? [{ key: 'api' as Tab, label: 'API Testing' }] : [])
+            ...(app.app_type !== 'container' ? [
+                { key: 'api' as Tab, label: 'API Testing' },
+                { key: 'mcp' as Tab, label: 'AI Tools' }
+            ] : [])
         ] : [])
     ];
 
@@ -370,7 +373,15 @@ export default function AppDetailPage() {
                         {app.name} &middot; {app.source_type === 'github' ? 'GitHub' : 'Upload'}
                     </p>
                 </div>
-                <StatusBadge status={app.status} labels={STATUS_LABELS} colors={STATUS_COLORS} />
+                <div className="flex items-center gap-2">
+                    {hasActiveDeployment && app.app_type !== 'container' && (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 text-xs font-medium rounded-full bg-violet-100 text-violet-800 dark:bg-violet-900/30 dark:text-violet-300">
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                            MCP
+                        </span>
+                    )}
+                    <StatusBadge status={app.status} labels={STATUS_LABELS} colors={STATUS_COLORS} />
+                </div>
             </div>
 
             {error && (
@@ -426,6 +437,9 @@ export default function AppDetailPage() {
                 )}
                 {tab === 'api' && session?.accessToken && (
                     <ApiTestingTab appId={app.id} token={session.accessToken} deployments={activeDeployments} versions={versions} />
+                )}
+                {tab === 'mcp' && session?.accessToken && (
+                    <McpToolsTab appId={app.id} appName={app.name} hostname={activeDeployments[0]?.hostname} token={session.accessToken} />
                 )}
 
             </div>
@@ -568,6 +582,29 @@ function OverviewTab({ app, versions, builds, deployments, deleting, onDelete }:
                             </div>
                         ))}
                     </div>
+                </section>
+            )}
+
+            {/* MCP tools banner — shown for deployed WASM apps */}
+            {activeDeployments.length > 0 && app.app_type !== 'container' && (
+                <section className="p-4 rounded-xl border border-violet-200 dark:border-violet-800 bg-violet-50/50 dark:bg-violet-900/10 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                        <svg className="w-5 h-5 text-violet-600 dark:text-violet-400 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                        <div>
+                            <p className="text-sm font-medium text-violet-800 dark:text-violet-300">
+                                This app is an MCP tool server
+                            </p>
+                            <p className="text-xs text-violet-600/70 dark:text-violet-400/60 mt-0.5">
+                                AI agents can discover and call your exported functions with hardware attestation.
+                            </p>
+                        </div>
+                    </div>
+                    <a
+                        href={`/dashboard/apps/${app.id}?tab=mcp`}
+                        className="px-3 py-1.5 text-xs font-medium rounded-lg bg-violet-600 text-white hover:bg-violet-700 transition-colors whitespace-nowrap"
+                    >
+                        View AI Tools
+                    </a>
                 </section>
             )}
 
@@ -2220,6 +2257,179 @@ function AppStoreTab({ app, token, deployments, onSave }: { app: App; token: str
                         Saved
                     </span>
                 )}
+            </div>
+        </div>
+    );
+}
+
+// ------- MCP Tools Tab -------
+function McpToolsTab({ appId, appName, hostname, token }: { appId: string; appName: string; hostname?: string; token: string }) {
+    const [manifest, setManifest] = useState<McpManifest | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    const [copied, setCopied] = useState<string | null>(null);
+
+    useEffect(() => {
+        let cancelled = false;
+        setLoading(true);
+        setError(null);
+        getAppMcp(token, appId)
+            .then((m) => { if (!cancelled) setManifest(m); })
+            .catch((e) => { if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load MCP tools'); })
+            .finally(() => { if (!cancelled) setLoading(false); });
+        return () => { cancelled = true; };
+    }, [appId, token]);
+
+    function copyText(text: string, label: string) {
+        navigator.clipboard.writeText(text);
+        setCopied(label);
+        setTimeout(() => setCopied(null), 2000);
+    }
+
+    const connectionUrl = hostname ? `https://${hostname}` : undefined;
+
+    if (loading) {
+        return (
+            <div className="py-12 text-center text-sm text-black/40 dark:text-white/40">
+                Loading MCP tools…
+            </div>
+        );
+    }
+
+    if (error) {
+        return (
+            <div className="p-4 rounded-lg bg-red-50 dark:bg-red-900/20 text-sm text-red-700 dark:text-red-300">
+                {error}
+            </div>
+        );
+    }
+
+    const tools = manifest?.tools ?? [];
+
+    return (
+        <div className="space-y-6">
+            {/* Intro */}
+            <section className="p-5 rounded-xl border border-violet-200 dark:border-violet-800 bg-violet-50/30 dark:bg-violet-900/10">
+                <div className="flex items-center gap-2 mb-2">
+                    <svg className="w-5 h-5 text-violet-600 dark:text-violet-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                    <h2 className="text-sm font-semibold text-violet-800 dark:text-violet-300">MCP Tool Server</h2>
+                </div>
+                <p className="text-sm text-violet-700/80 dark:text-violet-300/70">
+                    Your app exposes <strong>{tools.length}</strong> MCP {tools.length === 1 ? 'tool' : 'tools'} derived from your WASM exports.
+                    AI agents can discover and invoke these tools with full hardware attestation on every connection.
+                </p>
+            </section>
+
+            {/* Connection info */}
+            {connectionUrl && (
+                <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">
+                    <h2 className="text-sm font-semibold mb-3">Connection</h2>
+                    <div className="space-y-3">
+                        <div>
+                            <div className="text-xs text-black/50 dark:text-white/50 mb-1">Endpoint</div>
+                            <div className="flex items-center gap-2">
+                                <code className="flex-1 text-xs bg-black/5 dark:bg-white/5 px-3 py-2 rounded-lg font-mono break-all">{connectionUrl}</code>
+                                <button
+                                    onClick={() => copyText(connectionUrl, 'url')}
+                                    className="px-3 py-2 text-xs font-medium rounded-lg border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 transition-colors shrink-0"
+                                >
+                                    {copied === 'url' ? 'Copied' : 'Copy'}
+                                </button>
+                            </div>
+                        </div>
+                        <div>
+                            <div className="text-xs text-black/50 dark:text-white/50 mb-1">MCP config snippet</div>
+                            <div className="relative">
+                                <pre className="text-xs bg-black/5 dark:bg-white/5 px-3 py-2 rounded-lg font-mono overflow-x-auto">{JSON.stringify({
+                                    mcpServers: {
+                                        [appName]: {
+                                            url: connectionUrl,
+                                            transport: 'sse'
+                                        }
+                                    }
+                                }, null, 2)}</pre>
+                                <button
+                                    onClick={() => copyText(JSON.stringify({ mcpServers: { [appName]: { url: connectionUrl, transport: 'sse' } } }, null, 2), 'config')}
+                                    className="absolute top-2 right-2 px-2 py-1 text-[10px] font-medium rounded border border-black/10 dark:border-white/10 bg-white dark:bg-black hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                                >
+                                    {copied === 'config' ? 'Copied' : 'Copy'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            )}
+
+            {/* Tool manifest */}
+            {tools.length === 0 ? (
+                <div className="text-center py-8 text-sm text-black/40 dark:text-white/40">
+                    No MCP tools found. Make sure your WASM module exports functions.
+                </div>
+            ) : (
+                <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">
+                    <h2 className="text-sm font-semibold mb-4">Tools ({tools.length})</h2>
+                    <div className="space-y-4">
+                        {tools.map((tool) => (
+                            <div key={tool.name} className="p-4 rounded-lg border border-black/5 dark:border-white/5 bg-black/[0.02] dark:bg-white/[0.02]">
+                                <div className="flex items-center gap-2 mb-1">
+                                    <code className="text-sm font-semibold font-mono">{tool.name}</code>
+                                </div>
+                                {tool.description && (
+                                    <p className="text-xs text-black/50 dark:text-white/50 mb-3">{tool.description}</p>
+                                )}
+                                {tool.parameters && tool.parameters.length > 0 && (
+                                    <div className="mt-2">
+                                        <div className="text-[10px] uppercase tracking-wider text-black/30 dark:text-white/30 mb-2">Parameters</div>
+                                        <div className="space-y-1.5">
+                                            {tool.parameters.map((p) => (
+                                                <div key={p.name} className="flex items-baseline gap-2 text-xs">
+                                                    <code className="font-mono text-black/70 dark:text-white/70">{p.name}</code>
+                                                    {p.schema?.type != null && (
+                                                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-black/5 dark:bg-white/10 text-black/40 dark:text-white/40">
+                                                            {String(p.schema.type)}
+                                                        </span>
+                                                    )}
+                                                    {p.required && (
+                                                        <span className="text-[10px] text-red-500">required</span>
+                                                    )}
+                                                    {p.description && (
+                                                        <span className="text-black/40 dark:text-white/40">{p.description}</span>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                </section>
+            )}
+
+            {/* Raw JSON */}
+            {manifest && (
+                <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">
+                    <div className="flex items-center justify-between mb-3">
+                        <h2 className="text-sm font-semibold">Raw manifest</h2>
+                        <button
+                            onClick={() => copyText(JSON.stringify(manifest, null, 2), 'json')}
+                            className="px-2 py-1 text-[10px] font-medium rounded border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                        >
+                            {copied === 'json' ? 'Copied' : 'Copy JSON'}
+                        </button>
+                    </div>
+                    <pre className="text-xs bg-black/5 dark:bg-white/5 px-3 py-2 rounded-lg font-mono overflow-x-auto max-h-80 overflow-y-auto">
+                        {JSON.stringify(manifest, null, 2)}
+                    </pre>
+                </section>
+            )}
+
+            {/* Docs link */}
+            <div className="text-xs text-black/40 dark:text-white/40">
+                Learn more about MCP tools in the{' '}
+                <a href="https://docs.privasys.org/docs/solutions/enclave-os/enclave-os-mini/mcp-tools" target="_blank" rel="noopener noreferrer" className="text-violet-600 dark:text-violet-400 hover:underline">
+                    documentation
+                </a>.
             </div>
         </div>
     );
