@@ -1,0 +1,167 @@
+---
+title: MCP Tools
+description: Every WASM application deployed on Enclave OS becomes an attested MCP tool server, with typed interfaces derived directly from the WebAssembly binary.
+---
+
+Every WASM application deployed on Enclave OS Mini automatically becomes an **MCP (Model Context Protocol) tool server**. The enclave derives a standard MCP tool manifest from the application's WIT type information and doc comments — no separate server implementation, no manifest file to maintain.
+
+## How it works
+
+When a WASM module is loaded into the enclave, the runtime:
+
+1. **Extracts WIT type information** from the compiled component binary using `discover_exports_typed()`.
+2. **Generates a JSON Schema** for each exported function's parameters, derived from the WIT types.
+3. **Reads doc comments** from the `package-docs` custom section of the WASM binary — these become the human-readable descriptions in the MCP manifest.
+4. **Serves the manifest** via the `mcp_tools` wire protocol command, authenticated with the same permissions model as schema access.
+
+The result is a fully typed MCP tool manifest that stays in sync with the deployed code, because it **is** the deployed code.
+
+## Tool manifest structure
+
+The enclave responds to `mcp_tools` requests with a manifest conforming to the MCP standard:
+
+```json
+{
+  "status": "mcp_tools",
+  "manifest": {
+    "name": "my-app",
+    "tools": [
+      {
+        "name": "analyse",
+        "description": "Analyse patient symptoms and return ranked diagnoses.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "symptoms": { "type": "string", "description": "Free-text symptom description." },
+            "age": { "type": "integer", "description": "Patient age in years." },
+            "allergies": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Known drug allergies, if any."
+            }
+          },
+          "required": ["symptoms", "age", "allergies"]
+        }
+      }
+    ]
+  }
+}
+```
+
+Each tool maps to a single exported function. The `inputSchema` is a standard JSON Schema object, ready for use by any MCP-compatible client or AI agent.
+
+## Documenting your tools with WIT
+
+Tool descriptions come from `///` doc comments in your WIT definition. These comments are part of the WIT specification and are embedded into the compiled binary:
+
+```wit
+package privasys:medical@0.1.0;
+
+world diagnostic {
+    /// Analyse patient symptoms and return ranked diagnoses.
+    export analyse: func(
+        /// Free-text symptom description from the patient.
+        symptoms: string,
+        /// Patient age in years.
+        age: u32,
+        /// Known drug allergies, if any.
+        allergies: list<string>,
+    ) -> result<list<diagnosis>, error-code>;
+}
+```
+
+The `///` comments flow all the way from source to the MCP manifest:
+
+| WIT element | MCP field |
+|-------------|-----------|
+| Function `///` comment | `tool.description` |
+| Parameter `///` comment | `inputSchema.properties[name].description` |
+| Function name | `tool.name` |
+| Parameter types | `inputSchema` (JSON Schema) |
+
+If no doc comments are present, the tools are still generated with correct type schemas — they just lack descriptions.
+
+## WIT to JSON Schema mapping
+
+The full WIT type system is supported:
+
+| WIT type | JSON Schema |
+|----------|-------------|
+| `string`, `char` | `{ "type": "string" }` |
+| `bool` | `{ "type": "boolean" }` |
+| `u8`–`u64`, `s8`–`s64` | `{ "type": "integer" }` |
+| `f32`, `f64` | `{ "type": "number" }` |
+| `list<T>` | `{ "type": "array", "items": <T> }` |
+| `option<T>` | `{ "oneOf": [<T>, { "type": "null" }] }` |
+| `result<O, E>` | `{ "oneOf": [{ "ok": <O> }, { "err": <E> }] }` |
+| `record { ... }` | `{ "type": "object", "properties": { ... } }` |
+| `tuple<A, B>` | `{ "type": "array", "items": [<A>, <B>] }` |
+| `enum { a, b, c }` | `{ "type": "string", "enum": ["a", "b", "c"] }` |
+| `variant { ... }` | Tagged union via `oneOf` |
+| `flags { ... }` | `{ "type": "array", "items": { "type": "string", "enum": [...] } }` |
+
+## Requesting the manifest
+
+### Via the wire protocol
+
+Send an `mcp_tools` request over the RA-TLS connection:
+
+```json
+{ "mcp_tools": { "app": "my-app" } }
+```
+
+The enclave returns the full tool manifest. Authentication follows the same model as `wasm_schema` — monitoring role or app-level OIDC token.
+
+### Via the management service
+
+The management service proxies MCP requests through its API:
+
+```
+GET /api/v1/apps/{id}/schema
+```
+
+The schema response includes the WIT type information. The MCP tool manifest is derived from the same underlying data.
+
+## Enabling and disabling MCP
+
+MCP manifest generation is **enabled by default**. To disable it for a specific application, set `mcp_enabled: false` in the load request:
+
+```json
+{
+  "wasm_load": {
+    "name": "my-app",
+    "mcp_enabled": false
+  }
+}
+```
+
+When MCP is disabled, the enclave returns an error for `mcp_tools` requests targeting that application. The schema and Connect RPC endpoints remain unaffected.
+
+## Security model
+
+MCP tool access inherits the same security guarantees as all enclave interactions:
+
+| Aspect | Detail |
+|--------|--------|
+| **Transport** | RA-TLS (TLS 1.3 with embedded SGX attestation quote) |
+| **Authentication** | Same as `wasm_schema` — monitoring role or app-level OIDC |
+| **Tool invocation** | Via Connect RPC (`connect_call`) with user or agent JWT |
+| **Attestation** | Every connection carries proof of enclave identity and deployed code |
+| **Isolation** | Each WASM function runs in a sandboxed instance inside SGX |
+
+An AI agent connecting to an MCP-enabled enclave can:
+
+1. **Verify the enclave** — the RA-TLS certificate proves the hardware identity and code measurement.
+2. **Discover tools** — the `mcp_tools` endpoint returns a typed, documented manifest.
+3. **Invoke tools** — Connect RPC calls are forwarded to the WASM function with full type validation.
+
+Every step is attested. The agent does not need to trust the platform operator — it can verify the enclave's identity cryptographically.
+
+## Relationship to Attested MCP
+
+This page describes the **enclave-side** MCP tool generation built into Enclave OS Mini. For the broader concept of wrapping MCP in RA-TLS for mutual attestation between agents and tool servers, see [Attested MCP](/solutions/enclave-agent/attested-mcp).
+
+The two are complementary:
+
+- **Enclave OS Mini** generates MCP tool manifests from deployed WASM binaries (this page).
+- **Attested MCP** describes the protocol for AI agents to discover and call those tools over mutually attested connections.

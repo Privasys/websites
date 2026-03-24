@@ -199,6 +199,42 @@ export default function Platform() {
 
             <section className='mt-20 lg:mt-40'>
                 <h2 className='text-2xl lg:text-4xl'>
+                    <Balancer>Every app is an attested MCP tool server.</Balancer>
+                </h2>
+                <p className='mt-8 text-lg'>
+                    Every WASM application deployed on the platform is automatically exposed as a{' '}
+                    <a href='https://modelcontextprotocol.io/' target='_blank' rel='noopener noreferrer' className='underline'>Model Context Protocol</a>{' '}
+                    (MCP) tool server.
+                    The enclave derives typed tool manifests directly from the deployed binary — no glue code, no separate MCP server, no manifest file to maintain.
+                    AI agents can discover and call your enclave functions with full hardware attestation on every connection.
+                </p>
+                <div className='mt-16 grid grid-cols-1 lg:grid-cols-2 gap-16 lg:gap-x-32 lg:gap-y-20'>
+                    <div>
+                        <h3 className='text-xl lg:text-3xl'>Tools from types</h3>
+                        <p>
+                            <Balancer>
+                                Each exported function in your WASM module becomes an MCP tool.
+                                Parameter names and types are derived from the WIT interface definition.
+                                Doc comments in your WIT file become tool descriptions.
+                                The manifest is always in sync with the code because it is generated from the code.
+                            </Balancer>
+                        </p>
+                    </div>
+                    <div>
+                        <h3 className='text-xl lg:text-3xl'>Attested AI integration</h3>
+                        <p>
+                            <Balancer>
+                                When an AI agent calls your tool, the connection carries an SGX attestation quote.
+                                The agent can verify the enclave&apos;s identity, the exact code running inside, and the configuration — before sending any data.
+                                Trust is based on hardware proof, not promises.
+                            </Balancer>
+                        </p>
+                    </div>
+                </div>
+            </section>
+
+            <section className='mt-20 lg:mt-40'>
+                <h2 className='text-2xl lg:text-4xl'>
                     <Balancer>Built for developers and entrepreneurs.</Balancer>
                 </h2>
                 <p className='mt-8 text-lg'>

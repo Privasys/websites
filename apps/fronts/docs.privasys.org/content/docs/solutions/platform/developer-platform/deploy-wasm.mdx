@@ -84,6 +84,24 @@ Once deployed, the Developer Platform provides an **API Explorer** tab (WASM app
 
 This is useful for quick smoke testing without writing client code.
 
+## MCP tool discovery
+
+Every deployed WASM application is automatically exposed as an **MCP tool server**. The enclave generates a standard [Model Context Protocol](https://modelcontextprotocol.io/) tool manifest from the application's WIT types and doc comments.
+
+AI agents can discover your application's functions as typed tools and call them over attested connections. No additional configuration is required — MCP generation is enabled by default for all WASM deployments.
+
+To add descriptions to your tools, use `///` doc comments in your WIT definition:
+
+```wit
+/// Analyse patient symptoms and return ranked diagnoses.
+export analyse: func(
+    /// Free-text symptom description.
+    symptoms: string,
+) -> string;
+```
+
+See [MCP Tools](/solutions/enclave-os/enclave-os-mini/mcp-tools) for the full protocol reference and manifest format.
+
 ## WASM capabilities
 
 Your WASM module has access to the following interfaces inside the enclave:
