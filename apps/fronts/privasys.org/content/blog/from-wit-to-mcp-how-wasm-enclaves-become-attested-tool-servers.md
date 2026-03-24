@@ -161,13 +161,13 @@ These comments are not just for developers reading the `.wit` file. They can be 
 
 ### From Schema to MCP Tool Manifest
 
-In the next version of the platform, we are extending the schema endpoint to emit MCP-compatible tool manifests. The flow is:
+The enclave's schema and MCP endpoints derive tool manifests directly from the deployed binary. The flow is:
 
 1. **Write documented WIT.** Use `///` comments on your exports and parameters, the same way you would document a Rust function or a TypeScript interface.
 
 2. **Compile and deploy.** The documentation is embedded into the component binary as a `package-docs` custom section, carried alongside the type information the enclave already introspects.
 
-3. **Schema endpoint emits MCP tools.** The enclave's schema response will include descriptions alongside types. Each exported function becomes an MCP tool with a name, a description from the `///` comment, and a JSON Schema input derived from the WIT parameter types.
+3. **Schema endpoint emits MCP tools.** The enclave's `mcp_tools` endpoint includes descriptions alongside types. Each exported function becomes an MCP tool with a name, a description from the `///` comment, and a JSON Schema input derived from the WIT parameter types.
 
 4. **AI agents discover and call.** An agent connecting to the platform sees your enclave's functions as typed, documented tools. It calls them over the same attested RPC channel that human users and programmatic clients already use.
 
