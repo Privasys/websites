@@ -127,7 +127,7 @@ function Sidebar() {
                     <span className="text-[10px] font-semibold uppercase tracking-wider text-black/30 dark:text-white/30">Resources</span>
                 </div>
                 <a
-                    href="https://docs.privasys.org/docs/solutions/enclave-os/enclave-os-mini/mcp-tools"
+                    href="https://docs.privasys.org/solutions/enclave-os/enclave-os-mini/mcp-tools"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors hover:bg-black/3 dark:hover:bg-white/5 text-black/60 dark:text-white/60"

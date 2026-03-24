@@ -5,7 +5,7 @@ import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { useEffect, useState, useCallback } from 'react';
 import { getApp, listBuilds, listVersions, listDeployments, listEnclaves, deleteApp, deployVersion, stopDeployment, attestApp, verifyQuote, getAppSchema, rpcCall, updateStoreListing, getAppMcp } from '~/lib/api';
-import type { AppSchema, FunctionSchema, WitType, QuoteVerifyResult, McpManifest, McpTool } from '~/lib/api';
+import type { AppSchema, FunctionSchema, WitType, QuoteVerifyResult, McpManifest } from '~/lib/api';
 import { useSSE } from '~/lib/use-sse';
 import type { App, BuildJob, AppVersion, AppDeployment, Enclave, AttestationResult } from '~/lib/types';
 import { STATUS_LABELS, STATUS_COLORS, DEPLOYMENT_STATUS_LABELS, DEPLOYMENT_STATUS_COLORS } from '~/lib/types';
@@ -2304,7 +2304,7 @@ function McpToolsTab({ appId, appName, hostname, token }: { appId: string; appNa
         );
     }
 
-    const tools = manifest?.tools ?? [];
+    const tools = manifest?.manifest?.tools ?? [];
 
     return (
         <div className="space-y-6">
@@ -2377,23 +2377,23 @@ function McpToolsTab({ appId, appName, hostname, token }: { appId: string; appNa
                                 {tool.description && (
                                     <p className="text-xs text-black/50 dark:text-white/50 mb-3">{tool.description}</p>
                                 )}
-                                {tool.parameters && tool.parameters.length > 0 && (
+                                {tool.inputSchema?.properties && Object.keys(tool.inputSchema.properties).length > 0 && (
                                     <div className="mt-2">
                                         <div className="text-[10px] uppercase tracking-wider text-black/30 dark:text-white/30 mb-2">Parameters</div>
                                         <div className="space-y-1.5">
-                                            {tool.parameters.map((p) => (
-                                                <div key={p.name} className="flex items-baseline gap-2 text-xs">
-                                                    <code className="font-mono text-black/70 dark:text-white/70">{p.name}</code>
-                                                    {p.schema?.type != null && (
+                                            {Object.entries(tool.inputSchema.properties).map(([paramName, paramDef]) => (
+                                                <div key={paramName} className="flex items-baseline gap-2 text-xs">
+                                                    <code className="font-mono text-black/70 dark:text-white/70">{paramName}</code>
+                                                    {paramDef.type != null && (
                                                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-black/5 dark:bg-white/10 text-black/40 dark:text-white/40">
-                                                            {String(p.schema.type)}
+                                                            {paramDef.type}
                                                         </span>
                                                     )}
-                                                    {p.required && (
+                                                    {tool.inputSchema!.required?.includes(paramName) && (
                                                         <span className="text-[10px] text-red-500">required</span>
                                                     )}
-                                                    {p.description && (
-                                                        <span className="text-black/40 dark:text-white/40">{p.description}</span>
+                                                    {paramDef.description && (
+                                                        <span className="text-black/40 dark:text-white/40">{paramDef.description}</span>
                                                     )}
                                                 </div>
                                             ))}
@@ -2427,7 +2427,7 @@ function McpToolsTab({ appId, appName, hostname, token }: { appId: string; appNa
             {/* Docs link */}
             <div className="text-xs text-black/40 dark:text-white/40">
                 Learn more about MCP tools in the{' '}
-                <a href="https://docs.privasys.org/docs/solutions/enclave-os/enclave-os-mini/mcp-tools" target="_blank" rel="noopener noreferrer" className="text-violet-600 dark:text-violet-400 hover:underline">
+                <a href="https://docs.privasys.org/solutions/enclave-os/enclave-os-mini/mcp-tools" target="_blank" rel="noopener noreferrer" className="text-violet-600 dark:text-violet-400 hover:underline">
                     documentation
                 </a>.
             </div>
