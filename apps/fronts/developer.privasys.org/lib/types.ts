@@ -300,10 +300,17 @@ export interface AttestationResult {
     // Stored CWASM hash for verification against APP_CODE_HASH_OID (3.2)
     cwasm_hash?: string;
     // TCG2 event log for RTMR replay verification (TDX only)
-    event_log_base64?: string;
+    event_log_events?: EventLogDigest[];
     event_log_source?: string;
     // Application-level RTMR[3] events from the enclave manager
     app_events?: AppEvent[];
+}
+
+export interface EventLogDigest {
+    pcr: number;
+    event_type: number;
+    digest: string;       // SHA-384 hex
+    data_text?: string;   // Human-readable event data when decodable
 }
 
 export interface AppEvent {
