@@ -50,7 +50,7 @@ const RTMR_LABELS_TPM: Record<number, string> = {
     0: 'TD firmware (not in vTPM log)',
     1: 'Boot config (PCR 0–7)',
     2: 'OS & kernel (PCR 8–15)',
-    3: 'Runtime (unused)'
+    3: 'Application workload'
 };
 
 const RTMR_LABELS_CCEL: Record<number, string> = {
@@ -73,11 +73,21 @@ interface ParsedEvent {
     data: Uint8Array;
 }
 
+interface AppEvent {
+    timestamp: string;
+    pcr: number;
+    digest_sha384: string;
+    digest_sha256: string;
+    type: string;
+    description: string;
+}
+
 interface RtmrResult {
     value: string;
     events: ParsedEvent[];
     match: boolean | null; // null = no quote to compare
     pcrValues?: Record<number, string>; // per-PCR replayed values (tpm0 source)
+    appEvents?: AppEvent[]; // application-level events for RTMR[3]
 }
 
 interface BootMeasurement {
@@ -96,6 +106,7 @@ interface RtmrVerifierProps {
         rtmr2?: string;
         rtmr3?: string;
     };
+    appEvents?: AppEvent[];
 }
 
 function hexFromBytes(bytes: Uint8Array): string {
@@ -253,7 +264,8 @@ function parseEventLog(base64: string, source: string): { events: ParsedEvent[];
 async function replayRtmrs(
     events: ParsedEvent[],
     source: string,
-    quoteRtmrs: RtmrVerifierProps['quoteRtmrs']
+    quoteRtmrs: RtmrVerifierProps['quoteRtmrs'],
+    appEvents?: AppEvent[]
 ): Promise<RtmrResult[]> {
     const rtmr = [
         new Uint8Array(SHA384_SIZE),
@@ -293,7 +305,37 @@ async function replayRtmrs(
     }
 
     const quoteArr = [quoteRtmrs.rtmr0, quoteRtmrs.rtmr1, quoteRtmrs.rtmr2, quoteRtmrs.rtmr3];
+
+    // Replay RTMR[3] from application events (sysfs extend, not in vTPM log)
+    let rtmr3Replayed: { value: string; match: boolean | null } | null = null;
+    if (appEvents && appEvents.length > 0) {
+        let reg = new Uint8Array(SHA384_SIZE);
+        for (const ev of appEvents) {
+            const digest = new Uint8Array(ev.digest_sha384.match(/.{2}/g)!.map(b => parseInt(b, 16)));
+            const concat = new Uint8Array(SHA384_SIZE * 2);
+            concat.set(reg, 0);
+            concat.set(digest, SHA384_SIZE);
+            const hash = await crypto.subtle.digest('SHA-384', concat);
+            reg = new Uint8Array(hash);
+        }
+        const hex = hexFromBytes(reg);
+        rtmr3Replayed = {
+            value: hex,
+            match: quoteArr[3] ? hex === quoteArr[3] : null
+        };
+    }
+
     return rtmr.map((val, i) => {
+        // RTMR[3]: use application events instead of vTPM events
+        if (i === 3 && rtmr3Replayed) {
+            return {
+                value: rtmr3Replayed.value,
+                events: rtmrEvents[i],
+                match: rtmr3Replayed.match,
+                appEvents
+            };
+        }
+
         if (rtmrEvents[i].length === 0) {
             return { value: '', events: rtmrEvents[i], match: null };
         }
@@ -463,7 +505,7 @@ ${replaySection}
 })();`;
 }
 
-export function RtmrVerifier({ eventLogBase64, eventLogSource, quoteRtmrs }: RtmrVerifierProps) {
+export function RtmrVerifier({ eventLogBase64, eventLogSource, quoteRtmrs, appEvents }: RtmrVerifierProps) {
     const [results, setResults] = useState<RtmrResult[] | null>(null);
     const [parseError, setParseError] = useState<string | null>(null);
     const [expanded, setExpanded] = useState(false);
@@ -479,13 +521,13 @@ export function RtmrVerifier({ eventLogBase64, eventLogSource, quoteRtmrs }: Rtm
                 setParseError(error);
                 return;
             }
-            const r = await replayRtmrs(events, eventLogSource, quoteRtmrs);
+            const r = await replayRtmrs(events, eventLogSource, quoteRtmrs, appEvents);
             setResults(r);
             const extracted = extractBootMeasurements(events, eventLogSource);
             setBootMeasurements(extracted.measurements);
             setDmVerityHash(extracted.dmVerityHash);
         })();
-    }, [eventLogBase64, eventLogSource, quoteRtmrs]);
+    }, [eventLogBase64, eventLogSource, quoteRtmrs, appEvents]);
 
     const copySnippet = useCallback(() => {
         const snippet = generateConsoleSnippet(eventLogBase64, eventLogSource);
@@ -519,7 +561,7 @@ export function RtmrVerifier({ eventLogBase64, eventLogSource, quoteRtmrs }: Rtm
     const allMatch = results.every(r => r.match === true || r.match === null);
     const anyMismatch = results.some(r => r.match === false);
     const anyTrue = results.some(r => r.match === true);
-    const totalEvents = results.reduce((sum, r) => sum + r.events.length, 0);
+    const totalEvents = results.reduce((sum, r) => sum + (r.appEvents?.length ?? r.events.length), 0);
     const isTpm = eventLogSource !== 'ccel';
     const rtmrLabels = isTpm ? RTMR_LABELS_TPM : RTMR_LABELS_CCEL;
     const quoteArr = [quoteRtmrs.rtmr0, quoteRtmrs.rtmr1, quoteRtmrs.rtmr2, quoteRtmrs.rtmr3];
@@ -631,7 +673,9 @@ export function RtmrVerifier({ eventLogBase64, eventLogSource, quoteRtmrs }: Rtm
 
             {/* PCR/RTMR detail section with RTMR[0-3] buttons */}
             <div className="space-y-2 mb-4">
-                {results.map((r, i) => (
+                {results.map((r, i) => {
+                    const eventCount = r.appEvents?.length ?? r.events.length;
+                    return (
                     <div key={i}>
                         <div className="flex items-center gap-2">
                             <button
@@ -641,7 +685,7 @@ export function RtmrVerifier({ eventLogBase64, eventLogSource, quoteRtmrs }: Rtm
                                 {selectedRtmr === i ? '▾' : '▸'} RTMR[{i}]
                             </button>
                             <span className="text-[10px] text-black/30 dark:text-white/30">
-                                {r.events.length} event{r.events.length !== 1 ? 's' : ''}
+                                {eventCount} event{eventCount !== 1 ? 's' : ''}
                             </span>
                             {r.match === true && (
                                 <span className="text-[9px] px-1.5 py-0 rounded-full bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 font-medium">
@@ -653,7 +697,7 @@ export function RtmrVerifier({ eventLogBase64, eventLogSource, quoteRtmrs }: Rtm
                                     ✗ Mismatch
                                 </span>
                             )}
-                            {r.match === null && r.events.length === 0 && (
+                            {r.match === null && eventCount === 0 && (
                                 <span className="text-[9px] text-black/25 dark:text-white/25">no events</span>
                             )}
                             {isTpm && r.match === null && r.events.length > 0 && (
@@ -677,8 +721,34 @@ export function RtmrVerifier({ eventLogBase64, eventLogSource, quoteRtmrs }: Rtm
                             </code>
                         ) : null}
 
-                        {/* Event table for selected RTMR */}
-                        {selectedRtmr === i && r.events.length > 0 && (
+                        {/* Application event details for RTMR[3] */}
+                        {selectedRtmr === i && r.appEvents && r.appEvents.length > 0 && (
+                            <div className="mt-2 ml-4 space-y-1">
+                                {r.appEvents.map((ev, idx) => (
+                                    <div
+                                        key={idx}
+                                        className="text-[10px] font-mono p-1.5 rounded bg-black/3 dark:bg-white/3"
+                                    >
+                                        <div className="flex items-center gap-2 text-black/50 dark:text-white/50">
+                                            <span>#{idx + 1}</span>
+                                            <span className={ev.type === 'container_load' ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-700 dark:text-amber-400'}>
+                                                {ev.type === 'container_load' ? '▶ load' : '■ unload'}
+                                            </span>
+                                            <span className="text-black/30 dark:text-white/30">{ev.timestamp}</span>
+                                        </div>
+                                        <div className="text-black/40 dark:text-white/40 break-all mt-0.5">
+                                            sha384: {ev.digest_sha384.slice(0, 32)}…
+                                        </div>
+                                        <div className="text-black/35 dark:text-white/35 mt-0.5">
+                                            {ev.description}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        {/* Event table for selected RTMR (vTPM/CCEL events) */}
+                        {selectedRtmr === i && !r.appEvents && r.events.length > 0 && (
                             <div className="mt-2 ml-4 space-y-1">
                                 {r.events.map((ev) => {
                                     const text = tryDecodeText(ev.data);
@@ -716,7 +786,8 @@ export function RtmrVerifier({ eventLogBase64, eventLogSource, quoteRtmrs }: Rtm
                             </div>
                         )}
                     </div>
-                ))}
+                    );
+                })}
             </div>
 
             {/* Console snippet */}
