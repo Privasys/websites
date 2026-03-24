@@ -20,15 +20,12 @@ test.describe('WASM App Explorer', () => {
         await page.goto('/');
         await expect(page.locator('h2')).toContainText('Connect to a WASM App');
         await expect(page.locator('#connect-btn')).toBeVisible();
-        await expect(page.locator('#endpoint-input')).toBeVisible();
-        await expect(page.locator('#base-url-input')).toBeVisible();
         await expect(page.locator('#app-name-input')).toBeVisible();
         await page.screenshot({ path: screenshot('01-connection-screen'), fullPage: true });
     });
 
     test('pre-fills from URL params', async ({ page }) => {
-        await page.goto(`/?base=${encodeURIComponent(API_BASE)}&app=${encodeURIComponent(APP_NAME)}`);
-        await expect(page.locator('#base-url-input')).toHaveValue(API_BASE);
+        await page.goto(`/?app=${encodeURIComponent(APP_NAME)}`);
         await expect(page.locator('#app-name-input')).toHaveValue(APP_NAME);
     });
 
@@ -44,8 +41,12 @@ test.describe('WASM App Explorer', () => {
         test.setTimeout(90_000);
         await page.goto('/');
 
-        // Fill connection details
-        await page.locator('#base-url-input').fill(API_BASE);
+        // Fill connection details — just app name is enough with default base URL
+        if (API_BASE !== 'https://api.developer.privasys.org') {
+            // Expand advanced section to override base URL
+            await page.locator('#advanced-toggle').click();
+            await page.locator('#base-url-input').fill(API_BASE);
+        }
         await page.locator('#app-name-input').fill(APP_NAME);
         if (AUTH_TOKEN) await page.locator('#auth-token-input').fill(AUTH_TOKEN);
         if (ATTESTATION_SERVER_URL) await page.locator('#attestation-url-input').fill(ATTESTATION_SERVER_URL);

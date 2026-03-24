@@ -189,6 +189,38 @@ code, pre, .mono { font-family: var(--mono); }
     margin-top: -8px;
     margin-bottom: 12px;
 }
+
+/* Collapsible advanced section */
+.toggle-btn {
+    background: none;
+    border: none;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+.toggle-btn:hover { color: var(--fg); }
+.toggle-chevron { transition: transform 0.2s; }
+.collapsed .toggle-chevron { transform: rotate(-90deg); }
+.collapsed .collapsible-body { display: none; }
+
+/* Gateway badge in header */
+.gateway-badge {
+    display: inline-block;
+    margin-left: 8px;
+    padding: 2px 8px;
+    font-size: 10px;
+    font-family: var(--mono);
+    background: var(--blue-bg);
+    color: var(--blue);
+    border-radius: 4px;
+    cursor: default;
+}
+
 .header-connected { display: none; }
 body.connected .header-connected { display: inline-flex; }
 body.connected .connect-screen { display: none; }
