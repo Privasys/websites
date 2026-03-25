@@ -350,6 +350,7 @@ export default function AppDetailPage() {
 
     // Full detail view — shown once the app has reached a terminal state
     const hasActiveDeployment = activeDeployments.length > 0;
+    const hasContainerMcp = app.app_type === 'container' && app.container_mcp;
     const TABS: { key: Tab; label: string; count?: number; danger?: boolean }[] = [
         { key: 'overview', label: 'Overview' },
         { key: 'deployments', label: 'Deployments', count: activeDeployments.length },
@@ -358,6 +359,8 @@ export default function AppDetailPage() {
             { key: 'attestation' as Tab, label: 'Attestation' },
             ...(app.app_type !== 'container' ? [
                 { key: 'api' as Tab, label: 'API Testing' },
+            ] : []),
+            ...(app.app_type !== 'container' || hasContainerMcp ? [
                 { key: 'mcp' as Tab, label: 'AI Tools' }
             ] : [])
         ] : [])
@@ -374,7 +377,7 @@ export default function AppDetailPage() {
                     </p>
                 </div>
                 <div className="flex items-center gap-2">
-                    {hasActiveDeployment && app.app_type !== 'container' && (
+                    {hasActiveDeployment && (app.app_type !== 'container' || hasContainerMcp) && (
                         <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 text-xs font-medium rounded-full bg-violet-100 text-violet-800 dark:bg-violet-900/30 dark:text-violet-300">
                             <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
                             MCP
@@ -439,7 +442,7 @@ export default function AppDetailPage() {
                     <ApiTestingTab appId={app.id} token={session.accessToken} deployments={activeDeployments} versions={versions} />
                 )}
                 {tab === 'mcp' && session?.accessToken && (
-                    <McpToolsTab appId={app.id} appName={app.name} hostname={activeDeployments[0]?.hostname} token={session.accessToken} />
+                    <McpToolsTab appId={app.id} appName={app.name} appType={app.app_type} hostname={activeDeployments[0]?.hostname} token={session.accessToken} />
                 )}
 
             </div>
@@ -585,8 +588,8 @@ function OverviewTab({ app, versions, builds, deployments, deleting, onDelete }:
                 </section>
             )}
 
-            {/* MCP tools banner — shown for deployed WASM apps */}
-            {activeDeployments.length > 0 && app.app_type !== 'container' && (
+            {/* MCP tools banner — shown for deployed apps with MCP tools */}
+            {activeDeployments.length > 0 && (app.app_type !== 'container' || (app.container_mcp)) && (
                 <section className="p-4 rounded-xl border border-violet-200 dark:border-violet-800 bg-violet-50/50 dark:bg-violet-900/10 flex items-center justify-between">
                     <div className="flex items-center gap-3">
                         <svg className="w-5 h-5 text-violet-600 dark:text-violet-400 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
@@ -2263,7 +2266,7 @@ function AppStoreTab({ app, token, deployments, onSave }: { app: App; token: str
 }
 
 // ------- MCP Tools Tab -------
-function McpToolsTab({ appId, appName, hostname, token }: { appId: string; appName: string; hostname?: string; token: string }) {
+function McpToolsTab({ appId, appName, appType, hostname, token }: { appId: string; appName: string; appType?: string; hostname?: string; token: string }) {
     const [manifest, setManifest] = useState<McpManifest | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -2315,7 +2318,7 @@ function McpToolsTab({ appId, appName, hostname, token }: { appId: string; appNa
                     <h2 className="text-sm font-semibold text-violet-800 dark:text-violet-300">MCP Tool Server</h2>
                 </div>
                 <p className="text-sm text-violet-700/80 dark:text-violet-300/70">
-                    Your app exposes <strong>{tools.length}</strong> MCP {tools.length === 1 ? 'tool' : 'tools'} derived from your WASM exports.
+                    Your app exposes <strong>{tools.length}</strong> MCP {tools.length === 1 ? 'tool' : 'tools'}{appType === 'container' ? ' from its container manifest' : ' derived from your WASM exports'}.
                     AI agents can discover and invoke these tools with full hardware attestation on every connection.
                 </p>
             </section>
@@ -2363,7 +2366,7 @@ function McpToolsTab({ appId, appName, hostname, token }: { appId: string; appNa
             {/* Tool manifest */}
             {tools.length === 0 ? (
                 <div className="text-center py-8 text-sm text-black/40 dark:text-white/40">
-                    No MCP tools found. Make sure your WASM module exports functions.
+                    No MCP tools found. {appType === 'container' ? 'Add a container_mcp manifest when creating your app.' : 'Make sure your WASM module exports functions.'}
                 </div>
             ) : (
                 <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">

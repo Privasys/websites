@@ -22,6 +22,7 @@ export interface App {
     container_env?: string;
     container_storage?: boolean;
     container_storage_key?: string;
+    container_mcp?: Record<string, unknown>;
     status: string;
     review_note?: string;
     reviewer_sub?: string;
@@ -62,6 +63,7 @@ export interface CreateAppRequest {
     container_env?: Record<string, string>;
     container_storage?: boolean;
     container_storage_key?: string;
+    container_mcp?: Record<string, unknown>;
 }
 
 export interface ReviewRequest {
