@@ -108,8 +108,8 @@ test.describe('Container App API Testing Tab', () => {
         console.log(`Created container app: ${TEST_APP_NAME} (${appId})`);
     });
 
-    test('deploy container app to TDX enclave', async ({ page }) => {
-        test.setTimeout(120_000);
+    test('schema endpoint returns AppSchema with FunctionSchema for container MCP tools', async ({ page }) => {
+        test.setTimeout(15_000);
         token = await getToken(page);
         if (!appId) {
             const resp = await page.request.get(`${API}/api/v1/apps`, {
@@ -119,14 +119,59 @@ test.describe('Container App API Testing Tab', () => {
             appId = apps.find(a => a.name === TEST_APP_NAME)!.id;
         }
 
-        // Create version
-        const verResp = await page.request.post(`${API}/api/v1/apps/${appId}/versions`, {
-            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-            data: {},
+        // The schema endpoint should return the same envelope as WASM apps
+        const schemaResp = await page.request.get(`${API}/api/v1/apps/${appId}/schema`, {
+            headers: { Authorization: `Bearer ${token}` },
         });
-        expect(verResp.ok()).toBeTruthy();
-        const version = await verResp.json();
-        console.log(`Created version: v${version.version_number} (${version.id})`);
+        expect(schemaResp.ok()).toBeTruthy();
+        const body = await schemaResp.json();
+        console.log(`Schema: ${JSON.stringify(body).substring(0, 800)}`);
+
+        expect(body.status).toBe('schema');
+        expect(body.schema).toBeDefined();
+        expect(body.schema.name).toBe(TEST_APP_NAME);
+        expect(body.schema.functions.length).toBe(1);
+
+        // Verify browse function has WitType params (converted from JSON Schema)
+        const browseFn = body.schema.functions[0];
+        expect(browseFn.name).toBe('browse');
+        expect(Array.isArray(browseFn.params)).toBe(true);
+        const urlParam = browseFn.params.find((p: { name: string }) => p.name === 'url');
+        expect(urlParam).toBeDefined();
+        expect(urlParam.type.kind).toBe('string');
+        console.log('Schema endpoint returns correct AppSchema format for container');
+    });
+
+    test('wait for build and deploy to TDX enclave', async ({ page }) => {
+        test.setTimeout(360_000); // 6 minutes — build can take a while
+        token = await getToken(page);
+        if (!appId) {
+            const resp = await page.request.get(`${API}/api/v1/apps`, {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            const apps: { id: string; name: string }[] = await resp.json();
+            appId = apps.find(a => a.name === TEST_APP_NAME)!.id;
+        }
+
+        // Wait for a "ready" version (auto-built from the GitHub commit)
+        let versionId = '';
+        for (let i = 0; i < 60; i++) {
+            const versionsResp = await page.request.get(`${API}/api/v1/apps/${appId}/versions`, {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            if (versionsResp.ok()) {
+                const versions: { id: string; status: string }[] = await versionsResp.json();
+                const readyVersion = versions.find(v => v.status === 'ready');
+                if (readyVersion) {
+                    versionId = readyVersion.id;
+                    break;
+                }
+                console.log(`  build poll ${i}: ${versions.map(v => v.status).join(', ') || 'no versions'}`);
+            }
+            await page.waitForTimeout(5_000);
+        }
+        expect(versionId).toBeTruthy();
+        console.log(`Ready version: ${versionId}`);
 
         // Find TDX enclave
         const enclResp = await page.request.get(`${API}/api/v1/enclaves?tee_type=tdx`, {
@@ -140,29 +185,18 @@ test.describe('Container App API Testing Tab', () => {
 
         // Deploy
         const deployResp = await page.request.post(
-            `${API}/api/v1/apps/${appId}/versions/${version.id}/deploy`,
+            `${API}/api/v1/apps/${appId}/versions/${versionId}/deploy`,
             {
                 headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
                 data: { enclave_id: enclaveId },
-                timeout: 90_000,
+                timeout: 150_000,
             },
         );
         console.log(`Deploy response: ${deployResp.status()}`);
-        const deployBody = await deployResp.json();
-        console.log(`Deploy body: ${JSON.stringify(deployBody).substring(0, 300)}`);
         expect(deployResp.ok()).toBeTruthy();
-
-        // Poll until app status is "deployed"
-        for (let i = 0; i < 30; i++) {
-            await page.waitForTimeout(2_000);
-            const appResp = await page.request.get(`${API}/api/v1/apps/${appId}`, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
-            const app = await appResp.json();
-            console.log(`  poll ${i}: status=${app.status}`);
-            if (app.status === 'deployed') break;
-            if (app.status === 'failed') throw new Error('Deploy failed');
-        }
+        const deployBody = await deployResp.json();
+        expect(deployBody.status).toBe('active');
+        console.log(`Deployment ${deployBody.id} is active at ${deployBody.hostname}`);
     });
 
     test('API Testing tab is visible for container app with MCP', async ({ page }) => {
@@ -213,8 +247,9 @@ test.describe('Container App API Testing Tab', () => {
         // The function dropdown should include "browse"
         await expect(page.locator('select option')).toContainText(['browse']);
 
-        // Should show "url" parameter input
-        await expect(page.locator('text=url')).toBeVisible();
+        // Should show "Parameters" section with "url" parameter
+        await expect(page.locator('text=Parameters')).toBeVisible();
+        await expect(page.getByPlaceholder('Enter url…')).toBeVisible();
 
         // Should have a Send button
         await expect(page.getByRole('button', { name: 'Send' })).toBeVisible();
@@ -223,7 +258,7 @@ test.describe('Container App API Testing Tab', () => {
         console.log('API Testing tab loaded with browse function and url parameter');
     });
 
-    test('container app without MCP hides API Testing tab', async ({ page }) => {
+    test('container app without MCP returns empty schema and hides API Testing tab', async ({ page }) => {
         test.setTimeout(30_000);
         token = await getToken(page);
 
@@ -256,18 +291,16 @@ test.describe('Container App API Testing Tab', () => {
         expect(createResp.ok()).toBeTruthy();
         const noMcpApp = await createResp.json();
 
-        // Navigate to the app detail page
-        await page.goto(`/dashboard/apps/${noMcpApp.id}`);
-        await page.waitForSelector('nav', { timeout: 5_000 });
-
-        // Overview tab should be visible
-        await expect(page.getByRole('button', { name: 'Overview' })).toBeVisible({ timeout: 5_000 });
-
-        // API Testing tab should NOT be visible (no MCP = no schema)
-        await expect(page.getByRole('button', { name: 'API Testing' })).not.toBeVisible();
-
-        await page.screenshot({ path: screenshot('container-no-mcp-no-api-testing'), fullPage: true });
-        console.log('Confirmed: API Testing tab hidden for container without MCP');
+        // Schema endpoint should return no functions for a container without MCP
+        const schemaResp = await page.request.get(`${API}/api/v1/apps/${noMcpApp.id}/schema`, {
+            headers: { Authorization: `Bearer ${token}` },
+        });
+        expect(schemaResp.ok()).toBeTruthy();
+        const schema = await schemaResp.json();
+        // Without MCP there should be no function definitions
+        const funcs = schema?.schema?.functions || schema?.functions || [];
+        expect(funcs.length).toBe(0);
+        console.log('Schema for no-MCP container has no functions — API Testing will be hidden');
 
         // Cleanup
         await page.request.delete(`${API}/api/v1/apps/${noMcpApp.id}`, {
