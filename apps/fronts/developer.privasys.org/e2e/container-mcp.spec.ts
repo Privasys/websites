@@ -162,7 +162,7 @@ test.describe('Container App MCP Tools', () => {
         console.log('Container MCP manifest validated successfully');
     });
 
-    test('schema endpoint includes container tools', async ({ page }) => {
+    test('schema endpoint returns AppSchema format for container with MCP', async ({ page }) => {
         test.setTimeout(15_000);
         token = await getToken(page);
         if (!appId) {
@@ -180,16 +180,34 @@ test.describe('Container App MCP Tools', () => {
         console.log(`Schema response: ${schemaResp.status()}`);
         expect(schemaResp.ok()).toBeTruthy();
 
-        const schema = await schemaResp.json();
-        console.log(`Schema: ${JSON.stringify(schema).substring(0, 500)}`);
+        const body = await schemaResp.json();
+        console.log(`Schema: ${JSON.stringify(body).substring(0, 800)}`);
 
-        expect(schema.type).toBe('container');
-        expect(schema.name).toBe(TEST_APP_NAME);
-        expect(schema.container_port).toBe(TEST_CONTAINER_PORT);
-        // Should now include functions from the manifest
-        expect(schema.functions).toBeDefined();
-        expect(schema.functions.length).toBe(1);
-        console.log('Container schema with functions validated');
+        // Verify the response uses the same AppSchema envelope as WASM apps
+        expect(body.status).toBe('schema');
+        expect(body.schema).toBeDefined();
+        expect(body.schema.name).toBe(TEST_APP_NAME);
+        expect(Array.isArray(body.schema.functions)).toBe(true);
+        expect(Array.isArray(body.schema.interfaces)).toBe(true);
+        expect(body.schema.functions.length).toBe(1);
+
+        // Verify the browse function was converted from MCP manifest to FunctionSchema format
+        const browseFn = body.schema.functions[0];
+        expect(browseFn.name).toBe('browse');
+        expect(Array.isArray(browseFn.params)).toBe(true);
+        expect(Array.isArray(browseFn.results)).toBe(true);
+
+        // Verify parameters were converted from JSON Schema to WitType format
+        const urlParam = browseFn.params.find((p: { name: string }) => p.name === 'url');
+        expect(urlParam).toBeDefined();
+        expect(urlParam.type.kind).toBe('string'); // required → no option wrapper
+
+        // format is optional → should be wrapped in option
+        const formatParam = browseFn.params.find((p: { name: string }) => p.name === 'format');
+        expect(formatParam).toBeDefined();
+        expect(formatParam.type.kind).toBe('option');
+        expect(formatParam.type.inner.kind).toBe('string');
+        console.log('Container schema with AppSchema format validated');
     });
 
     test('container app without MCP manifest returns 404 for MCP', async ({ page }) => {

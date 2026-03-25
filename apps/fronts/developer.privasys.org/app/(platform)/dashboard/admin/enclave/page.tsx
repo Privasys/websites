@@ -119,7 +119,7 @@ export default function AdminEnclavePage() {
     }
 
     async function fetchMrEnclave() {
-        if (!session?.accessToken || !form.host) return;
+        if (!session?.accessToken || !form.host || !form.tee_type) return;
         setFetchingMr(true);
         setError(null);
         try {
