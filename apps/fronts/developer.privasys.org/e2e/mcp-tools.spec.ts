@@ -13,6 +13,7 @@ const screenshot = (name: string) =>
     path.join(__dirname, 'test-results', `${name}.png`);
 
 const APP_NAME = 'wasm-app';
+const APP_DISPLAY_NAME = 'Wasm App';
 
 test('MCP Tools / AI Tools tab — full verification', async ({ page }) => {
     test.setTimeout(120_000);
@@ -39,7 +40,7 @@ test('MCP Tools / AI Tools tab — full verification', async ({ page }) => {
     await page.screenshot({ path: screenshot('mcp-01-dashboard'), fullPage: true });
 
     // ── Step 2: Navigate to the app detail page ──
-    const appLink = page.locator('nav a', { hasText: APP_NAME });
+    const appLink = page.locator('nav a', { hasText: APP_DISPLAY_NAME });
     await appLink.waitFor({ state: 'visible', timeout: 5_000 });
     await appLink.click();
 
@@ -47,7 +48,7 @@ test('MCP Tools / AI Tools tab — full verification', async ({ page }) => {
     const appUrl = page.url();
     console.log('App URL:', appUrl);
 
-    await expect(page.locator('h1', { hasText: APP_NAME })).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('h1', { hasText: /wasm.app/i })).toBeVisible({ timeout: 5_000 });
     await page.screenshot({ path: screenshot('mcp-02-app-detail'), fullPage: true });
 
     // ── Step 3: Verify MCP badge is visible ──
@@ -100,14 +101,16 @@ test('MCP Tools / AI Tools tab — full verification', async ({ page }) => {
     await expect(page.locator('code', { hasText: 'get-random' })).toBeVisible();
 
     // Verify tool descriptions are rendered (not just names)
-    await expect(page.getByText('Return a greeting from inside the enclave')).toBeVisible();
-    await expect(page.getByText('Generate a random number between 1 and 100')).toBeVisible();
-    await expect(page.getByText('Store a value in the enclave')).toBeVisible();
+    // Use .first() to avoid strict-mode collision with the raw JSON section
+    const toolsSection = page.locator('section').filter({ hasText: /^Tools \(\d+\)/ });
+    await expect(toolsSection.getByText('Return a greeting from inside the enclave')).toBeVisible();
+    await expect(toolsSection.getByText('Generate a random number between 1 and 100')).toBeVisible();
+    await expect(toolsSection.getByText('Store a value in the enclave')).toBeVisible();
     console.log('Tool descriptions: visible in UI');
 
     // Verify parameter descriptions are rendered
-    await expect(page.getByText('The key to store the value under')).toBeVisible();
-    await expect(page.getByText('The value to persist')).toBeVisible();
+    await expect(toolsSection.getByText('The key to store the value under')).toBeVisible();
+    await expect(toolsSection.getByText('The value to persist')).toBeVisible();
     console.log('Parameter descriptions: visible in UI');
     await page.screenshot({ path: screenshot('mcp-05-tool-cards'), fullPage: true });
 
