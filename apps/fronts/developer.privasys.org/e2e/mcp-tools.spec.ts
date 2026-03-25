@@ -98,6 +98,17 @@ test('MCP Tools / AI Tools tab — full verification', async ({ page }) => {
     // Individual tool names from wasm-app-example
     await expect(page.locator('code', { hasText: 'hello' })).toBeVisible();
     await expect(page.locator('code', { hasText: 'get-random' })).toBeVisible();
+
+    // Verify tool descriptions are rendered (not just names)
+    await expect(page.getByText('Return a greeting from inside the enclave')).toBeVisible();
+    await expect(page.getByText('Generate a random number between 1 and 100')).toBeVisible();
+    await expect(page.getByText('Store a value in the enclave')).toBeVisible();
+    console.log('Tool descriptions: visible in UI');
+
+    // Verify parameter descriptions are rendered
+    await expect(page.getByText('The key to store the value under')).toBeVisible();
+    await expect(page.getByText('The value to persist')).toBeVisible();
+    console.log('Parameter descriptions: visible in UI');
     await page.screenshot({ path: screenshot('mcp-05-tool-cards'), fullPage: true });
 
     // ── Step 8: Verify raw manifest JSON ──
@@ -147,6 +158,17 @@ test('MCP Tools / AI Tools tab — full verification', async ({ page }) => {
         expect(tool.inputSchema).toBeDefined();
         expect(tool.inputSchema.type).toBe('object');
     }
+
+    // Verify descriptions are present in the API response
+    const helloTool = apiManifest.manifest.tools.find((t: { name: string }) => t.name === 'hello');
+    expect(helloTool.description).toBeTruthy();
+    expect(helloTool.description).toContain('greeting');
+
+    const kvStoreTool = apiManifest.manifest.tools.find((t: { name: string }) => t.name === 'kv-store');
+    expect(kvStoreTool.description).toBeTruthy();
+    expect(kvStoreTool.inputSchema.properties.key.description).toBeTruthy();
+    expect(kvStoreTool.inputSchema.properties.value.description).toBeTruthy();
+    console.log('Tool descriptions in API: verified');
 
     console.log('MCP API response validated:', apiManifest.manifest.tools.length, 'tools');
     await page.screenshot({ path: screenshot('mcp-07-final'), fullPage: true });
