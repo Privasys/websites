@@ -117,18 +117,18 @@ export function adminGetDeploymentLogs(token: string, id: string): Promise<Deplo
     return request<DeploymentLog[]>(`/api/v1/admin/apps/${encodeURIComponent(id)}/logs`, token);
 }
 
-export function adminEnclaveHealth(token: string, host: string, port: number, teeType?: TeeType): Promise<{ status: string; error?: string }> {
-    const qs = `host=${encodeURIComponent(host)}&port=${port}${teeType ? `&tee_type=${teeType}` : ''}`;
+export function adminEnclaveHealth(token: string, host: string, port: number, teeType: TeeType): Promise<{ status: string; error?: string }> {
+    const qs = `host=${encodeURIComponent(host)}&port=${port}&tee_type=${teeType}`;
     return request<{ status: string; error?: string }>(`/api/v1/admin/enclave/health?${qs}`, token);
 }
 
-export function adminListEnclaveApps(token: string, host: string, port: number, teeType?: TeeType): Promise<unknown> {
-    const qs = `host=${encodeURIComponent(host)}&port=${port}${teeType ? `&tee_type=${teeType}` : ''}`;
+export function adminListEnclaveApps(token: string, host: string, port: number, teeType: TeeType): Promise<unknown> {
+    const qs = `host=${encodeURIComponent(host)}&port=${port}&tee_type=${teeType}`;
     return request<unknown>(`/api/v1/admin/enclave/apps?${qs}`, token);
 }
 
-export function adminInspectEnclave(token: string, host: string, port: number, teeType?: TeeType): Promise<{ mr_enclave?: string; mr_signer?: string; quote_type?: string }> {
-    const qs = `host=${encodeURIComponent(host)}&port=${port}${teeType ? `&tee_type=${teeType}` : ''}`;
+export function adminInspectEnclave(token: string, host: string, port: number, teeType: TeeType): Promise<{ mr_enclave?: string; mr_signer?: string; quote_type?: string }> {
+    const qs = `host=${encodeURIComponent(host)}&port=${port}&tee_type=${teeType}`;
     return request<{ mr_enclave?: string; mr_signer?: string; quote_type?: string }>(`/api/v1/admin/enclave/inspect?${qs}`, token);
 }
 
