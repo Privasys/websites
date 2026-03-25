@@ -189,7 +189,7 @@ export default function Platform() {
                             <Balancer>
                                 Multiple gateways run across geographically distributed regions.
                                 DNS resolves your application to the nearest available gateway.
-                                Every gateway is stateless and syncs its routing table from the management service,
+                                Every gateway is stateless and syncs its routing table from the platform,
                                 so failover is automatic with zero configuration.
                             </Balancer>
                         </p>

@@ -12,7 +12,7 @@ Client ──TLS ClientHello──► Gateway (L4) ──TCP──► Enclave Ma
                               │                     (SGX or TDX)
                               │ polls routes
                               ▼
-                        Management Service
+                        Platform API
 ```
 
 1. A client opens a TLS connection to `myapp.apps.privasys.org`.
@@ -35,7 +35,7 @@ The gateway is deliberately minimal:
 
 ## Route synchronisation
 
-Each gateway instance polls the management service for the current routing table:
+Each gateway instance polls the platform API for the current routing table:
 
 ```
 GET /api/v1/internal/routes
@@ -43,7 +43,7 @@ Authorization: Bearer <token>
 If-None-Match: "sha256:abc123..."
 ```
 
-The management service returns a list of `(sni, upstream)` pairs derived from all currently deployed applications. Routes are updated atomically in memory. The gateway uses **ETag-based polling**, so unchanged route tables return `304 Not Modified` with no body.
+The platform returns a list of `(sni, upstream)` pairs derived from all currently deployed applications. Routes are updated atomically in memory. The gateway uses **ETag-based polling**, so unchanged route tables return `304 Not Modified` with no body.
 
 When an application is deployed or undeployed through the [Developer Platform](/solutions/platform/developer-platform), the routing table updates automatically. No manual DNS or gateway configuration is needed.
 
@@ -68,7 +68,7 @@ Every application deployed through the Developer Platform automatically receives
 <app-name>.apps.privasys.org
 ```
 
-This hostname is usable immediately after deployment. No DNS configuration is required from the developer. The management service registers the route and all gateway instances pick it up within seconds.
+This hostname is usable immediately after deployment. No DNS configuration is required from the developer. The platform registers the route and all gateway instances pick it up within seconds.
 
 ## Connecting to your application
 
