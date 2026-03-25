@@ -3,7 +3,7 @@ import path from 'path';
 
 const screenshot = (name: string) => path.join(__dirname, 'test-results', `${name}.png`);
 
-const COMMIT_URL = 'https://github.com/Privasys/wasm-app-example/commit/f0eefca8adf131a8ab763641c06ac83e1ca1feef';
+const COMMIT_URL = 'https://github.com/Privasys/wasm-app-example/commit/a6acb6da7a1e01b0a01dbb1bd6fcbd2054b6d345';
 const CONTAINER_COMMIT_URL = 'https://github.com/Privasys/container-app-example/commit/04a44ffc9068a8600a69b7791bde8fd970362502';
 
 /** Delete an app by navigating to its Overview tab and using the Danger Zone. */
