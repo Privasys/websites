@@ -48,7 +48,7 @@ The question is: why should this type information stop at the enclave boundary?
 When you deploy a WASM application on the [Privasys Developer Platform](https://developer.privasys.org), the platform exposes your enclave functions through the [Connect protocol](https://connectrpc.com/docs/introduction), an open standard for browser- and gRPC-compatible HTTP APIs. Connect gives us typed RPC semantics over standard HTTP, and we layer it on top of RA-TLS so that every call is attested end-to-end.
 
 ```
-Browser                 Management Service              Enclave (SGX)
+Browser                 Platform API                    Enclave (SGX)
   │                          │                              │
   │  GET /apps/{id}/schema   │                              │
   ├─────────────────────────►│  wasm_schema (RA-TLS)        │
@@ -67,11 +67,11 @@ Two things happen here:
 
 1. **Schema discovery.** The enclave introspects the compiled `.cwasm` module's type information and exposes the full WIT schema as structured JSON. Every exported function, every parameter name, every type, all derived from the component's own WIT definition.
 
-2. **Typed invocation.** The management service forwards RPC calls to the enclave over RA-TLS, where the WASM runtime deserialises parameters using the WIT type metadata, calls the function, and serialises the results back.
+2. **Typed invocation.** The platform forwards RPC calls to the enclave over RA-TLS, where the WASM runtime deserialises parameters using the WIT type metadata, calls the function, and serialises the results back.
 
 If you have used gRPC, this should feel familiar. A `.proto` file defines services and messages. A code generator produces stubs and skeletons. Our use of the [Connect protocol](https://connectrpc.com/) achieves the same semantics, but with WIT as the schema language instead of Protobuf. The WIT definition lives inside the `.wasm` binary. The schema is discovered at runtime. There is no `.proto` file to check in, no `protoc` to run, no generated code to keep in sync.
 
-The entire transport layer is RA-TLS: every call from the management service to the enclave happens over a TLS connection that carries an SGX attestation quote. The schema endpoint is authenticated with a service JWT; the RPC endpoint is authenticated with the user's JWT. All within the same attested channel we described in our [article on RA-TLS](/blog/a-practical-guide-for-an-attested-web).
+The entire transport layer is RA-TLS: every call from the platform to the enclave happens over a TLS connection that carries an SGX attestation quote. The schema endpoint is authenticated with a service JWT; the RPC endpoint is authenticated with the user's JWT. All within the same attested channel we described in our [article on RA-TLS](/blog/a-practical-guide-for-an-attested-web).
 
 ## WIT-Driven Developer Tools
 
@@ -157,21 +157,23 @@ world diagnostic {
 }
 ```
 
-These comments are not just for developers reading the `.wit` file. They can be embedded into the compiled `.wasm` binary as a `package-docs` custom section, preserved through compilation, and extracted at runtime alongside the structural types.
+These comments are not just for developers reading the `.wit` file. They flow through the build and deployment pipeline so the enclave can attach human-readable descriptions to the typed tool manifest it generates at runtime.
 
 ### From Schema to MCP Tool Manifest
 
-The enclave's schema and MCP endpoints derive tool manifests directly from the deployed binary. The flow is:
+The enclave's schema and MCP endpoints derive tool manifests from the deployed binary's type information and the doc comments extracted during the build. The flow is:
 
 1. **Write documented WIT.** Use `///` comments on your exports and parameters, the same way you would document a Rust function or a TypeScript interface.
 
-2. **Compile and deploy.** The documentation is embedded into the component binary as a `package-docs` custom section, carried alongside the type information the enclave already introspects.
+2. **Build and extract.** During the CI pipeline, doc comments are extracted from the WIT source. (AOT compilation strips WASM custom sections, so the docs travel out-of-band rather than inside the binary.)
 
-3. **Schema endpoint emits MCP tools.** The enclave's `mcp_tools` endpoint includes descriptions alongside types. Each exported function becomes an MCP tool with a name, a description from the `///` comment, and a JSON Schema input derived from the WIT parameter types.
+3. **Deploy to the enclave.** The platform delivers the compiled binary and its doc comments to the enclave together. The runtime combines the structural type information introspected from the binary with the descriptions from the doc comments.
 
-4. **AI agents discover and call.** An agent connecting to the platform sees your enclave's functions as typed, documented tools. It calls them over the same attested RPC channel that human users and programmatic clients already use.
+4. **Schema endpoint emits MCP tools.** The enclave's `mcp_tools` endpoint returns a fully typed, fully documented manifest. Each exported function becomes an MCP tool with a name, a description from the `///` comment, and a JSON Schema input derived from the WIT parameter types.
 
-The result: deploy a documented WASM app to the platform, and it is instantly available as an MCP tool server. No glue code, no separate MCP server implementation, no tool manifest to maintain. The manifest is derived from the deployed binary.
+5. **AI agents discover and call.** An agent connecting to the platform sees your enclave's functions as typed, documented tools. It calls them over the same attested RPC channel that human users and programmatic clients already use.
+
+The result: deploy a documented WASM app to the platform, and it is instantly available as an MCP tool server. No glue code, no separate MCP server implementation, no tool manifest to maintain. The manifest is derived from the deployed code and its documentation.
 
 ### Why Attestation Changes the Game
 

@@ -9,9 +9,9 @@ Every WASM application deployed on Enclave OS Mini automatically becomes an **MC
 
 When a WASM module is loaded into the enclave, the runtime:
 
-1. **Extracts WIT type information** from the compiled component binary using `discover_exports_typed()`.
+1. **Extracts WIT type information** from the compiled component binary.
 2. **Generates a JSON Schema** for each exported function's parameters, derived from the WIT types.
-3. **Reads doc comments** from the `package-docs` custom section of the WASM binary — these become the human-readable descriptions in the MCP manifest.
+3. **Reads doc comments** extracted from the WIT source during the build pipeline and delivered alongside the binary at deployment time.
 4. **Serves the manifest** via the `mcp_tools` wire protocol command, authenticated with the same permissions model as schema access.
 
 The result is a fully typed MCP tool manifest that stays in sync with the deployed code, because it **is** the deployed code.
@@ -52,7 +52,7 @@ Each tool maps to a single exported function. The `inputSchema` is a standard JS
 
 ## Documenting your tools with WIT
 
-Tool descriptions come from `///` doc comments in your WIT definition. These comments are part of the WIT specification and are embedded into the compiled binary:
+Tool descriptions come from `///` doc comments in your WIT definition. These comments are part of the WIT specification and are extracted during the CI build pipeline:
 
 ```wit
 package privasys:medical@0.1.0;
@@ -73,7 +73,7 @@ world diagnostic {
 The `///` comments flow all the way from source to the MCP manifest:
 
 | WIT element | MCP field |
-|-------------|-----------|
+|-------------|-----------||
 | Function `///` comment | `tool.description` |
 | Parameter `///` comment | `inputSchema.properties[name].description` |
 | Function name | `tool.name` |
@@ -112,15 +112,9 @@ Send an `mcp_tools` request over the RA-TLS connection:
 
 The enclave returns the full tool manifest. Authentication follows the same model as `wasm_schema` — monitoring role or app-level OIDC token.
 
-### Via the management service
+### Via the Developer Platform
 
-The management service proxies MCP requests through its API:
-
-```
-GET /api/v1/apps/{id}/schema
-```
-
-The schema response includes the WIT type information. The MCP tool manifest is derived from the same underlying data.
+The platform API exposes MCP manifests for deployed applications. The developer portal's **AI Tools** tab uses this to render tool cards, parameter schemas, and connection snippets.
 
 ## Enabling and disabling MCP
 
