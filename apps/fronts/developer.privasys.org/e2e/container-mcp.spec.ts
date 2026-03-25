@@ -17,34 +17,11 @@ const screenshot = (name: string) =>
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'https://api-test.developer.privasys.org';
 const TEST_APP_NAME = 'e2e-container-mcp-test';
-const TEST_COMMIT_URL = 'https://github.com/Privasys/container-app-example/commit/04a44ffc9068a8600a69b7791bde8fd970362502';
+// New commit includes privasys.json — auto-detection should populate container_mcp
+const TEST_COMMIT_URL = 'https://github.com/Privasys/container-app-example/commit/daaffbd60317f0a18a4ff32b1a22a426d6a00dd1';
+// Old commit has NO privasys.json — used to verify the "no MCP" path
+const NO_MCP_COMMIT_URL = 'https://github.com/Privasys/container-app-example/commit/04a44ffc9068a8600a69b7791bde8fd970362502';
 const TEST_CONTAINER_PORT = 8080;
-
-// The MCP manifest matching the Privasys container MCP standard
-const TEST_MCP_MANIFEST = {
-    tools: [
-        {
-            name: 'browse',
-            description: 'Fetch a web page using the Lightpanda headless browser and return its content as markdown or HTML.',
-            endpoint: '/browse',
-            inputSchema: {
-                type: 'object',
-                properties: {
-                    url: {
-                        type: 'string',
-                        description: 'The URL of the web page to fetch (must start with http:// or https://)',
-                    },
-                    format: {
-                        type: 'string',
-                        enum: ['markdown', 'html'],
-                        description: 'Output format for the page content (default: markdown)',
-                    },
-                },
-                required: ['url'],
-            },
-        },
-    ],
-};
 
 async function getToken(page: import('@playwright/test').Page): Promise<string> {
     await page.goto('/dashboard/');
@@ -89,11 +66,13 @@ test.describe('Container App MCP Tools', () => {
     let token: string;
     let appId: string;
 
-    test('create container app with MCP manifest', async ({ page }) => {
+    test('create container app — auto-detect MCP from privasys.json', async ({ page }) => {
         test.setTimeout(30_000);
         token = await getToken(page);
         await deleteAppIfExists(page, token);
 
+        // Do NOT pass container_mcp — the management service should auto-detect
+        // it from the privasys.json in the GitHub repo at the given commit.
         const createResp = await page.request.post(`${API}/api/v1/apps`, {
             headers: {
                 Authorization: `Bearer ${token}`,
@@ -105,7 +84,6 @@ test.describe('Container App MCP Tools', () => {
                 commit_url: TEST_COMMIT_URL,
                 app_type: 'container',
                 container_port: TEST_CONTAINER_PORT,
-                container_mcp: TEST_MCP_MANIFEST,
             },
         });
 
@@ -116,9 +94,12 @@ test.describe('Container App MCP Tools', () => {
         expect(createResp.ok()).toBeTruthy();
         expect(body.app_type).toBe('container');
         expect(body.container_port).toBe(TEST_CONTAINER_PORT);
+        // container_mcp should be populated from auto-detection of privasys.json
         expect(body.container_mcp).toBeTruthy();
+        expect(body.container_mcp.tools).toBeDefined();
+        expect(body.container_mcp.tools[0].name).toBe('browse');
         appId = body.id;
-        console.log(`Created container app with MCP: ${TEST_APP_NAME} (${appId})`);
+        console.log(`Created container app with MCP: ${TEST_APP_NAME} (${appId}) — MCP auto-detected`);
     });
 
     test('MCP endpoint returns tool manifest for container app', async ({ page }) => {
@@ -238,7 +219,7 @@ test.describe('Container App MCP Tools', () => {
             data: {
                 name: noMcpName,
                 source_type: 'github',
-                commit_url: TEST_COMMIT_URL,
+                commit_url: NO_MCP_COMMIT_URL,
                 app_type: 'container',
                 container_port: 8080,
             },
