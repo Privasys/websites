@@ -143,6 +143,7 @@ export interface Enclave {
     name: string;
     host: string;
     port: number;
+    gateway_host?: string;
     tee_type: TeeType;
     mr_enclave: string;
     country: string;
@@ -162,6 +163,7 @@ export interface CreateEnclaveRequest {
     name: string;
     host: string;
     port: number;
+    gateway_host?: string;
     tee_type?: TeeType;
     mr_enclave?: string;
     country?: string;

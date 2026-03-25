@@ -8,7 +8,7 @@ import { COUNTRIES, regionForCountry, countryName } from '~/lib/countries';
 import type { Enclave, CreateEnclaveRequest, TeeType } from '~/lib/types';
 
 const EMPTY_FORM: CreateEnclaveRequest = {
-    name: '', host: '', port: 8445, tee_type: 'sgx', mr_enclave: '', country: '', region: '', provider: '', owner: '', max_apps: 0,
+    name: '', host: '', port: 8445, gateway_host: '', tee_type: 'sgx', mr_enclave: '', country: '', region: '', provider: '', owner: '', max_apps: 0,
 };
 
 const ENC_STATUS_COLORS: Record<string, string> = {
@@ -110,7 +110,7 @@ export default function AdminEnclavePage() {
 
     function openEdit(enc: Enclave) {
         setForm({
-            name: enc.name, host: enc.host, port: enc.port, tee_type: enc.tee_type || 'sgx', mr_enclave: enc.mr_enclave,
+            name: enc.name, host: enc.host, port: enc.port, gateway_host: enc.gateway_host ?? '', tee_type: enc.tee_type || 'sgx', mr_enclave: enc.mr_enclave,
             country: enc.country, region: enc.region, gps_lat: enc.gps_lat, gps_lon: enc.gps_lon,
             provider: enc.provider, owner: enc.owner, max_apps: enc.max_apps,
         });
@@ -142,7 +142,7 @@ export default function AdminEnclavePage() {
         setSaving(true);
         setError(null);
         try {
-            const payload = { ...form, region: regionForCountry(form.country ?? '') };
+            const payload = { ...form, region: regionForCountry(form.country ?? ''), gateway_host: form.gateway_host || undefined };
             if (editingId) {
                 await adminUpdateEnclave(session.accessToken, editingId, payload);
             } else {
@@ -219,6 +219,12 @@ export default function AdminEnclavePage() {
                         <div>
                             <label className="block text-xs font-medium mb-1">Port</label>
                             <input type="number" value={form.port} onChange={e => setForm(f => ({ ...f, port: parseInt(e.target.value) || 8445 }))}
+                                className={INPUT_CLS} />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-medium mb-1">Gateway host</label>
+                            <input value={form.gateway_host ?? ''} onChange={e => setForm(f => ({ ...f, gateway_host: e.target.value }))}
+                                placeholder="Public IP or hostname for gateway routing"
                                 className={INPUT_CLS} />
                         </div>
                         <div>
@@ -435,6 +441,12 @@ export default function AdminEnclavePage() {
                                                             <div className="col-span-3">
                                                                 <div className="text-xs text-black/50 dark:text-white/50">MR_ENCLAVE</div>
                                                                 <code className="text-xs mt-0.5 bg-black/5 dark:bg-white/5 px-2 py-1 rounded break-all block">{enc.mr_enclave}</code>
+                                                            </div>
+                                                        )}
+                                                        {enc.gateway_host && (
+                                                            <div className="col-span-3">
+                                                                <div className="text-xs text-black/50 dark:text-white/50">Gateway host</div>
+                                                                <code className="text-xs mt-0.5">{enc.gateway_host}</code>
                                                             </div>
                                                         )}
                                                         {(enc.gps_lat != null && enc.gps_lon != null) && (
