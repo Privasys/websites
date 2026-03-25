@@ -357,7 +357,7 @@ export default function AppDetailPage() {
         { key: 'store', label: 'App Store' },
         ...(hasActiveDeployment ? [
             { key: 'attestation' as Tab, label: 'Attestation' },
-            ...(app.app_type !== 'container' ? [
+            ...(app.app_type !== 'container' || hasContainerMcp ? [
                 { key: 'api' as Tab, label: 'API Testing' },
             ] : []),
             ...(app.app_type !== 'container' || hasContainerMcp ? [
