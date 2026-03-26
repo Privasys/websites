@@ -29,6 +29,7 @@ Your existing container image runs inside a **Confidential VM** powered by [Encl
 - No code changes or special SDKs
 - Hardware-encrypted memory (TDX)
 - Optional encrypted storage
+- [MCP tool server](/solutions/platform/developer-platform/deploy-container#mcp-tool-discovery) via a `privasys.json` manifest — AI agents can discover and call your container's API
 
 ### Choosing a target
 
@@ -38,6 +39,7 @@ Your existing container image runs inside a **Confidential VM** powered by [Encl
 | **TCB size** | ~4 MB | Full VM |
 | **Code changes** | Build as WASM component | None |
 | **Attestation granularity** | Enclave identity + per-app code hash | VM boot chain (RTMR registers) |
+| **MCP tools** | Auto-derived from WIT types | Declared via `privasys.json` manifest |
 | **Best for** | New apps, security-critical workloads | Existing apps, quick adoption |
 
 See [Trust Model](/technology/confidential-computing/trust-model) for a deeper comparison of TEE technologies.

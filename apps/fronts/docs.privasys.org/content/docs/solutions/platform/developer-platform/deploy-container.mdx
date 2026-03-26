@@ -76,6 +76,59 @@ Traffic to and from the container flows through the RA-TLS proxy:
 - **Inbound:** Clients connect over HTTPS. The proxy terminates TLS using the RA-TLS certificate (which embeds the TDX attestation quote). Requests are forwarded to your container on the configured port.
 - **Outbound:** The container can make outbound connections. DNS resolution and egress work normally.
 
+## MCP tool discovery
+
+Container applications can be exposed as **MCP tool servers** by adding a `privasys.json` manifest to their GitHub repository. When the platform detects this file, it reads the declared tools and surfaces them in the Developer Platform's **AI Tools** tab.
+
+### Adding a `privasys.json` manifest
+
+Create a `privasys.json` file in the root of your repository:
+
+```json
+{
+  "container_mcp": {
+    "tools": [
+      {
+        "name": "browse",
+        "description": "Browse a URL and return the page content.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "url": {
+              "type": "string",
+              "description": "The URL to browse."
+            }
+          },
+          "required": ["url"]
+        }
+      }
+    ]
+  }
+}
+```
+
+Each tool in the `tools` array follows the standard [MCP tool format](https://modelcontextprotocol.io/): a `name`, a human-readable `description`, and a JSON Schema `inputSchema` for the parameters.
+
+### How it works
+
+1. When you create or update a container application with a GitHub commit URL, the platform checks the repository for a `privasys.json` file.
+2. If `container_mcp` is present, the tool manifest is stored alongside the application.
+3. The **AI Tools** tab in the Developer Platform displays your container's tools, parameter schemas, and connection instructions.
+4. AI agents can discover and call your container's API over attested connections — the same TDX attestation that protects all container traffic.
+
+No code changes to your container are required. The `privasys.json` file is read by the platform at submission time, not at runtime.
+
+### Comparison with WASM MCP
+
+| | **WASM** | **Container** |
+|--|----------|---------------|
+| **Tool source** | Auto-derived from WIT types and doc comments | Declared in `privasys.json` manifest |
+| **Schema format** | Generated JSON Schema from WIT | Hand-written JSON Schema |
+| **Tool invocation** | Connect RPC to WASM function | HTTP to container endpoint |
+| **Attestation** | SGX (per-function code hash) | TDX (VM boot chain) |
+
+See [MCP Tools](/solutions/enclave-os/enclave-os-mini/mcp-tools) for the WASM-specific MCP reference.
+
 ## Next steps
 
 - [Attestation and verification](/solutions/platform/developer-platform/attestation)
