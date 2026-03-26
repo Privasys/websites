@@ -4,7 +4,7 @@
  * Expects a WASM app named "wasm-app" to already exist and be deployed.
  *
  * Run with:
- *   E2E_BASE_URL=https://developer.privasys.org npx playwright test --config apps/fronts/developer.privasys.org/e2e/playwright.config.ts mcp-tools.spec.ts --headed --project=portal --no-deps
+ *   E2E_BASE_URL=https://developer.privasys.org npx playwright test --config apps/fronts/developer.privasys.org/e2e/playwright.config.ts wasm-mcp-tools.spec.ts --headed --project=portal --no-deps
  */
 import { test, expect } from '@playwright/test';
 import path from 'path';
