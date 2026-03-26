@@ -69,6 +69,19 @@ export default function Home() {
                                 </Balancer>
                             </p>
                         </div>
+                        <div>
+                            <h3 className='text-xl lg:text-3xl'>
+                                <a href='/solutions/wallet' className='hover:underline'>Privasys Wallet&nbsp;&rsaquo;</a>
+                            </h3>
+                            <p>
+                                <Balancer>
+                                    A mobile authenticator that verifies the server before you authenticate.
+                                    FIDO2 credentials backed by your phone&rsquo;s secure hardware, with built-in RA-TLS verification
+                                    to ensure you are connecting to a genuine hardware enclave.
+                                    Two-way trust, no passwords, no shared secrets.
+                                </Balancer>
+                            </p>
+                        </div>
                     </div>
                 </section>
 
