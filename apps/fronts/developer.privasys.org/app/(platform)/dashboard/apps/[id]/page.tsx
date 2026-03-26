@@ -1537,7 +1537,7 @@ function defaultValueForType(ty: WitType): unknown {
         case 'float32': case 'float64':
             return 0;
         case 'list': return [];
-        case 'option': return null;
+        case 'option': return ty.default !== undefined ? ty.default : null;
         case 'enum': return ty.names?.[0] ?? '';
         case 'record':
             if (ty.fields) {
@@ -1558,6 +1558,18 @@ function ParamInput({ param, value, onChange }: { param: { name: string; type: W
     switch (ty.kind) {
         case 'option': {
             const inner = ty.inner || { kind: 'string' };
+            const hasDefault = ty.default !== undefined;
+            if (hasDefault) {
+                // Show the inner input directly, pre-filled with the default
+                const effectiveValue = (value === null || value === undefined) ? ty.default : value;
+                return (
+                    <div className="flex flex-col gap-1">
+                        <ParamInput param={{ name: param.name, type: inner }} value={effectiveValue} onChange={onChange} />
+                        <span className="text-[10px] text-black/35 dark:text-white/35">optional &middot; default: <span className="font-mono">{String(ty.default)}</span></span>
+                    </div>
+                );
+            }
+            // No default: two-step null/set toggle
             const isNull = value === null || value === undefined;
             return (
                 <div className="flex flex-col gap-2">
@@ -1871,6 +1883,7 @@ function ApiTestingTab({ appId, token, deployments, versions }: { appId: string;
                             ))}
                         </select>
                     </div>
+                    <div className="w-px bg-black/10 dark:bg-white/10" />
                     <button
                         onClick={sendCall}
                         disabled={sending || !selectedFunc}
@@ -1921,7 +1934,7 @@ function ApiTestingTab({ appId, token, deployments, versions }: { appId: string;
                             <div className="space-y-2.5">
                                 {currentFunc!.params.map((p) => (
                                     <div key={p.name} className="flex items-start gap-3">
-                                        <div className="flex items-center gap-1.5 pt-2 min-w-[120px] shrink-0">
+                                        <div className="flex items-center gap-1.5 min-h-[36px] min-w-[120px] shrink-0">
                                             <span className="text-xs font-mono font-medium text-black/70 dark:text-white/70">{p.name}</span>
                                             <span className="text-[10px] font-mono text-black/25 dark:text-white/25">{witTypeLabel(p.type)}</span>
                                         </div>
