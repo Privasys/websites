@@ -57,9 +57,7 @@ Once the deployment is active, switch to the **Attestation** tab. Enter a challe
 
 ![Attestation challenge](/images/tutorial/wasm-06a-attestation-challenge.png)
 
-The panel shows the full TLS certificate chain, the SGX quote, and the parsed attestation extensions. Scroll to **Workload Attestation Extensions** to find the code hash under OID `3.2`:
-
-![Workload Attestation Extensions](/images/tutorial/wasm-06b-workload-extensions.png)
+The panel shows the full TLS certificate chain, the SGX quote, and the parsed attestation extensions including the **Workload Attestation Extensions** where the code hash appears under OID `3.2`.
 
 > **SHA-256 match**: the code hash in the attestation quote is the same SHA-256 from Step 4. This proves the enclave is running the exact binary that was built from your commit — no modifications, no substitutions.
 
@@ -128,6 +126,10 @@ Once the deployment reaches **Active** status, switch to the **Attestation** tab
 ![Attestation challenge and workload](/images/tutorial/container-06a-attestation-challenge.png)
 
 The attestation includes a TDX quote with RTMR (Runtime Measurement Register) values that cover the full boot chain — from firmware through the OS to the container layer. Unlike SGX which measures a single WASM binary hash, TDX attestation proves the integrity of the entire virtual machine.
+
+Scroll down to see the RTMR registers — each one covers a different layer of the boot chain:
+
+![RTMR measurements](/images/tutorial/container-06b-rtmr-measurements.png)
 
 ### Step 7. API Testing — browse tool
 

@@ -242,7 +242,7 @@ test.describe('WASM App Tutorial', () => {
         await inspectBtn.click();
 
         // Wait for attestation results
-        await expect(page.getByText(/TLS Connection/i).or(page.getByText(/attestation failed/i))).toBeVisible({ timeout: 30_000 });
+        await expect(page.getByText(/TLS Connection/i)).toBeVisible({ timeout: 60_000 });
         await settle(page, 2000);
 
         // Screenshot 1: Full attestation with challenge
@@ -491,7 +491,7 @@ test.describe('Container App Tutorial', () => {
         await expect(inspectBtn).toBeVisible({ timeout: 5_000 });
         await inspectBtn.click();
 
-        await expect(page.getByText(/TLS Connection/i).or(page.getByText(/attestation failed/i))).toBeVisible({ timeout: 30_000 });
+        await expect(page.getByText(/TLS Connection/i)).toBeVisible({ timeout: 60_000 });
         await settle(page, 2000);
 
         await page.screenshot({ path: shot('container-06a-attestation-challenge'), fullPage: true });
