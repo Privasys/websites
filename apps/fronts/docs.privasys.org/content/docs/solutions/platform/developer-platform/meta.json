@@ -3,6 +3,7 @@
     "defaultOpen": true,
     "pages": [
         "getting-started",
+        "tutorial",
         "deploy-wasm",
         "deploy-container",
         "attestation",
