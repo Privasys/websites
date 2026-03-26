@@ -1,12 +1,12 @@
 /**
- * Register the m1-dev TDX enclave in the dev management service.
+ * Register the TDX dev enclave in the dev management service.
  * Run: npx playwright test --headed register-enclave.spec.ts
  */
 import { test, expect } from '@playwright/test';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'https://api-test.developer.privasys.org';
 
-test('register m1-dev TDX enclave', async ({ page }) => {
+test('register TDX dev enclave', async ({ page }) => {
     test.setTimeout(60_000);
 
     // Login
@@ -27,7 +27,7 @@ test('register m1-dev TDX enclave', async ({ page }) => {
     expect(listResp.ok()).toBeTruthy();
     const enclaves: { id: string; name: string; host: string }[] = await listResp.json();
 
-    const existing = enclaves.find(e => e.host === '34.155.33.17');
+    const existing = enclaves.find(e => e.host === 'v-fr-dev.privasys.org');
     if (existing) {
         console.log(`Enclave already exists: ${existing.id} (${existing.name})`);
         return;
@@ -40,8 +40,8 @@ test('register m1-dev TDX enclave', async ({ page }) => {
             'Content-Type': 'application/json',
         },
         data: {
-            name: 'm1-dev',
-            host: '34.155.33.17',
+            name: 'DEV---virtual-eu-paris-1',
+            host: 'v-fr-dev.privasys.org',
             port: 443,
             tee_type: 'tdx',
             country: 'FR',
@@ -50,6 +50,7 @@ test('register m1-dev TDX enclave', async ({ page }) => {
             owner: 'Privasys',
             status: 'active',
             max_apps: 10,
+            gateway_host: '34.155.116.130',
         },
     });
 
