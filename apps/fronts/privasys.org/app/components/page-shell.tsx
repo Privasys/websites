@@ -11,7 +11,8 @@ const NAV_ITEMS = [
             { label: 'Enclave OS', href: '/solutions/enclave-os' },
             { label: 'Enclave Vaults', href: '/solutions/enclave-vaults' },
             { label: 'Enclave Agent', href: '/solutions/enclave-agent' },
-            { label: 'Privasys Platform', href: '/solutions/platform' }
+            { label: 'Privasys Platform', href: '/solutions/platform' },
+            { label: 'Privasys Wallet', href: '/solutions/wallet' }
         ]
     },
     { label: 'App Store', href: '/uk/apps' },
