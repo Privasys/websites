@@ -1538,6 +1538,7 @@ function defaultValueForType(ty: WitType): unknown {
             return 0;
         case 'list': return [];
         case 'option': return null;
+        case 'enum': return ty.names?.[0] ?? '';
         case 'record':
             if (ty.fields) {
                 const obj: Record<string, unknown> = {};
@@ -1555,6 +1556,25 @@ function ParamInput({ param, value, onChange }: { param: { name: string; type: W
     const inputClass = 'w-full px-3 py-2 text-[13px] font-mono rounded-lg border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:focus:ring-blue-400/30 focus:border-blue-500/50 dark:focus:border-blue-400/50 transition-colors placeholder:text-black/25 dark:placeholder:text-white/25';
 
     switch (ty.kind) {
+        case 'option': {
+            const inner = ty.inner || { kind: 'string' };
+            const isNull = value === null || value === undefined;
+            return (
+                <div className="flex flex-col gap-2">
+                    <div className="flex items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={() => onChange(isNull ? defaultValueForType(inner) : null)}
+                            className={`px-2 py-0.5 text-xs rounded ${isNull ? 'bg-black/10 dark:bg-white/10 text-black/50 dark:text-white/50' : 'bg-blue-500/15 text-blue-600 dark:text-blue-400'}`}
+                        >
+                            {isNull ? 'null' : 'set'}
+                        </button>
+                        <span className="text-xs text-black/40 dark:text-white/40">click to {isNull ? 'set a value' : 'clear'}</span>
+                    </div>
+                    {!isNull && <ParamInput param={{ name: param.name, type: inner }} value={value} onChange={onChange} />}
+                </div>
+            );
+        }
         case 'bool':
             return (
                 <div className="flex items-center gap-3 py-1">
