@@ -195,6 +195,7 @@ export interface WitType {
     cases?: { name: string; type?: WitType }[];
     elements?: WitType[];
     names?: string[];
+    default?: unknown;
 }
 
 export interface ParamSchema {

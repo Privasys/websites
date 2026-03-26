@@ -15,7 +15,7 @@ const screenshot = (name: string) =>
 const API = process.env.NEXT_PUBLIC_API_URL || 'https://api-test.developer.privasys.org';
 const TEST_APP_NAME = 'e2e-container-api-test';
 // New commit includes privasys.json — auto-detection should populate container_mcp
-const TEST_COMMIT_URL = 'https://github.com/Privasys/container-app-example/commit/daaffbd60317f0a18a4ff32b1a22a426d6a00dd1';
+const TEST_COMMIT_URL = 'https://github.com/Privasys/container-app-example/commit/5abf1e9';
 // Old commit has NO privasys.json — used to verify the "no MCP" path
 const NO_MCP_COMMIT_URL = 'https://github.com/Privasys/container-app-example/commit/04a44ffc9068a8600a69b7791bde8fd970362502';
 const TEST_CONTAINER_PORT = 8080;
