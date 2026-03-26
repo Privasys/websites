@@ -183,11 +183,12 @@ test.describe('Container App MCP Tools', () => {
         expect(urlParam).toBeDefined();
         expect(urlParam.type.kind).toBe('string'); // required → no option wrapper
 
-        // format is optional → should be wrapped in option
+        // format is optional → should be wrapped in option, inner is enum
         const formatParam = browseFn.params.find((p: { name: string }) => p.name === 'format');
         expect(formatParam).toBeDefined();
         expect(formatParam.type.kind).toBe('option');
-        expect(formatParam.type.inner.kind).toBe('string');
+        expect(formatParam.type.inner.kind).toBe('enum');
+        expect(formatParam.type.inner.names).toEqual(['markdown', 'html']);
         console.log('Container schema with AppSchema format validated');
     });
 
