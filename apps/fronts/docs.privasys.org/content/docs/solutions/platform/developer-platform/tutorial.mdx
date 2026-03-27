@@ -127,10 +127,6 @@ Once the deployment reaches **Active** status, switch to the **Attestation** tab
 
 The attestation includes a TDX quote with RTMR (Runtime Measurement Register) values that cover the full boot chain — from firmware through the OS to the container layer. Unlike SGX which measures a single WASM binary hash, TDX attestation proves the integrity of the entire virtual machine.
 
-Scroll down to see the RTMR registers — each one covers a different layer of the boot chain:
-
-![RTMR measurements](/images/tutorial/container-06b-rtmr-measurements.png)
-
 ### Step 7. API Testing — browse tool
 
 The **API Testing** tab shows input fields generated from the `privasys.json` JSON Schema. For this LightPanda container, there is a single `browse` tool that accepts a URL.
@@ -181,7 +177,7 @@ When you deploy an application through this workflow:
 
 | | WASM (SGX) | Container (TDX) |
 |---|---|---|
-| **Source** | Rust/C compiled to `.wasm` | Any language, Dockerfile |
+| **Source** | Any language compiled to `.wasm` | Any language, Dockerfile |
 | **MCP tools** | Auto-derived from `.wit` | Declared in `privasys.json` |
 | **Attestation** | Per-app code hash (SHA-256 of `.cwasm`) | Full VM boot chain (RTMR registers) |
 | **Enclave** | SGX enclave | TDX virtual machine |
