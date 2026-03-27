@@ -245,16 +245,23 @@ test.describe('WASM App Tutorial', () => {
         await expect(page.getByText(/TLS Connection/i)).toBeVisible({ timeout: 60_000 });
         await settle(page, 2000);
 
+        // Wait for quote verification to complete (✓ Verified badge)
+        await expect(page.getByText(/Verified/).first()).toBeVisible({ timeout: 30_000 });
+
+        // Fail if the attestation server is not configured
+        await expect(page.getByText(/attestation server is not configured/i)).not.toBeVisible();
+
+        // Workload Attestation Extensions must be present for WASM apps
+        const workloadSection = page.getByText('Workload Attestation Extensions');
+        await expect(workloadSection).toBeVisible({ timeout: 10_000 });
+
         // Screenshot 1: Full attestation with challenge
         await page.screenshot({ path: shot('wasm-06a-attestation-challenge'), fullPage: true });
 
         // Screenshot 2: Scroll to Workload Attestation Extensions section
-        const workloadSection = page.getByText('Workload Attestation Extensions');
-        if (await workloadSection.isVisible({ timeout: 5_000 }).catch(() => false)) {
-            await workloadSection.scrollIntoViewIfNeeded();
-            await settle(page, 500);
-            await page.screenshot({ path: shot('wasm-06b-workload-extensions'), fullPage: true });
-        }
+        await workloadSection.scrollIntoViewIfNeeded();
+        await settle(page, 500);
+        await page.screenshot({ path: shot('wasm-06b-workload-extensions'), fullPage: true });
     });
 
     test('wasm-07 — API Testing: call get-random', async ({ page }) => {
@@ -494,14 +501,29 @@ test.describe('Container App Tutorial', () => {
         await expect(page.getByText(/TLS Connection/i)).toBeVisible({ timeout: 60_000 });
         await settle(page, 2000);
 
+        // Wait for quote verification to complete (✓ Verified badge)
+        await expect(page.getByText(/Verified/).first()).toBeVisible({ timeout: 30_000 });
+
+        // Fail if the attestation server is not configured
+        await expect(page.getByText(/attestation server is not configured/i)).not.toBeVisible();
+
+        // Workload Attestation Extensions must be present for container apps
+        const workloadSection = page.getByText('Workload Attestation Extensions');
+        await expect(workloadSection).toBeVisible({ timeout: 10_000 });
+
         await page.screenshot({ path: shot('container-06a-attestation-challenge'), fullPage: true });
 
-        // Scroll to TDX measurements (RTMR registers)
+        // Scroll to Workload Attestation Extensions
+        await workloadSection.scrollIntoViewIfNeeded();
+        await settle(page, 500);
+        await page.screenshot({ path: shot('container-06b-workload-extensions'), fullPage: true });
+
+        // Scroll to TDX RTMR measurements
         const rtmrSection = page.getByText(/RTMR/);
         if (await rtmrSection.first().isVisible({ timeout: 5_000 }).catch(() => false)) {
             await rtmrSection.first().scrollIntoViewIfNeeded();
             await settle(page, 500);
-            await page.screenshot({ path: shot('container-06b-rtmr-measurements'), fullPage: true });
+            await page.screenshot({ path: shot('container-06c-rtmr-measurements'), fullPage: true });
         }
     });
 
