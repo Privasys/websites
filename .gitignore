@@ -141,6 +141,3 @@ reports
 .github/instructions/nx.instructions.md
 vite.config.*.timestamp*
 vitest.config.*.timestamp*
-
-# Internal status
-status.md

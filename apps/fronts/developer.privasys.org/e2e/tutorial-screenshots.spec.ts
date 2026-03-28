@@ -24,7 +24,7 @@ import fs from 'fs';
 const TUTORIAL_DIR = path.join(__dirname, 'test-results', 'tutorial');
 const API = process.env.NEXT_PUBLIC_API_URL || 'https://api-test.developer.privasys.org';
 
-const WASM_COMMIT_URL = 'https://github.com/Privasys/wasm-app-example/commit/a6acb6da7a1e01b0a01dbb1bd6fcbd2054b6d345';
+const WASM_COMMIT_URL = 'https://github.com/Privasys/wasm-app-example/commit/b296c0d78d0f7a5504d76abba7e5e5b3af885936';
 const WASM_APP_NAME = 'alice-first-wasm-app';
 
 const CONTAINER_COMMIT_URL = 'https://github.com/Privasys/container-app-lightpanda/commit/9d08f6d6d16c313b8ad7fb9b6e5df763044d9b7d';
@@ -35,8 +35,7 @@ function shot(name: string) {
     return path.join(TUTORIAL_DIR, `${name}.png`);
 }
 
-async function settle(page: Page, ms = 1500) {
-    await page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => {});
+async function settle(page: Page, ms = 500) {
     await page.waitForTimeout(ms);
 }
 
@@ -75,6 +74,18 @@ async function deleteAppByApi(page: Page, token: string, appName: string) {
     console.log(`Cleaned up ${appName} (${existing.id})`);
 }
 
+/** Delete ALL apps via the API (clean slate for screenshots). */
+async function deleteAllApps(page: Page, token: string) {
+    const resp = await page.request.get(`${API}/api/v1/apps`, {
+        headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!resp.ok()) return;
+    const apps: { id: string; name: string }[] = await resp.json();
+    for (const app of apps) {
+        await deleteAppByApi(page, token, app.name);
+    }
+}
+
 // ══════════════════════════════════════════════════════════════
 //  WASM APP TUTORIAL
 // ══════════════════════════════════════════════════════════════
@@ -86,9 +97,9 @@ test.describe('WASM App Tutorial', () => {
         await page.goto('/dashboard/');
         await settle(page);
 
-        // Clean up if the app exists from a previous run
+        // Clean up ALL apps from previous runs to ensure empty dashboard
         const token = await getToken(page);
-        await deleteAppByApi(page, token, WASM_APP_NAME);
+        await deleteAllApps(page, token);
         await page.reload();
         await settle(page);
 
@@ -167,6 +178,38 @@ test.describe('WASM App Tutorial', () => {
         await expect(page.getByText('WASM module SHA-256')).toBeVisible({ timeout: 5_000 });
 
         await page.screenshot({ path: shot('wasm-04-overview-built'), fullPage: true });
+    });
+
+    test('wasm-04b — GitHub Actions: reproducible build log', async ({ page }) => {
+        test.setTimeout(60_000);
+
+        // Navigate to the portal first so getToken can fetch /api/auth/session
+        await page.goto('/dashboard/');
+        await settle(page);
+
+        // Fetch the build's run_url from the API
+        const token = await getToken(page);
+        const appsResp = await page.request.get(`${API}/api/v1/apps`, {
+            headers: { Authorization: `Bearer ${token}` },
+        });
+        const apps: { id: string; name: string }[] = await appsResp.json();
+        const app = apps.find(a => a.name === WASM_APP_NAME);
+        expect(app).toBeTruthy();
+
+        const buildsResp = await page.request.get(`${API}/api/v1/apps/${app!.id}/builds`, {
+            headers: { Authorization: `Bearer ${token}` },
+        });
+        const builds: { run_url?: string }[] = await buildsResp.json();
+        const runUrl = builds[0]?.run_url;
+        expect(runUrl).toBeTruthy();
+
+        console.log(`GitHub Actions run URL: ${runUrl}`);
+
+        // Navigate to GitHub Actions run page (auth cookies from setup include github.com)
+        await page.goto(runUrl!);
+        await settle(page, 3000);
+
+        await page.screenshot({ path: shot('wasm-04b-github-actions-hash'), fullPage: true });
     });
 
     test('wasm-05 — Deployments tab with version and region selected', async ({ page }) => {
@@ -299,7 +342,7 @@ test.describe('WASM App Tutorial', () => {
         await sendBtn.click();
 
         // Wait for response
-        await expect(page.getByText(/200 OK/i).or(page.getByText(/error/i))).toBeVisible({ timeout: 30_000 });
+        await expect(page.getByText(/200 OK/i).first()).toBeVisible({ timeout: 30_000 });
         await settle(page, 1000);
 
         await page.screenshot({ path: shot('wasm-07-api-testing-getrandom'), fullPage: true });
