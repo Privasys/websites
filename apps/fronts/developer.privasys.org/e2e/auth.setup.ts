@@ -26,7 +26,7 @@ setup('authenticate via GitHub', async ({ page }) => {
             JSON.parse(fs.readFileSync(stateFile, 'utf-8')).cookies ?? []
         );
         await page.goto('/dashboard/');
-        await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {});
+        await page.waitForLoadState('domcontentloaded');
         if (page.url().includes('/dashboard') && !page.url().includes('/login')) {
             const session = await page.evaluate(() => fetch('/api/auth/session').then(r => r.json()));
             if (session?.accessToken) {
@@ -61,7 +61,7 @@ setup('authenticate via GitHub', async ({ page }) => {
     // If we landed on /dashboard (OIDC flow completed instantly), check session
     if (page.url().includes('/dashboard')) {
         // Wait for the page to fully hydrate
-        await page.waitForLoadState('networkidle');
+        await page.waitForLoadState('domcontentloaded');
         const session = await page.evaluate(() => fetch('/api/auth/session').then(r => r.json()));
         console.log('Session after auto-redirect:', JSON.stringify(session).substring(0, 200));
         if (session?.accessToken) {
@@ -76,7 +76,7 @@ setup('authenticate via GitHub', async ({ page }) => {
         // Wait for login page which should redirect to Zitadel
         await page.waitForURL(/auth\.privasys\.org|github\.com|\/dashboard/, { timeout: 30_000 });
         if (page.url().includes('/dashboard')) {
-            await page.waitForLoadState('networkidle');
+            await page.waitForLoadState('domcontentloaded');
             const fresh = await page.evaluate(() => fetch('/api/auth/session').then(r => r.json()));
             console.log('Session after re-auth:', JSON.stringify(fresh).substring(0, 200));
             if (fresh?.accessToken) {
@@ -95,7 +95,7 @@ setup('authenticate via GitHub', async ({ page }) => {
             console.log('Zitadel account picker detected — selecting account.');
             await accountEntry.click();
             await page.waitForURL(/\/dashboard/, { timeout: 30_000 });
-            await page.waitForLoadState('networkidle');
+            await page.waitForLoadState('domcontentloaded');
             const session = await page.evaluate(() => fetch('/api/auth/session').then(r => r.json()));
             if (session?.accessToken) {
                 console.log('Authenticated via Zitadel account picker, saving state.');
