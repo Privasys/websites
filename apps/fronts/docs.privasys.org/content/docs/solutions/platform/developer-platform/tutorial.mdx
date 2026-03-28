@@ -1,15 +1,15 @@
 ---
 title: Tutorial
-description: Step-by-step walkthrough of the Privasys Developer Platform — deploy a WASM application and a container application from commit to attested MCP tool server.
+description: Step-by-step walkthrough of the Privasys Developer Platform - deploy a WASM application and a container application from commit to attested MCP tool server.
 ---
 
 Two end-to-end tutorials covering both deployment targets on the Privasys Platform. Every screenshot was captured from the live platform using Playwright.
 
 ---
 
-## Part 1 — Deploy a WASM application
+## Part 1: Deploy a WASM application
 
-This tutorial deploys the [wasm-app-example](https://github.com/Privasys/wasm-app-example) repository — a Rust module compiled to WebAssembly that exposes seven functions including `get-random`, `hello`, `kv-store`, and `compute-hash`.
+This tutorial deploys the [wasm-app-example](https://github.com/Privasys/wasm-app-example) repository, a Rust module compiled to WebAssembly that exposes seven functions including `get-random`, `hello`, `kv-store`, and `compute-hash`.
 
 ### Step 1. Empty dashboard
 
@@ -27,23 +27,29 @@ The creation form appears. You will provide a GitHub commit URL, choose an appli
 
 ### Step 3. Paste commit URL and fill the form
 
-Paste the commit URL from the `wasm-app-example` repository. The platform parses the URL, extracts the repository and commit hash, and selects **WASM** as the application type.
+Paste the commit URL from the `wasm-app-example` repository - for this tutorial we use:
 
-Give it a name — here we use `alice-first-wasm-app`.
+```
+https://github.com/Privasys/wasm-app-example/commit/a6acb6da7a1e01b0a01dbb1bd6fcbd2054b6d345
+```
+
+The platform parses the URL, extracts the repository and commit hash, and selects **WASM** as the application type.
+
+Give it a name - here we use `alice-first-wasm-app`.
 
 ![Commit URL pasted and form filled](/images/tutorial/wasm-03-commit-and-name.png)
 
-> **SHA-256 to watch**: note the commit hash displayed on this screen. You will see this same hash appear later in the Overview (as the WASM module hash) and in the Attestation certificate (as the code measurement). This chain of hashes is how you verify that _exactly_ the code you committed is what runs inside the enclave.
+> **Reproducible build hash**: once you click Create, the platform triggers a [reproducible build](https://github.com/Privasys/reproducible-app-builder) via GitHub Actions. The build log prints the SHA-256 hash of the compiled `.cwasm` binary. You will see this same hash appear in the Overview and in the Attestation certificate. This chain of hashes is how you verify that _exactly_ the code you committed is what runs inside the enclave.
 
-### Step 4. Overview — build complete
+### Step 4. Overview: build complete
 
-After clicking **Create**, the platform triggers a reproducible build. When finished, the Overview tab shows the application metadata and build output, including the **SHA-256 hash** of the compiled `.cwasm` binary.
+After clicking **Create**, the platform triggers a [reproducible build](https://github.com/Privasys/reproducible-app-builder) via GitHub Actions. When finished, the Overview tab shows the application metadata and build output, including the **SHA-256 hash** of the compiled `.cwasm` binary.
 
 ![Overview after build](/images/tutorial/wasm-04-overview-built.png)
 
-Compare this SHA-256 with the one from the GitHub Actions build log — they must match. This is the first link in the verifiable chain from source code to enclave.
+This is the same hash as the one on the [GitHub Actions build log](https://github.com/Privasys/reproducible-app-builder/actions). Anyone can re-run the build from the same commit and verify they get the same SHA-256. This is the first link in the verifiable chain from source code to enclave.
 
-### Step 5. Deployments — select version and region
+### Step 5. Deployments: select version and region
 
 Switch to the **Deployments** tab. Select the version you just built and a deployment region, then click **Deploy**.
 
@@ -51,7 +57,7 @@ Switch to the **Deployments** tab. Select the version you just built and a deplo
 
 The platform delivers the `.cwasm` binary to an SGX enclave and starts serving it behind an RA-TLS certificate.
 
-### Step 6. Attestation — verify the enclave
+### Step 6. Attestation: verify the enclave
 
 Once the deployment is active, switch to the **Attestation** tab. Enter a challenge nonce and click **Inspect Certificate** to perform a live attestation check.
 
@@ -59,35 +65,46 @@ Once the deployment is active, switch to the **Attestation** tab. Enter a challe
 
 The panel shows the full TLS certificate chain, the SGX quote, and the parsed attestation extensions including the **Workload Attestation Extensions** where the code hash appears under OID `3.2`.
 
-> **SHA-256 match**: the code hash in the attestation quote is the same SHA-256 from Step 4. This proves the enclave is running the exact binary that was built from your commit — no modifications, no substitutions.
+> **SHA-256 match**: the code hash in the attestation quote is the same SHA-256 from Step 4 and from the GitHub Actions build log. This proves the enclave is running the exact binary that was built from your commit - no modifications, no substitutions.
 
-### Step 7. API Testing — call a function
+Inside the enclave, Enclave OS Mini [recomputes the SHA-256](https://github.com/Privasys/enclave-os-mini/blob/main/crates/enclave-os-wasm/src/registry.rs) of the WASM bytecode at load time and embeds it in the RA-TLS certificate:
+
+```rust
+// enclave-os-mini - crates/enclave-os-wasm/src/registry.rs
+let hash = digest::digest(&digest::SHA256, wasm_bytes);
+let mut code_hash = [0u8; 32];
+code_hash.copy_from_slice(hash.as_ref());
+```
+
+This ensures the attestation OID always reflects the actual bytes loaded into the enclave - there is no separate metadata or external index.
+
+### Step 7. API Testing: call a function
 
 Switch to the **API Testing** tab. Select `get-random` from the function dropdown and click **Send**.
 
-![API Testing — get-random](/images/tutorial/wasm-07-api-testing-getrandom.png)
+![API Testing - get-random](/images/tutorial/wasm-07-api-testing-getrandom.png)
 
-The response is returned directly from the enclave over the attested TLS channel. For WASM applications, the platform generates type-aware input controls from the WIT schema — text fields for strings, number inputs for integers, toggles for booleans.
+The response is returned directly from the enclave over the attested TLS channel. For WASM applications, the platform generates type-aware input controls from the WIT schema - text fields for strings, number inputs for integers, toggles for booleans.
 
-### Step 8. AI Tools — MCP tool server
+### Step 8. AI Tools: MCP tool server
 
 Switch to the **AI Tools** tab. The platform automatically generated an MCP tool manifest from the WIT interface.
 
 ![MCP tools](/images/tutorial/wasm-08-mcp-tools.png)
 
-Each exported function becomes an MCP tool with its name, description (from `///` doc comments in the `.wit` file), and parameter schema. The tab shows connection instructions for AI clients like Claude or Cursor — every call is attested end-to-end.
+Each exported function becomes an MCP tool with its name, description (from `///` doc comments in the `.wit` file), and parameter schema. The tab shows connection instructions for AI clients like Claude or Cursor - every call is attested end-to-end.
 
 ---
 
-## Part 2 — Deploy a container application
+## Part 2: Deploy a container application
 
-This tutorial deploys the [container-app-lightpanda](https://github.com/Privasys/container-app-lightpanda) repository — a headless browser running inside a TDX enclave, with a single MCP tool `browse` declared in `privasys.json`.
+This tutorial deploys the [container-app-lightpanda](https://github.com/Privasys/container-app-lightpanda) repository, a headless browser running inside a TDX enclave, with a single MCP tool `browse` declared in `privasys.json`.
 
-### Step 1. Empty dashboard
+### Step 1. Dashboard
 
-After removing the WASM app, we start from an empty dashboard again.
+The WASM app from Part 1 is still visible in the sidebar. Click **New Application** to begin the container flow.
 
-![Empty dashboard](/images/tutorial/container-01-empty-dashboard.png)
+![Dashboard](/images/tutorial/container-01-empty-dashboard.png)
 
 ### Step 2. New application form
 
@@ -95,39 +112,55 @@ Click **New Application**. The same creation form appears.
 
 ![New Application screen](/images/tutorial/container-02-new-application.png)
 
-### Step 3. Paste commit URL — auto-detection
+### Step 3. Paste commit URL: auto-detection
 
-Paste the commit URL from the `container-app-lightpanda` repository. The platform detects the `privasys.json` manifest and automatically selects **Container** as the application type.
+Paste the commit URL from the `container-app-lightpanda` repository - for this tutorial we use:
+
+```
+https://github.com/Privasys/container-app-lightpanda/commit/9d08f6d6d16c313b8ad7fb9b6e5df763044d9b7d
+```
+
+The platform detects the `privasys.json` manifest and automatically selects **Container** as the application type.
 
 Name it `alice-lightpanda-app`.
 
 ![Commit URL with auto-detection](/images/tutorial/container-03-commit-and-name.png)
 
-> Notice the **(auto-detected)** label next to Container — the platform identified the type from the `privasys.json` file in the repository.
+> Notice the **(auto-detected)** label next to Container - the platform identified the type from the `privasys.json` file in the repository.
 
-### Step 4. Overview — build complete
+> **Reproducible build hash**: just like WASM, the container image is built by the [reproducible-app-builder](https://github.com/Privasys/reproducible-app-builder) GitHub Action. The build log prints the SHA-256 image digest - you will see this same digest in the Attestation workload extensions.
+
+### Step 4. Overview: build complete
 
 After clicking **Create**, the platform builds the container image. The Overview shows the build status and application metadata.
 
 ![Container overview](/images/tutorial/container-04-overview.png)
 
-### Step 5. Deployments — select version and region
+### Step 5. Deployments: select version and region
 
 Switch to the **Deployments** tab. Select the version and region, then click **Deploy**.
 
 ![Deployments with version and region](/images/tutorial/container-05-deploy-select.png)
 
-The platform deploys the container image to a TDX enclave. Unlike WASM on SGX, the TDX attestation covers the entire VM boot chain — from firmware through the OS to the application layer.
+The platform deploys the container image to a TDX enclave.
 
-### Step 6. Attestation — TDX quote and measurements
+### Step 6. Attestation: TDX quote and measurements
 
 Once the deployment reaches **Active** status, switch to the **Attestation** tab and click **Inspect Certificate**. The platform performs a TLS handshake with the TDX enclave and extracts the attestation data.
 
 ![Attestation challenge and workload](/images/tutorial/container-06a-attestation-challenge.png)
 
-The attestation includes a TDX quote with RTMR (Runtime Measurement Register) values that cover the full boot chain — from firmware through the OS to the container layer. Unlike SGX which measures a single WASM binary hash, TDX attestation proves the integrity of the entire virtual machine.
+The attestation includes a TDX quote with RTMR (Runtime Measurement Register) values that cover the full boot chain - from firmware through the OS to the container layer.
 
-### Step 7. API Testing — browse tool
+Scroll down to the **Workload Attestation Extensions** - these contain the container-specific measurements including the workload image digest. This digest matches the SHA-256 from the [GitHub Actions build log](https://github.com/Privasys/reproducible-app-builder/actions):
+
+![Workload Attestation Extensions](/images/tutorial/container-06b-workload-extensions.png)
+
+Further down, the RTMR registers show each layer of the boot chain:
+
+![RTMR measurements](/images/tutorial/container-06c-rtmr-measurements.png)
+
+### Step 7. API Testing: browse tool
 
 The **API Testing** tab shows input fields generated from the `privasys.json` JSON Schema. For this LightPanda container, there is a single `browse` tool that accepts a URL.
 
@@ -135,31 +168,9 @@ The **API Testing** tab shows input fields generated from the `privasys.json` JS
 
 ### Step 8. AI Tools (MCP)
 
-The **AI Tools** tab displays the MCP tool manifest with connection instructions — same as WASM, but tools are declared in `privasys.json` instead of derived from WIT.
+The **AI Tools** tab displays the MCP tool manifest with connection instructions - same as WASM, but tools are declared in `privasys.json` instead of derived from WIT.
 
 ![AI Tools MCP tab](/images/tutorial/container-08-mcp-tools.png)
-
-The container `privasys.json` for this app:
-
-```json
-{
-  "container_mcp": {
-    "tools": [
-      {
-        "name": "browse",
-        "description": "Browse a URL and return the page content.",
-        "inputSchema": {
-          "type": "object",
-          "properties": {
-            "url": { "type": "string", "description": "The URL to browse." }
-          },
-          "required": ["url"]
-        }
-      }
-    ]
-  }
-}
-```
 
 ---
 
@@ -167,13 +178,13 @@ The container `privasys.json` for this app:
 
 When you deploy an application through this workflow:
 
-1. **Build** — the platform compiles your WASM module via reproducible GitHub Actions, or builds your container image from the Dockerfile.
-2. **Deploy** — the binary or image is delivered to a hardware enclave (SGX for WASM, TDX for containers) over an attested channel.
-3. **Attest** — the enclave generates RA-TLS certificates embedding a hardware-signed attestation quote.
-4. **Route** — your application receives a hostname under `*.apps.privasys.org`. The gateway routes traffic without terminating TLS.
-5. **Discover** — AI agents and clients discover your application's tools via MCP and verify the attestation on every connection.
+1. **Build** - the platform compiles your WASM module via reproducible GitHub Actions, or builds your container image from the Dockerfile.
+2. **Deploy** - the binary or image is delivered to a hardware enclave (SGX for WASM, TDX for containers) over an attested channel.
+3. **Attest** - the enclave generates RA-TLS certificates embedding a hardware-signed attestation quote.
+4. **Route** - your application receives a hostname under `*.apps.privasys.org`. The gateway routes traffic without terminating TLS.
+5. **Discover** - AI agents and clients discover your application's tools via MCP and verify the attestation on every connection.
 
-## WASM vs Container — quick comparison
+## WASM vs Container: quick comparison
 
 | | WASM (SGX) | Container (TDX) |
 |---|---|---|
@@ -185,8 +196,8 @@ When you deploy an application through this workflow:
 
 ## Next steps
 
-- [Deploy a WASM module](/solutions/platform/developer-platform/deploy-wasm) — full reference for WASM deployments
-- [Deploy a container](/solutions/platform/developer-platform/deploy-container) — full reference for container deployments
-- [Attestation and verification](/solutions/platform/developer-platform/attestation) — deep dive into the attestation model
-- [MCP Tools](/solutions/enclave-os/enclave-os-mini/mcp-tools) — WASM MCP tool generation reference
-- [Verification libraries](/solutions/platform/verification-libraries) — verify attestation from Python, Go, Rust, TypeScript, or C#
+- [Deploy a WASM module](/solutions/platform/developer-platform/deploy-wasm) - full reference for WASM deployments
+- [Deploy a container](/solutions/platform/developer-platform/deploy-container) - full reference for container deployments
+- [Attestation and verification](/solutions/platform/developer-platform/attestation) - deep dive into the attestation model
+- [MCP Tools](/solutions/enclave-os/enclave-os-mini/mcp-tools) - WASM MCP tool generation reference
+- [Verification libraries](/solutions/platform/verification-libraries) - verify attestation from Python, Go, Rust, TypeScript, or C#

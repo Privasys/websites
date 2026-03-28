@@ -29,7 +29,15 @@ export default defineConfig({
         },
         {
             name: 'portal',
-            testMatch: '**/*.spec.ts',
+            testMatch: ['fast-verify.spec.ts', 'portal.spec.ts'],
+            dependencies: ['auth-setup'],
+            use: {
+                storageState: AUTH_FILE
+            }
+        },
+        {
+            name: 'tutorial',
+            testMatch: 'tutorial-screenshots.spec.ts',
             dependencies: ['auth-setup'],
             use: {
                 storageState: AUTH_FILE
