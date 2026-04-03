@@ -138,6 +138,25 @@ code, pre, .mono { font-family: var(--mono); }
     margin-bottom: 12px;
 }
 .connect-card input:focus { border-color: var(--blue); }
+.connect-card select {
+    width: 100%;
+    padding: 10px 12px;
+    font-size: 13px;
+    font-family: var(--font);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--input-bg);
+    color: var(--fg);
+    outline: none;
+    margin-bottom: 12px;
+    cursor: pointer;
+    -webkit-appearance: none;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 16 16'%3E%3Cpath d='M4 6l4 4 4-4' fill='none' stroke='%23888' stroke-width='1.5'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+}
+.connect-card select:focus { border-color: var(--blue); }
 .connect-card .or-separator {
     text-align: center;
     font-size: 11px;
@@ -624,3 +643,86 @@ textarea.param-input { resize: vertical; min-height: 60px; }
 .quote-verify-detail { margin-top: 6px; }
 .quote-verify-detail dt { color: var(--muted); font-size: 10px; }
 .quote-verify-detail dd { font-family: var(--mono); font-size: 11px; margin-bottom: 4px; }
+
+/* ── Auth tab ───────────────────────────────── */
+.auth-info {
+    margin-top: 12px;
+}
+.auth-qr-card {
+    text-align: center;
+}
+.auth-qr-wrap {
+    display: flex;
+    justify-content: center;
+    padding: 24px 0 8px;
+}
+.auth-qr-wrap svg {
+    border-radius: var(--radius-sm);
+    background: #fff;
+    padding: 8px;
+    max-width: 260px;
+    max-height: 260px;
+}
+.auth-status {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 12px 0;
+    color: var(--muted);
+    font-size: 13px;
+}
+.auth-status-text {
+    font-weight: 500;
+}
+.auth-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 0 16px;
+    font-size: 13px;
+}
+.auth-step {
+    color: var(--muted);
+    padding: 4px 0;
+}
+.auth-step-done {
+    color: var(--emerald);
+}
+.auth-step-active {
+    color: var(--fg);
+    font-weight: 500;
+}
+.auth-error {
+    background: var(--red-bg);
+    border: 1px solid rgba(220,38,38,0.2);
+    border-radius: var(--radius-sm);
+    padding: 10px 14px;
+    font-size: 13px;
+    color: var(--red);
+}
+.tab-badge {
+    display: inline-block;
+    margin-left: 6px;
+    font-size: 10px;
+    font-weight: 600;
+    border-radius: 999px;
+    padding: 1px 6px;
+    vertical-align: middle;
+}
+.tab-badge-ok {
+    background: var(--emerald-bg);
+    color: var(--emerald);
+    border: 1px solid var(--emerald-border);
+}
+.qr-svg {
+    display: inline-block;
+}
+.qr-svg svg {
+    width: 240px;
+    height: 240px;
+}
+.qr-fallback {
+    text-align: left;
+    padding: 12px;
+}
