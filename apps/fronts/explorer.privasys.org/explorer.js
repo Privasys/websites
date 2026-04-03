@@ -9,8 +9,15 @@
     let attestationServerUrl = '';
     let attestationServerToken = '';
     let currentTab = 'attestation';
-    const DEFAULT_BASE_URL = 'https://api.developer.privasys.org';
-    const GATEWAY_DOMAIN = 'apps.privasys.org';
+    const ENV_CONFIG = {
+        production:  { baseUrl: 'https://api.developer.privasys.org',      gatewayDomain: 'apps.privasys.org' },
+        development: { baseUrl: 'https://api-test.developer.privasys.org',  gatewayDomain: 'apps-test.privasys.org' }
+    };
+    var currentEnv = 'production';
+    const DEFAULT_BASE_URL = ENV_CONFIG.production.baseUrl;
+    var gatewayDomain = ENV_CONFIG.production.gatewayDomain;
+    const DEFAULT_BROKER_URL = 'wss://relay.privasys.org/relay';
+    const FIDO2_TIMEOUT = 120000;
 
     // Attestation state
     let attestResult = null;
@@ -34,6 +41,16 @@
     let rpcSending = false;
     let history = [];
     let historyId = 0;
+
+    // FIDO2 auth state
+    let brokerUrl = DEFAULT_BROKER_URL;
+    let fido2SessionToken = '';
+    let fido2State = 'idle';
+    let fido2SessionId = '';
+    let fido2Attestation = null;
+    let fido2Error = '';
+    let brokerWs = null;
+    let fido2Timer = null;
 
     // ── Helpers ────────────────────────────────────
     function $(sel, ctx) { return (ctx || document).querySelector(sel); }
@@ -76,6 +93,7 @@
         const url = baseUrl.replace(/\/+$/, '') + path;
         const headers = { 'Content-Type': 'application/json' };
         if (authToken) headers['Authorization'] = 'Bearer ' + authToken;
+        if (fido2SessionToken) headers['X-App-Auth'] = fido2SessionToken;
         if (opts && opts.headers) Object.assign(headers, opts.headers);
         const res = await fetch(url, {
             ...opts,
@@ -162,6 +180,9 @@
         attestationServerToken = ($('#attestation-token-input') || {}).value || '';
         attestationServerToken = attestationServerToken.trim();
 
+        var brokerInput = ($('#broker-url-input') || {}).value || '';
+        brokerUrl = brokerInput.trim() || DEFAULT_BROKER_URL;
+
         if (fullInput) {
             var match = fullInput.match(/^(https?:\/\/[^/]+(?:\/[^/]+)*?)\/api\/v1\/apps\/([^/?#]+)\/?$/i);
             if (match) {
@@ -172,8 +193,9 @@
                 appName = nameInput;
             }
         } else if (nameInput) {
-            // Default: just app name → use default management service
-            baseUrl = baseInput || DEFAULT_BASE_URL;
+            // Default: just app name → use env-appropriate management service
+            var env = ENV_CONFIG[currentEnv];
+            baseUrl = baseInput || env.baseUrl;
             appName = nameInput;
         } else if (baseInput) {
             baseUrl = baseInput;
@@ -185,7 +207,10 @@
             return;
         }
 
-        var gatewayUrl = appName + '.' + GATEWAY_DOMAIN;
+        var domainInput = $('#gateway-domain-input').value.trim();
+        if (domainInput) gatewayDomain = domainInput;
+        else gatewayDomain = ENV_CONFIG[currentEnv].gatewayDomain;
+        var gatewayUrl = appName + '.' + gatewayDomain;
         document.body.classList.add('connected');
         $('#connected-view').classList.remove('hidden');
         $('#connection-info').innerHTML = '';
@@ -200,14 +225,18 @@
         currentTab = tab;
         $$('.tab-btn').forEach(function (b) { b.classList.toggle('active', b.dataset.tab === tab); });
         if (tab === 'attestation') renderAttestation();
+        else if (tab === 'auth') renderAuth();
         else if (tab === 'api') renderApiTesting();
     }
 
     function renderTabs() {
         var container = $('#tab-container');
         container.innerHTML = '';
+        var authLabel = ['Authenticate'];
+        if (fido2State === 'complete') authLabel.push(h('span', { className: 'tab-badge tab-badge-ok' }, '\u2713'));
         container.appendChild(h('div', { className: 'tabs' },
             h('button', { 'className': 'tab-btn active', 'data-tab': 'attestation', 'onClick': function () { switchTab('attestation'); } }, 'Attestation'),
+            h('button', { 'className': 'tab-btn', 'data-tab': 'auth', 'onClick': function () { switchTab('auth'); } }, ...authLabel),
             h('button', { 'className': 'tab-btn', 'data-tab': 'api', 'onClick': function () { switchTab('api'); } }, 'API Testing')
         ));
         container.appendChild(h('div', { id: 'tab-content' }));
@@ -570,6 +599,306 @@
     }
 
     // ═══════════════════════════════════════════════
+    // AUTHENTICATE TAB
+    // ═══════════════════════════════════════════════
+
+    function getRpId() {
+        return appName + '.' + gatewayDomain;
+    }
+
+    function generateQRPayload() {
+        return JSON.stringify({
+            origin: getRpId(),
+            sessionId: fido2SessionId,
+            rpId: getRpId(),
+            brokerUrl: brokerUrl
+        });
+    }
+
+    function startFido2Auth() {
+        fido2SessionId = generateHex(32);
+        fido2State = 'waiting';
+        fido2Error = '';
+        fido2Attestation = null;
+        fido2SessionToken = '';
+        renderAuth();
+        renderTabs();
+        switchTab('auth');
+
+        var url = brokerUrl + '?session=' + encodeURIComponent(fido2SessionId) + '&role=browser';
+        brokerWs = new WebSocket(url);
+
+        fido2Timer = setTimeout(function () {
+            fido2State = 'error';
+            fido2Error = 'Authentication timed out after 2 minutes';
+            cleanupBroker();
+            renderAuth();
+            renderTabs();
+        }, FIDO2_TIMEOUT);
+
+        brokerWs.onmessage = function (event) {
+            try {
+                handleBrokerMessage(JSON.parse(event.data));
+            } catch (e) { /* ignore malformed */ }
+        };
+
+        brokerWs.onerror = function () {
+            clearTimeout(fido2Timer);
+            fido2State = 'error';
+            fido2Error = 'WebSocket connection to auth broker failed';
+            cleanupBroker();
+            renderAuth();
+            renderTabs();
+        };
+
+        brokerWs.onclose = function (event) {
+            if (fido2State !== 'complete' && fido2State !== 'error' && fido2State !== 'idle') {
+                clearTimeout(fido2Timer);
+                fido2State = 'error';
+                fido2Error = 'Broker connection closed (code ' + event.code + ')';
+                renderAuth();
+                renderTabs();
+            }
+        };
+    }
+
+    function handleBrokerMessage(msg) {
+        switch (msg.type) {
+            case 'peer-joined':
+                fido2State = 'wallet-connected';
+                renderAuth();
+                break;
+            case 'authenticating':
+                fido2State = 'authenticating';
+                renderAuth();
+                break;
+            case 'auth-result':
+                clearTimeout(fido2Timer);
+                fido2State = 'complete';
+                fido2SessionToken = msg.sessionToken || '';
+                fido2Attestation = msg.attestation || null;
+                cleanupBroker();
+                renderAuth();
+                renderTabs();
+                break;
+            case 'auth-error':
+                clearTimeout(fido2Timer);
+                fido2State = 'error';
+                fido2Error = msg.message || 'Authentication failed';
+                cleanupBroker();
+                renderAuth();
+                renderTabs();
+                break;
+        }
+    }
+
+    function cleanupBroker() {
+        if (brokerWs) {
+            try { brokerWs.close(1000); } catch (e) {}
+            brokerWs = null;
+        }
+    }
+
+    function cancelFido2() {
+        clearTimeout(fido2Timer);
+        fido2State = 'idle';
+        fido2Error = '';
+        cleanupBroker();
+        renderAuth();
+        renderTabs();
+    }
+
+    function signOutFido2() {
+        fido2SessionToken = '';
+        fido2State = 'idle';
+        fido2SessionId = '';
+        fido2Attestation = null;
+        fido2Error = '';
+        renderAuth();
+        renderTabs();
+    }
+
+    function renderQR(payload) {
+        if (typeof qrcode === 'function') {
+            try {
+                var qr = qrcode(0, 'M');
+                qr.addData(payload);
+                qr.make();
+                var size = qr.getModuleCount();
+                var cellSize = Math.max(3, Math.floor(240 / size));
+                return h('div', { className: 'qr-svg', html: qr.createSvgTag({ cellSize: cellSize, margin: 4, scalable: true }) });
+            } catch (e) { /* fall through */ }
+        }
+        return h('div', { className: 'qr-fallback' },
+            h('p', { className: 'text-xs text-muted mb-2' }, 'QR library unavailable \u2014 copy this payload into the wallet:'),
+            h('pre', { className: 'pem-block' }, payload)
+        );
+    }
+
+    function renderAuth() {
+        var content = $('#tab-content');
+        if (!content) return;
+        content.innerHTML = '';
+
+        var rpId = getRpId();
+
+        // ── Idle state ──
+        if (fido2State === 'idle') {
+            content.appendChild(h('div', { className: 'card' },
+                h('div', { className: 'card-header' },
+                    h('h3', null, 'App Authentication')
+                ),
+                h('p', { className: 'text-xs text-muted mb-4' },
+                    'Authenticate as an end-user with this WASM app using the Privasys Wallet. ',
+                    'The wallet verifies enclave attestation via RA-TLS before completing the FIDO2 ceremony.'
+                ),
+                h('div', { className: 'auth-info' },
+                    h('div', { className: 'field' },
+                        h('span', { className: 'field-label' }, 'Relying Party'),
+                        h('span', { className: 'field-value' }, rpId)
+                    ),
+                    h('div', { className: 'field' },
+                        h('span', { className: 'field-label' }, 'Auth Broker'),
+                        h('span', { className: 'field-value' }, brokerUrl)
+                    )
+                ),
+                fido2Error ? h('div', { className: 'auth-error mb-4 mt-4' },
+                    h('span', null, fido2Error)
+                ) : null,
+                h('div', { style: 'margin-top:16px' },
+                    h('button', { className: 'btn', onClick: startFido2Auth }, 'Authenticate with Wallet')
+                )
+            ));
+            return;
+        }
+
+        // ── Waiting for scan ──
+        if (fido2State === 'waiting') {
+            var payload = generateQRPayload();
+            content.appendChild(h('div', { className: 'card auth-qr-card' },
+                h('div', { className: 'card-header' },
+                    h('h3', null, 'Scan with Privasys Wallet')
+                ),
+                h('div', { className: 'auth-qr-wrap' },
+                    renderQR(payload)
+                ),
+                h('p', { className: 'text-xs text-muted text-center mt-2' },
+                    'Open the Privasys Wallet app on your phone and scan this QR code.'
+                ),
+                h('div', { className: 'auth-status' },
+                    h('span', { className: 'loading-spinner' }),
+                    h('span', { className: 'auth-status-text' }, 'Waiting for wallet to scan\u2026')
+                ),
+                h('div', { className: 'field mt-4' },
+                    h('span', { className: 'field-label' }, 'Session'),
+                    h('span', { className: 'field-value' }, fido2SessionId.slice(0, 16) + '\u2026')
+                ),
+                h('div', { style: 'margin-top:16px;text-align:center' },
+                    h('button', { className: 'btn btn-outline btn-sm', onClick: cancelFido2 }, 'Cancel')
+                )
+            ));
+            return;
+        }
+
+        // ── Wallet connected / authenticating ──
+        if (fido2State === 'wallet-connected' || fido2State === 'authenticating') {
+            var label = fido2State === 'wallet-connected'
+                ? 'Wallet connected \u2014 verifying attestation\u2026'
+                : 'Completing FIDO2 ceremony\u2026';
+            content.appendChild(h('div', { className: 'card' },
+                h('div', { className: 'card-header' },
+                    h('h3', null, 'Authenticating')
+                ),
+                h('div', { className: 'auth-status' },
+                    h('span', { className: 'loading-spinner' }),
+                    h('span', { className: 'auth-status-text' }, label)
+                ),
+                h('div', { className: 'auth-steps mt-4' },
+                    h('div', { className: 'auth-step auth-step-done' }, '\u2713 QR code scanned'),
+                    h('div', { className: 'auth-step ' + (fido2State === 'authenticating' ? 'auth-step-done' : 'auth-step-active') },
+                        (fido2State === 'authenticating' ? '\u2713 ' : ''), 'RA-TLS attestation verification'
+                    ),
+                    h('div', { className: 'auth-step ' + (fido2State === 'authenticating' ? 'auth-step-active' : '') },
+                        'FIDO2 biometric ceremony'
+                    )
+                ),
+                h('div', { style: 'margin-top:16px;text-align:center' },
+                    h('button', { className: 'btn btn-outline btn-sm', onClick: cancelFido2 }, 'Cancel')
+                )
+            ));
+            return;
+        }
+
+        // ── Complete ──
+        if (fido2State === 'complete') {
+            var masked = fido2SessionToken ? '\u25CF'.repeat(12) + fido2SessionToken.slice(-8) : '\u2014';
+            var cards = [];
+            cards.push(h('div', { className: 'card card-emerald' },
+                h('div', { className: 'card-header' },
+                    h('h3', null, 'Authenticated'),
+                    h('span', { className: 'badge badge-ok' }, 'Active')
+                ),
+                h('div', { className: 'field' },
+                    h('span', { className: 'field-label' }, 'Session Token'),
+                    h('span', { className: 'field-value' }, masked),
+                    h('button', { className: 'copy-btn', onClick: function () { copyText(fido2SessionToken); } }, 'Copy')
+                ),
+                h('div', { className: 'field' },
+                    h('span', { className: 'field-label' }, 'Relying Party'),
+                    h('span', { className: 'field-value' }, rpId)
+                ),
+                h('div', { className: 'field' },
+                    h('span', { className: 'field-label' }, 'Session ID'),
+                    h('span', { className: 'field-value' }, fido2SessionId.slice(0, 16) + '\u2026'),
+                    h('button', { className: 'copy-btn', onClick: function () { copyText(fido2SessionId); } }, 'Copy')
+                ),
+                h('p', { className: 'text-xs text-muted mt-4' },
+                    'The session token will be sent as an X-App-Auth header on API calls.'
+                ),
+                h('div', { style: 'margin-top:16px' },
+                    h('button', { className: 'btn btn-outline btn-sm', onClick: signOutFido2 }, 'Sign Out')
+                )
+            ));
+
+            if (fido2Attestation) {
+                var attFields = [];
+                for (var key in fido2Attestation) {
+                    if (Object.prototype.hasOwnProperty.call(fido2Attestation, key)) {
+                        attFields.push(h('div', { className: 'field' },
+                            h('span', { className: 'field-label' }, key),
+                            h('span', { className: 'field-value' }, String(fido2Attestation[key]))
+                        ));
+                    }
+                }
+                cards.push(h('div', { className: 'card' },
+                    h('div', { className: 'card-header' }, h('h3', null, 'Wallet Attestation')),
+                    ...attFields
+                ));
+            }
+
+            for (var c = 0; c < cards.length; c++) content.appendChild(cards[c]);
+            return;
+        }
+
+        // ── Error ──
+        if (fido2State === 'error') {
+            content.appendChild(h('div', { className: 'card' },
+                h('div', { className: 'card-header' },
+                    h('h3', null, 'Authentication Failed'),
+                    h('span', { className: 'badge badge-err' }, 'Error')
+                ),
+                h('div', { className: 'auth-error' },
+                    h('span', null, fido2Error || 'Unknown error')
+                ),
+                h('div', { style: 'margin-top:16px' },
+                    h('button', { className: 'btn btn-sm', onClick: function () { fido2Error = ''; fido2State = 'idle'; renderAuth(); renderTabs(); } }, 'Try Again')
+                )
+            ));
+            return;
+        }
+    }
+
+    // ═══════════════════════════════════════════════
     // API TESTING TAB
     // ═══════════════════════════════════════════════
 
@@ -843,10 +1172,23 @@
     // ── Init ───────────────────────────────────────
     document.addEventListener('DOMContentLoaded', function () {
         $('#connect-btn').addEventListener('click', handleConnect);
-        var ids = ['endpoint-input', 'base-url-input', 'app-name-input', 'auth-token-input', 'attestation-url-input', 'attestation-token-input'];
+        var ids = ['endpoint-input', 'base-url-input', 'app-name-input', 'auth-token-input', 'attestation-url-input', 'attestation-token-input', 'broker-url-input'];
         for (var i = 0; i < ids.length; i++) {
             var el = $('#' + ids[i]);
             if (el) el.addEventListener('keydown', function (e) { if (e.key === 'Enter') handleConnect(); });
+        }
+
+        // Environment selector
+        var envSelect = $('#env-select');
+        if (envSelect) {
+            envSelect.addEventListener('change', function () {
+                currentEnv = envSelect.value;
+                var cfg = ENV_CONFIG[currentEnv];
+                $('#base-url-input').value = cfg.baseUrl;
+                $('#base-url-input').placeholder = cfg.baseUrl;
+                $('#gateway-domain-input').value = cfg.gatewayDomain;
+                $('#gateway-domain-input').placeholder = cfg.gatewayDomain;
+            });
         }
 
         // Advanced section toggle
@@ -869,5 +1211,10 @@
             $('#endpoint-input').value = params.get('url');
         }
         if (params.get('as')) $('#attestation-url-input').value = params.get('as');
+        if (params.get('broker')) $('#broker-url-input').value = params.get('broker');
+        if (params.get('env') && ENV_CONFIG[params.get('env')]) {
+            envSelect.value = params.get('env');
+            envSelect.dispatchEvent(new Event('change'));
+        }
     });
 })();

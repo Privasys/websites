@@ -32,6 +32,12 @@
                 <label for="app-name-input">App name</label>
                 <input type="text" id="app-name-input" placeholder="wasm-app-example" autofocus>
                 <div class="field-hint">The app name as deployed on the platform (e.g. <code>wasm-app-example</code>).</div>
+
+                <label for="env-select">Environment</label>
+                <select id="env-select">
+                    <option value="production" selected>Production</option>
+                    <option value="development">Development</option>
+                </select>
             </fieldset>
 
             <fieldset class="connect-section collapsed" id="advanced-section">
@@ -48,6 +54,14 @@
 
                     <label for="base-url-input">Management service URL</label>
                     <input type="text" id="base-url-input" placeholder="https://api.developer.privasys.org" value="https://api.developer.privasys.org">
+
+                    <label for="gateway-domain-input">Gateway domain</label>
+                    <input type="text" id="gateway-domain-input" placeholder="apps.privasys.org" value="apps.privasys.org">
+                    <div class="field-hint">Domain suffix for RA-TLS gateway routing. Use <code>apps-test.privasys.org</code> for dev instances.</div>
+
+                    <label for="broker-url-input">Auth broker URL <span class="optional">(optional)</span></label>
+                    <input type="text" id="broker-url-input" placeholder="wss://relay.privasys.org/relay" value="wss://relay.privasys.org/relay">
+                    <div class="field-hint">WebSocket relay for wallet-to-browser authentication.</div>
                 </div>
             </fieldset>
 
@@ -83,6 +97,7 @@
         <div class="main-content" id="tab-container"></div>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
     <script src="explorer.js"></script>
 </body>
 </html>
