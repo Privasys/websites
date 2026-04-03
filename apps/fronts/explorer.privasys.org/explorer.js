@@ -51,6 +51,7 @@
     let fido2Error = '';
     let brokerWs = null;
     let fido2Timer = null;
+    let webauthnOp = ''; // 'register' or 'authenticate'
 
     // ── Helpers ────────────────────────────────────
     function $(sel, ctx) { return (ctx || document).querySelector(sel); }
@@ -615,6 +616,195 @@
         });
     }
 
+    // ── Browser WebAuthn helpers ───────────────────
+
+    function base64urlEncode(buffer) {
+        var bytes = new Uint8Array(buffer);
+        var binary = '';
+        for (var i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+        return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    }
+
+    function base64urlDecode(str) {
+        var padded = str.replace(/-/g, '+').replace(/_/g, '/');
+        while (padded.length % 4 !== 0) padded += '=';
+        var binary = atob(padded);
+        var bytes = new Uint8Array(binary.length);
+        for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        return bytes.buffer;
+    }
+
+    async function fido2ProxyFetch(body) {
+        var url = baseUrl.replace(/\/+$/, '') + '/api/v1/apps/' + encodeURIComponent(appName) + '/fido2';
+        var headers = { 'Content-Type': 'application/json' };
+        if (authToken) headers['Authorization'] = 'Bearer ' + authToken;
+        var res = await fetch(url, { method: 'POST', headers: headers, body: JSON.stringify(body) });
+        if (!res.ok) {
+            var err = await res.json().catch(function () { return { error: res.statusText }; });
+            throw new Error(err.error || 'HTTP ' + res.status);
+        }
+        return res.json();
+    }
+
+    async function webauthnRegister() {
+        webauthnOp = 'register';
+        fido2State = 'webauthn-register';
+        fido2Error = '';
+        fido2SessionToken = '';
+        fido2Attestation = null;
+        renderAuth();
+        renderTabs();
+        switchTab('auth');
+
+        try {
+            // 1. Get registration options from the enclave
+            var userHandle = base64urlEncode(crypto.getRandomValues(new Uint8Array(32)));
+            var browserSessionId = generateHex(16);
+            var opts = await fido2ProxyFetch({
+                type: 'register_begin',
+                user_name: window.location.hostname || 'browser-user',
+                user_handle: userHandle,
+                browser_session_id: browserSessionId
+            });
+
+            if (opts.type === 'error') throw new Error(opts.error || 'Registration begin failed');
+            if (opts.type !== 'register_options') throw new Error('Unexpected response: ' + opts.type);
+
+            // 2. Build PublicKeyCredentialCreationOptions
+            var createOptions = {
+                publicKey: {
+                    challenge: base64urlDecode(opts.challenge),
+                    rp: { id: opts.rp.id, name: opts.rp.name },
+                    user: {
+                        id: base64urlDecode(opts.user.id),
+                        name: opts.user.name,
+                        displayName: opts.user.display_name || opts.user.name
+                    },
+                    pubKeyCredParams: (opts.pub_key_cred_params || []).map(function (p) {
+                        return { type: p.type || 'public-key', alg: p.alg };
+                    }),
+                    timeout: 60000,
+                    attestation: opts.attestation || 'none',
+                    authenticatorSelection: opts.authenticator_selection || { userVerification: 'preferred' }
+                }
+            };
+
+            if (opts.exclude_credentials) {
+                createOptions.publicKey.excludeCredentials = opts.exclude_credentials.map(function (c) {
+                    return { type: 'public-key', id: base64urlDecode(c.id) };
+                });
+            }
+
+            fido2State = 'webauthn-ceremony';
+            renderAuth();
+
+            // 3. Call navigator.credentials.create()
+            var credential = await navigator.credentials.create(createOptions);
+
+            fido2State = 'webauthn-verify';
+            renderAuth();
+
+            // 4. Send the credential response to the enclave
+            var attestationResponse = credential.response;
+            var result = await fido2ProxyFetch({
+                type: 'register_complete',
+                challenge: opts.challenge,
+                attestation_object: base64urlEncode(attestationResponse.attestationObject),
+                client_data_json: base64urlEncode(attestationResponse.clientDataJSON),
+                credential_id: base64urlEncode(credential.rawId),
+                browser_session_id: browserSessionId
+            });
+
+            if (result.type === 'error') throw new Error(result.error || 'Registration failed');
+            if (result.type !== 'register_ok') throw new Error('Unexpected: ' + result.type);
+
+            fido2State = 'complete';
+            fido2SessionToken = result.session_token || '';
+            renderAuth();
+            renderTabs();
+
+        } catch (e) {
+            fido2State = 'error';
+            fido2Error = e.name === 'NotAllowedError' ? 'Credential creation was cancelled or timed out' : e.message || 'Registration failed';
+            renderAuth();
+            renderTabs();
+        }
+    }
+
+    async function webauthnAuthenticate() {
+        webauthnOp = 'authenticate';
+        fido2State = 'webauthn-auth';
+        fido2Error = '';
+        fido2SessionToken = '';
+        fido2Attestation = null;
+        renderAuth();
+        renderTabs();
+        switchTab('auth');
+
+        try {
+            // 1. Get authentication options from the enclave
+            var browserSessionId = generateHex(16);
+            var opts = await fido2ProxyFetch({
+                type: 'authenticate_begin',
+                browser_session_id: browserSessionId
+            });
+
+            if (opts.type === 'error') throw new Error(opts.error || 'Authentication begin failed');
+            if (opts.type !== 'authenticate_options') throw new Error('Unexpected response: ' + opts.type);
+
+            // 2. Build PublicKeyCredentialRequestOptions
+            var getOptions = {
+                publicKey: {
+                    challenge: base64urlDecode(opts.challenge),
+                    rpId: opts.rp_id,
+                    timeout: 60000,
+                    userVerification: opts.user_verification || 'preferred'
+                }
+            };
+
+            if (opts.allow_credentials && opts.allow_credentials.length > 0) {
+                getOptions.publicKey.allowCredentials = opts.allow_credentials.map(function (c) {
+                    return { type: 'public-key', id: base64urlDecode(c.id), transports: c.transports };
+                });
+            }
+
+            fido2State = 'webauthn-ceremony';
+            renderAuth();
+
+            // 3. Call navigator.credentials.get()
+            var assertion = await navigator.credentials.get(getOptions);
+
+            fido2State = 'webauthn-verify';
+            renderAuth();
+
+            // 4. Send the assertion to the enclave
+            var assertionResponse = assertion.response;
+            var result = await fido2ProxyFetch({
+                type: 'authenticate_complete',
+                challenge: opts.challenge,
+                credential_id: base64urlEncode(assertion.rawId),
+                authenticator_data: base64urlEncode(assertionResponse.authenticatorData),
+                signature: base64urlEncode(assertionResponse.signature),
+                client_data_json: base64urlEncode(assertionResponse.clientDataJSON),
+                browser_session_id: browserSessionId
+            });
+
+            if (result.type === 'error') throw new Error(result.error || 'Authentication failed');
+            if (result.type !== 'authenticate_ok') throw new Error('Unexpected: ' + result.type);
+
+            fido2State = 'complete';
+            fido2SessionToken = result.session_token || '';
+            renderAuth();
+            renderTabs();
+
+        } catch (e) {
+            fido2State = 'error';
+            fido2Error = e.name === 'NotAllowedError' ? 'Authentication was cancelled or timed out' : e.message || 'Authentication failed';
+            renderAuth();
+            renderTabs();
+        }
+    }
+
     function startFido2Auth() {
         fido2SessionId = generateHex(32);
         fido2State = 'waiting';
@@ -744,13 +934,14 @@
 
         // ── Idle state ──
         if (fido2State === 'idle') {
+            var hasWebAuthn = window.PublicKeyCredential != null;
             content.appendChild(h('div', { className: 'card' },
                 h('div', { className: 'card-header' },
                     h('h3', null, 'App Authentication')
                 ),
                 h('p', { className: 'text-xs text-muted mb-4' },
-                    'Authenticate as an end-user with this WASM app using the Privasys Wallet. ',
-                    'The wallet verifies enclave attestation via RA-TLS before completing the FIDO2 ceremony.'
+                    'Authenticate as an end-user with this WASM app. ',
+                    'Choose browser-based WebAuthn (passkeys, Touch ID, Windows Hello) or use the Privasys Wallet for RA-TLS verified attestation.'
                 ),
                 h('div', { className: 'auth-info' },
                     h('div', { className: 'field' },
@@ -765,8 +956,16 @@
                 fido2Error ? h('div', { className: 'auth-error mb-4 mt-4' },
                     h('span', null, fido2Error)
                 ) : null,
-                h('div', { style: 'margin-top:16px' },
-                    h('button', { className: 'btn', onClick: startFido2Auth }, 'Authenticate with Wallet')
+                hasWebAuthn ? h('div', { className: 'auth-methods mt-4' },
+                    h('div', { className: 'auth-method-label text-xxs text-muted mb-2' }, 'Browser WebAuthn'),
+                    h('div', { className: 'flex gap-2' },
+                        h('button', { className: 'btn', onClick: webauthnRegister }, 'Register Passkey'),
+                        h('button', { className: 'btn btn-outline', onClick: webauthnAuthenticate }, 'Sign In')
+                    )
+                ) : null,
+                h('div', { className: 'mt-4' },
+                    h('div', { className: 'auth-method-label text-xxs text-muted mb-2' }, 'Privasys Wallet'),
+                    h('button', { className: hasWebAuthn ? 'btn btn-outline' : 'btn', onClick: startFido2Auth }, 'Authenticate with Wallet')
                 )
             ));
             return;
@@ -829,6 +1028,41 @@
             return;
         }
 
+        // ── WebAuthn ceremony (browser-based) ──
+        if (fido2State === 'webauthn-register' || fido2State === 'webauthn-auth' ||
+            fido2State === 'webauthn-ceremony' || fido2State === 'webauthn-verify') {
+            var stepLabels = fido2State === 'webauthn-register' || fido2State === 'webauthn-auth'
+                ? 'Contacting enclave\u2026'
+                : fido2State === 'webauthn-ceremony'
+                    ? 'Complete the biometric prompt\u2026'
+                    : 'Enclave verifying credential\u2026';
+            var isRegister = webauthnOp === 'register';
+            content.appendChild(h('div', { className: 'card' },
+                h('div', { className: 'card-header' },
+                    h('h3', null, isRegister ? 'Registering Passkey' : 'Signing In')
+                ),
+                h('div', { className: 'auth-status' },
+                    h('span', { className: 'loading-spinner' }),
+                    h('span', { className: 'auth-status-text' }, stepLabels)
+                ),
+                h('div', { className: 'auth-steps mt-4' },
+                    h('div', { className: 'auth-step ' + (fido2State !== 'webauthn-register' && fido2State !== 'webauthn-auth' ? 'auth-step-done' : 'auth-step-active') },
+                        (fido2State !== 'webauthn-register' && fido2State !== 'webauthn-auth' ? '\u2713 ' : ''), 'Request options from enclave'
+                    ),
+                    h('div', { className: 'auth-step ' + (fido2State === 'webauthn-ceremony' ? 'auth-step-active' : fido2State === 'webauthn-verify' ? 'auth-step-done' : '') },
+                        (fido2State === 'webauthn-verify' ? '\u2713 ' : ''), 'Browser biometric prompt'
+                    ),
+                    h('div', { className: 'auth-step ' + (fido2State === 'webauthn-verify' ? 'auth-step-active' : '') },
+                        'Enclave verification'
+                    )
+                ),
+                h('div', { style: 'margin-top:16px;text-align:center' },
+                    h('button', { className: 'btn btn-outline btn-sm', onClick: cancelFido2 }, 'Cancel')
+                )
+            ));
+            return;
+        }
+
         // ── Complete ──
         if (fido2State === 'complete') {
             var masked = fido2SessionToken ? '\u25CF'.repeat(12) + fido2SessionToken.slice(-8) : '\u2014';
@@ -847,10 +1081,13 @@
                     h('span', { className: 'field-label' }, 'Relying Party'),
                     h('span', { className: 'field-value' }, rpId)
                 ),
-                h('div', { className: 'field' },
+                fido2SessionId ? h('div', { className: 'field' },
                     h('span', { className: 'field-label' }, 'Session ID'),
                     h('span', { className: 'field-value' }, fido2SessionId.slice(0, 16) + '\u2026'),
                     h('button', { className: 'copy-btn', onClick: function () { copyText(fido2SessionId); } }, 'Copy')
+                ) : h('div', { className: 'field' },
+                    h('span', { className: 'field-label' }, 'Method'),
+                    h('span', { className: 'field-value' }, 'Browser WebAuthn')
                 ),
                 h('p', { className: 'text-xs text-muted mt-4' },
                     'The session token will be sent as an X-App-Auth header on API calls.'
