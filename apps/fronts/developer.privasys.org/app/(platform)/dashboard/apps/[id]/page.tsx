@@ -358,7 +358,7 @@ export default function AppDetailPage() {
         ...(hasActiveDeployment ? [
             { key: 'attestation' as Tab, label: 'Attestation' },
             ...(app.app_type !== 'container' || hasContainerMcp ? [
-                { key: 'api' as Tab, label: 'API Testing' },
+                { key: 'api' as Tab, label: 'API Testing' }
             ] : []),
             ...(app.app_type !== 'container' || hasContainerMcp ? [
                 { key: 'mcp' as Tab, label: 'AI Tools' }

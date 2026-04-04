@@ -478,115 +478,115 @@ export function RtmrVerifier({ events: logEvents, eventLogSource, quoteRtmrs, ap
                 {results.map((r, i) => {
                     const eventCount = r.appEvents?.length ?? r.events.length;
                     return (
-                    <div key={i}>
-                        <div className="flex items-center gap-2">
-                            <button
-                                onClick={() => setSelectedRtmr(selectedRtmr === i ? null : i)}
-                                className="text-xs text-black/50 dark:text-white/50 hover:text-black/70 dark:hover:text-white/70"
-                            >
-                                {selectedRtmr === i ? '▾' : '▸'} RTMR[{i}]
-                            </button>
-                            <span className="text-[10px] text-black/30 dark:text-white/30">
-                                {eventCount} event{eventCount !== 1 ? 's' : ''}
-                            </span>
-                            {r.match === true && (
-                                <span className="text-[9px] px-1.5 py-0 rounded-full bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 font-medium">
-                                    ✓ Match
+                        <div key={i}>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => setSelectedRtmr(selectedRtmr === i ? null : i)}
+                                    className="text-xs text-black/50 dark:text-white/50 hover:text-black/70 dark:hover:text-white/70"
+                                >
+                                    {selectedRtmr === i ? '▾' : '▸'} RTMR[{i}]
+                                </button>
+                                <span className="text-[10px] text-black/30 dark:text-white/30">
+                                    {eventCount} event{eventCount !== 1 ? 's' : ''}
                                 </span>
-                            )}
-                            {r.match === false && (
-                                <span className="text-[9px] px-1.5 py-0 rounded-full bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 font-medium">
-                                    ✗ Mismatch
-                                </span>
-                            )}
-                            {r.match === null && eventCount === 0 && (
-                                <span className="text-[9px] text-black/25 dark:text-white/25">no events</span>
-                            )}
-                            {isTpm && r.match === null && r.events.length > 0 && (
-                                <span className="text-[9px] px-1.5 py-0 rounded-full bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 font-medium">
-                                    ✓ Verified
-                                </span>
-                            )}
-                        </div>
-                        {/* Per-PCR values for tpm0 source */}
-                        {isTpm && r.pcrValues && Object.keys(r.pcrValues).length > 0 ? (
-                            <div className="mt-1 space-y-0.5">
-                                {Object.entries(r.pcrValues).sort(([a], [b]) => Number(a) - Number(b)).map(([pcr, val]) => (
-                                    <code key={pcr} className="text-[10px] bg-black/5 dark:bg-white/5 px-2 py-0.5 rounded block font-mono break-all text-black/60 dark:text-white/60">
-                                        <span className="text-black/40 dark:text-white/40">PCR {pcr}:</span> {val}
-                                    </code>
-                                ))}
+                                {r.match === true && (
+                                    <span className="text-[9px] px-1.5 py-0 rounded-full bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 font-medium">
+                                        ✓ Match
+                                    </span>
+                                )}
+                                {r.match === false && (
+                                    <span className="text-[9px] px-1.5 py-0 rounded-full bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 font-medium">
+                                        ✗ Mismatch
+                                    </span>
+                                )}
+                                {r.match === null && eventCount === 0 && (
+                                    <span className="text-[9px] text-black/25 dark:text-white/25">no events</span>
+                                )}
+                                {isTpm && r.match === null && r.events.length > 0 && (
+                                    <span className="text-[9px] px-1.5 py-0 rounded-full bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 font-medium">
+                                        ✓ Verified
+                                    </span>
+                                )}
                             </div>
-                        ) : r.value ? (
-                            <code className="text-[10px] bg-black/5 dark:bg-white/5 px-2 py-0.5 rounded block mt-0.5 font-mono break-all text-black/60 dark:text-white/60">
-                                {r.value}
-                            </code>
-                        ) : null}
+                            {/* Per-PCR values for tpm0 source */}
+                            {isTpm && r.pcrValues && Object.keys(r.pcrValues).length > 0 ? (
+                                <div className="mt-1 space-y-0.5">
+                                    {Object.entries(r.pcrValues).sort(([a], [b]) => Number(a) - Number(b)).map(([pcr, val]) => (
+                                        <code key={pcr} className="text-[10px] bg-black/5 dark:bg-white/5 px-2 py-0.5 rounded block font-mono break-all text-black/60 dark:text-white/60">
+                                            <span className="text-black/40 dark:text-white/40">PCR {pcr}:</span> {val}
+                                        </code>
+                                    ))}
+                                </div>
+                            ) : r.value ? (
+                                <code className="text-[10px] bg-black/5 dark:bg-white/5 px-2 py-0.5 rounded block mt-0.5 font-mono break-all text-black/60 dark:text-white/60">
+                                    {r.value}
+                                </code>
+                            ) : null}
 
-                        {/* Application event details for RTMR[3] */}
-                        {selectedRtmr === i && r.appEvents && r.appEvents.length > 0 && (
-                            <div className="mt-2 ml-4 space-y-1">
-                                {r.appEvents.map((ev, idx) => (
-                                    <div
-                                        key={idx}
-                                        className="text-[10px] font-mono p-1.5 rounded bg-black/3 dark:bg-white/3"
-                                    >
-                                        <div className="flex items-center gap-2 text-black/50 dark:text-white/50">
-                                            <span>#{idx + 1}</span>
-                                            <span className={ev.type === 'container_load' ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-700 dark:text-amber-400'}>
-                                                {ev.type === 'container_load' ? '▶ load' : '■ unload'}
-                                            </span>
-                                            <span className="text-black/30 dark:text-white/30">{ev.timestamp}</span>
-                                        </div>
-                                        <div className="text-black/40 dark:text-white/40 break-all mt-0.5">
-                                            sha384: {ev.digest_sha384.slice(0, 32)}…
-                                        </div>
-                                        <div className="text-black/35 dark:text-white/35 mt-0.5">
-                                            {ev.description}
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-
-                        {/* Event table for selected RTMR (vTPM/CCEL events) */}
-                        {selectedRtmr === i && !r.appEvents && r.events.length > 0 && (
-                            <div className="mt-2 ml-4 space-y-1">
-                                {r.events.map((ev, idx) => {
-                                    const hasRootHash = ev.data_text ? /roothash=/.test(ev.data_text) : false;
-                                    const typeName = EVENT_TYPE_NAMES[ev.event_type] || `0x${ev.event_type.toString(16).padStart(8, '0')}`;
-                                    return (
+                            {/* Application event details for RTMR[3] */}
+                            {selectedRtmr === i && r.appEvents && r.appEvents.length > 0 && (
+                                <div className="mt-2 ml-4 space-y-1">
+                                    {r.appEvents.map((ev, idx) => (
                                         <div
                                             key={idx}
-                                            className={`text-[10px] font-mono p-1.5 rounded ${
-                                                hasRootHash
-                                                    ? 'bg-amber-100/80 dark:bg-amber-900/30 border border-amber-300/50 dark:border-amber-600/30'
-                                                    : 'bg-black/3 dark:bg-white/3'
-                                            }`}
+                                            className="text-[10px] font-mono p-1.5 rounded bg-black/3 dark:bg-white/3"
                                         >
                                             <div className="flex items-center gap-2 text-black/50 dark:text-white/50">
                                                 <span>#{idx + 1}</span>
-                                                <span>{eventLogSource === 'ccel' ? `CC_MR=${ev.pcr}` : `PCR=${ev.pcr}`}</span>
-                                                <span className={hasRootHash ? 'text-amber-800 dark:text-amber-300 font-semibold' : ''}>{typeName}</span>
+                                                <span className={ev.type === 'container_load' ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-700 dark:text-amber-400'}>
+                                                    {ev.type === 'container_load' ? '▶ load' : '■ unload'}
+                                                </span>
+                                                <span className="text-black/30 dark:text-white/30">{ev.timestamp}</span>
                                             </div>
                                             <div className="text-black/40 dark:text-white/40 break-all mt-0.5">
-                                                digest: {ev.digest.slice(0, 32)}…
+                                                sha384: {ev.digest_sha384.slice(0, 32)}…
                                             </div>
-                                            {ev.data_text && (
-                                                <div className={`mt-0.5 break-all ${
-                                                    hasRootHash
-                                                        ? 'text-amber-900 dark:text-amber-200 font-medium'
-                                                        : 'text-black/35 dark:text-white/35'
-                                                }`}>
-                                                    {hasRootHash ? '🔑 ' : ''}data: {ev.data_text.length > 200 ? ev.data_text.slice(0, 200) + '…' : ev.data_text}
-                                                </div>
-                                            )}
+                                            <div className="text-black/35 dark:text-white/35 mt-0.5">
+                                                {ev.description}
+                                            </div>
                                         </div>
-                                    );
-                                })}
-                            </div>
-                        )}
-                    </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            {/* Event table for selected RTMR (vTPM/CCEL events) */}
+                            {selectedRtmr === i && !r.appEvents && r.events.length > 0 && (
+                                <div className="mt-2 ml-4 space-y-1">
+                                    {r.events.map((ev, idx) => {
+                                        const hasRootHash = ev.data_text ? /roothash=/.test(ev.data_text) : false;
+                                        const typeName = EVENT_TYPE_NAMES[ev.event_type] || `0x${ev.event_type.toString(16).padStart(8, '0')}`;
+                                        return (
+                                            <div
+                                                key={idx}
+                                                className={`text-[10px] font-mono p-1.5 rounded ${
+                                                    hasRootHash
+                                                        ? 'bg-amber-100/80 dark:bg-amber-900/30 border border-amber-300/50 dark:border-amber-600/30'
+                                                        : 'bg-black/3 dark:bg-white/3'
+                                                }`}
+                                            >
+                                                <div className="flex items-center gap-2 text-black/50 dark:text-white/50">
+                                                    <span>#{idx + 1}</span>
+                                                    <span>{eventLogSource === 'ccel' ? `CC_MR=${ev.pcr}` : `PCR=${ev.pcr}`}</span>
+                                                    <span className={hasRootHash ? 'text-amber-800 dark:text-amber-300 font-semibold' : ''}>{typeName}</span>
+                                                </div>
+                                                <div className="text-black/40 dark:text-white/40 break-all mt-0.5">
+                                                    digest: {ev.digest.slice(0, 32)}…
+                                                </div>
+                                                {ev.data_text && (
+                                                    <div className={`mt-0.5 break-all ${
+                                                        hasRootHash
+                                                            ? 'text-amber-900 dark:text-amber-200 font-medium'
+                                                            : 'text-black/35 dark:text-white/35'
+                                                    }`}>
+                                                        {hasRootHash ? '🔑 ' : ''}data: {ev.data_text.length > 200 ? ev.data_text.slice(0, 200) + '…' : ev.data_text}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
                     );
                 })}
             </div>
