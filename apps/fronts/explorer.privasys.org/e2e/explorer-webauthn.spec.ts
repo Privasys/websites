@@ -370,3 +370,139 @@ test.describe('Explorer — FIDO2 Proxy Endpoint', () => {
         expect(corsOrigin).toBeTruthy();
     });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 2.5: AAGUID Enforcement
+// ---------------------------------------------------------------------------
+
+test.describe('Explorer — AAGUID Enforcement', () => {
+    test.describe.configure({ mode: 'serial' });
+
+    test('registration rejected with AAGUID error shows clear message', async ({ page }) => {
+        test.setTimeout(60_000);
+        const cdp = await setupVirtualAuthenticator(page);
+
+        // Mock FIDO2 proxy: register_begin succeeds, register_complete returns AAGUID error
+        await page.route('**/api/v1/apps/*/fido2', async (route, request) => {
+            const body = JSON.parse(request.postData()!);
+
+            if (body.type === 'register_begin') {
+                await route.fulfill({
+                    status: 200,
+                    contentType: 'application/json',
+                    body: JSON.stringify({
+                        type: 'register_options',
+                        challenge: MOCK_CHALLENGE,
+                        rp: { id: 'localhost', name: 'Privasys Test' },
+                        user: { id: MOCK_USER_ID, name: 'test-user', display_name: 'Test User' },
+                        pub_key_cred_params: [{ type: 'public-key', alg: -7 }],
+                        attestation: 'none',
+                        authenticator_selection: {
+                            user_verification: 'preferred',
+                            resident_key: 'preferred',
+                        },
+                    }),
+                });
+                return;
+            }
+
+            if (body.type === 'register_complete') {
+                // Simulate enclave AAGUID rejection (Phase 2.5 enforcement)
+                const fakeAaguid = body.attestation_object
+                    ? '0000000000000000000000000000000000000000'
+                    : 'unknown';
+                await route.fulfill({
+                    status: 200,
+                    contentType: 'application/json',
+                    body: JSON.stringify({
+                        type: 'error',
+                        error: `authenticator AAGUID ${fakeAaguid} not in allowlist`,
+                    }),
+                });
+                return;
+            }
+
+            await route.fulfill({
+                status: 400,
+                contentType: 'application/json',
+                body: JSON.stringify({ type: 'error', error: 'unknown type' }),
+            });
+        });
+
+        await connectToApp(page);
+        await switchToAuthTab(page);
+
+        await page.locator('button', { hasText: 'Register Passkey' }).click();
+
+        // The virtual authenticator completes registration, but the enclave rejects the AAGUID
+        await expect(page.locator('.auth-error')).toBeVisible({ timeout: 30_000 });
+        await expect(page.locator('.auth-error')).toContainText('not in allowlist');
+
+        await page.screenshot({ path: screenshot('aaguid-01-rejected'), fullPage: true });
+
+        await cdp.detach();
+    });
+
+    test('AAGUID rejection does not leave stale auth state', async ({ page }) => {
+        test.setTimeout(60_000);
+        const cdp = await setupVirtualAuthenticator(page);
+
+        // Same AAGUID-rejecting mock
+        await page.route('**/api/v1/apps/*/fido2', async (route, request) => {
+            const body = JSON.parse(request.postData()!);
+            if (body.type === 'register_begin') {
+                await route.fulfill({
+                    status: 200,
+                    contentType: 'application/json',
+                    body: JSON.stringify({
+                        type: 'register_options',
+                        challenge: MOCK_CHALLENGE,
+                        rp: { id: 'localhost', name: 'Privasys Test' },
+                        user: { id: MOCK_USER_ID, name: 'test-user', display_name: 'Test User' },
+                        pub_key_cred_params: [{ type: 'public-key', alg: -7 }],
+                        attestation: 'none',
+                        authenticator_selection: {
+                            user_verification: 'preferred',
+                            resident_key: 'preferred',
+                        },
+                    }),
+                });
+                return;
+            }
+            if (body.type === 'register_complete') {
+                await route.fulfill({
+                    status: 200,
+                    contentType: 'application/json',
+                    body: JSON.stringify({
+                        type: 'error',
+                        error: 'authenticator AAGUID 00000000 not in allowlist',
+                    }),
+                });
+                return;
+            }
+            await route.fulfill({ status: 400, body: '{}' });
+        });
+
+        await connectToApp(page);
+        await switchToAuthTab(page);
+
+        // Attempt registration — should fail
+        await page.locator('button', { hasText: 'Register Passkey' }).click();
+        await expect(page.locator('.auth-error')).toBeVisible({ timeout: 30_000 });
+
+        // After error, no stale "Active" badge
+        await expect(page.locator('.badge', { hasText: 'Active' })).not.toBeVisible();
+
+        // "Try Again" button should be visible — click it to verify reset
+        const tryAgainBtn = page.locator('button', { hasText: 'Try Again' });
+        await expect(tryAgainBtn).toBeVisible({ timeout: 5_000 });
+        await tryAgainBtn.click();
+
+        // After clicking "Try Again", auth buttons should reappear
+        await expect(page.locator('button', { hasText: 'Register Passkey' })).toBeVisible({ timeout: 10_000 });
+
+        await page.screenshot({ path: screenshot('aaguid-02-reset-after-rejection'), fullPage: true });
+
+        await cdp.detach();
+    });
+});
