@@ -1,6 +1,8 @@
 import { test, expect } from '@playwright/test';
 import path from 'path';
+import { fileURLToPath } from 'url';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const screenshot = (name: string) => path.join(__dirname, 'test-results', `${name}.png`);
 
 /**
@@ -221,11 +223,15 @@ test.describe('WASM App Explorer', () => {
 /** Helper: connect to the wasm app with pre-configured settings. */
 async function connectToApp(page: import('@playwright/test').Page) {
     await page.goto('/');
-    await page.locator('#base-url-input').fill(API_BASE);
+    const needAdvanced = API_BASE !== 'https://api.developer.privasys.org' || AUTH_TOKEN || ATTESTATION_SERVER_URL || ATTESTATION_SERVER_TOKEN;
+    if (needAdvanced) {
+        await page.locator('#advanced-toggle').click();
+        if (API_BASE !== 'https://api.developer.privasys.org') await page.locator('#base-url-input').fill(API_BASE);
+        if (AUTH_TOKEN) await page.locator('#auth-token-input').fill(AUTH_TOKEN);
+        if (ATTESTATION_SERVER_URL) await page.locator('#attestation-url-input').fill(ATTESTATION_SERVER_URL);
+        if (ATTESTATION_SERVER_TOKEN) await page.locator('#attestation-token-input').fill(ATTESTATION_SERVER_TOKEN);
+    }
     await page.locator('#app-name-input').fill(APP_NAME);
-    if (AUTH_TOKEN) await page.locator('#auth-token-input').fill(AUTH_TOKEN);
-    if (ATTESTATION_SERVER_URL) await page.locator('#attestation-url-input').fill(ATTESTATION_SERVER_URL);
-    if (ATTESTATION_SERVER_TOKEN) await page.locator('#attestation-token-input').fill(ATTESTATION_SERVER_TOKEN);
     await page.locator('#connect-btn').click();
     await expect(page.locator('#connected-view')).toBeVisible();
 }
