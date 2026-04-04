@@ -1,8 +1,9 @@
 import { defineConfig, devices } from '@playwright/test';
 import path from 'path';
+import { fileURLToPath } from 'url';
 
-const EXPLORER_URL = process.env.E2E_EXPLORER_URL || 'http://localhost:4210';
-const E2E_DIR = __dirname;
+const EXPLORER_URL = process.env.E2E_EXPLORER_URL || 'http://localhost:54281';
+const E2E_DIR = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
     testDir: E2E_DIR,
@@ -24,10 +25,10 @@ export default defineConfig({
     /* Start a local HTTP server for the explorer when testing locally */
     ...(process.env.E2E_EXPLORER_URL ? {} : {
         webServer: {
-            command: 'npx serve -l 4210 -s apps/fronts/explorer.privasys.org',
-            port: 4210,
+            command: 'npx serve -l 54281 -s apps/fronts/explorer.privasys.org',
+            port: 54281,
             reuseExistingServer: true,
-            cwd: path.resolve(__dirname, '..', '..', '..', '..')
+            cwd: path.resolve(E2E_DIR, '..', '..', '..', '..')
         }
     }),
 
