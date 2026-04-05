@@ -828,7 +828,9 @@
                 ),
                 h('p', { className: 'text-xs text-muted mb-4' },
                     'Authenticate as an end-user with this WASM app. ',
-                    'Choose browser-based WebAuthn (passkeys, Touch ID, Windows Hello) or use the Privasys Wallet for RA-TLS verified attestation.'
+                    hasWebAuthn
+                        ? 'Use your device passkey (routed to the Privasys Wallet provider) or scan a QR code for browsers without WebAuthn.'
+                        : 'Your browser does not support WebAuthn. Use the Privasys Wallet QR flow instead.'
                 ),
                 h('div', { className: 'auth-info' },
                     h('div', { className: 'field' },
@@ -844,14 +846,14 @@
                     h('span', null, fido2Error)
                 ) : null,
                 hasWebAuthn ? h('div', { className: 'auth-methods mt-4' },
-                    h('div', { className: 'auth-method-label text-xxs text-muted mb-2' }, 'Browser WebAuthn'),
+                    h('div', { className: 'auth-method-label text-xxs text-muted mb-2' }, 'Track A \u2014 Passkey (default)'),
                     h('div', { className: 'flex gap-2' },
                         h('button', { className: 'btn', onClick: webauthnRegister }, 'Register Passkey'),
                         h('button', { className: 'btn btn-outline', onClick: webauthnAuthenticate }, 'Sign In')
                     )
                 ) : null,
                 h('div', { className: 'mt-4' },
-                    h('div', { className: 'auth-method-label text-xxs text-muted mb-2' }, 'Privasys Wallet'),
+                    h('div', { className: 'auth-method-label text-xxs text-muted mb-2' }, hasWebAuthn ? 'Track B \u2014 Wallet QR (fallback)' : 'Privasys Wallet'),
                     h('button', { className: hasWebAuthn ? 'btn btn-outline' : 'btn', onClick: startFido2Auth }, 'Authenticate with Wallet')
                 )
             ));
