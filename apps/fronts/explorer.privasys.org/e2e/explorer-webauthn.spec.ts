@@ -43,7 +43,7 @@ async function setupVirtualAuthenticator(page: Page): Promise<CDPSession> {
     await cdp.send('WebAuthn.addVirtualAuthenticator', {
         options: {
             protocol: 'ctap2',
-            transport: 'internal',
+            transport: 'hybrid',
             hasResidentKey: true,
             hasUserVerification: true,
             isUserVerified: true,
@@ -506,5 +506,121 @@ test.describe('Explorer — AAGUID Enforcement', () => {
         await page.screenshot({ path: screenshot('aaguid-02-reset-after-rejection'), fullPage: true });
 
         await cdp.detach();
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Real E2E: wasm-app-example on development environment
+// ---------------------------------------------------------------------------
+
+const DEV_API_BASE = 'https://api-test.developer.privasys.org';
+const DEV_APP_NAME = 'wasm-app-example';
+
+/**
+ * Connect to wasm-app-example in the development environment.
+ * Selects "development" from the env dropdown, fills the app name, connects.
+ */
+async function connectToDevApp(page: Page) {
+    await page.goto('/');
+
+    // Select development environment
+    await page.locator('#env-select').selectOption('development');
+
+    // Fill app name and connect
+    await page.locator('#app-name-input').fill(DEV_APP_NAME);
+    await page.locator('#connect-btn').click();
+    await expect(page.locator('#connected-view')).toBeVisible({ timeout: 10_000 });
+}
+
+test.describe('Explorer — Real E2E (wasm-app-example / dev)', () => {
+    test.describe.configure({ mode: 'serial' });
+
+    test('connects to wasm-app-example in development env', async ({ page }) => {
+        await connectToDevApp(page);
+        await expect(page.locator('#connection-info')).toContainText(DEV_APP_NAME);
+        await page.screenshot({ path: screenshot('real-e2e-01-connected'), fullPage: true });
+    });
+
+    test('auth tab shows Track A and Track B options', async ({ page }) => {
+        await connectToDevApp(page);
+        await switchToAuthTab(page);
+
+        // Track A — passkey buttons
+        await expect(page.locator('button', { hasText: 'Register Passkey' })).toBeVisible();
+        await expect(page.locator('button', { hasText: 'Sign In' })).toBeVisible();
+
+        // Track B — wallet button
+        await expect(page.locator('button', { hasText: 'Authenticate with Wallet' })).toBeVisible();
+
+        // RP ID should reflect the dev gateway domain
+        await expect(page.locator('.field-value', { hasText: 'apps-test.privasys.org' })).toBeVisible();
+
+        await page.screenshot({ path: screenshot('real-e2e-02-auth-tab'), fullPage: true });
+    });
+
+    test('register_begin returns valid options from real enclave', async ({ page }) => {
+        // Directly call the real FIDO2 proxy to verify the enclave responds
+        const response = await page.request.post(
+            `${DEV_API_BASE}/api/v1/apps/${DEV_APP_NAME}/fido2`,
+            {
+                data: { type: 'register_begin', user_name: 'e2e-test', user_handle: 'ZTJlLXRlc3Q' },
+                headers: { 'Content-Type': 'application/json' },
+                timeout: 15_000,
+            },
+        );
+
+        expect(response.status()).toBe(200);
+        const body = await response.json();
+
+        // Verify the enclave returned valid FIDO2 registration options
+        expect(body.type).toBe('register_options');
+        expect(body.challenge).toBeTruthy();
+        expect(body.rp).toBeTruthy();
+        expect(body.rp.id).toBeTruthy();
+        expect(body.user).toBeTruthy();
+        expect(body.pub_key_cred_params).toBeTruthy();
+        expect(body.pub_key_cred_params.length).toBeGreaterThan(0);
+        // ES256 must be supported
+        expect(body.pub_key_cred_params.some((p: { alg: number }) => p.alg === -7)).toBe(true);
+        // Enclave must request cross-platform attachment (phone-based flow)
+        expect(body.authenticator_selection?.authenticator_attachment).toBe('cross-platform');
+    });
+
+    test('registration with non-Privasys authenticator is rejected by AAGUID enforcement', async ({ page }) => {
+        test.setTimeout(60_000);
+
+        const cdp = await setupVirtualAuthenticator(page);
+
+        await connectToDevApp(page);
+        await switchToAuthTab(page);
+
+        await page.locator('button', { hasText: 'Register Passkey' }).click();
+
+        // The virtual authenticator has a zero AAGUID (not Privasys Wallet).
+        // The enclave enforces Phase 2.5 AAGUID allowlist and rejects registration.
+        await expect(page.locator('.auth-error')).toBeVisible({ timeout: 30_000 });
+        await expect(page.locator('.auth-error')).toContainText('not in allowlist');
+
+        await page.screenshot({ path: screenshot('real-e2e-03-aaguid-rejected'), fullPage: true });
+
+        await cdp.detach();
+    });
+
+    test('authenticate_begin returns valid options from real enclave', async ({ page }) => {
+        const response = await page.request.post(
+            `${DEV_API_BASE}/api/v1/apps/${DEV_APP_NAME}/fido2`,
+            {
+                data: { type: 'authenticate_begin' },
+                headers: { 'Content-Type': 'application/json' },
+                timeout: 15_000,
+            },
+        );
+
+        expect(response.status()).toBe(200);
+        const body = await response.json();
+
+        expect(body.type).toBe('authenticate_options');
+        expect(body.challenge).toBeTruthy();
+        expect(body.user_verification).toBeTruthy();
     });
 });
