@@ -16,9 +16,8 @@
         "serve": {
             "executor": "nx:run-commands",
             "options": {
-                "command": "npx serve -l 4210 -s .",
-                "cwd": "apps/fronts/explorer.privasys.org",
-                "port": 4210
+                "command": "npx serve -l 54281 -s .",
+                "cwd": "apps/fronts/explorer.privasys.org"
             }
         },
         "lint": {

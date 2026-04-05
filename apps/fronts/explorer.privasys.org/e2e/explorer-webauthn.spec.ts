@@ -5,6 +5,8 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const screenshot = (name: string) => path.join(__dirname, 'test-results', `${name}.png`);
 
+const EXPLORER_URL = process.env.E2E_EXPLORER_URL || 'http://localhost:54281';
+const MOCK_RP_ID = new URL(EXPLORER_URL).hostname;
 const API_BASE = process.env.E2E_API_BASE || 'https://api.developer.privasys.org';
 const APP_NAME = process.env.E2E_APP_NAME || 'wasm-app';
 
@@ -65,7 +67,7 @@ async function mockFido2Proxy(page: Page) {
                 body: JSON.stringify({
                     type: 'register_options',
                     challenge: MOCK_CHALLENGE,
-                    rp: { id: 'localhost', name: 'Privasys Test' },
+                    rp: { id: MOCK_RP_ID, name: 'Privasys Test' },
                     user: { id: MOCK_USER_ID, name: 'test-user', display_name: 'Test User' },
                     pub_key_cred_params: [
                         { type: 'public-key', alg: -7 },   // ES256
@@ -99,7 +101,7 @@ async function mockFido2Proxy(page: Page) {
             const resp: Record<string, unknown> = {
                 type: 'authenticate_options',
                 challenge: MOCK_CHALLENGE,
-                rp_id: 'localhost',
+                rp_id: MOCK_RP_ID,
                 user_verification: 'preferred',
             };
             // If we have a previously registered credential, include it
@@ -393,7 +395,7 @@ test.describe('Explorer — AAGUID Enforcement', () => {
                     body: JSON.stringify({
                         type: 'register_options',
                         challenge: MOCK_CHALLENGE,
-                        rp: { id: 'localhost', name: 'Privasys Test' },
+                        rp: { id: MOCK_RP_ID, name: 'Privasys Test' },
                         user: { id: MOCK_USER_ID, name: 'test-user', display_name: 'Test User' },
                         pub_key_cred_params: [{ type: 'public-key', alg: -7 }],
                         attestation: 'none',
@@ -457,7 +459,7 @@ test.describe('Explorer — AAGUID Enforcement', () => {
                     body: JSON.stringify({
                         type: 'register_options',
                         challenge: MOCK_CHALLENGE,
-                        rp: { id: 'localhost', name: 'Privasys Test' },
+                        rp: { id: MOCK_RP_ID, name: 'Privasys Test' },
                         user: { id: MOCK_USER_ID, name: 'test-user', display_name: 'Test User' },
                         pub_key_cred_params: [{ type: 'public-key', alg: -7 }],
                         attestation: 'none',
