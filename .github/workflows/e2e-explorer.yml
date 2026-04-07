@@ -1,0 +1,48 @@
+name: E2E — Explorer
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/fronts/explorer.privasys.org/**'
+      - 'libs/**'
+  pull_request:
+    paths:
+      - 'apps/fronts/explorer.privasys.org/**'
+      - 'libs/**'
+  workflow_dispatch:
+
+jobs:
+  e2e-explorer:
+    name: Explorer Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.x
+          cache: yarn
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      - name: Install Playwright browsers
+        run: npx playwright install chromium --with-deps
+
+      - name: Run explorer e2e tests
+        run: |
+          npx playwright test \
+            --config=apps/fronts/explorer.privasys.org/e2e/playwright.config.ts \
+            explorer.spec.ts \
+            --reporter=list
+
+      - name: Upload test artifacts
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: explorer-test-results
+          path: apps/fronts/explorer.privasys.org/e2e/test-results/
+          retention-days: 7
