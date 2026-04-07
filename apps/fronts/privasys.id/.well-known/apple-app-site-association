@@ -1,0 +1,14 @@
+{
+    "applinks": {
+        "apps": [],
+        "details": [
+            {
+                "appID": "XXXXXXXXXX.org.privasys.wallet",
+                "paths": ["/scp", "/scp/*"]
+            }
+        ]
+    },
+    "webcredentials": {
+        "apps": ["XXXXXXXXXX.org.privasys.wallet"]
+    }
+}
