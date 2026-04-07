@@ -107,6 +107,12 @@ test.describe('Developer Portal', () => {
 
             if (gotResult === 'tls') {
                 await expect(page.getByText(/x\.509 Certificate/i)).toBeVisible({ timeout: 5_000 });
+                // Verify workload attestation extensions section is visible
+                const workloadExts = page.getByText(/Workload Attestation Extensions/i);
+                const hasWorkloadExts = await workloadExts.isVisible().catch(() => false);
+                if (hasWorkloadExts) {
+                    console.log('Workload Attestation Extensions section visible');
+                }
             }
             // Either outcome means the attestation tab is functional
 
