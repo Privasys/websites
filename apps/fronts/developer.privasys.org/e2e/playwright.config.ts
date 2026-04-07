@@ -42,6 +42,14 @@ export default defineConfig({
             use: {
                 storageState: AUTH_FILE
             }
+        },
+        {
+            name: 'confidential-ai',
+            testMatch: 'confidential-ai.spec.ts',
+            dependencies: ['auth-setup'],
+            use: {
+                storageState: AUTH_FILE
+            }
         }
     ]
 });
