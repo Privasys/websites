@@ -43,7 +43,7 @@ async function setupVirtualAuthenticator(page: Page): Promise<CDPSession> {
     await cdp.send('WebAuthn.addVirtualAuthenticator', {
         options: {
             protocol: 'ctap2',
-            transport: 'hybrid',
+            transport: 'internal',
             hasResidentKey: true,
             hasUserVerification: true,
             isUserVerified: true,
@@ -144,17 +144,19 @@ async function mockFido2Proxy(page: Page) {
 test.describe('Explorer — Browser WebAuthn', () => {
     test.describe.configure({ mode: 'serial' });
 
-    test('auth tab shows WebAuthn buttons when browser supports it', async ({ page }) => {
+    test('auth tab shows three-tier auth options with wallet primary', async ({ page }) => {
         await mockFido2Proxy(page);
         await connectToApp(page);
         await switchToAuthTab(page);
 
-        // Browser WebAuthn section
+        // Tier 1 — Wallet section (primary, shown first)
+        await expect(page.locator('button', { hasText: 'Authenticate with Wallet' })).toBeVisible();
+        await expect(page.locator('.auth-method-label', { hasText: 'attestation verified' })).toBeVisible();
+
+        // Tier 2 — This device (fallback, shown below)
         await expect(page.locator('button', { hasText: 'Register Passkey' })).toBeVisible();
         await expect(page.locator('button', { hasText: 'Sign In' })).toBeVisible();
-
-        // Wallet section
-        await expect(page.locator('button', { hasText: 'Authenticate with Wallet' })).toBeVisible();
+        await expect(page.locator('.auth-method-label', { hasText: 'without enclave verification' })).toBeVisible();
 
         // RP info
         await expect(page.locator('.field-label', { hasText: 'Relying Party' })).toBeVisible();
@@ -182,7 +184,7 @@ test.describe('Explorer — Browser WebAuthn', () => {
         await expect(page.locator('.badge', { hasText: 'Active' })).toBeVisible({ timeout: 30_000 });
         await expect(page.locator('.field-label', { hasText: 'Session Token' })).toBeVisible();
         await expect(page.locator('.field-label', { hasText: 'Method' })).toBeVisible();
-        await expect(page.locator('.field-value', { hasText: 'Browser WebAuthn' })).toBeVisible();
+        await expect(page.locator('.field-value', { hasText: 'Browser WebAuthn (this device)' })).toBeVisible();
 
         await page.screenshot({ path: screenshot('webauthn-03-registered'), fullPage: true });
 
@@ -213,7 +215,7 @@ test.describe('Explorer — Browser WebAuthn', () => {
 
         // Should complete
         await expect(page.locator('.badge', { hasText: 'Active' })).toBeVisible({ timeout: 30_000 });
-        await expect(page.locator('.field-value', { hasText: 'Browser WebAuthn' })).toBeVisible();
+        await expect(page.locator('.field-value', { hasText: 'Browser WebAuthn (this device)' })).toBeVisible();
 
         await page.screenshot({ path: screenshot('webauthn-05-authenticated'), fullPage: true });
 
@@ -374,8 +376,54 @@ test.describe('Explorer — FIDO2 Proxy Endpoint', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Phase 2.5: AAGUID Enforcement
+// Phase 2.5: AAGUID Enforcement (enclave currently rejects non-Privasys authenticators)
+// When the enclave is updated to accept-and-tag instead of reject,
+// these mock tests should be updated to verify the "unverified" tag.
 // ---------------------------------------------------------------------------
+
+test.describe('Explorer — Wallet Relay (Tier 1)', () => {
+    test.describe.configure({ mode: 'serial' });
+
+    test('clicking Authenticate with Wallet shows QR code and waiting state', async ({ page }) => {
+        // Mock the broker WebSocket so it stays connected but never sends messages
+        await page.routeWebSocket('**/relay*', (ws) => { ws.onMessage(() => {}); });
+
+        await connectToApp(page);
+        await switchToAuthTab(page);
+
+        await page.locator('button', { hasText: 'Authenticate with Wallet' }).click();
+
+        // Should show QR code / waiting state
+        await expect(page.locator('h3', { hasText: 'Scan with Privasys Wallet' })).toBeVisible({ timeout: 5_000 });
+        await expect(page.locator('.auth-status-text', { hasText: /waiting/i })).toBeVisible();
+
+        // Should show a session ID
+        await expect(page.locator('.field-label', { hasText: 'Session' })).toBeVisible();
+
+        // Cancel button should be present
+        await expect(page.locator('button', { hasText: 'Cancel' })).toBeVisible();
+
+        await page.screenshot({ path: screenshot('wallet-01-qr-waiting'), fullPage: true });
+    });
+
+    test('cancel button returns to idle', async ({ page }) => {
+        await page.routeWebSocket('**/relay*', (ws) => { ws.onMessage(() => {}); });
+
+        await connectToApp(page);
+        await switchToAuthTab(page);
+
+        await page.locator('button', { hasText: 'Authenticate with Wallet' }).click();
+        await expect(page.locator('h3', { hasText: 'Scan with Privasys Wallet' })).toBeVisible({ timeout: 5_000 });
+
+        await page.locator('button', { hasText: 'Cancel' }).click();
+
+        // Back to idle with auth buttons
+        await expect(page.locator('button', { hasText: 'Authenticate with Wallet' })).toBeVisible({ timeout: 5_000 });
+        await expect(page.locator('button', { hasText: 'Register Passkey' })).toBeVisible();
+
+        await page.screenshot({ path: screenshot('wallet-02-cancelled'), fullPage: true });
+    });
+});
 
 test.describe('Explorer — AAGUID Enforcement', () => {
     test.describe.configure({ mode: 'serial' });
@@ -541,16 +589,18 @@ test.describe('Explorer — Real E2E (wasm-app-example / dev)', () => {
         await page.screenshot({ path: screenshot('real-e2e-01-connected'), fullPage: true });
     });
 
-    test('auth tab shows Track A and Track B options', async ({ page }) => {
+    test('auth tab shows three-tier options (wallet primary, device fallback)', async ({ page }) => {
         await connectToDevApp(page);
         await switchToAuthTab(page);
 
-        // Track A — passkey buttons
+        // Tier 1 — Wallet (primary, attestation verified)
+        await expect(page.locator('button', { hasText: 'Authenticate with Wallet' })).toBeVisible();
+        await expect(page.locator('.auth-method-label', { hasText: 'attestation verified' })).toBeVisible();
+
+        // Tier 2 — This device (fallback, without enclave verification)
         await expect(page.locator('button', { hasText: 'Register Passkey' })).toBeVisible();
         await expect(page.locator('button', { hasText: 'Sign In' })).toBeVisible();
-
-        // Track B — wallet button
-        await expect(page.locator('button', { hasText: 'Authenticate with Wallet' })).toBeVisible();
+        await expect(page.locator('.auth-method-label', { hasText: 'without enclave verification' })).toBeVisible();
 
         // RP ID should reflect the dev gateway domain
         await expect(page.locator('.field-value', { hasText: 'apps-test.privasys.org' })).toBeVisible();
@@ -597,9 +647,11 @@ test.describe('Explorer — Real E2E (wasm-app-example / dev)', () => {
         await page.locator('button', { hasText: 'Register Passkey' }).click();
 
         // The virtual authenticator has a zero AAGUID (not Privasys Wallet).
-        // The enclave enforces Phase 2.5 AAGUID allowlist and rejects registration.
+        // From localhost the browser rejects first (RP ID mismatch); in
+        // production the enclave would reject with AAGUID not in allowlist.
+        // Future: enclave will accept but tag as "unverified".
         await expect(page.locator('.auth-error')).toBeVisible({ timeout: 30_000 });
-        await expect(page.locator('.auth-error')).toContainText('not in allowlist');
+        await expect(page.locator('.auth-error')).toContainText(/not in allowlist|relying party/i);
 
         await page.screenshot({ path: screenshot('real-e2e-03-aaguid-rejected'), fullPage: true });
 

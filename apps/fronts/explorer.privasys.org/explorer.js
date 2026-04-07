@@ -49,8 +49,6 @@
     let fido2SessionId = '';
     let fido2Attestation = null;
     let fido2Error = '';
-    let brokerWs = null;
-    let fido2Timer = null;
     let webauthnOp = ''; // 'register' or 'authenticate'
 
     // ── Helpers ────────────────────────────────────
@@ -62,6 +60,8 @@
             if (k === 'className') el.className = v;
             else if (k.startsWith('on') && typeof v === 'function') el.addEventListener(k.slice(2).toLowerCase(), v);
             else if (k === 'html') el.innerHTML = v;
+            else if (v === false || v == null) el.removeAttribute(k);
+            else if (v === true) el.setAttribute(k, '');
             else el.setAttribute(k, v);
         }
         for (const c of children.flat(Infinity)) {
@@ -609,15 +609,63 @@
     }
 
     function generateQRPayload() {
-        return JSON.stringify({
+        var json = JSON.stringify({
             origin: getRpId(),
             sessionId: fido2SessionId,
             rpId: getRpId(),
             brokerUrl: brokerUrl
         });
+        var b64 = btoa(json).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+        return 'https://privasys.id/scp?p=' + b64;
     }
 
-    // ── Browser WebAuthn (via @privasys/auth SDK) ──
+    // ── Privasys Wallet relay (Tier 1) via @privasys/auth SDK ──
+
+    var relayClient = null;
+
+    function getRelayClient() {
+        if (!relayClient ||
+            relayClient.config.rpId !== getRpId() ||
+            relayClient.config.brokerUrl !== brokerUrl) {
+            relayClient = new Privasys.PrivasysAuth({
+                rpId: getRpId(),
+                brokerUrl: brokerUrl,
+                timeout: FIDO2_TIMEOUT
+            }, {
+                onStateChange: function (state) {
+                    var stateMap = {
+                        'waiting-for-scan': 'waiting',
+                        'wallet-connected': 'wallet-connected',
+                        'authenticating': 'authenticating',
+                        'complete': 'complete',
+                        'error': 'error',
+                        'timeout': 'error'
+                    };
+                    fido2State = stateMap[state] || fido2State;
+                    renderAuth();
+                    if (state === 'complete' || state === 'error' || state === 'timeout') renderTabs();
+                },
+                onAuthenticated: function (result) {
+                    fido2SessionToken = result.sessionToken || '';
+                    fido2Attestation = result.attestation || null;
+                    fido2State = 'complete';
+                    renderAuth();
+                    renderTabs();
+                },
+                onError: function () {
+                    if (fido2State !== 'error') {
+                        fido2State = 'error';
+                        fido2Error = fido2Error || 'Wallet authentication failed';
+                        renderAuth();
+                        renderTabs();
+                    }
+                }
+            });
+        }
+        return relayClient;
+    }
+
+    // ── Browser WebAuthn (Tier 2) via @privasys/auth SDK ──
 
     var webauthnClient = null;
 
@@ -693,7 +741,9 @@
     }
 
     function startFido2Auth() {
-        fido2SessionId = generateHex(32);
+        var client = getRelayClient();
+        var qr = client.createQR();
+        fido2SessionId = qr.sessionId;
         fido2State = 'waiting';
         fido2Error = '';
         fido2Attestation = null;
@@ -702,85 +752,19 @@
         renderTabs();
         switchTab('auth');
 
-        var url = brokerUrl + '?session=' + encodeURIComponent(fido2SessionId) + '&role=browser';
-        brokerWs = new WebSocket(url);
-
-        fido2Timer = setTimeout(function () {
+        client.waitForResult(fido2SessionId).catch(function (e) {
             fido2State = 'error';
-            fido2Error = 'Authentication timed out after 2 minutes';
-            cleanupBroker();
+            fido2Error = e.message || 'Wallet authentication failed';
             renderAuth();
             renderTabs();
-        }, FIDO2_TIMEOUT);
-
-        brokerWs.onmessage = function (event) {
-            try {
-                handleBrokerMessage(JSON.parse(event.data));
-            } catch (e) { /* ignore malformed */ }
-        };
-
-        brokerWs.onerror = function () {
-            clearTimeout(fido2Timer);
-            fido2State = 'error';
-            fido2Error = 'WebSocket connection to auth broker failed';
-            cleanupBroker();
-            renderAuth();
-            renderTabs();
-        };
-
-        brokerWs.onclose = function (event) {
-            if (fido2State !== 'complete' && fido2State !== 'error' && fido2State !== 'idle') {
-                clearTimeout(fido2Timer);
-                fido2State = 'error';
-                fido2Error = 'Broker connection closed (code ' + event.code + ')';
-                renderAuth();
-                renderTabs();
-            }
-        };
-    }
-
-    function handleBrokerMessage(msg) {
-        switch (msg.type) {
-            case 'peer-joined':
-                fido2State = 'wallet-connected';
-                renderAuth();
-                break;
-            case 'authenticating':
-                fido2State = 'authenticating';
-                renderAuth();
-                break;
-            case 'auth-result':
-                clearTimeout(fido2Timer);
-                fido2State = 'complete';
-                fido2SessionToken = msg.sessionToken || '';
-                fido2Attestation = msg.attestation || null;
-                cleanupBroker();
-                renderAuth();
-                renderTabs();
-                break;
-            case 'auth-error':
-                clearTimeout(fido2Timer);
-                fido2State = 'error';
-                fido2Error = msg.message || 'Authentication failed';
-                cleanupBroker();
-                renderAuth();
-                renderTabs();
-                break;
-        }
-    }
-
-    function cleanupBroker() {
-        if (brokerWs) {
-            try { brokerWs.close(1000); } catch (e) {}
-            brokerWs = null;
-        }
+        });
     }
 
     function cancelFido2() {
-        clearTimeout(fido2Timer);
+        if (relayClient) relayClient.destroy();
+        relayClient = null;
         fido2State = 'idle';
         fido2Error = '';
-        cleanupBroker();
         renderAuth();
         renderTabs();
     }
@@ -791,6 +775,8 @@
         fido2SessionId = '';
         fido2Attestation = null;
         fido2Error = '';
+        if (relayClient) relayClient.destroy();
+        relayClient = null;
         renderAuth();
         renderTabs();
     }
@@ -828,9 +814,8 @@
                 ),
                 h('p', { className: 'text-xs text-muted mb-4' },
                     'Authenticate as an end-user with this WASM app. ',
-                    hasWebAuthn
-                        ? 'Use your device passkey (routed to the Privasys Wallet provider) or scan a QR code for browsers without WebAuthn.'
-                        : 'Your browser does not support WebAuthn. Use the Privasys Wallet QR flow instead.'
+                    'Scan a QR code with the Privasys Wallet for full enclave attestation',
+                    hasWebAuthn ? ', or use this device as a fallback.' : '.'
                 ),
                 h('div', { className: 'auth-info' },
                     h('div', { className: 'field' },
@@ -845,24 +830,26 @@
                 fido2Error ? h('div', { className: 'auth-error mb-4 mt-4' },
                     h('span', null, fido2Error)
                 ) : null,
+                // Tier 1 — Privasys Wallet (primary)
+                h('div', { className: 'mt-4' },
+                    h('div', { className: 'auth-method-label text-xxs text-muted mb-2' }, 'Privasys Wallet \u2014 attestation verified'),
+                    h('button', { className: 'btn', onClick: startFido2Auth }, 'Authenticate with Wallet')
+                ),
+                // Tier 2 — This device (fallback)
                 hasWebAuthn ? h('div', { className: 'auth-methods mt-4' },
-                    h('div', { className: 'auth-method-label text-xxs text-muted mb-2' }, 'Track A \u2014 Passkey (default)'),
+                    h('div', { className: 'auth-method-label text-xxs text-muted mb-2' }, 'This device \u2014 Windows Hello / Touch ID (without enclave verification)'),
                     h('div', { className: 'flex gap-2' },
-                        h('button', { className: 'btn', onClick: webauthnRegister }, 'Register Passkey'),
+                        h('button', { className: 'btn btn-outline', onClick: webauthnRegister }, 'Register Passkey'),
                         h('button', { className: 'btn btn-outline', onClick: webauthnAuthenticate }, 'Sign In')
                     )
-                ) : null,
-                h('div', { className: 'mt-4' },
-                    h('div', { className: 'auth-method-label text-xxs text-muted mb-2' }, hasWebAuthn ? 'Track B \u2014 Wallet QR (fallback)' : 'Privasys Wallet'),
-                    h('button', { className: hasWebAuthn ? 'btn btn-outline' : 'btn', onClick: startFido2Auth }, 'Authenticate with Wallet')
-                )
+                ) : null
             ));
             return;
         }
 
         // ── Waiting for scan ──
         if (fido2State === 'waiting') {
-            var payload = generateQRPayload();
+            var payload = relayClient ? relayClient.createQR(fido2SessionId).payload : generateQRPayload();
             content.appendChild(h('div', { className: 'card auth-qr-card' },
                 h('div', { className: 'card-header' },
                     h('h3', null, 'Scan with Privasys Wallet')
@@ -974,9 +961,10 @@
                     h('span', { className: 'field-label' }, 'Session ID'),
                     h('span', { className: 'field-value' }, fido2SessionId.slice(0, 16) + '\u2026'),
                     h('button', { className: 'copy-btn', onClick: function () { copyText(fido2SessionId); } }, 'Copy')
-                ) : h('div', { className: 'field' },
+                ) : null,
+                h('div', { className: 'field' },
                     h('span', { className: 'field-label' }, 'Method'),
-                    h('span', { className: 'field-value' }, 'Browser WebAuthn')
+                    h('span', { className: 'field-value' }, fido2SessionId ? 'Privasys Wallet (attestation verified)' : 'Browser WebAuthn (this device)')
                 ),
                 h('p', { className: 'text-xs text-muted mt-4' },
                     'The session token will be sent as an X-App-Auth header on API calls.'
