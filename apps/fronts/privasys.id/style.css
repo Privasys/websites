@@ -1,0 +1,433 @@
+/* ────────────────────────────────────────────────────────────
+   privasys.id — Brand landing page
+   ──────────────────────────────────────────────────────────── */
+
+:root {
+    --brand-green: #34E89E;
+    --brand-blue: #00BCF2;
+    --navy: #0F172A;
+    --slate: #64748B;
+    --border: #E2E8F0;
+    --bg: #FFFFFF;
+    --text: #1d1d1f;
+    --text-secondary: #6e6e73;
+    --brand-gradient: linear-gradient(135deg, var(--brand-green), var(--brand-blue));
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bg: #1d1d1f;
+        --text: #f5f5f7;
+        --text-secondary: #a1a1a6;
+        --border: rgba(255, 255, 255, 0.12);
+    }
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+html {
+    font-family: "Inter", "InterVariable", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-optical-sizing: auto;
+    font-size: 16px;
+    color: var(--text);
+    background: var(--bg);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    scroll-behavior: smooth;
+}
+
+body {
+    overflow-x: clip;
+}
+
+/* ── Navbar ──────────────────────────────────────────────── */
+
+.navbar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 50;
+    height: 3.5rem;
+    border-bottom: 1px solid var(--border);
+    background: rgba(255, 255, 255, 0.72);
+    backdrop-filter: saturate(180%) blur(20px);
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+}
+
+@media (prefers-color-scheme: dark) {
+    .navbar {
+        background: rgba(29, 29, 31, 0.72);
+    }
+}
+
+.navbar-inner {
+    max-width: 60rem;
+    margin: 0 auto;
+    padding: 0 1.5rem;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.navbar-brand {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    font-size: 1.125rem;
+    font-weight: 600;
+    letter-spacing: 0.011em;
+    color: var(--text);
+    text-decoration: none;
+}
+
+.navbar-links {
+    display: flex;
+    align-items: center;
+    gap: 2rem;
+    font-size: 0.875rem;
+}
+
+.navbar-links a {
+    color: var(--text);
+    opacity: 0.7;
+    text-decoration: none;
+    transition: opacity 0.15s;
+}
+
+.navbar-links a:hover {
+    opacity: 1;
+}
+
+@media (max-width: 30rem) {
+    .navbar-links { gap: 1.25rem; }
+}
+
+/* ── Main ────────────────────────────────────────────────── */
+
+main {
+    max-width: 60rem;
+    margin: 0 auto;
+    padding: 0 1.5rem;
+    padding-top: 3.5rem;
+}
+
+/* ── Hero ────────────────────────────────────────────────── */
+
+.hero {
+    padding: 6rem 0 2rem;
+}
+
+@media (min-width: 64rem) {
+    .hero {
+        padding: 10rem 0 4rem;
+    }
+}
+
+.hero h1 {
+    font-size: clamp(2.75rem, 7vw, 4.6rem);
+    font-weight: 600;
+    line-height: 1.05;
+    letter-spacing: -0.015em;
+    color: var(--text);
+    max-width: 42rem;
+}
+
+.hero-intro {
+    font-size: clamp(1.1rem, 2.5vw, 1.375rem);
+    line-height: 1.45;
+    font-weight: 400;
+    letter-spacing: 0.007em;
+    color: var(--text-secondary);
+    max-width: 36rem;
+    margin-top: 2rem;
+}
+
+/* ── Sections ────────────────────────────────────────────── */
+
+.section {
+    padding: 5rem 0;
+}
+
+@media (min-width: 64rem) {
+    .section { padding: 7rem 0; }
+}
+
+.section h2 {
+    font-size: clamp(1.5rem, 3.5vw, 2.5rem);
+    font-weight: 600;
+    line-height: 1.15;
+    letter-spacing: -0.01em;
+    color: var(--text);
+    max-width: 42rem;
+}
+
+.section-lead {
+    font-size: clamp(1rem, 2vw, 1.2rem);
+    line-height: 1.55;
+    color: var(--text-secondary);
+    margin-top: 1.5rem;
+    max-width: 40rem;
+}
+
+.section-body {
+    font-size: 1rem;
+    line-height: 1.6;
+    color: var(--text-secondary);
+    margin-top: 1rem;
+    max-width: 40rem;
+}
+
+/* ── Commitments ─────────────────────────────────────────── */
+
+.commitments {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 2.5rem;
+    margin-top: 3rem;
+}
+
+@media (min-width: 48rem) {
+    .commitments {
+        grid-template-columns: 1fr 1fr;
+        gap: 3rem 4rem;
+    }
+}
+
+.commitment-icon {
+    width: 2.5rem;
+    height: 2.5rem;
+    color: var(--brand-blue);
+    margin-bottom: 0.75rem;
+}
+
+@media (prefers-color-scheme: dark) {
+    .commitment-icon { color: var(--brand-green); }
+}
+
+.commitment-icon svg {
+    width: 100%;
+    height: 100%;
+}
+
+.commitment h3 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    line-height: 1.25;
+    letter-spacing: 0.004em;
+    color: var(--text);
+    margin-bottom: 0.5rem;
+}
+
+.commitment p {
+    font-size: 1rem;
+    line-height: 1.55;
+    color: var(--text-secondary);
+}
+
+/* ── Steps ───────────────────────────────────────────────── */
+
+.steps {
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+    margin-top: 3rem;
+    max-width: 36rem;
+}
+
+.step {
+    display: flex;
+    gap: 1.25rem;
+    align-items: flex-start;
+}
+
+.step-num {
+    flex-shrink: 0;
+    width: 2.25rem;
+    height: 2.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: var(--brand-gradient);
+    color: #fff;
+    font-weight: 600;
+    font-size: 0.95rem;
+}
+
+.step h3 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    line-height: 1.3;
+    color: var(--text);
+    margin-bottom: 0.25rem;
+}
+
+.step p {
+    font-size: 0.95rem;
+    line-height: 1.5;
+    color: var(--text-secondary);
+}
+
+/* ── Wallet section ──────────────────────────────────────── */
+
+.wallet-cta {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-top: 2rem;
+}
+
+/* ── Quotes ──────────────────────────────────────────────── */
+
+.quotes {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 2rem;
+    margin-top: 2.5rem;
+}
+
+@media (min-width: 48rem) {
+    .quotes {
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 3rem;
+    }
+}
+
+.quotes blockquote {
+    padding: 0;
+    margin: 0;
+    border: none;
+    font-style: normal;
+}
+
+.quotes blockquote p {
+    font-size: 0.95rem;
+    line-height: 1.55;
+    color: var(--text-secondary);
+}
+
+.quotes blockquote p::before { content: "\201C"; }
+.quotes blockquote p::after { content: "\201D"; }
+
+.quotes cite {
+    display: block;
+    margin-top: 0.75rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    font-style: normal;
+    color: var(--text);
+}
+
+/* ── CTA section ─────────────────────────────────────────── */
+
+.cta-section {
+    text-align: center;
+    padding: 6rem 0 4rem;
+}
+
+.cta-section h2 {
+    max-width: none;
+}
+
+.cta-buttons {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-top: 2rem;
+}
+
+/* ── Buttons ─────────────────────────────────────────────── */
+
+.btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.7rem 1.75rem;
+    font-size: 0.95rem;
+    font-weight: 600;
+    border-radius: 100px;
+    text-decoration: none;
+    transition: background 0.2s, color 0.2s, border-color 0.2s;
+    cursor: pointer;
+    line-height: 1.3;
+}
+
+.btn-primary {
+    background: var(--text);
+    color: var(--bg);
+    border: 1px solid var(--text);
+}
+
+.btn-primary:hover {
+    background: transparent;
+    color: var(--text);
+}
+
+.btn-outline {
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--text);
+}
+
+.btn-outline:hover {
+    background: var(--text);
+    color: var(--bg);
+}
+
+/* ── Footer ──────────────────────────────────────────────── */
+
+.footer {
+    border-top: 1px solid var(--border);
+    padding: 2rem 0;
+    margin-top: 2rem;
+}
+
+.footer-inner {
+    max-width: 60rem;
+    margin: 0 auto;
+    padding: 0 1.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.footer-copy {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.footer-links {
+    display: flex;
+    gap: 1.5rem;
+    font-size: 0.8rem;
+}
+
+.footer-links a {
+    color: var(--text-secondary);
+    text-decoration: none;
+    transition: color 0.15s;
+}
+
+.footer-links a:hover {
+    color: var(--text);
+}
+
+/* ── Responsive ──────────────────────────────────────────── */
+
+@media (max-width: 30rem) {
+    html { font-size: 15px; }
+
+    .footer-inner {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+}
