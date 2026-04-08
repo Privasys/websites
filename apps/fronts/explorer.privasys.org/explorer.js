@@ -49,7 +49,6 @@
     let fido2SessionId = '';
     let fido2Attestation = null;
     let fido2Error = '';
-    let webauthnOp = ''; // 'register' or 'authenticate'
 
     // ── Helpers ────────────────────────────────────
     function $(sel, ctx) { return (ctx || document).querySelector(sel); }
@@ -214,6 +213,13 @@
         var gatewayUrl = appName + '.' + gatewayDomain;
         document.body.classList.add('connected');
         $('#connected-view').classList.remove('hidden');
+        fido2SessionToken = '';
+        fido2State = 'idle';
+        fido2SessionId = '';
+        fido2Attestation = null;
+        fido2Error = '';
+        sessionChecked = false;
+        authFrame = null;
         $('#connection-info').innerHTML = '';
         $('#connection-info').appendChild(h('span', {}, appName + ' — ' + baseUrl));
         $('#connection-info').appendChild(h('span', { className: 'gateway-badge', title: 'Direct RA-TLS gateway endpoint for this app' }, gatewayUrl + ':443'));
@@ -601,202 +607,61 @@
     }
 
     // ═══════════════════════════════════════════════
-    // AUTHENTICATE TAB
+    // AUTHENTICATE TAB  (delegates to SDK AuthUI)
     // ═══════════════════════════════════════════════
 
     function getRpId() {
         return appName + '.' + gatewayDomain;
     }
 
-    function generateQRPayload() {
-        var json = JSON.stringify({
-            origin: getRpId(),
-            sessionId: fido2SessionId,
-            rpId: getRpId(),
-            brokerUrl: brokerUrl
-        });
-        var b64 = btoa(json).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
-        return 'https://privasys.id/scp?p=' + b64;
-    }
+    var authFrame = null;
 
-    // ── Privasys Wallet relay (Tier 1) via @privasys/auth SDK ──
-
-    var relayClient = null;
-
-    function getRelayClient() {
-        if (!relayClient ||
-            relayClient.config.rpId !== getRpId() ||
-            relayClient.config.brokerUrl !== brokerUrl) {
-            relayClient = new Privasys.PrivasysAuth({
+    function getAuthFrame() {
+        if (!authFrame || authFrame.rpId !== getRpId()) {
+            authFrame = new Privasys.AuthFrame({
+                apiBase: baseUrl,
+                appName: appName,
                 rpId: getRpId(),
                 brokerUrl: brokerUrl,
                 timeout: FIDO2_TIMEOUT
-            }, {
-                onStateChange: function (state) {
-                    var stateMap = {
-                        'waiting-for-scan': 'waiting',
-                        'wallet-connected': 'wallet-connected',
-                        'authenticating': 'authenticating',
-                        'complete': 'complete',
-                        'error': 'error',
-                        'timeout': 'error'
-                    };
-                    fido2State = stateMap[state] || fido2State;
-                    renderAuth();
-                    if (state === 'complete' || state === 'error' || state === 'timeout') renderTabs();
-                },
-                onAuthenticated: function (result) {
-                    fido2SessionToken = result.sessionToken || '';
-                    fido2Attestation = result.attestation || null;
-                    fido2State = 'complete';
-                    renderAuth();
-                    renderTabs();
-                },
-                onError: function () {
-                    if (fido2State !== 'error') {
-                        fido2State = 'error';
-                        fido2Error = fido2Error || 'Wallet authentication failed';
-                        renderAuth();
-                        renderTabs();
-                    }
-                }
             });
         }
-        return relayClient;
+        return authFrame;
     }
 
-    // ── Browser WebAuthn (Tier 2) via @privasys/auth SDK ──
-
-    var webauthnClient = null;
-
-    function getWebAuthnClient() {
-        if (!webauthnClient || webauthnClient.config.apiBase !== baseUrl || webauthnClient.config.appName !== appName) {
-            webauthnClient = new Privasys.WebAuthnClient({
-                apiBase: baseUrl,
-                appName: appName
-            }, {
-                onStateChange: function (state) {
-                    var stateMap = {
-                        'requesting-options': webauthnOp === 'register' ? 'webauthn-register' : 'webauthn-auth',
-                        'ceremony': 'webauthn-ceremony',
-                        'verifying': 'webauthn-verify',
-                        'complete': 'complete',
-                        'error': 'error'
-                    };
-                    fido2State = stateMap[state] || fido2State;
-                    renderAuth();
-                    if (state === 'complete' || state === 'error') renderTabs();
-                }
-            });
-        }
-        return webauthnClient;
-    }
-
-    async function webauthnRegister() {
-        webauthnOp = 'register';
-        fido2State = 'webauthn-register';
-        fido2Error = '';
-        fido2SessionToken = '';
-        fido2Attestation = null;
-        renderAuth();
-        renderTabs();
-        switchTab('auth');
-
-        try {
-            var result = await getWebAuthnClient().register(window.location.hostname || 'browser-user');
-            fido2State = 'complete';
+    function startSignIn() {
+        getAuthFrame().signIn().then(function (result) {
             fido2SessionToken = result.sessionToken || '';
-            renderAuth();
-            renderTabs();
-        } catch (e) {
-            fido2State = 'error';
-            fido2Error = e.message || 'Registration failed';
-            renderAuth();
-            renderTabs();
-        }
-    }
-
-    async function webauthnAuthenticate() {
-        webauthnOp = 'authenticate';
-        fido2State = 'webauthn-auth';
-        fido2Error = '';
-        fido2SessionToken = '';
-        fido2Attestation = null;
-        renderAuth();
-        renderTabs();
-        switchTab('auth');
-
-        try {
-            var result = await getWebAuthnClient().authenticate();
+            fido2Attestation = result.attestation || null;
             fido2State = 'complete';
-            fido2SessionToken = result.sessionToken || '';
+            fido2SessionId = result.sessionId || '';
             renderAuth();
             renderTabs();
-        } catch (e) {
+        }).catch(function (e) {
+            // User cancelled — just stay idle
+            if (e && e.message === 'Authentication cancelled') return;
             fido2State = 'error';
             fido2Error = e.message || 'Authentication failed';
             renderAuth();
             renderTabs();
-        }
+        });
     }
 
-    function startFido2Auth() {
-        var client = getRelayClient();
-        var qr = client.createQR();
-        fido2SessionId = qr.sessionId;
-        fido2State = 'waiting';
-        fido2Error = '';
-        fido2Attestation = null;
-        fido2SessionToken = '';
-        renderAuth();
-        renderTabs();
-        switchTab('auth');
-
-        client.waitForResult(fido2SessionId).catch(function (e) {
-            fido2State = 'error';
-            fido2Error = e.message || 'Wallet authentication failed';
+    function signOutFido2() {
+        // Clear privasys.id session first, then reset local state
+        getAuthFrame().clearSession().catch(function () {}).then(function () {
+            fido2SessionToken = '';
+            fido2State = 'idle';
+            fido2SessionId = '';
+            fido2Attestation = null;
+            fido2Error = '';
+            sessionChecked = true; // prevent auto-re-login
             renderAuth();
             renderTabs();
         });
     }
 
-    function cancelFido2() {
-        if (relayClient) relayClient.destroy();
-        relayClient = null;
-        fido2State = 'idle';
-        fido2Error = '';
-        renderAuth();
-        renderTabs();
-    }
-
-    function signOutFido2() {
-        fido2SessionToken = '';
-        fido2State = 'idle';
-        fido2SessionId = '';
-        fido2Attestation = null;
-        fido2Error = '';
-        if (relayClient) relayClient.destroy();
-        relayClient = null;
-        renderAuth();
-        renderTabs();
-    }
-
-    function renderQR(payload) {
-        if (typeof qrcode === 'function') {
-            try {
-                var qr = qrcode(0, 'M');
-                qr.addData(payload);
-                qr.make();
-                var size = qr.getModuleCount();
-                var cellSize = Math.max(3, Math.floor(240 / size));
-                return h('div', { className: 'qr-svg', html: qr.createSvgTag({ cellSize: cellSize, margin: 4, scalable: true }) });
-            } catch (e) { /* fall through */ }
-        }
-        return h('div', { className: 'qr-fallback' },
-            h('p', { className: 'text-xs text-muted mb-2' }, 'QR library unavailable \u2014 copy this payload into the wallet:'),
-            h('pre', { className: 'pem-block' }, payload)
-        );
-    }
+    var sessionChecked = false;
 
     function renderAuth() {
         var content = $('#tab-content');
@@ -805,175 +670,63 @@
 
         var rpId = getRpId();
 
-        // ── Idle state ──
-        if (fido2State === 'idle') {
-            var hasWebAuthn = typeof Privasys !== 'undefined' && Privasys.WebAuthnClient.isSupported();
-            content.appendChild(h('div', { className: 'card' },
-                h('div', { className: 'card-header' },
-                    h('h3', null, 'App Authentication')
-                ),
-                h('p', { className: 'text-xs text-muted mb-4' },
-                    'Authenticate as an end-user with this WASM app. ',
-                    'Scan a QR code with the Privasys Wallet for full enclave attestation',
-                    hasWebAuthn ? ', or use this device as a fallback.' : '.'
-                ),
-                h('div', { className: 'auth-info' },
-                    h('div', { className: 'field' },
-                        h('span', { className: 'field-label' }, 'Relying Party'),
-                        h('span', { className: 'field-value' }, rpId)
-                    ),
-                    h('div', { className: 'field' },
-                        h('span', { className: 'field-label' }, 'Auth Broker'),
-                        h('span', { className: 'field-value' }, brokerUrl)
-                    )
-                ),
-                fido2Error ? h('div', { className: 'auth-error mb-4 mt-4' },
-                    h('span', null, fido2Error)
-                ) : null,
-                // Tier 1 — Privasys Wallet (primary)
-                h('div', { className: 'mt-4' },
-                    h('div', { className: 'auth-method-label text-xxs text-muted mb-2' }, 'Privasys Wallet \u2014 attestation verified'),
-                    h('button', { className: 'btn', onClick: startFido2Auth }, 'Authenticate with Wallet')
-                ),
-                // Tier 2 — This device (fallback)
-                hasWebAuthn ? h('div', { className: 'auth-methods mt-4' },
-                    h('div', { className: 'auth-method-label text-xxs text-muted mb-2' }, 'This device \u2014 Windows Hello / Touch ID (without enclave verification)'),
-                    h('div', { className: 'flex gap-2' },
-                        h('button', { className: 'btn btn-outline', onClick: webauthnRegister }, 'Register Passkey'),
-                        h('button', { className: 'btn btn-outline', onClick: webauthnAuthenticate }, 'Sign In')
-                    )
-                ) : null
-            ));
-            return;
+        // Auto-restore session from privasys.id on first render
+        if (fido2State === 'idle' && !sessionChecked) {
+            sessionChecked = true;
+            getAuthFrame().getSession().then(function (session) {
+                if (session && session.token) {
+                    fido2SessionToken = session.token;
+                    fido2State = 'complete';
+                    renderAuth();
+                    renderTabs();
+                }
+            }).catch(function () {});
         }
 
-        // ── Waiting for scan ──
-        if (fido2State === 'waiting') {
-            var payload = relayClient ? relayClient.createQR(fido2SessionId).payload : generateQRPayload();
-            content.appendChild(h('div', { className: 'card auth-qr-card' },
-                h('div', { className: 'card-header' },
-                    h('h3', null, 'Scan with Privasys Wallet')
-                ),
-                h('div', { className: 'auth-qr-wrap' },
-                    renderQR(payload)
-                ),
-                h('p', { className: 'text-xs text-muted text-center mt-2' },
-                    'Open the Privasys Wallet app on your phone and scan this QR code.'
-                ),
-                h('div', { className: 'auth-status' },
-                    h('span', { className: 'loading-spinner' }),
-                    h('span', { className: 'auth-status-text' }, 'Waiting for wallet to scan\u2026')
-                ),
-                h('div', { className: 'field mt-4' },
-                    h('span', { className: 'field-label' }, 'Session'),
-                    h('span', { className: 'field-value' }, fido2SessionId.slice(0, 16) + '\u2026')
-                ),
-                h('div', { style: 'margin-top:16px;text-align:center' },
-                    h('button', { className: 'btn btn-outline btn-sm', onClick: cancelFido2 }, 'Cancel')
-                )
-            ));
-            return;
-        }
+        // ── Complete: show session info ──
+        if (fido2State === 'complete' && fido2SessionToken) {
+            var masked = '\u25CF'.repeat(8) + fido2SessionToken.slice(-6);
+            var method = fido2SessionId ? 'Privasys Wallet' : 'Passkey';
+            var methodDetail = fido2SessionId ? 'Attestation verified' : 'This device';
 
-        // ── Wallet connected / authenticating ──
-        if (fido2State === 'wallet-connected' || fido2State === 'authenticating') {
-            var label = fido2State === 'wallet-connected'
-                ? 'Wallet connected \u2014 verifying attestation\u2026'
-                : 'Completing FIDO2 ceremony\u2026';
-            content.appendChild(h('div', { className: 'card' },
-                h('div', { className: 'card-header' },
-                    h('h3', null, 'Authenticating')
-                ),
-                h('div', { className: 'auth-status' },
-                    h('span', { className: 'loading-spinner' }),
-                    h('span', { className: 'auth-status-text' }, label)
-                ),
-                h('div', { className: 'auth-steps mt-4' },
-                    h('div', { className: 'auth-step auth-step-done' }, '\u2713 QR code scanned'),
-                    h('div', { className: 'auth-step ' + (fido2State === 'authenticating' ? 'auth-step-done' : 'auth-step-active') },
-                        (fido2State === 'authenticating' ? '\u2713 ' : ''), 'RA-TLS attestation verification'
-                    ),
-                    h('div', { className: 'auth-step ' + (fido2State === 'authenticating' ? 'auth-step-active' : '') },
-                        'FIDO2 biometric ceremony'
+            var successCard = h('div', { className: 'auth-modal auth-modal-success' },
+                h('div', { className: 'auth-success-icon' },
+                    h('svg', { 'viewBox': '0 0 24 24', 'fill': 'none', 'stroke': 'currentColor', 'stroke-width': '2', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' },
+                        h('circle', { cx: '12', cy: '12', r: '10' }),
+                        h('path', { d: 'M8 12l3 3 5-6' })
                     )
                 ),
-                h('div', { style: 'margin-top:16px;text-align:center' },
-                    h('button', { className: 'btn btn-outline btn-sm', onClick: cancelFido2 }, 'Cancel')
-                )
-            ));
-            return;
-        }
-
-        // ── WebAuthn ceremony (browser-based) ──
-        if (fido2State === 'webauthn-register' || fido2State === 'webauthn-auth' ||
-            fido2State === 'webauthn-ceremony' || fido2State === 'webauthn-verify') {
-            var stepLabels = fido2State === 'webauthn-register' || fido2State === 'webauthn-auth'
-                ? 'Contacting enclave\u2026'
-                : fido2State === 'webauthn-ceremony'
-                    ? 'Complete the biometric prompt\u2026'
-                    : 'Enclave verifying credential\u2026';
-            var isRegister = webauthnOp === 'register';
-            content.appendChild(h('div', { className: 'card' },
-                h('div', { className: 'card-header' },
-                    h('h3', null, isRegister ? 'Registering Passkey' : 'Signing In')
+                h('div', { className: 'auth-success-title' }, 'Authenticated'),
+                h('div', { className: 'auth-success-method' },
+                    h('span', { className: 'auth-method-badge' }, method),
+                    h('span', { className: 'auth-method-detail' }, methodDetail)
                 ),
-                h('div', { className: 'auth-status' },
-                    h('span', { className: 'loading-spinner' }),
-                    h('span', { className: 'auth-status-text' }, stepLabels)
-                ),
-                h('div', { className: 'auth-steps mt-4' },
-                    h('div', { className: 'auth-step ' + (fido2State !== 'webauthn-register' && fido2State !== 'webauthn-auth' ? 'auth-step-done' : 'auth-step-active') },
-                        (fido2State !== 'webauthn-register' && fido2State !== 'webauthn-auth' ? '\u2713 ' : ''), 'Request options from enclave'
+                h('div', { className: 'auth-session-info' },
+                    h('div', { className: 'auth-session-row' },
+                        h('span', { className: 'auth-session-label' }, 'Session'),
+                        h('span', { className: 'auth-session-value' }, masked),
+                        h('button', { className: 'auth-copy-btn', onClick: function () { copyText(fido2SessionToken); } },
+                            h('svg', { 'viewBox': '0 0 16 16', 'width': '14', 'height': '14', 'fill': 'none', 'stroke': 'currentColor', 'stroke-width': '1.5' },
+                                h('rect', { x: '5', y: '5', width: '8', height: '8', rx: '1.5' }),
+                                h('path', { d: 'M3 11V3.5A.5.5 0 013.5 3H11' })
+                            )
+                        )
                     ),
-                    h('div', { className: 'auth-step ' + (fido2State === 'webauthn-ceremony' ? 'auth-step-active' : fido2State === 'webauthn-verify' ? 'auth-step-done' : '') },
-                        (fido2State === 'webauthn-verify' ? '\u2713 ' : ''), 'Browser biometric prompt'
-                    ),
-                    h('div', { className: 'auth-step ' + (fido2State === 'webauthn-verify' ? 'auth-step-active' : '') },
-                        'Enclave verification'
+                    h('div', { className: 'auth-session-row' },
+                        h('span', { className: 'auth-session-label' }, 'App'),
+                        h('span', { className: 'auth-session-value' }, rpId)
                     )
                 ),
-                h('div', { style: 'margin-top:16px;text-align:center' },
-                    h('button', { className: 'btn btn-outline btn-sm', onClick: cancelFido2 }, 'Cancel')
+                h('p', { className: 'auth-session-note' },
+                    'Your session token is sent automatically on API calls.'
+                ),
+                h('div', { className: 'auth-modal-footer' },
+                    h('button', { className: 'auth-signout-btn', onClick: signOutFido2 }, 'Sign out')
                 )
-            ));
-            return;
-        }
+            );
+            content.appendChild(h('div', { className: 'auth-modal-wrap' }, successCard));
 
-        // ── Complete ──
-        if (fido2State === 'complete') {
-            var masked = fido2SessionToken ? '\u25CF'.repeat(12) + fido2SessionToken.slice(-8) : '\u2014';
-            var cards = [];
-            cards.push(h('div', { className: 'card card-emerald' },
-                h('div', { className: 'card-header' },
-                    h('h3', null, 'Authenticated'),
-                    h('span', { className: 'badge badge-ok' }, 'Active')
-                ),
-                h('div', { className: 'field' },
-                    h('span', { className: 'field-label' }, 'Session Token'),
-                    h('span', { className: 'field-value' }, masked),
-                    h('button', { className: 'copy-btn', onClick: function () { copyText(fido2SessionToken); } }, 'Copy')
-                ),
-                h('div', { className: 'field' },
-                    h('span', { className: 'field-label' }, 'Relying Party'),
-                    h('span', { className: 'field-value' }, rpId)
-                ),
-                fido2SessionId ? h('div', { className: 'field' },
-                    h('span', { className: 'field-label' }, 'Session ID'),
-                    h('span', { className: 'field-value' }, fido2SessionId.slice(0, 16) + '\u2026'),
-                    h('button', { className: 'copy-btn', onClick: function () { copyText(fido2SessionId); } }, 'Copy')
-                ) : null,
-                h('div', { className: 'field' },
-                    h('span', { className: 'field-label' }, 'Method'),
-                    h('span', { className: 'field-value' }, fido2SessionId ? 'Privasys Wallet (attestation verified)' : 'Browser WebAuthn (this device)')
-                ),
-                h('p', { className: 'text-xs text-muted mt-4' },
-                    'The session token will be sent as an X-App-Auth header on API calls.'
-                ),
-                h('div', { style: 'margin-top:16px' },
-                    h('button', { className: 'btn btn-outline btn-sm', onClick: signOutFido2 }, 'Sign Out')
-                )
-            ));
-
+            // Show wallet attestation details if available
             if (fido2Attestation) {
                 var attFields = [];
                 for (var key in fido2Attestation) {
@@ -984,32 +737,41 @@
                         ));
                     }
                 }
-                cards.push(h('div', { className: 'card' },
+                content.appendChild(h('div', { className: 'card', style: 'margin-top:16px' },
                     h('div', { className: 'card-header' }, h('h3', null, 'Wallet Attestation')),
                     ...attFields
                 ));
             }
-
-            for (var c = 0; c < cards.length; c++) content.appendChild(cards[c]);
             return;
         }
 
-        // ── Error ──
-        if (fido2State === 'error') {
-            content.appendChild(h('div', { className: 'card' },
-                h('div', { className: 'card-header' },
-                    h('h3', null, 'Authentication Failed'),
-                    h('span', { className: 'badge badge-err' }, 'Error')
-                ),
-                h('div', { className: 'auth-error' },
-                    h('span', null, fido2Error || 'Unknown error')
-                ),
-                h('div', { style: 'margin-top:16px' },
-                    h('button', { className: 'btn btn-sm', onClick: function () { fido2Error = ''; fido2State = 'idle'; renderAuth(); renderTabs(); } }, 'Try Again')
+        // ── Idle / Error: show sign-in prompt ──
+        var modal = h('div', { className: 'auth-modal' },
+            h('div', { className: 'auth-brand' },
+                h('div', { className: 'auth-brand-icon', html: '<svg viewBox="0 0 500 500"><defs><linearGradient id="eg" y2="1"><stop offset="21%" stop-color="#34E89E"/><stop offset="42%" stop-color="#12B06E"/></linearGradient><linearGradient id="eb" x1="1" y1="1" x2="0" y2="0"><stop offset="21%" stop-color="#00BCF2"/><stop offset="42%" stop-color="#00A0EB"/></linearGradient></defs><path d="M100 0H450L0 450V100A100 100 0 0 1 100 0Z" fill="url(#eg)"/><path d="M500 50V400A100 100 0 0 1 400 500H50L500 50Z" fill="url(#eb)"/><polygon points="0,500 50,500 500,50 500,0" fill="#fff"/></svg>' }),
+                h('div', { className: 'auth-brand-text' },
+                    h('div', { className: 'auth-brand-title' }, 'Authenticate with ' + appName),
+                    h('div', { className: 'auth-brand-sub' }, rpId)
                 )
-            ));
-            return;
-        }
+            ),
+            fido2Error ? h('div', { className: 'auth-error mb-3' },
+                h('span', null, fido2Error)
+            ) : null,
+            h('p', { style: 'font-size:13px;color:var(--muted);margin-bottom:20px;line-height:1.5' },
+                'Sign in using the Privasys Wallet (QR scan) or a browser passkey (Touch\u00A0ID, Windows\u00A0Hello). The SDK overlay handles the full ceremony.'
+            ),
+            h('button', { className: 'auth-provider-btn auth-provider-wallet', onClick: startSignIn },
+                h('svg', { 'className': 'auth-provider-icon', 'viewBox': '0 0 24 24', 'fill': 'none', 'stroke': 'currentColor', 'stroke-width': '1.5', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' },
+                    h('path', { d: 'M12 2l7 4v5c0 5.25-3.5 9.74-7 11-3.5-1.26-7-5.75-7-11V6l7-4z' })
+                ),
+                h('span', { className: 'auth-provider-label' }, 'Sign in'),
+                h('span', { className: 'auth-provider-hint' }, 'Opens SDK overlay')
+            ),
+            h('div', { className: 'auth-modal-footer' },
+                h('span', null, 'Authentication is handled by the @privasys/auth SDK')
+            )
+        );
+        content.appendChild(h('div', { className: 'auth-modal-wrap' }, modal));
     }
 
     // ═══════════════════════════════════════════════
@@ -1076,7 +838,12 @@
         renderApiTesting();
         var start = performance.now();
         try {
-            var data = await apiFetch('/api/v1/apps/' + encodeURIComponent(appName) + '/rpc/' + encodeURIComponent(fn.name), {
+            // Use the public /call/ endpoint when authenticated via FIDO2 session,
+            // or the JWT-gated /rpc/ endpoint when using a management service token.
+            var rpcPath = fido2SessionToken
+                ? '/api/v1/apps/' + encodeURIComponent(appName) + '/call/' + encodeURIComponent(fn.name)
+                : '/api/v1/apps/' + encodeURIComponent(appName) + '/rpc/' + encodeURIComponent(fn.name);
+            var data = await apiFetch(rpcPath, {
                 method: 'POST',
                 body: JSON.stringify(paramValues)
             });
