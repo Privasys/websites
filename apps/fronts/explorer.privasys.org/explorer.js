@@ -673,8 +673,31 @@
         // Auto-restore session from privasys.id on first render
         if (fido2State === 'idle' && !sessionChecked) {
             sessionChecked = true;
-            getAuthFrame().getSession().then(function (session) {
+
+            // Listen for session lifecycle events from the frame host
+            var frame = getAuthFrame();
+            frame.onSessionExpired = function (rpId) {
+                console.log('[explorer] session expired for', rpId);
+                fido2SessionToken = null;
+                fido2SessionId = null;
+                fido2State = 'idle';
+                sessionChecked = false;
+                renderAuth();
+                renderTabs();
+            };
+            frame.onSessionRenewed = function (rpId) {
+                console.log('[explorer] session renewed for', rpId);
+            };
+
+            frame.getSession().then(function (session) {
                 if (session && session.token) {
+                    // Session tokens have a 5-minute client-side TTL;
+                    // the frame host renews them automatically via push.
+                    var age = Date.now() - (session.authenticatedAt || 0);
+                    if (age > 5 * 60 * 1000) {
+                        getAuthFrame().clearSession().catch(function () {});
+                        return;
+                    }
                     fido2SessionToken = session.token;
                     fido2State = 'complete';
                     renderAuth();
@@ -848,6 +871,21 @@
                 body: JSON.stringify(paramValues)
             });
             var ms = Math.round(performance.now() - start);
+            // Detect expired session token in 200 responses
+            if (data && data.status === 'error' && typeof data.message === 'string' && data.message.indexOf('session token expired') !== -1) {
+                fido2SessionToken = '';
+                fido2State = 'idle';
+                sessionChecked = false;
+                getAuthFrame().clearSession().catch(function () {});
+                rpcElapsed = ms;
+                rpcError = 'Session expired — please sign in again.';
+                rpcStatus = 'error';
+                history.unshift({ id: historyId++, func: fn.name, params: Object.assign({}, paramValues), response: rpcError, status: 'error', elapsed: ms, timestamp: new Date() });
+                if (history.length > 20) history.length = 20;
+                renderAuth();
+                renderTabs();
+                return;
+            }
             var json = JSON.stringify(data, null, 2);
             rpcElapsed = ms;
             rpcResponse = json;
