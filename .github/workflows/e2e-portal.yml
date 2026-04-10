@@ -1,15 +1,19 @@
 name: E2E — Developer Portal
 
+# DISABLED: Auto-triggers are off because the tests log into real GitHub
+# via username/password, which triggers device verification from CI runner
+# IPs. Until the auth approach is changed (e.g. use a PAT or mock auth),
+# this workflow can only run manually with someone providing the OTP.
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'apps/fronts/developer.privasys.org/**'
-      - 'libs/**'
-  pull_request:
-    paths:
-      - 'apps/fronts/developer.privasys.org/**'
-      - 'libs/**'
+  # push:
+  #   branches: [main]
+  #   paths:
+  #     - 'apps/fronts/developer.privasys.org/**'
+  #     - 'libs/**'
+  # pull_request:
+  #   paths:
+  #     - 'apps/fronts/developer.privasys.org/**'
+  #     - 'libs/**'
   workflow_dispatch:
     inputs:
       suite:
