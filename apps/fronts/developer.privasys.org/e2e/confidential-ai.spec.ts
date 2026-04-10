@@ -20,7 +20,7 @@ const API = process.env.NEXT_PUBLIC_API_URL || 'https://api-test.developer.priva
 
 // ── App config ─────────────────────────────────────────────────────
 const COMMIT_URL =
-    'https://github.com/Privasys/confidential-ai/commit/9d4ef6c568e9d42497cfab0f5561cde0d067a0df';
+    'https://github.com/Privasys/confidential-ai/commit/1336dda71860336ebc3670a627cb86b081e45293';
 const APP_NAME = 'e2e-conf-ai';
 const CONTAINER_PORT = 8080;
 
@@ -157,9 +157,9 @@ test.describe('Confidential AI Deployment', () => {
         expect(enclResp.ok()).toBeTruthy();
         const enclaves: { id: string; name: string; tee_type: string }[] =
             await enclResp.json();
-        // Prefer ai-dev enclave, fall back to any TDX
-        const aiDev = enclaves.find(e => e.name.includes('ai-eu'));
-        const tdx = aiDev || enclaves.find(e => e.tee_type === 'tdx');
+        // Prefer ai-gpu enclave, fall back to any TDX
+        const aiGpu = enclaves.find(e => e.name.includes('ai-gpu'));
+        const tdx = aiGpu || enclaves.find(e => e.tee_type === 'tdx');
         expect(tdx).toBeTruthy();
         console.log(`Deploying to enclave: ${tdx!.name} (${tdx!.id})`);
 
