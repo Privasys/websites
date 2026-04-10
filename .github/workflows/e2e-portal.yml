@@ -1,19 +1,15 @@
 name: E2E — Developer Portal
 
-# DISABLED: Auto-triggers are off because the tests log into real GitHub
-# via username/password, which triggers device verification from CI runner
-# IPs. Until the auth approach is changed (e.g. use a PAT or mock auth),
-# this workflow can only run manually with someone providing the OTP.
 on:
-  # push:
-  #   branches: [main]
-  #   paths:
-  #     - 'apps/fronts/developer.privasys.org/**'
-  #     - 'libs/**'
-  # pull_request:
-  #   paths:
-  #     - 'apps/fronts/developer.privasys.org/**'
-  #     - 'libs/**'
+  push:
+    branches: [main]
+    paths:
+      - 'apps/fronts/developer.privasys.org/**'
+      - 'libs/**'
+  pull_request:
+    paths:
+      - 'apps/fronts/developer.privasys.org/**'
+      - 'libs/**'
   workflow_dispatch:
     inputs:
       suite:
@@ -44,6 +40,13 @@ jobs:
 
       - name: Install Playwright browsers
         run: npx playwright install chromium --with-deps
+
+      - name: Restore auth state
+        run: |
+          mkdir -p apps/fronts/developer.privasys.org/e2e/.auth
+          echo "$E2E_AUTH_STATE" | base64 -d > apps/fronts/developer.privasys.org/e2e/.auth/state.json
+        env:
+          E2E_AUTH_STATE: ${{ secrets.E2E_AUTH_STATE }}
 
       - name: Determine spec files
         id: specs
