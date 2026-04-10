@@ -433,6 +433,13 @@ export function updateStoreListing(token: string, appId: string, listing: StoreL
     });
 }
 
+export function updateContainerMcp(token: string, appId: string, mcp: Record<string, unknown>): Promise<App> {
+    return request<App>(`/api/v1/apps/${encodeURIComponent(appId)}/mcp`, token, {
+        method: 'PATCH',
+        body: JSON.stringify(mcp)
+    });
+}
+
 export function adminStopDeployment(token: string, appId: string, deploymentId: string): Promise<AppDeployment> {
     return request<AppDeployment>(`/api/v1/admin/apps/${encodeURIComponent(appId)}/deployments/${encodeURIComponent(deploymentId)}/stop`, token, {
         method: 'POST',
