@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { useEffect, useState, useCallback } from 'react';
-import { getApp, listBuilds, listVersions, listDeployments, listEnclaves, deleteApp, deployVersion, stopDeployment, attestApp, verifyQuote, getAppSchema, rpcCall, updateStoreListing, getAppMcp } from '~/lib/api';
+import { getApp, listBuilds, listVersions, listDeployments, listEnclaves, deleteApp, deployVersion, stopDeployment, attestApp, verifyQuote, getAppSchema, rpcCall, updateStoreListing, getAppMcp, updateContainerMcp } from '~/lib/api';
 import type { AppSchema, FunctionSchema, WitType, QuoteVerifyResult, McpManifest } from '~/lib/api';
 import { useSSE } from '~/lib/use-sse';
 import type { App, BuildJob, AppVersion, AppDeployment, Enclave, AttestationResult } from '~/lib/types';
@@ -28,7 +28,7 @@ function BuildStatusDot({ status }: { status: string }) {
     return <span className={`w-2 h-2 rounded-full inline-block ${color}`} />;
 }
 
-type Tab = 'overview' | 'deployments' | 'store' | 'attestation' | 'api' | 'mcp';
+type Tab = 'overview' | 'deployments' | 'store' | 'attestation' | 'api' | 'mcp' | 'ui';
 
 // Terminal states that show the full detail view
 const TERMINAL_STATUSES = new Set(['deployed', 'undeployed', 'built']);
@@ -351,6 +351,7 @@ export default function AppDetailPage() {
     // Full detail view — shown once the app has reached a terminal state
     const hasActiveDeployment = activeDeployments.length > 0;
     const hasContainerMcp = app.app_type === 'container' && app.container_mcp;
+    const containerUI = app.container_mcp?.ui as { url: string; label?: string } | undefined;
     const TABS: { key: Tab; label: string; count?: number; danger?: boolean }[] = [
         { key: 'overview', label: 'Overview' },
         { key: 'deployments', label: 'Deployments', count: activeDeployments.length },
@@ -362,6 +363,9 @@ export default function AppDetailPage() {
             ] : []),
             ...(app.app_type !== 'container' || hasContainerMcp ? [
                 { key: 'mcp' as Tab, label: 'AI Tools' }
+            ] : []),
+            ...(containerUI?.url ? [
+                { key: 'ui' as Tab, label: containerUI.label || 'App UI' }
             ] : [])
         ] : [])
     ];
@@ -443,6 +447,9 @@ export default function AppDetailPage() {
                 )}
                 {tab === 'mcp' && session?.accessToken && (
                     <McpToolsTab appId={app.id} appName={app.name} appType={app.app_type} hostname={activeDeployments[0]?.hostname} token={session.accessToken} />
+                )}
+                {tab === 'ui' && session?.accessToken && containerUI?.url && (
+                    <AppUITab appId={app.id} appName={app.name} hostname={activeDeployments[0]?.hostname} token={session.accessToken} containerMcp={app.container_mcp as Record<string, unknown>} onMcpUpdate={(updated) => setApp(updated)} />
                 )}
 
             </div>
@@ -2677,6 +2684,101 @@ function DeploymentsTab({ app, deployments, versions, enclaves, token, onRefresh
                     })}
                 </div>
             )}
+        </div>
+    );
+}
+
+// ------- App UI Tab (iframe) -------
+function AppUITab({ appId, appName, hostname, token, containerMcp, onMcpUpdate }: {
+    appId: string; appName: string; hostname?: string; token: string;
+    containerMcp: Record<string, unknown>; onMcpUpdate: (app: App) => void;
+}) {
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+    const iframeSrc = `${apiUrl}/api/v1/apps/${encodeURIComponent(appId)}/ui`;
+    const currentUrl = (containerMcp?.ui as { url?: string })?.url || '';
+    const [editUrl, setEditUrl] = useState(currentUrl);
+    const [saving, setSaving] = useState(false);
+    const [iframeKey, setIframeKey] = useState(0);
+    const urlChanged = editUrl !== currentUrl;
+
+    const handleIframeLoad = useCallback((e: React.SyntheticEvent<HTMLIFrameElement>) => {
+        const iframe = e.currentTarget;
+        try {
+            iframe.contentWindow?.postMessage({
+                type: 'privasys-init',
+                apiUrl,
+                appId,
+                appName,
+                hostname,
+                token,
+            }, '*');
+        } catch {
+            // cross-origin - expected if CSP blocks
+        }
+    }, [apiUrl, appId, appName, hostname, token]);
+
+    const handleSaveUrl = useCallback(async () => {
+        if (!urlChanged || saving) return;
+        setSaving(true);
+        try {
+            const updated = await updateContainerMcp(token, appId, {
+                ...containerMcp,
+                ui: { ...(containerMcp.ui as Record<string, unknown> || {}), url: editUrl },
+            });
+            onMcpUpdate(updated);
+            setIframeKey(k => k + 1);
+        } catch {
+            // revert on error
+            setEditUrl(currentUrl);
+        } finally {
+            setSaving(false);
+        }
+    }, [urlChanged, saving, token, appId, containerMcp, editUrl, currentUrl, onMcpUpdate]);
+
+    return (
+        <div className="space-y-4">
+            <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                    <p className="text-sm text-black/50 dark:text-white/50">
+                        UI fetched on-demand from the URL below. Override it to test a new version without redeploying.
+                    </p>
+                    <a
+                        href={iframeSrc}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="shrink-0 text-sm text-blue-600 dark:text-blue-400 hover:underline"
+                    >
+                        Open in new tab
+                    </a>
+                </div>
+                <div className="flex items-center gap-2">
+                    <input
+                        type="url"
+                        value={editUrl}
+                        onChange={e => setEditUrl(e.target.value)}
+                        placeholder="https://raw.githubusercontent.com/..."
+                        className="flex-1 rounded-lg border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 px-3 py-1.5 text-sm font-mono"
+                    />
+                    {urlChanged && (
+                        <button
+                            onClick={handleSaveUrl}
+                            disabled={saving || !editUrl.startsWith('https://')}
+                            className="shrink-0 rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                        >
+                            {saving ? 'Saving...' : 'Save & Reload'}
+                        </button>
+                    )}
+                </div>
+            </div>
+            <iframe
+                key={iframeKey}
+                src={iframeSrc}
+                onLoad={handleIframeLoad}
+                sandbox="allow-scripts allow-forms"
+                className="w-full rounded-xl border border-black/10 dark:border-white/10"
+                style={{ minHeight: '600px', height: '80vh' }}
+                title={`${appName} UI`}
+            />
         </div>
     );
 }
