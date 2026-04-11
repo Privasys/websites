@@ -54,7 +54,7 @@ export interface CreateAppRequest {
     name: string;
     display_name?: string;
     description?: string;
-    source_type: 'upload' | 'github';
+    source_type: 'upload' | 'github' | 'package';
     app_type?: AppType;
     commit_url?: string;
     enclave_id?: string;

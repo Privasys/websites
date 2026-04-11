@@ -6,7 +6,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { createApp, uploadCwasm, checkAppName, detectAppType } from '~/lib/api';
 import type { AppType } from '~/lib/types';
 
-type Mode = 'github' | 'manual';
+type Mode = 'github' | 'manual' | 'package';
 type WizardState = 'input' | 'submitted';
 
 interface SubmittedApp {
@@ -91,7 +91,7 @@ export default function NewApplicationPage() {
     const [detecting, setDetecting] = useState(false);
 
     // Container-specific fields
-    const [containerImage] = useState('');
+    const [containerImage, setContainerImage] = useState('');
     const [containerPort, setContainerPort] = useState('8080');
 
 
@@ -164,12 +164,13 @@ export default function NewApplicationPage() {
 
         if (mode === 'github' && !parsed) return;
         if (mode === 'manual' && !file) return;
+        if (mode === 'package' && !containerImage.trim()) return;
 
         setSubmitting(true);
         setError(null);
 
         // Validate container port
-        if (appType === 'container') {
+        if (appType === 'container' || mode === 'package') {
             const port = parseInt(containerPort, 10);
             if (!port || port < 1 || port > 65535) {
                 setError('Container port must be between 1 and 65535');
@@ -179,13 +180,14 @@ export default function NewApplicationPage() {
         }
 
         try {
+            const sourceType = mode === 'github' ? 'github' : mode === 'package' ? 'package' : 'upload';
             const app = await createApp(session.accessToken, {
                 name: appName,
-                source_type: mode === 'github' ? 'github' : 'upload',
+                source_type: sourceType,
                 commit_url: mode === 'github' ? commitUrl.trim() : undefined,
-                app_type: appType,
-                container_image: appType === 'container' && containerImage ? containerImage : undefined,
-                container_port: appType === 'container' && containerPort ? parseInt(containerPort, 10) : undefined
+                app_type: mode === 'package' ? 'container' : appType,
+                container_image: mode === 'package' ? containerImage.trim() : (appType === 'container' && containerImage ? containerImage : undefined),
+                container_port: (mode === 'package' || appType === 'container') && containerPort ? parseInt(containerPort, 10) : undefined
 
             });
 
@@ -203,7 +205,8 @@ export default function NewApplicationPage() {
 
     const isGithubValid = mode === 'github' && !!parsed && !!name.trim() && nameStatus !== 'taken';
     const isManualValid = mode === 'manual' && !!name && !!file && nameStatus !== 'taken';
-    const canSubmit = (isGithubValid || isManualValid) && !submitting;
+    const isPackageValid = mode === 'package' && !!name.trim() && !!containerImage.trim() && nameStatus !== 'taken';
+    const canSubmit = (isGithubValid || isManualValid || isPackageValid) && !submitting;
 
     // ── Submitted state: auto-redirect to detail page ──
     useEffect(() => {
@@ -228,9 +231,11 @@ export default function NewApplicationPage() {
                     <strong>{submittedApp.name}</strong> has been created successfully.
                     {submittedApp.status === 'building'
                         ? ' A reproducible build has been triggered automatically.'
-                        : submittedApp.status === 'approved'
-                            ? ' Your application has been approved and is being prepared.'
-                            : ' Your application is being processed.'}
+                        : submittedApp.status === 'built'
+                            ? ' Your container image is ready to deploy.'
+                            : submittedApp.status === 'approved'
+                                ? ' Your application has been approved and is being prepared.'
+                                : ' Your application is being processed.'}
                 </p>
 
                 <div className="space-y-0">
@@ -242,7 +247,7 @@ export default function NewApplicationPage() {
                                 <PipelineStep step={1} active={stepIdx === 1} done={stepIdx > 1}>
                                     <h2 className="text-lg font-semibold">Application details</h2>
                                     <div className="mt-1 text-sm text-black/50 dark:text-white/50">
-                                        {submittedApp.source_type === 'github' ? 'Created from GitHub commit' : 'Uploaded manually'}
+                                        {submittedApp.source_type === 'github' ? 'Created from GitHub commit' : submittedApp.source_type === 'package' ? 'Created from container image' : 'Uploaded manually'}
                                     </div>
                                 </PipelineStep>
 
@@ -253,18 +258,20 @@ export default function NewApplicationPage() {
                                     </div>
                                 </PipelineStep>
 
-                                <PipelineStep step={3} active={stepIdx === 3} done={stepIdx > 3}>
-                                    <h2 className="text-lg font-semibold">{submittedApp.source_type === 'github' && appType === 'container' ? 'Image build' : 'Reproducible build'}</h2>
-                                    <div className="mt-1 text-sm text-black/50 dark:text-white/50">
-                                        {stepIdx === 3
-                                            ? (appType === 'container' ? 'Building container image via GitHub Actions\u2026' : 'Building via GitHub Actions\u2026')
-                                            : stepIdx > 3
-                                                ? 'Build complete.'
-                                                : (appType === 'container' ? 'Build your container image via GitHub Actions.' : 'Compile your application into a .cwasm artifact.')}
-                                    </div>
-                                </PipelineStep>
+                                {submittedApp.source_type !== 'package' && (
+                                    <PipelineStep step={3} active={stepIdx === 3} done={stepIdx > 3}>
+                                        <h2 className="text-lg font-semibold">{submittedApp.source_type === 'github' && appType === 'container' ? 'Image build' : 'Reproducible build'}</h2>
+                                        <div className="mt-1 text-sm text-black/50 dark:text-white/50">
+                                            {stepIdx === 3
+                                                ? (appType === 'container' ? 'Building container image via GitHub Actions\u2026' : 'Building via GitHub Actions\u2026')
+                                                : stepIdx > 3
+                                                    ? 'Build complete.'
+                                                    : (appType === 'container' ? 'Build your container image via GitHub Actions.' : 'Compile your application into a .cwasm artifact.')}
+                                        </div>
+                                    </PipelineStep>
+                                )}
 
-                                <PipelineStep step={4} active={false} done={stepIdx > 3} last>
+                                <PipelineStep step={submittedApp.source_type === 'package' ? 3 : 4} active={false} done={stepIdx > 3 || (submittedApp.source_type === 'package' && stepIdx > 2)} last>
                                     <h2 className="text-lg font-semibold">Ready</h2>
                                     <div className="mt-1 text-sm text-black/50 dark:text-white/50">
                                         Your application is built and ready to deploy.
@@ -310,7 +317,7 @@ export default function NewApplicationPage() {
             )}
 
             <div className="mt-8">
-                <PipelineStep step={1} active={true} done={isGithubValid || isManualValid}>
+                <PipelineStep step={1} active={true} done={isGithubValid || isManualValid || isPackageValid}>
                     <h2 className="text-lg font-semibold mb-1">Application details</h2>
 
                     {mode === 'github' ? (
@@ -450,6 +457,98 @@ export default function NewApplicationPage() {
                                 >
                                     Upload manually instead
                                 </button>
+                                <button
+                                    type="button"
+                                    onClick={() => { setMode('package'); setAppType('container'); }}
+                                    className="text-sm text-black/50 dark:text-white/50 hover:underline"
+                                >
+                                    Use a package URL
+                                </button>
+                            </div>
+                        </div>
+                    ) : mode === 'package' ? (
+                        <div className="space-y-3">
+                            <div>
+                                <label className="block text-xs font-medium text-black/60 dark:text-white/60 mb-1">Container image</label>
+                                <input
+                                    type="text"
+                                    placeholder="ghcr.io/your-org/your-app:latest"
+                                    value={containerImage}
+                                    onChange={(e) => setContainerImage(e.target.value)}
+                                    disabled={submitting}
+                                    className="w-full px-3 py-2.5 rounded-lg border border-black/10 dark:border-white/10 bg-transparent text-sm focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/20 placeholder:text-black/30 dark:placeholder:text-white/30 disabled:opacity-50"
+                                    autoFocus
+                                />
+                                <p className="mt-1.5 text-xs text-black/40 dark:text-white/40">
+                                    The full container image reference (e.g. ghcr.io/org/app:tag or docker.io/user/app:v1).
+                                </p>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-black/60 dark:text-white/60 mb-1">Application name</label>
+                                <div className="relative">
+                                    <input
+                                        type="text"
+                                        placeholder="my-confidential-app"
+                                        value={name}
+                                        onChange={(e) => setName(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
+                                        disabled={submitting}
+                                        className={`w-full px-3 py-2 rounded-lg border bg-transparent text-sm font-mono focus:outline-none focus:ring-2 disabled:opacity-50 ${
+                                            nameStatus === 'taken'
+                                                ? 'border-red-400 focus:ring-red-300'
+                                                : nameStatus === 'available'
+                                                    ? 'border-emerald-400 focus:ring-emerald-300'
+                                                    : 'border-black/10 dark:border-white/10 focus:ring-black/20 dark:focus:ring-white/20'
+                                        }`}
+                                    />
+                                    {nameStatus === 'checking' && (
+                                        <div className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 border-2 border-black/20 dark:border-white/20 border-t-black dark:border-t-white rounded-full animate-spin" />
+                                    )}
+                                    {nameStatus === 'available' && (
+                                        <div className="absolute right-3 top-1/2 -translate-y-1/2 text-emerald-500">
+                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7" /></svg>
+                                        </div>
+                                    )}
+                                    {nameStatus === 'taken' && (
+                                        <div className="absolute right-3 top-1/2 -translate-y-1/2 text-red-500">
+                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" /></svg>
+                                        </div>
+                                    )}
+                                </div>
+                                {nameStatus === 'taken' && nameReason && (
+                                    <p className="mt-1 text-xs text-red-500">{nameReason}</p>
+                                )}
+                                {nameStatus === 'available' && (
+                                    <p className="mt-1 text-xs text-emerald-600 dark:text-emerald-400">{name}.apps.privasys.org is available</p>
+                                )}
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-black/60 dark:text-white/60 mb-1">Container port</label>
+                                <input
+                                    type="number"
+                                    placeholder="8080"
+                                    value={containerPort}
+                                    onChange={(e) => setContainerPort(e.target.value)}
+                                    disabled={submitting}
+                                    className="w-32 px-3 py-2 rounded-lg border border-black/10 dark:border-white/10 bg-transparent text-sm focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/20 disabled:opacity-50"
+                                />
+                                <p className="mt-1 text-xs text-black/40 dark:text-white/40">The port your container listens on.</p>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <button
+                                    type="button"
+                                    onClick={handleSubmit}
+                                    disabled={!canSubmit}
+                                    className="px-5 py-2 text-sm font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-80 disabled:opacity-40 transition-opacity"
+                                >
+                                    {submitting ? 'Creating\u2026' : 'Create application'}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => { setMode('github'); setContainerImage(''); setName(''); }}
+                                    className="text-sm text-black/50 dark:text-white/50 hover:underline"
+                                >
+                                    Use GitHub instead
+                                </button>
                             </div>
                         </div>
                     ) : (
@@ -539,6 +638,13 @@ export default function NewApplicationPage() {
                                 >
                                     Use GitHub instead
                                 </button>
+                                <button
+                                    type="button"
+                                    onClick={() => { setMode('package'); setFile(null); setName(''); setAppType('container'); }}
+                                    className="text-sm text-black/50 dark:text-white/50 hover:underline"
+                                >
+                                    Use a package URL
+                                </button>
                             </div>
                         </div>
                     )}
@@ -551,21 +657,25 @@ export default function NewApplicationPage() {
                     </div>
                 </PipelineStep>
 
-                <PipelineStep step={3} active={false} done={false}>
-                    <h2 className="text-lg font-semibold">{appType === 'container' ? 'Image build' : 'Reproducible build'}</h2>
-                    <div className="mt-1 text-sm text-black/50 dark:text-white/50">
-                        {appType === 'container'
-                            ? 'Build your container image via GitHub Actions.'
-                            : 'Compile your application into a .cwasm artifact via GitHub Actions.'}
-                    </div>
-                </PipelineStep>
+                {mode !== 'package' && (
+                    <PipelineStep step={3} active={false} done={false}>
+                        <h2 className="text-lg font-semibold">{appType === 'container' ? 'Image build' : 'Reproducible build'}</h2>
+                        <div className="mt-1 text-sm text-black/50 dark:text-white/50">
+                            {appType === 'container'
+                                ? 'Build your container image via GitHub Actions.'
+                                : 'Compile your application into a .cwasm artifact via GitHub Actions.'}
+                        </div>
+                    </PipelineStep>
+                )}
 
-                <PipelineStep step={4} active={false} done={false} last>
+                <PipelineStep step={mode === 'package' ? 3 : 4} active={false} done={false} last>
                     <h2 className="text-lg font-semibold">Ready</h2>
                     <div className="mt-1 text-sm text-black/50 dark:text-white/50">
-                        {appType === 'container'
-                            ? 'Your container is built and ready to deploy to a TDX enclave.'
-                            : 'Your application is built and ready to deploy.'}
+                        {mode === 'package'
+                            ? 'Your container image is ready to deploy to a TDX enclave.'
+                            : appType === 'container'
+                                ? 'Your container is built and ready to deploy to a TDX enclave.'
+                                : 'Your application is built and ready to deploy.'}
                     </div>
                 </PipelineStep>
             </div>
@@ -575,6 +685,12 @@ export default function NewApplicationPage() {
                 <div className="mt-2 flex items-center gap-2 text-sm text-black/50 dark:text-white/50">
                     <div className="w-4 h-4 border-2 border-black/20 dark:border-white/20 border-t-black dark:border-t-white rounded-full animate-spin" />
                     Creating application from {parsed?.owner}/{parsed?.repo}{'\u2026'}
+                </div>
+            )}
+            {submitting && mode === 'package' && (
+                <div className="mt-2 flex items-center gap-2 text-sm text-black/50 dark:text-white/50">
+                    <div className="w-4 h-4 border-2 border-black/20 dark:border-white/20 border-t-black dark:border-t-white rounded-full animate-spin" />
+                    Creating application from package{'\u2026'}
                 </div>
             )}
         </div>
