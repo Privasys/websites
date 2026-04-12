@@ -399,10 +399,10 @@ export function listDeployments(token: string, appId: string): Promise<AppDeploy
     return request<AppDeployment[]>(`/api/v1/apps/${encodeURIComponent(appId)}/deployments`, token);
 }
 
-export function deployVersion(token: string, appId: string, versionId: string, enclaveId: string): Promise<AppDeployment> {
+export function deployVersion(token: string, appId: string, versionId: string, enclaveId: string, runtimeEnv?: Record<string, string>): Promise<AppDeployment> {
     return request<AppDeployment>(`/api/v1/apps/${encodeURIComponent(appId)}/versions/${encodeURIComponent(versionId)}/deploy`, token, {
         method: 'POST',
-        body: JSON.stringify({ enclave_id: enclaveId })
+        body: JSON.stringify({ enclave_id: enclaveId, runtime_env: runtimeEnv })
     });
 }
 

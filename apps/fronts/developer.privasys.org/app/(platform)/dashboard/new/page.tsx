@@ -93,6 +93,7 @@ export default function NewApplicationPage() {
     // Container-specific fields
     const [containerImage, setContainerImage] = useState('');
     const [containerPort, setContainerPort] = useState('8080');
+    const [envVars, setEnvVars] = useState<{ key: string; value: string; secret: boolean }[]>([]);
 
 
     // Name availability check
@@ -187,8 +188,10 @@ export default function NewApplicationPage() {
                 commit_url: mode === 'github' ? commitUrl.trim() : undefined,
                 app_type: mode === 'package' ? 'container' : appType,
                 container_image: mode === 'package' ? containerImage.trim() : (appType === 'container' && containerImage ? containerImage : undefined),
-                container_port: (mode === 'package' || appType === 'container') && containerPort ? parseInt(containerPort, 10) : undefined
-
+                container_port: (mode === 'package' || appType === 'container') && containerPort ? parseInt(containerPort, 10) : undefined,
+                container_env: mode === 'package' && envVars.length > 0
+                    ? Object.fromEntries(envVars.filter(e => e.key.trim()).map(e => [e.key.trim(), e.value]))
+                    : undefined,
             });
 
             if (mode === 'manual' && file) {
@@ -201,7 +204,7 @@ export default function NewApplicationPage() {
             setError(e instanceof Error ? e.message : 'Something went wrong');
             setSubmitting(false);
         }
-    }, [session?.accessToken, mode, name, parsed, file, commitUrl, submitting, appType, containerPort, containerImage]);
+    }, [session?.accessToken, mode, name, parsed, file, commitUrl, submitting, appType, containerPort, containerImage, envVars]);
 
     const isGithubValid = mode === 'github' && !!parsed && !!name.trim() && nameStatus !== 'taken';
     const isManualValid = mode === 'manual' && !!name && !!file && nameStatus !== 'taken';
@@ -532,6 +535,85 @@ export default function NewApplicationPage() {
                                     className="w-32 px-3 py-2 rounded-lg border border-black/10 dark:border-white/10 bg-transparent text-sm focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/20 disabled:opacity-50"
                                 />
                                 <p className="mt-1 text-xs text-black/40 dark:text-white/40">The port your container listens on.</p>
+                            </div>
+                            <div>
+                                <div className="flex items-center justify-between mb-1">
+                                    <label className="block text-xs font-medium text-black/60 dark:text-white/60">Environment variables</label>
+                                    <button
+                                        type="button"
+                                        onClick={() => setEnvVars([...envVars, { key: '', value: '', secret: false }])}
+                                        disabled={submitting}
+                                        className="text-xs text-black/50 dark:text-white/50 hover:text-black dark:hover:text-white transition-colors disabled:opacity-50"
+                                    >
+                                        + Add variable
+                                    </button>
+                                </div>
+                                {envVars.length === 0 ? (
+                                    <p className="text-xs text-black/30 dark:text-white/30">
+                                        No environment variables configured. Add variables like MODEL_NAME, HF_TOKEN, etc.
+                                    </p>
+                                ) : (
+                                    <div className="space-y-2">
+                                        {envVars.map((env, i) => (
+                                            <div key={i} className="flex gap-2 items-start">
+                                                <input
+                                                    type="text"
+                                                    placeholder="KEY"
+                                                    value={env.key}
+                                                    onChange={(e) => {
+                                                        const next = [...envVars];
+                                                        next[i] = { ...next[i], key: e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, '') };
+                                                        setEnvVars(next);
+                                                    }}
+                                                    disabled={submitting}
+                                                    className="w-[140px] px-2.5 py-1.5 rounded-md border border-black/10 dark:border-white/10 bg-transparent text-xs font-mono focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/20 placeholder:text-black/25 dark:placeholder:text-white/25 disabled:opacity-50"
+                                                />
+                                                <div className="flex-1 relative">
+                                                    <input
+                                                        type={env.secret ? 'password' : 'text'}
+                                                        placeholder="value"
+                                                        value={env.value}
+                                                        onChange={(e) => {
+                                                            const next = [...envVars];
+                                                            next[i] = { ...next[i], value: e.target.value };
+                                                            setEnvVars(next);
+                                                        }}
+                                                        disabled={submitting}
+                                                        className="w-full px-2.5 py-1.5 pr-8 rounded-md border border-black/10 dark:border-white/10 bg-transparent text-xs font-mono focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/20 placeholder:text-black/25 dark:placeholder:text-white/25 disabled:opacity-50"
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            const next = [...envVars];
+                                                            next[i] = { ...next[i], secret: !next[i].secret };
+                                                            setEnvVars(next);
+                                                        }}
+                                                        className="absolute right-2 top-1/2 -translate-y-1/2 text-black/30 dark:text-white/30 hover:text-black/60 dark:hover:text-white/60"
+                                                        title={env.secret ? 'Show value' : 'Hide value'}
+                                                    >
+                                                        {env.secret ? (
+                                                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M13.875 18.825A10.05 10.05 0 0112 19c-4.486 0-8.101-2.983-9.534-7.175a.992.992 0 010-.65C3.263 8.42 5.36 6.17 8.125 5.175M9.878 9.878a3 3 0 104.243 4.243M3 3l18 18" /></svg>
+                                                        ) : (
+                                                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" /><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                                                        )}
+                                                    </button>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setEnvVars(envVars.filter((_, j) => j !== i))}
+                                                    disabled={submitting}
+                                                    className="px-1.5 py-1.5 text-black/30 dark:text-white/30 hover:text-red-500 transition-colors disabled:opacity-50"
+                                                    title="Remove"
+                                                >
+                                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" /></svg>
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                                <p className="mt-1.5 text-xs text-black/40 dark:text-white/40">
+                                    These variables are passed to the container and measured into the attestation Merkle tree.
+                                </p>
                             </div>
                             <div className="flex items-center gap-3">
                                 <button
