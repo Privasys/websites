@@ -350,7 +350,6 @@ export default function AppDetailPage() {
 
     // Full detail view — shown once the app has reached a terminal state
     const hasActiveDeployment = activeDeployments.length > 0;
-    const hasContainerMcp = app.app_type === 'container' && app.container_mcp;
     const containerUI = app.container_mcp?.ui as { url: string; label?: string } | undefined;
     const TABS: { key: Tab; label: string; count?: number; danger?: boolean }[] = [
         { key: 'overview', label: 'Overview' },
@@ -358,12 +357,8 @@ export default function AppDetailPage() {
         { key: 'store', label: 'App Store' },
         ...(hasActiveDeployment ? [
             { key: 'attestation' as Tab, label: 'Attestation' },
-            ...(app.app_type !== 'container' || hasContainerMcp ? [
-                { key: 'api' as Tab, label: 'API Testing' }
-            ] : []),
-            ...(app.app_type !== 'container' || hasContainerMcp ? [
-                { key: 'mcp' as Tab, label: 'AI Tools' }
-            ] : []),
+            { key: 'api' as Tab, label: 'API Testing' },
+            { key: 'mcp' as Tab, label: 'AI Tools' },
             ...(containerUI?.url ? [
                 { key: 'ui' as Tab, label: containerUI.label || 'App UI' }
             ] : [])
@@ -381,7 +376,7 @@ export default function AppDetailPage() {
                     </p>
                 </div>
                 <div className="flex items-center gap-2">
-                    {hasActiveDeployment && (app.app_type !== 'container' || hasContainerMcp) && (
+                    {hasActiveDeployment && (
                         <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 text-xs font-medium rounded-full bg-violet-100 text-violet-800 dark:bg-violet-900/30 dark:text-violet-300">
                             <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
                             MCP
@@ -596,7 +591,7 @@ function OverviewTab({ app, versions, builds, deployments, deleting, onDelete }:
             )}
 
             {/* MCP tools banner — shown for deployed apps with MCP tools */}
-            {activeDeployments.length > 0 && (app.app_type !== 'container' || (app.container_mcp)) && (
+            {activeDeployments.length > 0 && (
                 <section className="p-4 rounded-xl border border-violet-200 dark:border-violet-800 bg-violet-50/50 dark:bg-violet-900/10 flex items-center justify-between">
                     <div className="flex items-center gap-3">
                         <svg className="w-5 h-5 text-violet-600 dark:text-violet-400 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
@@ -1275,7 +1270,12 @@ function AttestationTab({ appId, token, deployments, versions }: { appId: string
                                         </div>
                                         <code className="text-[11px] bg-black/5 dark:bg-white/5 px-2 py-1 rounded block mt-1 font-mono break-all">
                                             {TEXT_OIDS.has(ext.oid) && hexToText(ext.value_hex)
-                                                ? <><span className="text-black/70 dark:text-white/70">{hexToText(ext.value_hex)}</span> <span className="text-black/25 dark:text-white/25">({ext.value_hex})</span></>
+                                                ? (() => {
+                                                    let decoded = hexToText(ext.value_hex)!;
+                                                    // Strip @sha256:... from Container Image Ref — digest is already shown in OID 3.2
+                                                    if (ext.oid === '1.3.6.1.4.1.65230.3.3') decoded = decoded.replace(/@sha256:[0-9a-f]+$/i, '');
+                                                    return <span className="text-black/70 dark:text-white/70">{decoded}</span>;
+                                                })()
                                                 : ext.value_hex}
                                         </code>
                                         <div className="flex items-center gap-2 mt-1">
