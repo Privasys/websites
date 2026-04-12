@@ -50,6 +50,14 @@ export default defineConfig({
             use: {
                 storageState: AUTH_FILE
             }
+        },
+        {
+            name: 'gemma4',
+            testMatch: 'gemma4-deploy.spec.ts',
+            dependencies: ['auth-setup'],
+            use: {
+                storageState: AUTH_FILE
+            }
         }
     ]
 });
