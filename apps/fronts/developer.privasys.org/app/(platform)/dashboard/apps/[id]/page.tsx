@@ -2780,7 +2780,31 @@ function AppUITab({ appId, appName, hostname, token, containerMcp, onMcpUpdate }
     const [editUrl, setEditUrl] = useState(currentUrl);
     const [saving, setSaving] = useState(false);
     const [iframeKey, setIframeKey] = useState(0);
+    const [htmlContent, setHtmlContent] = useState<string | null>(null);
+    const [fetchError, setFetchError] = useState<string | null>(null);
     const urlChanged = editUrl !== currentUrl;
+
+    // Fetch UI HTML with auth token (iframe src cannot carry Authorization header)
+    useEffect(() => {
+        let cancelled = false;
+        setHtmlContent(null);
+        setFetchError(null);
+        fetch(iframeSrc, {
+            headers: { Authorization: `Bearer ${token}` },
+        })
+            .then(async (res) => {
+                if (cancelled) return;
+                if (!res.ok) {
+                    setFetchError(await res.text());
+                    return;
+                }
+                setHtmlContent(await res.text());
+            })
+            .catch((err) => {
+                if (!cancelled) setFetchError(String(err));
+            });
+        return () => { cancelled = true; };
+    }, [iframeSrc, token, iframeKey]);
 
     const handleIframeLoad = useCallback((e: React.SyntheticEvent<HTMLIFrameElement>) => {
         const iframe = e.currentTarget;
@@ -2823,14 +2847,6 @@ function AppUITab({ appId, appName, hostname, token, containerMcp, onMcpUpdate }
                     <p className="text-sm text-black/50 dark:text-white/50">
                         UI fetched on-demand from the URL below. Override it to test a new version without redeploying.
                     </p>
-                    <a
-                        href={iframeSrc}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="shrink-0 text-sm text-blue-600 dark:text-blue-400 hover:underline"
-                    >
-                        Open in new tab
-                    </a>
                 </div>
                 <div className="flex items-center gap-2">
                     <input
@@ -2851,15 +2867,20 @@ function AppUITab({ appId, appName, hostname, token, containerMcp, onMcpUpdate }
                     )}
                 </div>
             </div>
-            <iframe
-                key={iframeKey}
-                src={iframeSrc}
-                onLoad={handleIframeLoad}
-                sandbox="allow-scripts allow-forms"
-                className="w-full rounded-xl border border-black/10 dark:border-white/10"
-                style={{ minHeight: '600px', height: '80vh' }}
-                title={`${appName} UI`}
-            />
+            {fetchError && (
+                <p className="text-sm text-red-600 dark:text-red-400">{fetchError}</p>
+            )}
+            {htmlContent != null && (
+                <iframe
+                    key={iframeKey}
+                    srcDoc={htmlContent}
+                    onLoad={handleIframeLoad}
+                    sandbox="allow-scripts allow-forms"
+                    className="w-full rounded-xl border border-black/10 dark:border-white/10"
+                    style={{ minHeight: '600px', height: '80vh' }}
+                    title={`${appName} UI`}
+                />
+            )}
         </div>
     );
 }
