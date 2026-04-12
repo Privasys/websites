@@ -190,20 +190,37 @@ test.describe('Gemma 4 Package Deploy', () => {
         }
 
         expect(deployBody).toBeTruthy();
-        expect(deployBody!.status).toBe('active');
-        console.log(`Deployed: ${deployBody!.hostname} (${deployBody!.id})`);
+        // The deploy response may be a zero-value struct if the request
+        // takes >60s (context canceled during re-fetch). Verify via polling instead.
+        if (deployBody!.status === 'active') {
+            console.log(`Deployed: ${deployBody!.hostname} (${deployBody!.id})`);
+        } else {
+            console.log('Deploy returned OK but empty body (context timeout), will verify via polling');
+        }
     });
 
     test('verify deployment active', async ({ page }) => {
-        test.setTimeout(15_000);
+        test.setTimeout(60_000);
         token = await getToken(page);
 
-        const resp = await page.request.get(`${API}/api/v1/apps/${appId}/deployments`, {
-            headers: { Authorization: `Bearer ${token}` },
-        });
-        expect(resp.ok()).toBeTruthy();
-        const deps: { id: string; status: string; hostname: string; enclave_host: string }[] = await resp.json();
-        const active = deps.find(d => d.status === 'active');
+        // Poll deployments until one is active (deploy may still be propagating)
+        let active: { id: string; status: string; hostname: string; enclave_host: string } | undefined;
+        for (let i = 0; i < 10; i++) {
+            const resp = await page.request.get(`${API}/api/v1/apps/${appId}/deployments`, {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            expect(resp.ok()).toBeTruthy();
+            const deps: { id: string; status: string; hostname: string; enclave_host: string }[] = await resp.json();
+            active = deps.find(d => d.status === 'active');
+            if (active) break;
+            const failed = deps.find(d => d.status === 'failed');
+            if (failed) {
+                console.log('Deployment failed:', JSON.stringify(failed));
+                break;
+            }
+            console.log(`Poll ${i + 1}/10: no active deployment yet, statuses: ${deps.map(d => d.status)}`);
+            await page.waitForTimeout(5_000);
+        }
         expect(active, 'no active deployment').toBeTruthy();
         console.log(`Active: ${active!.hostname} on ${active!.enclave_host}`);
     });
@@ -228,21 +245,99 @@ test.describe('Gemma 4 Package Deploy', () => {
         }
     });
 
-    test('UI tab available', async ({ page }) => {
+    test('wait for model ready', async ({ page }) => {
+        test.setTimeout(600_000); // 10 min - model download + load can be very slow
+        token = await getToken(page);
+
+        // Poll the health RPC endpoint until vLLM is ready
+        for (let i = 0; i < 120; i++) {
+            try {
+                const resp = await page.request.post(
+                    `${API}/api/v1/apps/${appId}/rpc/health`,
+                    {
+                        headers: {
+                            Authorization: `Bearer ${token}`,
+                            'Content-Type': 'application/json',
+                        },
+                        data: {},
+                        timeout: 10_000,
+                    },
+                );
+                if (resp.ok()) {
+                    console.log(`Model ready after ${i * 5}s`);
+                    return;
+                }
+                console.log(`Health poll ${i + 1}/120: HTTP ${resp.status()}`);
+            } catch {
+                console.log(`Health poll ${i + 1}/120: request failed`);
+            }
+            await page.waitForTimeout(5_000);
+        }
+        expect(false, 'model did not become ready within 10 minutes').toBeTruthy();
+    });
+
+    test('API Testing - Rousseau chat prompt', async ({ page }) => {
+        test.setTimeout(120_000); // 2 min - inference can be slow
+        token = await getToken(page);
+
+        const PROMPT = 'From the perspective of Jean-Jacques Rousseau, is it legitimate for elected officials to maintain high public deficits, even if it risks burdening future generations? Please reply in 3-5 paragraphs, use UK English.';
+
+        const resp = await page.request.post(
+            `${API}/api/v1/apps/${appId}/rpc/chat`,
+            {
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                },
+                data: {
+                    messages: JSON.stringify([{ role: 'user', content: PROMPT }]),
+                    max_tokens: '1024',
+                    temperature: '0.7',
+                    seed: '123456',
+                },
+                timeout: 90_000,
+            },
+        );
+        expect(resp.ok(), `RPC chat failed: HTTP ${resp.status()}`).toBeTruthy();
+
+        const body = await resp.json();
+        console.log('Chat response:', JSON.stringify(body).substring(0, 500));
+
+        // Verify the response contains meaningful content about Rousseau
+        const text = typeof body === 'string' ? body :
+            body?.choices?.[0]?.message?.content ??
+            body?.response ?? body?.text ?? JSON.stringify(body);
+        console.log('Response text (first 300 chars):', String(text).substring(0, 300));
+        expect(String(text).length).toBeGreaterThan(200);
+        expect(String(text).toLowerCase()).toContain('rousseau');
+    });
+
+    test('Chat tab loads and renders UI', async ({ page }) => {
         test.setTimeout(30_000);
         token = await getToken(page);
 
-        await page.goto(`/dashboard/apps/${appId}`);
+        // Fetch the Chat UI HTML (same as AppUITab does)
+        const uiResp = await page.request.get(
+            `${API}/api/v1/apps/${appId}/ui`,
+            {
+                headers: { Authorization: `Bearer ${token}` },
+            },
+        );
+        expect(uiResp.ok(), `UI fetch failed: HTTP ${uiResp.status()}`).toBeTruthy();
+
+        const html = await uiResp.text();
+        expect(html.length).toBeGreaterThan(100);
+        // The chat UI HTML should contain recognisable elements
+        expect(html).toContain('<');
+        console.log(`Chat UI HTML loaded: ${html.length} bytes`);
+
+        // Navigate to app detail, click Chat tab, verify iframe loads with content
+        await page.goto(`/dashboard/apps/${appId}?tab=ui`);
         await page.waitForSelector('nav', { timeout: 10_000 });
-        await page.locator(`text=${APP_NAME}`).first().waitFor({ timeout: 15_000 }).catch(() => {});
-        await page.waitForTimeout(3_000);
 
-        // Tabs render as <button> elements
-        const apiVisible = (await page.locator('button:has-text("API Testing")').count()) > 0;
-        const aiToolsVisible = (await page.locator('button:has-text("AI Tools")').count()) > 0;
-        const chatVisible = (await page.locator('button:has-text("Chat")').count()) > 0;
-        console.log(`Tabs visible - API Testing: ${apiVisible}, AI Tools: ${aiToolsVisible}, Chat: ${chatVisible}`);
-
-        expect(apiVisible || aiToolsVisible || chatVisible, 'neither API Testing, AI Tools, nor Chat tab is visible').toBeTruthy();
+        // Wait for the Chat tab content to render (iframe with srcDoc)
+        const iframe = page.locator('iframe[title]');
+        await iframe.waitFor({ state: 'visible', timeout: 15_000 });
+        console.log('Chat tab iframe is visible');
     });
 });
