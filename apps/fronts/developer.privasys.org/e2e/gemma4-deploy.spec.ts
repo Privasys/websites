@@ -2,7 +2,8 @@
  * Gemma 4 package deployment - e2e test.
  *
  * Deploys the confidential-ai-gemma4 container image (pre-built package)
- * to the ai-gpu TDX enclave with HF_TOKEN as a runtime env var.
+ * to the ai-gpu TDX enclave. Model weights are pre-loaded on a persistent
+ * disk and bind-mounted at /models/ by the management service.
  *
  * Run:
  *   cd websites
@@ -16,7 +17,6 @@ const API = process.env.NEXT_PUBLIC_API_URL || 'https://api-test.developer.priva
 const APP_NAME = 'e2e-gemma4-pkg';
 const CONTAINER_IMAGE = 'ghcr.io/privasys/confidential-ai-gemma4:latest';
 const CONTAINER_PORT = 8080;
-const HF_TOKEN = process.env.HF_TOKEN || '';
 
 let token: string;
 let appId: string;
@@ -149,7 +149,8 @@ test.describe('Gemma 4 Package Deploy', () => {
         expect(tdx, 'ai-gpu TDX enclave not found or not active').toBeTruthy();
         console.log(`Deploying to: ${tdx!.name} (${tdx!.id})`);
 
-        // Deploy with HF_TOKEN and MODEL_NAME as runtime env
+        // Deploy - model weights are pre-loaded on a persistent disk,
+        // bind-mounted at /models/ by the management service.
         let deployBody: { id: string; status: string; hostname: string } | undefined;
         for (let attempt = 0; attempt < 6; attempt++) {
             const resp = await page.request.post(
@@ -161,10 +162,7 @@ test.describe('Gemma 4 Package Deploy', () => {
                     },
                     data: {
                         enclave_id: tdx!.id,
-                        runtime_env: {
-                            HF_TOKEN: HF_TOKEN,
-                            MODEL_NAME: 'google/gemma-4-31b-it',
-                        },
+                        runtime_env: {},
                     },
                     timeout: 660_000,
                 },
