@@ -179,9 +179,15 @@ test.describe('Gemma 4 Package Deploy', () => {
             }
 
             // Retry on conflict (container already exists from a previous failed run)
-            if (respText.includes('already loaded') || respText.includes('already exists')) {
-                console.log('Container conflict, waiting 15s before retry...');
-                await page.waitForTimeout(15_000);
+            // or transient errors (502/500 during image pull, service unavailable)
+            const retryable = respText.includes('already loaded') ||
+                respText.includes('already exists') ||
+                respText.includes('service unavailable') ||
+                resp.status() === 502 ||
+                resp.status() === 500;
+            if (retryable) {
+                console.log(`Retryable error (attempt ${attempt + 1}), waiting 30s...`);
+                await page.waitForTimeout(30_000);
                 continue;
             }
 
@@ -200,12 +206,12 @@ test.describe('Gemma 4 Package Deploy', () => {
     });
 
     test('verify deployment active', async ({ page }) => {
-        test.setTimeout(60_000);
+        test.setTimeout(180_000);
         token = await getToken(page);
 
         // Poll deployments until one is active (deploy may still be propagating)
         let active: { id: string; status: string; hostname: string; enclave_host: string } | undefined;
-        for (let i = 0; i < 10; i++) {
+        for (let i = 0; i < 30; i++) {
             const resp = await page.request.get(`${API}/api/v1/apps/${appId}/deployments`, {
                 headers: { Authorization: `Bearer ${token}` },
             });
@@ -218,7 +224,7 @@ test.describe('Gemma 4 Package Deploy', () => {
                 console.log('Deployment failed:', JSON.stringify(failed));
                 break;
             }
-            console.log(`Poll ${i + 1}/10: no active deployment yet, statuses: ${deps.map(d => d.status)}`);
+            console.log(`Poll ${i + 1}/30: no active deployment yet, statuses: ${deps.map(d => d.status)}`);
             await page.waitForTimeout(5_000);
         }
         expect(active, 'no active deployment').toBeTruthy();
@@ -290,17 +296,20 @@ test.describe('Gemma 4 Package Deploy', () => {
                     'Content-Type': 'application/json',
                 },
                 data: {
-                    messages: JSON.stringify([{ role: 'user', content: PROMPT }]),
-                    max_tokens: '1024',
-                    temperature: '0.7',
-                    seed: '123456',
+                    messages: [{ role: 'user', content: PROMPT }],
+                    max_tokens: 1024,
+                    temperature: 0.7,
+                    seed: 123456,
                 },
                 timeout: 90_000,
             },
         );
-        expect(resp.ok(), `RPC chat failed: HTTP ${resp.status()}`).toBeTruthy();
 
-        const body = await resp.json();
+        const rawText = await resp.text();
+        console.log(`Chat HTTP ${resp.status()}, body length: ${rawText.length}, first 500: ${rawText.substring(0, 500)}`);
+        expect(resp.ok(), `RPC chat failed: HTTP ${resp.status()}, body: ${rawText.substring(0, 300)}`).toBeTruthy();
+
+        const body = JSON.parse(rawText);
         console.log('Chat response:', JSON.stringify(body).substring(0, 500));
 
         // Verify the response contains meaningful content about Rousseau
