@@ -10,7 +10,7 @@ Enclave OS is a family of open-source runtimes that adds remote attestation and 
 Enclave OS supports two workload models depending on your hardware:
 
 - **WebAssembly modules** (Enclave OS Mini): Compile your application logic to WASM and load it into an SGX enclave. The enclave provides RA-TLS ingress, HTTPS egress, sealed storage, and a JWT-authenticated vault. Applications written in Rust, C/C++, Go, Python, or any language with a WASM target can run inside the enclave without modification.
-- **OCI containers** (Enclave OS Virtual): Deploy standard Docker/OCI container images inside a Confidential VM. An attested reverse proxy (ra-tls-caddy) terminates TLS at the edge, and a workload launcher manages containers via containerd. No changes to your container images are required.
+- **OCI containers** (Enclave OS Virtual): Deploy standard Docker/OCI container images inside a Confidential VM. An attested reverse proxy terminates TLS at the edge, and a workload launcher manages containers via containerd. No changes to your container images are required.
 
 In both cases, clients verify the server's identity through a standard TLS handshake. The attestation evidence is embedded directly in the X.509 certificate, so no custom protocol or out-of-band verification channel is needed.
 

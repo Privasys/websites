@@ -33,7 +33,7 @@ When a container load request arrives:
 2. **Image pull.** containerd pulls the OCI image. The digest is verified against the `@sha256:...` reference in the request. If the digest does not match, the pull is rejected.
 3. **Container creation.** containerd creates the container with the specified environment variables, port mappings, and volume mounts.
 4. **Merkle tree update.** A per-container Merkle tree is computed from the image digest, environment variables, volume configuration, and port mappings. The platform Merkle tree is also recomputed to include the new container.
-5. **Caddy route.** A new reverse proxy route is registered with ra-tls-caddy via its admin API. The container's hostname (`<name>.<machine-name>.<hostname>`) is bound to a fresh RA-TLS certificate carrying per-container OID extensions.
+5. **Caddy route.** A new reverse proxy route is registered with Caddy via its admin API. The container's hostname (`<name>.<machine-name>.<hostname>`) is bound to a fresh RA-TLS certificate carrying per-container OID extensions.
 6. **Health check.** The launcher monitors the container's health endpoint. Once healthy, the container is marked as ready.
 
 Containers can be unloaded with `DELETE /api/v1/containers/<name>`, which reverses the process: stop the container, remove the Caddy route, and recompute Merkle trees.
