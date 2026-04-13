@@ -3,7 +3,7 @@
  *
  * Deploys the confidential-ai-gemma4 container image (pre-built package)
  * to the ai-gpu TDX enclave. Model weights are pre-loaded on a persistent
- * disk and bind-mounted at /models/ by the management service.
+ * disk, bind-mounted at /models/ via the image's ai.privasys.volume label.
  *
  * Run:
  *   cd websites
@@ -150,7 +150,7 @@ test.describe('Gemma 4 Package Deploy', () => {
         console.log(`Deploying to: ${tdx!.name} (${tdx!.id})`);
 
         // Deploy - model weights are pre-loaded on a persistent disk,
-        // bind-mounted at /models/ by the management service.
+        // bind-mounted at /models/ via the image's ai.privasys.volume label.
         let deployBody: { id: string; status: string; hostname: string } | undefined;
         for (let attempt = 0; attempt < 6; attempt++) {
             const resp = await page.request.post(
