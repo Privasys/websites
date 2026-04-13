@@ -133,7 +133,7 @@ test.describe('Gemma 4 Package Deploy', () => {
     });
 
     test('deploy to TDX enclave', async ({ page }) => {
-        test.setTimeout(180_000); // 3 min - container pull can be slow
+        test.setTimeout(720_000); // 12 min - WaitReady blocks until model loaded
         token = await getToken(page);
 
         // Find TDX enclave
@@ -166,7 +166,7 @@ test.describe('Gemma 4 Package Deploy', () => {
                             MODEL_NAME: 'google/gemma-4-31b-it',
                         },
                     },
-                    timeout: 150_000,
+                    timeout: 660_000,
                 },
             );
 

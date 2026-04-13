@@ -77,7 +77,7 @@ The `RequestContext` passed to each module's `handle()` method includes:
 
 ### Enclave OS Virtual
 
-In Virtual, ra-tls-caddy handles mutual TLS at the Caddy layer. When `client_auth` is enabled on a route, Caddy requests a client certificate during the handshake and forwards it to the container application, which performs quote extraction and verification.
+In Virtual, Caddy's RA-TLS module handles mutual TLS at the Caddy layer. When `client_auth` is enabled on a route, Caddy requests a client certificate during the handshake and forwards it to the container application, which performs quote extraction and verification.
 
 ## Client-Side Support
 

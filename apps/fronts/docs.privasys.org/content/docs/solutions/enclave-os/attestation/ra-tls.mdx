@@ -55,7 +55,7 @@ Both editions generate an X.509 leaf certificate signed by an operator-provision
 | **Signature** | ECDSA with SHA-256 | ECDSA with SHA-256 |
 | **TLS version** | 1.3 only (rustls) | 1.3 (Caddy / Go TLS) |
 | **Validity** | 5 min (challenge) / 24 h (deterministic) | 5 min (challenge) / 24 h (deterministic) |
-| **TLS stack** | rustls (pure Rust, inside SGX) | ra-tls-caddy (Go, Caddy `tls.issuance` module) |
+| **TLS stack** | rustls (pure Rust, inside SGX) | Caddy RA-TLS module (Go, Caddy `tls.issuance`) |
 
 Both editions follow the same three-tier certificate hierarchy:
 
@@ -117,7 +117,7 @@ The `rustls` configuration enforces:
 
 ### Virtual
 
-TLS is handled by ra-tls-caddy (a Caddy reverse proxy module). Caddy terminates TLS and forwards plaintext to containers on localhost. Certificate selection uses SNI, with each container hostname mapping to its own RA-TLS certificate. Certificates are cached by certmagic and auto-renewed when they expire.
+TLS is handled by Caddy's RA-TLS module (a Caddy reverse proxy module). Caddy terminates TLS and forwards plaintext to containers on localhost. Certificate selection uses SNI, with each container hostname mapping to its own RA-TLS certificate. Certificates are cached by certmagic and auto-renewed when they expire.
 
 ## Per-Workload Certificates and SNI Routing
 
@@ -166,7 +166,7 @@ The SGX quote is generated once at boot and bound to the Enclave CA's public key
 
 ### Certificate hierarchy (Virtual)
 
-In Virtual, ra-tls-caddy generates a separate RA-TLS certificate for each container hostname:
+In Virtual, the RA-TLS module generates a separate RA-TLS certificate for each container hostname:
 
 ```
 Root CA (operator-provisioned)
@@ -317,5 +317,5 @@ The Privasys [verification libraries](/solutions/platform/verification-libraries
 - [X.509 OID Scheme](/solutions/enclave-os/attestation/oids): Full reference of all Privasys OID extensions
 - [Configuration Merkle Tree](/solutions/enclave-os/attestation/merkle-tree): How configuration inputs are attested via Merkle trees
 - [Mutual RA-TLS](/solutions/enclave-os/attestation/mutual-ra-tls): Bidirectional attestation between TEEs
-- [Enclave OS Virtual Architecture](/solutions/enclave-os/enclave-os-virtual): How ra-tls-caddy generates RA-TLS certificates in Confidential VMs
+- [Enclave OS Virtual Architecture](/solutions/enclave-os/enclave-os-virtual): How the RA-TLS module generates certificates in Confidential VMs
 - [Verification Libraries](/solutions/platform/verification-libraries): Client libraries for Python, Go, Rust, TypeScript, and C#

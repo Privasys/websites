@@ -70,7 +70,7 @@ Both editions follow the same pattern: the Merkle tree is recomputed whenever th
 
 **Mini.** On enclave startup, the sealed config is unsealed, each configuration item is hashed and added as a Merkle leaf, and the RA-TLS certificate is generated. When a new WASM app is loaded, new leaves are added (app name, code hash, key source), the Merkle root is recomputed, and a fresh certificate is issued.
 
-**Virtual.** On VM boot, the platform tree is computed from the CA certificate, attestation server URLs, and runtime version. When a container is loaded via the management API, the container's image digest, environment variables, and volume configuration are hashed into a per-container tree. The platform-level combined workloads hash is also recomputed. ra-tls-caddy issues new certificates for both the container hostname and the management hostname.
+**Virtual.** On VM boot, the platform tree is computed from the CA certificate, attestation server URLs, and runtime version. When a container is loaded via the management API, the container's image digest, environment variables, and volume configuration are hashed into a per-container tree. The platform-level combined workloads hash is also recomputed. The RA-TLS module issues new certificates for both the container hostname and the management hostname.
 
 ## Verification Strategies
 

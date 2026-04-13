@@ -1,6 +1,6 @@
 ---
 title: Architecture
-description: The architecture of Enclave OS Virtual, running OCI containers inside Confidential VMs with end-to-end attestation via ra-tls-caddy.
+description: The architecture of Enclave OS Virtual, running OCI containers inside Confidential VMs with end-to-end attestation via RA-TLS.
 ---
 
 Enclave OS Virtual runs OCI containers inside Intel TDX (or AMD SEV-SNP) Confidential VMs with end-to-end attestation. Every container image digest, environment variable, volume mount, and platform configuration is measured into a deterministic Merkle tree and embedded in X.509 certificate extensions via RA-TLS. Clients can verify the full workload stack in a single TLS handshake.
@@ -40,7 +40,7 @@ Enclave OS Virtual runs OCI containers inside Intel TDX (or AMD SEV-SNP) Confide
 
 Three components run inside the Confidential VM:
 
-- **ra-tls-caddy** is a Caddy server with a custom TLS issuance module that generates RA-TLS certificates. It acts as a reverse proxy, terminating TLS at the edge and forwarding plaintext to containers on localhost. Each container gets its own hostname and its own RA-TLS certificate with per-container OID extensions.
+- **Caddy RA-TLS** is a Caddy server with a custom TLS issuance module that generates RA-TLS certificates. It acts as a reverse proxy, terminating TLS at the edge and forwarding plaintext to containers on localhost. Each container gets its own hostname and its own RA-TLS certificate with per-container OID extensions.
 - **Workload Launcher** manages the OCI container lifecycle via containerd. It pulls digest-pinned images, creates containers, runs health checks, and wires up Caddy routes dynamically.
 - **Management Server** exposes an HTTP API on localhost for loading and unloading containers at runtime, authenticated via OIDC bearer tokens. It also serves health, readiness, status, and Prometheus metrics endpoints over RA-TLS.
 
@@ -62,7 +62,7 @@ Three components run inside the Confidential VM:
 
 ## RA-TLS via Caddy
 
-ra-tls-caddy is a Caddy `tls.issuance` module that generates RA-TLS certificates inside the Confidential VM. It supports the same [deterministic and challenge-response](/solutions/enclave-os/attestation/ra-tls#deterministic-vs-challenge-mode) attestation paths as Enclave OS Mini.
+The RA-TLS module is a Caddy `tls.issuance` module that generates RA-TLS certificates inside the Confidential VM. It supports the same [deterministic and challenge-response](/solutions/enclave-os/attestation/ra-tls#deterministic-vs-challenge-mode) attestation paths as Enclave OS Mini.
 
 The module abstracts hardware-specific logic behind an `Attester` interface. Each TEE backend (TDX, SEV-SNP) lives in its own file and registers itself at init time.
 
@@ -98,7 +98,7 @@ Each container gets its own hostname derived from the workload manifest:
 - Container `myapp`: `myapp.<machine-name>.<hostname>`
 - Internal containers (e.g. databases): no external hostname, accessible only on localhost
 
-When a client connects, ra-tls-caddy selects the certificate matching the SNI hostname. Each certificate carries per-container OID extensions (image digest, config Merkle root, volume encryption status).
+When a client connects, the RA-TLS module selects the certificate matching the SNI hostname. Each certificate carries per-container OID extensions (image digest, config Merkle root, volume encryption status).
 
 ## Per-Container OID Extensions
 

@@ -64,11 +64,9 @@ Integrating RA-TLS into a web server means the server itself must generate keys 
 
 Caddy's architecture made the integration remarkably clean. We implemented a single `tls.issuance` module (`ra_tls`) that plugs into the standard certificate automation pipeline. Caddy handles caching, renewal timers, OCSP, and serving; our module just generates keys, obtains quotes, and signs certificates.
 
-### The Module: `ra-tls-caddy`
+### The RA-TLS Module
 
-The module is open source and available at:
-
-> **[github.com/Privasys/ra-tls-caddy](https://github.com/Privasys/ra-tls-caddy)**
+The RA-TLS module is part of Enclave OS Virtual:
 
 ### Architecture
 
@@ -141,9 +139,9 @@ Then build Caddy with the RA-TLS module:
 
 ```bash
 go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
-git clone https://github.com/Privasys/ra-tls-caddy.git
-cd ra-tls-caddy
-xcaddy build --with github.com/Privasys/ra-tls-caddy=.
+git clone https://github.com/Privasys/enclave-os-virtual.git
+cd enclave-os-virtual/caddy/ratls
+xcaddy build --with github.com/Privasys/enclave-os-virtual/caddy/ratls=.
 ```
 
 ### 3. Transfer the Intermediary CA Credentials
@@ -262,4 +260,4 @@ A complete verification flow would:
 
 ---
 
-*The ra-tls-caddy is open source under the AGPL-3.0 licence. Contributions and feedback are welcome at [github.com/Privasys/ra-tls-caddy](https://github.com/Privasys/ra-tls-caddy).*
+*The RA-TLS module is open source under the AGPL-3.0 licence. Contributions and feedback are welcome at [github.com/Privasys/enclave-os-virtual](https://github.com/Privasys/enclave-os-virtual).*
