@@ -287,9 +287,9 @@ test.describe('Fast Verification Suite', () => {
         expect(result.pem).toContain('BEGIN CERTIFICATE');
         expect(result.app_extensions).toBeTruthy();
         expect(result.app_extensions.length).toBeGreaterThan(0);
-        // Verify specific workload OID labels (3.x series)
+        // Verify specific workload OID labels (Privasys arc 1.3.6.1.4.1.65230.3.x)
         const oids = result.app_extensions.map((e: { oid: string }) => e.oid);
-        expect(oids).toContain('3.2'); // Workload Code Hash
+        expect(oids).toContain('1.3.6.1.4.1.65230.3.2'); // Workload Code Hash
         console.log(
             `WASM attestation: ${result.app_extensions.length} workload extensions (OIDs: ${oids.join(', ')})`,
         );
@@ -379,13 +379,13 @@ test.describe('Fast Verification Suite', () => {
         expect(result.quote.report_data).toHaveLength(128);
         // Platform cert extensions (Privasys OIDs)
         expect(result.extensions).toBeDefined();
-        // Per-workload cert extensions (3.x OIDs: config root, image digest, etc.)
+        // Per-workload cert extensions (Privasys arc 1.3.6.1.4.1.65230.3.x)
         expect(result.app_extensions).toBeDefined();
         expect(result.app_extensions.length).toBeGreaterThan(0);
-        // Verify specific workload OID labels (3.x series)
+        // Verify specific workload OID labels
         const appOids = result.app_extensions.map((e: { oid: string }) => e.oid);
-        expect(appOids).toContain('3.2'); // Image Digest
-        expect(appOids).toContain('3.1'); // Config Merkle Root
+        expect(appOids).toContain('1.3.6.1.4.1.65230.3.2'); // Image Digest
+        expect(appOids).toContain('1.3.6.1.4.1.65230.3.1'); // Config Merkle Root
         // Container image reference should be present
         expect(result.container_image).toBeTruthy();
         // Event log may not be available right after deploy
