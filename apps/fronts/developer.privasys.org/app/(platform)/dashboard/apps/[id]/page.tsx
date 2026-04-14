@@ -164,6 +164,7 @@ export default function AppDetailPage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [deleting, setDeleting] = useState(false);
+    const [deployProgress, setDeployProgress] = useState<Record<string, { stage: string; totalBytes?: number; downloadedBytes?: number }>>({});
 
     const tab = (searchParams.get('tab') as Tab) || 'overview';
     const setTab = (t: Tab) => router.push(`/dashboard/apps/${id}?tab=${t}`);
@@ -195,13 +196,41 @@ export default function AppDetailPage() {
     // Poll every 5s while app is in a transitional state (SSE fallback)
     useEffect(() => {
         const transitional = app && ['building', 'deploying', 'submitted', 'under_review'].includes(app.status);
-        if (!transitional) return;
+        // Also poll when any deployment is in "starting" status (container initialising)
+        const hasStartingDeploy = deployments?.some(d => d.status === 'starting' || d.status === 'deploying');
+        if (!transitional && !hasStartingDeploy) return;
         const interval = setInterval(load, 5000);
         return () => clearInterval(interval);
-    }, [app?.status, load]);
+    }, [app?.status, deployments, load]);
 
     useSSE(session?.accessToken, useCallback((ev) => {
-        if (ev.data.app_id === id) load();
+        if (ev.data.app_id !== id) return;
+        if (ev.event === 'deployment_progress') {
+            const depId = ev.data.deployment_id;
+            if (depId) {
+                setDeployProgress(prev => ({
+                    ...prev,
+                    [depId]: {
+                        stage: ev.data.stage || 'unknown',
+                        totalBytes: ev.data.pull_total_bytes ? Number(ev.data.pull_total_bytes) : undefined,
+                        downloadedBytes: ev.data.pull_downloaded_bytes ? Number(ev.data.pull_downloaded_bytes) : undefined,
+                    }
+                }));
+            }
+            return;
+        }
+        if (ev.event === 'deployment_update') {
+            // Clear progress for completed/failed deployments.
+            const depId = ev.data.deployment_id;
+            if (depId) {
+                setDeployProgress(prev => {
+                    const next = { ...prev };
+                    delete next[depId];
+                    return next;
+                });
+            }
+        }
+        load();
     }, [id, load]));
 
     async function handleDelete() {
@@ -434,6 +463,7 @@ export default function AppDetailPage() {
                         enclaves={enclaves}
                         token={session.accessToken}
                         onRefresh={load}
+                        deployProgress={deployProgress}
                     />
                 )}
                 {tab === 'store' && session?.accessToken && (
@@ -2479,8 +2509,9 @@ function McpToolsTab({ appId, appName, appType, hostname, token }: { appId: stri
 }
 
 // ------- Deployments Tab -------
-function DeploymentsTab({ app, deployments, versions, enclaves, token, onRefresh }: {
+function DeploymentsTab({ app, deployments, versions, enclaves, token, onRefresh, deployProgress }: {
     app: App; deployments: AppDeployment[]; versions: AppVersion[]; enclaves: Enclave[]; token: string; onRefresh: () => void;
+    deployProgress?: Record<string, { stage: string; totalBytes?: number; downloadedBytes?: number }>;
 }) {
     const versionMap = Object.fromEntries(versions.map(v => [v.id, v]));
     const enclaveMap = Object.fromEntries(enclaves.map(e => [`${e.host}:${e.port}`, e]));
@@ -2681,7 +2712,7 @@ function DeploymentsTab({ app, deployments, versions, enclaves, token, onRefresh
                         const version = versionMap[dep.version_id];
                         const enclave = enclaveMap[`${dep.enclave_host}:${dep.enclave_port}`];
                         const teeType = enclave?.tee_type;
-                        const isActive = dep.status === 'active' || dep.status === 'deploying';
+                        const isActive = dep.status === 'active' || dep.status === 'deploying' || dep.status === 'starting';
                         return (
                             <section key={dep.id} className={`p-5 rounded-xl border ${isActive ? 'border-emerald-200 dark:border-emerald-800/40 bg-emerald-50/30 dark:bg-emerald-900/5' : 'border-black/10 dark:border-white/10'}`}>
                                 <div className="flex items-center justify-between mb-3">
@@ -2689,9 +2720,10 @@ function DeploymentsTab({ app, deployments, versions, enclaves, token, onRefresh
                                         <span className={`w-2 h-2 rounded-full ${
                                             dep.status === 'active' ? 'bg-emerald-500' :
                                                 dep.status === 'deploying' ? 'bg-blue-500 animate-pulse' :
-                                                    dep.status === 'failed' ? 'bg-red-500' :
-                                                        dep.status === 'stopped' ? 'bg-gray-400' :
-                                                            'bg-yellow-500'
+                                                    dep.status === 'starting' ? 'bg-indigo-500 animate-pulse' :
+                                                        dep.status === 'failed' ? 'bg-red-500' :
+                                                            dep.status === 'stopped' ? 'bg-gray-400' :
+                                                                'bg-yellow-500'
                                         }`} />
                                         <span className="text-sm font-medium">
                                             {dep.hostname || `${dep.enclave_host}:${dep.enclave_port}`}
@@ -2724,6 +2756,31 @@ function DeploymentsTab({ app, deployments, versions, enclaves, token, onRefresh
                                         )}
                                     </div>
                                 </div>
+                                {/* Pull progress bar */}
+                                {(() => {
+                                    const progress = deployProgress?.[dep.id];
+                                    if (!progress || dep.status === 'active' || dep.status === 'stopped' || dep.status === 'failed') return null;
+                                    const { stage, totalBytes, downloadedBytes } = progress;
+                                    const pct = totalBytes && totalBytes > 0 ? Math.min(100, Math.round((downloadedBytes || 0) / totalBytes * 100)) : 0;
+                                    const formatBytes = (b: number) => b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : b >= 1e6 ? `${(b / 1e6).toFixed(0)} MB` : `${(b / 1e3).toFixed(0)} KB`;
+                                    return (
+                                        <div className="mb-3">
+                                            <div className="flex items-center justify-between text-xs text-black/50 dark:text-white/50 mb-1">
+                                                <span>{stage === 'pulling' ? 'Pulling image...' : stage === 'running' ? 'Starting container...' : stage}</span>
+                                                {totalBytes && totalBytes > 0 && (
+                                                    <span>{formatBytes(downloadedBytes || 0)} / {formatBytes(totalBytes)}</span>
+                                                )}
+                                            </div>
+                                            <div className="w-full h-1.5 bg-black/5 dark:bg-white/10 rounded-full overflow-hidden">
+                                                {stage === 'running' ? (
+                                                    <div className="h-full bg-indigo-500 rounded-full animate-pulse" style={{ width: '100%' }} />
+                                                ) : (
+                                                    <div className="h-full bg-indigo-500 rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
+                                                )}
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
                                 <div className="grid grid-cols-3 gap-3 text-xs text-black/50 dark:text-white/50">
                                     <div>
                                         <div className="text-[10px] uppercase tracking-wider text-black/30 dark:text-white/30">Enclave</div>
