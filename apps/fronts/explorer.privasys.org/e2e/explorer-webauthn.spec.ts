@@ -1,25 +1,14 @@
-import { test, expect, type Page, type CDPSession } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const screenshot = (name: string) => path.join(__dirname, 'test-results', `${name}.png`);
 
-const EXPLORER_URL = process.env.E2E_EXPLORER_URL || 'http://localhost:54281';
-const MOCK_RP_ID = new URL(EXPLORER_URL).hostname;
 const API_BASE = process.env.E2E_API_BASE || 'https://api.developer.privasys.org';
 const APP_NAME = process.env.E2E_APP_NAME || 'wasm-app';
 
-/**
- * Mock FIDO2 challenge — 32 random-looking bytes, base64url-encoded.
- * In real flow the enclave generates this; for tests we use a fixed value.
- */
-const MOCK_CHALLENGE = 'dGVzdC1jaGFsbGVuZ2UtZm9yLXBsYXl3cmlnaHQtZTJl';
-const MOCK_USER_ID = 'dGVzdC11c2VyLWlk';
 const MOCK_SESSION_TOKEN = 'mock-session-token-e2e-test';
-
-/** Credential ID assigned during registration, captured for authentication tests. */
-let registeredCredentialId = '';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -37,197 +26,99 @@ async function switchToAuthTab(page: Page) {
     await expect(page.locator('.tab-btn[data-tab="auth"]')).toHaveClass(/active/);
 }
 
-async function setupVirtualAuthenticator(page: Page): Promise<CDPSession> {
-    const cdp = await page.context().newCDPSession(page);
-    await cdp.send('WebAuthn.enable');
-    await cdp.send('WebAuthn.addVirtualAuthenticator', {
-        options: {
-            protocol: 'ctap2',
-            transport: 'internal',
-            hasResidentKey: true,
-            hasUserVerification: true,
-            isUserVerified: true,
-        },
-    });
-    return cdp;
-}
-
 /**
- * Intercept the FIDO2 proxy endpoint and return mock enclave responses.
- * This lets us test the full browser WebAuthn ceremony without a live enclave.
+ * Mock the AuthFrame IIFE loaded from privasys.id so tests run without
+ * the real SDK.  Supports signIn(), getSession(), clearSession().
  */
-async function mockFido2Proxy(page: Page) {
-    await page.route('**/api/v1/apps/*/fido2', async (route, request) => {
-        const body = JSON.parse(request.postData()!);
-
-        if (body.type === 'register_begin') {
-            await route.fulfill({
-                status: 200,
-                contentType: 'application/json',
-                body: JSON.stringify({
-                    type: 'register_options',
-                    challenge: MOCK_CHALLENGE,
-                    rp: { id: MOCK_RP_ID, name: 'Privasys Test' },
-                    user: { id: MOCK_USER_ID, name: 'test-user', display_name: 'Test User' },
-                    pub_key_cred_params: [
-                        { type: 'public-key', alg: -7 },   // ES256
-                        { type: 'public-key', alg: -257 },  // RS256
-                    ],
-                    attestation: 'none',
-                    authenticator_selection: {
-                        user_verification: 'preferred',
-                        resident_key: 'preferred',
-                    },
-                }),
-            });
-            return;
-        }
-
-        if (body.type === 'register_complete') {
-            // Save credential ID for later authentication tests
-            registeredCredentialId = body.credential_id;
-            await route.fulfill({
-                status: 200,
-                contentType: 'application/json',
-                body: JSON.stringify({
-                    type: 'register_ok',
-                    session_token: MOCK_SESSION_TOKEN,
-                }),
-            });
-            return;
-        }
-
-        if (body.type === 'authenticate_begin') {
-            const resp: Record<string, unknown> = {
-                type: 'authenticate_options',
-                challenge: MOCK_CHALLENGE,
-                rp_id: MOCK_RP_ID,
-                user_verification: 'preferred',
-            };
-            // If we have a previously registered credential, include it
-            if (registeredCredentialId) {
-                resp.allow_credentials = [{ id: registeredCredentialId, type: 'public-key' }];
-            }
-            await route.fulfill({
-                status: 200,
-                contentType: 'application/json',
-                body: JSON.stringify(resp),
-            });
-            return;
-        }
-
-        if (body.type === 'authenticate_complete') {
-            await route.fulfill({
-                status: 200,
-                contentType: 'application/json',
-                body: JSON.stringify({
-                    type: 'authenticate_ok',
-                    session_token: MOCK_SESSION_TOKEN,
-                }),
-            });
-            return;
-        }
-
-        // Unknown type → 400
+async function mockAuthFrame(page: Page, opts?: { error?: string; attestation?: Record<string, string> }) {
+    await page.route('**/privasys-auth-client.iife.js', async (route) => {
+        const errorExpr = opts?.error ? `'${opts.error.replace(/'/g, "\\'")}'` : 'null';
+        const attestationExpr = opts?.attestation ? JSON.stringify(opts.attestation) : 'null';
         await route.fulfill({
-            status: 400,
-            contentType: 'application/json',
-            body: JSON.stringify({ type: 'error', error: 'unknown type' }),
+            status: 200,
+            contentType: 'application/javascript',
+            body: `
+                window.__mockAuth = {
+                    error: ${errorExpr},
+                    attestation: ${attestationExpr},
+                    sessionToken: '${MOCK_SESSION_TOKEN}',
+                    sessionId: 'mock-session-id-e2e',
+                    session: null,
+                };
+                window.Privasys = {
+                    AuthFrame: class AuthFrame {
+                        constructor(config) {
+                            this.config = config;
+                            this.rpId = config.rpId;
+                            this.onSessionExpired = null;
+                            this.onSessionRenewed = null;
+                        }
+                        async signIn() {
+                            var m = window.__mockAuth;
+                            if (m.error) throw new Error(m.error);
+                            var result = { sessionToken: m.sessionToken, sessionId: m.sessionId };
+                            if (m.attestation) result.attestation = m.attestation;
+                            m.session = { token: m.sessionToken, authenticatedAt: Date.now() };
+                            return result;
+                        }
+                        async getSession() {
+                            return window.__mockAuth.session;
+                        }
+                        async clearSession() {
+                            window.__mockAuth.session = null;
+                        }
+                    }
+                };
+            `,
         });
     });
 }
 
 // ---------------------------------------------------------------------------
-// Tests
+// Tests — AuthFrame-based sign-in flow
 // ---------------------------------------------------------------------------
 
-test.describe('Explorer — Browser WebAuthn', () => {
+test.describe('Explorer — AuthFrame Sign-in', () => {
     test.describe.configure({ mode: 'serial' });
 
-    test('auth tab shows three-tier auth options with wallet primary', async ({ page }) => {
-        await mockFido2Proxy(page);
+    test('auth tab shows sign-in button with SDK overlay hint', async ({ page }) => {
+        await mockAuthFrame(page);
         await connectToApp(page);
         await switchToAuthTab(page);
 
-        // Tier 1 — Wallet section (primary, shown first)
-        await expect(page.locator('button', { hasText: 'Authenticate with Wallet' })).toBeVisible();
-        await expect(page.locator('.auth-method-label', { hasText: 'attestation verified' })).toBeVisible();
+        // Single sign-in button that delegates to AuthFrame overlay
+        await expect(page.locator('button', { hasText: 'Sign in' })).toBeVisible();
+        await expect(page.locator('.auth-provider-hint', { hasText: 'Opens SDK overlay' })).toBeVisible();
 
-        // Tier 2 — This device (fallback, shown below)
-        await expect(page.locator('button', { hasText: 'Register Passkey' })).toBeVisible();
-        await expect(page.locator('button', { hasText: 'Sign In' })).toBeVisible();
-        await expect(page.locator('.auth-method-label', { hasText: 'without enclave verification' })).toBeVisible();
-
-        // RP info
-        await expect(page.locator('.field-label', { hasText: 'Relying Party' })).toBeVisible();
+        // Brand section with app name
+        await expect(page.locator('.auth-brand-title')).toContainText(APP_NAME);
 
         await page.screenshot({ path: screenshot('webauthn-01-auth-idle'), fullPage: true });
     });
 
-    test('WebAuthn registration ceremony completes successfully', async ({ page }) => {
-        test.setTimeout(60_000);
-        const cdp = await setupVirtualAuthenticator(page);
-
-        await mockFido2Proxy(page);
+    test('sign-in completes and shows authenticated state', async ({ page }) => {
+        test.setTimeout(30_000);
+        await mockAuthFrame(page);
         await connectToApp(page);
         await switchToAuthTab(page);
 
-        // Click Register Passkey
-        await page.locator('button', { hasText: 'Register Passkey' }).click();
+        await page.locator('button', { hasText: 'Sign in' }).click();
 
-        // Should show registration progress
-        await expect(page.locator('h3', { hasText: 'Registering Passkey' })).toBeVisible({ timeout: 5_000 });
-        await page.screenshot({ path: screenshot('webauthn-02-registering'), fullPage: true });
+        // Should show authenticated state
+        await expect(page.locator('.auth-success-title', { hasText: 'Authenticated' })).toBeVisible({ timeout: 10_000 });
 
-        // Virtual authenticator completes the ceremony automatically.
-        // Should reach complete state.
-        await expect(page.locator('.badge', { hasText: 'Active' })).toBeVisible({ timeout: 30_000 });
-        await expect(page.locator('.field-label', { hasText: 'Session Token' })).toBeVisible();
-        await expect(page.locator('.field-label', { hasText: 'Method' })).toBeVisible();
-        await expect(page.locator('.field-value', { hasText: 'Browser WebAuthn (this device)' })).toBeVisible();
+        // Session info should be displayed
+        await expect(page.locator('.auth-session-label', { hasText: 'Session' })).toBeVisible();
 
-        await page.screenshot({ path: screenshot('webauthn-03-registered'), fullPage: true });
+        // Sign out button should be present
+        await expect(page.locator('.auth-signout-btn', { hasText: 'Sign out' })).toBeVisible();
 
-        await cdp.detach();
-    });
-
-    test('WebAuthn authentication ceremony completes successfully', async ({ page }) => {
-        test.setTimeout(60_000);
-        const cdp = await setupVirtualAuthenticator(page);
-
-        await mockFido2Proxy(page);
-        await connectToApp(page);
-        await switchToAuthTab(page);
-
-        // First register so the virtual authenticator has a credential
-        await page.locator('button', { hasText: 'Register Passkey' }).click();
-        await expect(page.locator('.badge', { hasText: 'Active' })).toBeVisible({ timeout: 30_000 });
-
-        // Sign out and authenticate
-        await page.locator('button', { hasText: 'Sign Out' }).click();
-        await expect(page.locator('button', { hasText: 'Sign In' })).toBeVisible({ timeout: 5_000 });
-
-        await page.locator('button', { hasText: 'Sign In' }).click();
-
-        // Should show signing in progress
-        await expect(page.locator('h3', { hasText: 'Signing In' })).toBeVisible({ timeout: 5_000 });
-        await page.screenshot({ path: screenshot('webauthn-04-signing-in'), fullPage: true });
-
-        // Should complete
-        await expect(page.locator('.badge', { hasText: 'Active' })).toBeVisible({ timeout: 30_000 });
-        await expect(page.locator('.field-value', { hasText: 'Browser WebAuthn (this device)' })).toBeVisible();
-
-        await page.screenshot({ path: screenshot('webauthn-05-authenticated'), fullPage: true });
-
-        await cdp.detach();
+        await page.screenshot({ path: screenshot('webauthn-02-authenticated'), fullPage: true });
     });
 
     test('session token appears in header after auth and enables API tab', async ({ page }) => {
-        test.setTimeout(60_000);
-        const cdp = await setupVirtualAuthenticator(page);
-
-        // Mock FIDO2 + also intercept a subsequent API call to verify the header
-        await mockFido2Proxy(page);
+        test.setTimeout(30_000);
+        await mockAuthFrame(page);
 
         let capturedAuthHeader = '';
         await page.route('**/api/v1/apps/*/schema', async (route, request) => {
@@ -239,126 +130,103 @@ test.describe('Explorer — Browser WebAuthn', () => {
             });
         });
 
-        // Also mock the RPC endpoint
-        await page.route('**/api/v1/apps/*/rpc/*', async (route) => {
-            await route.fulfill({
-                status: 200,
-                contentType: 'application/json',
-                body: JSON.stringify({ result: 'Hello, World!' }),
-            });
-        });
-
         await connectToApp(page);
         await switchToAuthTab(page);
 
-        // Register
-        await page.locator('button', { hasText: 'Register Passkey' }).click();
-        await expect(page.locator('.badge', { hasText: 'Active' })).toBeVisible({ timeout: 30_000 });
+        await page.locator('button', { hasText: 'Sign in' }).click();
+        await expect(page.locator('.auth-success-title', { hasText: 'Authenticated' })).toBeVisible({ timeout: 10_000 });
 
         // Switch to API tab — schema fetch should include X-App-Auth header
         await page.locator('.tab-btn[data-tab="api"]').click();
-        await page.waitForTimeout(2_000); // Wait for schema fetch
+        await page.waitForTimeout(2_000);
         expect(capturedAuthHeader).toBe(MOCK_SESSION_TOKEN);
 
-        await page.screenshot({ path: screenshot('webauthn-06-api-with-token'), fullPage: true });
-
-        await cdp.detach();
+        await page.screenshot({ path: screenshot('webauthn-03-api-with-token'), fullPage: true });
     });
 
-    test('registration error is displayed gracefully', async ({ page }) => {
-        await page.route('**/api/v1/apps/*/fido2', async (route) => {
-            await route.fulfill({
-                status: 200,
-                contentType: 'application/json',
-                body: JSON.stringify({ type: 'error', error: 'enclave not available' }),
-            });
-        });
-
+    test('sign-in error is displayed gracefully', async ({ page }) => {
+        await mockAuthFrame(page, { error: 'enclave not available' });
         await connectToApp(page);
         await switchToAuthTab(page);
 
-        await page.locator('button', { hasText: 'Register Passkey' }).click();
+        await page.locator('button', { hasText: 'Sign in' }).click();
 
-        // Should show error state
         await expect(page.locator('.auth-error')).toBeVisible({ timeout: 10_000 });
         await expect(page.locator('.auth-error')).toContainText('enclave not available');
 
-        await page.screenshot({ path: screenshot('webauthn-07-error'), fullPage: true });
+        await page.screenshot({ path: screenshot('webauthn-04-error'), fullPage: true });
     });
 
     test('sign out resets to idle state', async ({ page }) => {
-        test.setTimeout(60_000);
-        const cdp = await setupVirtualAuthenticator(page);
-        await mockFido2Proxy(page);
+        test.setTimeout(30_000);
+        await mockAuthFrame(page);
         await connectToApp(page);
         await switchToAuthTab(page);
 
-        // Register
-        await page.locator('button', { hasText: 'Register Passkey' }).click();
-        await expect(page.locator('.badge', { hasText: 'Active' })).toBeVisible({ timeout: 30_000 });
+        await page.locator('button', { hasText: 'Sign in' }).click();
+        await expect(page.locator('.auth-success-title', { hasText: 'Authenticated' })).toBeVisible({ timeout: 10_000 });
 
-        // Sign out
-        await page.locator('button', { hasText: 'Sign Out' }).click();
+        await page.locator('.auth-signout-btn', { hasText: 'Sign out' }).click();
 
-        // Should be back to idle with buttons
-        await expect(page.locator('button', { hasText: 'Register Passkey' })).toBeVisible({ timeout: 5_000 });
-        await expect(page.locator('button', { hasText: 'Sign In' })).toBeVisible();
-        await expect(page.locator('button', { hasText: 'Authenticate with Wallet' })).toBeVisible();
+        // Should be back to idle with sign-in button
+        await expect(page.locator('button', { hasText: 'Sign in' })).toBeVisible({ timeout: 5_000 });
+        await expect(page.locator('.auth-provider-hint', { hasText: 'Opens SDK overlay' })).toBeVisible();
 
-        await page.screenshot({ path: screenshot('webauthn-08-signed-out'), fullPage: true });
+        await page.screenshot({ path: screenshot('webauthn-05-signed-out'), fullPage: true });
+    });
 
-        await cdp.detach();
+    test('wallet attestation details are shown when available', async ({ page }) => {
+        test.setTimeout(30_000);
+        await mockAuthFrame(page, {
+            attestation: { mrenclave: 'abc123', mrsigner: 'def456', product_id: '1' },
+        });
+        await connectToApp(page);
+        await switchToAuthTab(page);
+
+        await page.locator('button', { hasText: 'Sign in' }).click();
+        await expect(page.locator('.auth-success-title', { hasText: 'Authenticated' })).toBeVisible({ timeout: 10_000 });
+
+        // Wallet attestation card should be visible
+        await expect(page.locator('h3', { hasText: 'Wallet Attestation' })).toBeVisible({ timeout: 5_000 });
+
+        await page.screenshot({ path: screenshot('webauthn-06-attestation-details'), fullPage: true });
     });
 });
+
+// ---------------------------------------------------------------------------
+// FIDO2 proxy endpoint tests (standard WebAuthn routed endpoints)
+// ---------------------------------------------------------------------------
 
 test.describe('Explorer — FIDO2 Proxy Endpoint', () => {
     test('FIDO2 proxy returns proper error for unknown app', async ({ request }) => {
         const response = await request.post(
-            `${API_BASE}/api/v1/apps/nonexistent-app-e2e-test/fido2`,
+            `${API_BASE}/api/v1/apps/nonexistent-app-e2e-test/fido2/register/begin`,
             {
-                data: { type: 'register_begin' },
+                data: { userName: 'test', userHandle: 'dGVzdA' },
                 headers: { 'Content-Type': 'application/json' },
                 timeout: 15_000,
             }
         );
-        // Should get 404 "app not found" (not a router 404)
         expect(response.status()).toBe(404);
         const body = await response.json();
         expect(body.error).toBe('app not found');
     });
 
-    test('FIDO2 proxy rejects invalid type', async ({ request }) => {
+    test('FIDO2 proxy rejects unknown endpoint', async ({ request }) => {
         const response = await request.post(
-            `${API_BASE}/api/v1/apps/${APP_NAME}/fido2`,
+            `${API_BASE}/api/v1/apps/${APP_NAME}/fido2/drop_tables`,
             {
-                data: { type: 'drop_tables' },
-                headers: { 'Content-Type': 'application/json' },
-                timeout: 15_000,
-            }
-        );
-        // Should reject with 400, not proxy the request
-        expect([400, 404]).toContain(response.status());
-        const body = await response.json();
-        expect(body.error).toBeTruthy();
-    });
-
-    test('FIDO2 proxy rejects missing type field', async ({ request }) => {
-        const response = await request.post(
-            `${API_BASE}/api/v1/apps/${APP_NAME}/fido2`,
-            {
-                data: { foo: 'bar' },
+                data: {},
                 headers: { 'Content-Type': 'application/json' },
                 timeout: 15_000,
             }
         );
         expect([400, 404]).toContain(response.status());
-        const body = await response.json();
-        expect(body.error).toBeTruthy();
     });
 
     test('CORS preflight allows POST to FIDO2 endpoint', async ({ request }) => {
         const response = await request.fetch(
-            `${API_BASE}/api/v1/apps/${APP_NAME}/fido2`,
+            `${API_BASE}/api/v1/apps/${APP_NAME}/fido2/register/begin`,
             {
                 method: 'OPTIONS',
                 headers: {
@@ -376,205 +244,15 @@ test.describe('Explorer — FIDO2 Proxy Endpoint', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Phase 2.5: AAGUID Enforcement (enclave currently rejects non-Privasys authenticators)
-// When the enclave is updated to accept-and-tag instead of reject,
-// these mock tests should be updated to verify the "unverified" tag.
-// ---------------------------------------------------------------------------
-
-test.describe('Explorer — Wallet Relay (Tier 1)', () => {
-    test.describe.configure({ mode: 'serial' });
-
-    test('clicking Authenticate with Wallet shows QR code and waiting state', async ({ page }) => {
-        // Mock the broker WebSocket so it stays connected but never sends messages
-        await page.routeWebSocket('**/relay*', (ws) => { ws.onMessage(() => {}); });
-
-        await connectToApp(page);
-        await switchToAuthTab(page);
-
-        await page.locator('button', { hasText: 'Authenticate with Wallet' }).click();
-
-        // Should show QR code / waiting state
-        await expect(page.locator('h3', { hasText: 'Scan with Privasys Wallet' })).toBeVisible({ timeout: 5_000 });
-        await expect(page.locator('.auth-status-text', { hasText: /waiting/i })).toBeVisible();
-
-        // Should show a session ID
-        await expect(page.locator('.field-label', { hasText: 'Session' })).toBeVisible();
-
-        // Cancel button should be present
-        await expect(page.locator('button', { hasText: 'Cancel' })).toBeVisible();
-
-        await page.screenshot({ path: screenshot('wallet-01-qr-waiting'), fullPage: true });
-    });
-
-    test('cancel button returns to idle', async ({ page }) => {
-        await page.routeWebSocket('**/relay*', (ws) => { ws.onMessage(() => {}); });
-
-        await connectToApp(page);
-        await switchToAuthTab(page);
-
-        await page.locator('button', { hasText: 'Authenticate with Wallet' }).click();
-        await expect(page.locator('h3', { hasText: 'Scan with Privasys Wallet' })).toBeVisible({ timeout: 5_000 });
-
-        await page.locator('button', { hasText: 'Cancel' }).click();
-
-        // Back to idle with auth buttons
-        await expect(page.locator('button', { hasText: 'Authenticate with Wallet' })).toBeVisible({ timeout: 5_000 });
-        await expect(page.locator('button', { hasText: 'Register Passkey' })).toBeVisible();
-
-        await page.screenshot({ path: screenshot('wallet-02-cancelled'), fullPage: true });
-    });
-});
-
-test.describe('Explorer — AAGUID Enforcement', () => {
-    test.describe.configure({ mode: 'serial' });
-
-    test('registration rejected with AAGUID error shows clear message', async ({ page }) => {
-        test.setTimeout(60_000);
-        const cdp = await setupVirtualAuthenticator(page);
-
-        // Mock FIDO2 proxy: register_begin succeeds, register_complete returns AAGUID error
-        await page.route('**/api/v1/apps/*/fido2', async (route, request) => {
-            const body = JSON.parse(request.postData()!);
-
-            if (body.type === 'register_begin') {
-                await route.fulfill({
-                    status: 200,
-                    contentType: 'application/json',
-                    body: JSON.stringify({
-                        type: 'register_options',
-                        challenge: MOCK_CHALLENGE,
-                        rp: { id: MOCK_RP_ID, name: 'Privasys Test' },
-                        user: { id: MOCK_USER_ID, name: 'test-user', display_name: 'Test User' },
-                        pub_key_cred_params: [{ type: 'public-key', alg: -7 }],
-                        attestation: 'none',
-                        authenticator_selection: {
-                            user_verification: 'preferred',
-                            resident_key: 'preferred',
-                        },
-                    }),
-                });
-                return;
-            }
-
-            if (body.type === 'register_complete') {
-                // Simulate enclave AAGUID rejection (Phase 2.5 enforcement)
-                const fakeAaguid = body.attestation_object
-                    ? '0000000000000000000000000000000000000000'
-                    : 'unknown';
-                await route.fulfill({
-                    status: 200,
-                    contentType: 'application/json',
-                    body: JSON.stringify({
-                        type: 'error',
-                        error: `authenticator AAGUID ${fakeAaguid} not in allowlist`,
-                    }),
-                });
-                return;
-            }
-
-            await route.fulfill({
-                status: 400,
-                contentType: 'application/json',
-                body: JSON.stringify({ type: 'error', error: 'unknown type' }),
-            });
-        });
-
-        await connectToApp(page);
-        await switchToAuthTab(page);
-
-        await page.locator('button', { hasText: 'Register Passkey' }).click();
-
-        // The virtual authenticator completes registration, but the enclave rejects the AAGUID
-        await expect(page.locator('.auth-error')).toBeVisible({ timeout: 30_000 });
-        await expect(page.locator('.auth-error')).toContainText('not in allowlist');
-
-        await page.screenshot({ path: screenshot('aaguid-01-rejected'), fullPage: true });
-
-        await cdp.detach();
-    });
-
-    test('AAGUID rejection does not leave stale auth state', async ({ page }) => {
-        test.setTimeout(60_000);
-        const cdp = await setupVirtualAuthenticator(page);
-
-        // Same AAGUID-rejecting mock
-        await page.route('**/api/v1/apps/*/fido2', async (route, request) => {
-            const body = JSON.parse(request.postData()!);
-            if (body.type === 'register_begin') {
-                await route.fulfill({
-                    status: 200,
-                    contentType: 'application/json',
-                    body: JSON.stringify({
-                        type: 'register_options',
-                        challenge: MOCK_CHALLENGE,
-                        rp: { id: MOCK_RP_ID, name: 'Privasys Test' },
-                        user: { id: MOCK_USER_ID, name: 'test-user', display_name: 'Test User' },
-                        pub_key_cred_params: [{ type: 'public-key', alg: -7 }],
-                        attestation: 'none',
-                        authenticator_selection: {
-                            user_verification: 'preferred',
-                            resident_key: 'preferred',
-                        },
-                    }),
-                });
-                return;
-            }
-            if (body.type === 'register_complete') {
-                await route.fulfill({
-                    status: 200,
-                    contentType: 'application/json',
-                    body: JSON.stringify({
-                        type: 'error',
-                        error: 'authenticator AAGUID 00000000 not in allowlist',
-                    }),
-                });
-                return;
-            }
-            await route.fulfill({ status: 400, body: '{}' });
-        });
-
-        await connectToApp(page);
-        await switchToAuthTab(page);
-
-        // Attempt registration — should fail
-        await page.locator('button', { hasText: 'Register Passkey' }).click();
-        await expect(page.locator('.auth-error')).toBeVisible({ timeout: 30_000 });
-
-        // After error, no stale "Active" badge
-        await expect(page.locator('.badge', { hasText: 'Active' })).not.toBeVisible();
-
-        // "Try Again" button should be visible — click it to verify reset
-        const tryAgainBtn = page.locator('button', { hasText: 'Try Again' });
-        await expect(tryAgainBtn).toBeVisible({ timeout: 5_000 });
-        await tryAgainBtn.click();
-
-        // After clicking "Try Again", auth buttons should reappear
-        await expect(page.locator('button', { hasText: 'Register Passkey' })).toBeVisible({ timeout: 10_000 });
-
-        await page.screenshot({ path: screenshot('aaguid-02-reset-after-rejection'), fullPage: true });
-
-        await cdp.detach();
-    });
-});
-
-// ---------------------------------------------------------------------------
 // Real E2E: wasm-app-example on development environment
 // ---------------------------------------------------------------------------
 
 const DEV_API_BASE = 'https://api-test.developer.privasys.org';
 const DEV_APP_NAME = 'wasm-app-example';
 
-/**
- * Connect to wasm-app-example in the development environment.
- * Selects "development" from the env dropdown, fills the app name, connects.
- */
 async function connectToDevApp(page: Page) {
     await page.goto('/');
-
-    // Select development environment
     await page.locator('#env-select').selectOption('development');
-
-    // Fill app name and connect
     await page.locator('#app-name-input').fill(DEV_APP_NAME);
     await page.locator('#connect-btn').click();
     await expect(page.locator('#connected-view')).toBeVisible({ timeout: 10_000 });
@@ -589,31 +267,18 @@ test.describe('Explorer — Real E2E (wasm-app-example / dev)', () => {
         await page.screenshot({ path: screenshot('real-e2e-01-connected'), fullPage: true });
     });
 
-    test('auth tab shows three-tier options (wallet primary, device fallback)', async ({ page }) => {
+    test('auth tab shows sign-in button', async ({ page }) => {
         await connectToDevApp(page);
         await switchToAuthTab(page);
-
-        // Tier 1 — Wallet (primary, attestation verified)
-        await expect(page.locator('button', { hasText: 'Authenticate with Wallet' })).toBeVisible();
-        await expect(page.locator('.auth-method-label', { hasText: 'attestation verified' })).toBeVisible();
-
-        // Tier 2 — This device (fallback, without enclave verification)
-        await expect(page.locator('button', { hasText: 'Register Passkey' })).toBeVisible();
-        await expect(page.locator('button', { hasText: 'Sign In' })).toBeVisible();
-        await expect(page.locator('.auth-method-label', { hasText: 'without enclave verification' })).toBeVisible();
-
-        // RP ID should reflect the dev gateway domain
-        await expect(page.locator('.field-value', { hasText: 'apps-test.privasys.org' })).toBeVisible();
-
+        await expect(page.locator('button', { hasText: 'Sign in' })).toBeVisible();
         await page.screenshot({ path: screenshot('real-e2e-02-auth-tab'), fullPage: true });
     });
 
-    test('register_begin returns valid options from real enclave', async ({ page }) => {
-        // Directly call the real FIDO2 proxy to verify the enclave responds
+    test('register/begin returns valid standard WebAuthn options from real enclave', async ({ page }) => {
         const response = await page.request.post(
-            `${DEV_API_BASE}/api/v1/apps/${DEV_APP_NAME}/fido2`,
+            `${DEV_API_BASE}/api/v1/apps/${DEV_APP_NAME}/fido2/register/begin`,
             {
-                data: { type: 'register_begin', user_name: 'e2e-test', user_handle: 'ZTJlLXRlc3Q' },
+                data: { userName: 'e2e-test', userHandle: 'ZTJlLXRlc3Q' },
                 headers: { 'Content-Type': 'application/json' },
                 timeout: 15_000,
             },
@@ -622,47 +287,23 @@ test.describe('Explorer — Real E2E (wasm-app-example / dev)', () => {
         expect(response.status()).toBe(200);
         const body = await response.json();
 
-        // Verify the enclave returned valid FIDO2 registration options
-        expect(body.type).toBe('register_options');
-        expect(body.challenge).toBeTruthy();
-        expect(body.rp).toBeTruthy();
-        expect(body.rp.id).toBeTruthy();
-        expect(body.user).toBeTruthy();
-        expect(body.pub_key_cred_params).toBeTruthy();
-        expect(body.pub_key_cred_params.length).toBeGreaterThan(0);
-        // ES256 must be supported
-        expect(body.pub_key_cred_params.some((p: { alg: number }) => p.alg === -7)).toBe(true);
-        // Enclave must request cross-platform attachment (phone-based flow)
-        expect(body.authenticator_selection?.authenticator_attachment).toBe('cross-platform');
+        // Standard WebAuthn: options nested under publicKey
+        expect(body.publicKey).toBeTruthy();
+        expect(body.publicKey.challenge).toBeTruthy();
+        expect(body.publicKey.rp).toBeTruthy();
+        expect(body.publicKey.rp.id).toBeTruthy();
+        expect(body.publicKey.user).toBeTruthy();
+        expect(body.publicKey.pubKeyCredParams).toBeTruthy();
+        expect(body.publicKey.pubKeyCredParams.length).toBeGreaterThan(0);
+        expect(body.publicKey.pubKeyCredParams.some((p: { alg: number }) => p.alg === -7)).toBe(true);
+        expect(body.publicKey.authenticatorSelection?.authenticatorAttachment).toBe('cross-platform');
     });
 
-    test('registration with non-Privasys authenticator is rejected by AAGUID enforcement', async ({ page }) => {
-        test.setTimeout(60_000);
-
-        const cdp = await setupVirtualAuthenticator(page);
-
-        await connectToDevApp(page);
-        await switchToAuthTab(page);
-
-        await page.locator('button', { hasText: 'Register Passkey' }).click();
-
-        // The virtual authenticator has a zero AAGUID (not Privasys Wallet).
-        // From localhost the browser rejects first (RP ID mismatch); in
-        // production the enclave would reject with AAGUID not in allowlist.
-        // Future: enclave will accept but tag as "unverified".
-        await expect(page.locator('.auth-error')).toBeVisible({ timeout: 30_000 });
-        await expect(page.locator('.auth-error')).toContainText(/not in allowlist|relying party/i);
-
-        await page.screenshot({ path: screenshot('real-e2e-03-aaguid-rejected'), fullPage: true });
-
-        await cdp.detach();
-    });
-
-    test('authenticate_begin returns valid options from real enclave', async ({ page }) => {
+    test('authenticate/begin returns valid standard WebAuthn options from real enclave', async ({ page }) => {
         const response = await page.request.post(
-            `${DEV_API_BASE}/api/v1/apps/${DEV_APP_NAME}/fido2`,
+            `${DEV_API_BASE}/api/v1/apps/${DEV_APP_NAME}/fido2/authenticate/begin`,
             {
-                data: { type: 'authenticate_begin' },
+                data: {},
                 headers: { 'Content-Type': 'application/json' },
                 timeout: 15_000,
             },
@@ -671,8 +312,8 @@ test.describe('Explorer — Real E2E (wasm-app-example / dev)', () => {
         expect(response.status()).toBe(200);
         const body = await response.json();
 
-        expect(body.type).toBe('authenticate_options');
-        expect(body.challenge).toBeTruthy();
-        expect(body.user_verification).toBeTruthy();
+        expect(body.publicKey).toBeTruthy();
+        expect(body.publicKey.challenge).toBeTruthy();
+        expect(body.publicKey.userVerification).toBeTruthy();
     });
 });
