@@ -1,8 +1,24 @@
 import NextAuth from 'next-auth';
 import type { JWT } from 'next-auth/jwt';
-import Zitadel from 'next-auth/providers/zitadel';
 
-const issuer = process.env.AUTH_ZITADEL_ISSUER!;
+// OIDC discovery cache.
+let discoveryCache: Record<string, { tokenEndpoint: string; userinfoEndpoint: string; fetchedAt: number }> = {};
+
+async function getDiscovery(issuer: string) {
+    const cached = discoveryCache[issuer];
+    if (cached && Date.now() - cached.fetchedAt < 3600_000) return cached;
+
+    const res = await fetch(`${issuer}/.well-known/openid-configuration`);
+    if (!res.ok) throw new Error(`OIDC discovery failed for ${issuer}: ${res.status}`);
+    const doc = await res.json();
+    const entry = {
+        tokenEndpoint: doc.token_endpoint as string,
+        userinfoEndpoint: doc.userinfo_endpoint as string,
+        fetchedAt: Date.now()
+    };
+    discoveryCache[issuer] = entry;
+    return entry;
+}
 
 function extractRolesAndClaims(accessToken: string, token: JWT) {
     try {
@@ -10,6 +26,15 @@ function extractRolesAndClaims(accessToken: string, token: JWT) {
             Buffer.from(accessToken.split('.')[1], 'base64').toString()
         );
         const roles: string[] = [];
+
+        // Standard OIDC "roles" claim (flat string array, RFC 9068).
+        if (Array.isArray(payload.roles)) {
+            for (const role of payload.roles) {
+                if (typeof role === 'string' && !roles.includes(role)) roles.push(role);
+            }
+        }
+
+        // Zitadel project roles: "urn:zitadel:iam:org:project:*:roles"
         for (const [key, val] of Object.entries(payload)) {
             if (key.includes(':roles') && key.startsWith('urn:zitadel:')) {
                 for (const role of Object.keys(val as Record<string, unknown>)) {
@@ -17,6 +42,7 @@ function extractRolesAndClaims(accessToken: string, token: JWT) {
                 }
             }
         }
+
         token.roles = roles;
         if (!token.email && payload.email) token.email = payload.email;
         if (!token.name && payload.name) token.name = payload.name;
@@ -24,9 +50,10 @@ function extractRolesAndClaims(accessToken: string, token: JWT) {
     } catch { /* ignore decode errors */ }
 }
 
-async function fetchUserInfo(accessToken: string): Promise<{ name?: string; email?: string }> {
+async function fetchUserInfo(issuer: string, accessToken: string): Promise<{ name?: string; email?: string }> {
     try {
-        const res = await fetch(`${issuer}/oidc/v1/userinfo`, {
+        const disc = await getDiscovery(issuer);
+        const res = await fetch(disc.userinfoEndpoint, {
             headers: { Authorization: `Bearer ${accessToken}` }
         });
         if (!res.ok) return {};
@@ -40,16 +67,17 @@ async function fetchUserInfo(accessToken: string): Promise<{ name?: string; emai
     }
 }
 
-async function refreshAccessToken(token: JWT): Promise<JWT> {
+async function refreshAccessToken(token: JWT, issuer: string, clientId: string, clientSecret: string): Promise<JWT> {
     try {
-        const response = await fetch(`${issuer}/oauth/v2/token`, {
+        const disc = await getDiscovery(issuer);
+        const response = await fetch(disc.tokenEndpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
             body: new URLSearchParams({
                 grant_type: 'refresh_token',
                 refresh_token: token.refreshToken as string,
-                client_id: process.env.AUTH_ZITADEL_ID!,
-                client_secret: process.env.AUTH_ZITADEL_SECRET!
+                client_id: clientId,
+                client_secret: clientSecret
             })
         });
         const data = await response.json();
@@ -66,7 +94,7 @@ async function refreshAccessToken(token: JWT): Promise<JWT> {
 
         // Self-heal: if name/email are still missing, fetch from userinfo
         if (!refreshed.name || !refreshed.email) {
-            const info = await fetchUserInfo(data.access_token);
+            const info = await fetchUserInfo(issuer, data.access_token);
             if (info.name && !refreshed.name) refreshed.name = info.name;
             if (info.email && !refreshed.email) refreshed.email = info.email;
         }
@@ -77,10 +105,52 @@ async function refreshAccessToken(token: JWT): Promise<JWT> {
     }
 }
 
-export const { handlers, auth, signIn, signOut } = NextAuth({
-    providers: [
-        Zitadel({
-            issuer,
+// Determine which issuer/credentials to use for token refresh based on the token's issuer.
+function getProviderConfig(token: JWT): { issuer: string; clientId: string; clientSecret: string } {
+    const privasysIssuer = process.env.AUTH_PRIVASYS_ISSUER;
+    if (privasysIssuer && token.issuer === privasysIssuer) {
+        return {
+            issuer: privasysIssuer,
+            clientId: process.env.AUTH_PRIVASYS_ID!,
+            clientSecret: process.env.AUTH_PRIVASYS_SECRET!
+        };
+    }
+    // Default to Zitadel (legacy) credentials.
+    return {
+        issuer: process.env.AUTH_ZITADEL_ISSUER!,
+        clientId: process.env.AUTH_ZITADEL_ID!,
+        clientSecret: process.env.AUTH_ZITADEL_SECRET!
+    };
+}
+
+// Build providers list dynamically based on which env vars are set.
+function buildProviders(): any[] {
+    const providers: any[] = [];
+
+    // Privasys Wallet (primary, if configured).
+    if (process.env.AUTH_PRIVASYS_ISSUER && process.env.AUTH_PRIVASYS_ID) {
+        providers.push({
+            id: 'privasys',
+            name: 'Privasys Wallet',
+            type: 'oidc' as const,
+            issuer: process.env.AUTH_PRIVASYS_ISSUER,
+            clientId: process.env.AUTH_PRIVASYS_ID!,
+            clientSecret: process.env.AUTH_PRIVASYS_SECRET!,
+            authorization: {
+                params: {
+                    scope: 'openid profile email offline_access'
+                }
+            }
+        });
+    }
+
+    // Zitadel (legacy / fallback for GitHub & Google social login).
+    if (process.env.AUTH_ZITADEL_ISSUER && process.env.AUTH_ZITADEL_ID) {
+        providers.push({
+            id: 'zitadel',
+            name: 'GitHub / Google',
+            type: 'oidc' as const,
+            issuer: process.env.AUTH_ZITADEL_ISSUER,
             clientId: process.env.AUTH_ZITADEL_ID!,
             clientSecret: process.env.AUTH_ZITADEL_SECRET!,
             authorization: {
@@ -89,8 +159,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                     prompt: 'select_account'
                 }
             }
-        })
-    ],
+        });
+    }
+
+    return providers;
+}
+
+export const { handlers, auth, signIn, signOut } = NextAuth({
+    providers: buildProviders(),
     pages: {
         signIn: '/login'
     },
@@ -104,6 +180,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                 token.accessToken = account.access_token;
                 token.refreshToken = account.refresh_token;
                 token.expiresAt = account.expires_at;
+                token.issuer = account.provider === 'privasys'
+                    ? process.env.AUTH_PRIVASYS_ISSUER
+                    : process.env.AUTH_ZITADEL_ISSUER;
                 if (account.access_token) {
                     extractRolesAndClaims(account.access_token, token);
                 }
@@ -115,9 +194,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                         || (profile.nickname as string);
                     if (profileName) token.name = profileName;
                 }
-                // Zitadel access tokens often omit profile claims — fetch from userinfo
-                if ((!token.name || !token.email) && account.access_token) {
-                    const info = await fetchUserInfo(account.access_token);
+                // Access tokens often omit profile claims — fetch from userinfo
+                if ((!token.name || !token.email) && account.access_token && token.issuer) {
+                    const info = await fetchUserInfo(token.issuer as string, account.access_token);
                     if (info.name && !token.name) token.name = info.name;
                     if (info.email && !token.email) token.email = info.email;
                 }
@@ -134,7 +213,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
             // Token expired or about to expire — refresh
             if (token.refreshToken) {
-                return refreshAccessToken(token);
+                const cfg = getProviderConfig(token);
+                return refreshAccessToken(token, cfg.issuer, cfg.clientId, cfg.clientSecret);
             }
 
             return token;
