@@ -118,12 +118,19 @@ test.describe('WASM App Tutorial', () => {
         await page.goto('/dashboard/new/');
         await settle(page, 500);
 
+        // Step 1: click WASM Application
+        await page.getByRole('button', { name: 'WASM Application' }).click();
+
+        // Step 2: fill commit URL
         const commitInput = page.getByPlaceholder(/github\.com/i);
         await commitInput.fill(WASM_COMMIT_URL);
         await expect(page.getByText('Privasys/wasm-app-example')).toBeVisible({ timeout: 10_000 });
 
+        // Click Next to step 3 (name)
+        await page.getByRole('button', { name: 'Next' }).click();
+
         // Change the name to alice-first-wasm-app
-        const nameInput = page.locator('input[type="text"]').nth(1);
+        const nameInput = page.getByPlaceholder('my-confidential-app');
         await nameInput.clear();
         await nameInput.fill(WASM_APP_NAME);
         await expect(page.getByText(/\.apps\.privasys\.org is available/i).or(
@@ -137,15 +144,22 @@ test.describe('WASM App Tutorial', () => {
     test('wasm-04 — Submit and wait for build (Overview)', async ({ page }) => {
         test.setTimeout(300_000); // 5 min — build can take a while
 
-        // Create the app
+        // Create the app via wizard
         await page.goto('/dashboard/new/');
         await settle(page, 500);
 
+        // Step 1: click WASM Application
+        await page.getByRole('button', { name: 'WASM Application' }).click();
+
+        // Step 2: fill commit URL
         const commitInput = page.getByPlaceholder(/github\.com/i);
         await commitInput.fill(WASM_COMMIT_URL);
         await expect(page.getByText('Privasys/wasm-app-example')).toBeVisible({ timeout: 10_000 });
 
-        const nameInput = page.locator('input[type="text"]').nth(1);
+        // Click Next to step 3 (name)
+        await page.getByRole('button', { name: 'Next' }).click();
+
+        const nameInput = page.getByPlaceholder('my-confidential-app');
         await nameInput.clear();
         await nameInput.fill(WASM_APP_NAME);
 
@@ -153,7 +167,7 @@ test.describe('WASM App Tutorial', () => {
         const taken = page.getByText(/already taken/i);
         await expect(available.or(taken)).toBeVisible({ timeout: 10_000 });
 
-        // If name taken, the app already exists — navigate to it instead
+        // If name taken, the app already exists - navigate to it instead
         if (await taken.isVisible().catch(() => false)) {
             await page.goto('/dashboard/');
             await settle(page);
@@ -161,6 +175,9 @@ test.describe('WASM App Tutorial', () => {
             await link.click();
             await page.waitForURL('**/dashboard/apps/**');
         } else {
+            // Click Next to step 4 (configuration)
+            await page.getByRole('button', { name: 'Next' }).click();
+
             const createBtn = page.getByRole('button', { name: /create application/i });
             await expect(createBtn).toBeEnabled();
             await createBtn.click();
@@ -403,27 +420,32 @@ test.describe('Container App Tutorial', () => {
         await page.goto('/dashboard/new/');
         await settle(page, 500);
 
+        // Step 1: click Container
+        await page.getByRole('button', { name: 'Container' }).click();
+
+        // Step 2: fill commit URL
         const commitInput = page.getByPlaceholder(/github\.com/i);
         await commitInput.fill(CONTAINER_COMMIT_URL);
         await expect(page.getByText(/container-app-lightpanda/i)).toBeVisible({ timeout: 10_000 });
 
-        // Wait for auto-detection
-        const containerBtn = page.getByRole('button', { name: 'Container' });
-        await containerBtn.waitFor({ state: 'visible', timeout: 10_000 });
+        // Click Next to step 3 (name)
+        await page.getByRole('button', { name: 'Next' }).click();
 
         // Change the name
-        const nameInput = page.locator('input[type="text"]').nth(1);
+        const nameInput = page.getByPlaceholder('my-confidential-app');
         await nameInput.clear();
         await nameInput.fill(CONTAINER_APP_NAME);
         await expect(page.getByText(/\.apps\.privasys\.org is available/i).or(
             page.getByText(/already taken/i)
         )).toBeVisible({ timeout: 10_000 });
 
+        // Click Next to step 4 (configuration)
+        await page.getByRole('button', { name: 'Next' }).click();
+
         // Set container port
         const portInput = page.locator('input[type="number"][placeholder="8080"]');
-        if (await portInput.isVisible().catch(() => false)) {
-            await portInput.fill('8080');
-        }
+        await expect(portInput).toBeVisible({ timeout: 5_000 });
+        await portInput.fill('8080');
 
         await settle(page);
         await page.screenshot({ path: shot('container-03-commit-and-name'), fullPage: true });
@@ -435,11 +457,18 @@ test.describe('Container App Tutorial', () => {
         await page.goto('/dashboard/new/');
         await settle(page, 500);
 
+        // Step 1: click Container
+        await page.getByRole('button', { name: 'Container' }).click();
+
+        // Step 2: fill commit URL
         const commitInput = page.getByPlaceholder(/github\.com/i);
         await commitInput.fill(CONTAINER_COMMIT_URL);
         await expect(page.getByText(/container-app-lightpanda/i)).toBeVisible({ timeout: 10_000 });
 
-        const nameInput = page.locator('input[type="text"]').nth(1);
+        // Click Next to step 3 (name)
+        await page.getByRole('button', { name: 'Next' }).click();
+
+        const nameInput = page.getByPlaceholder('my-confidential-app');
         await nameInput.clear();
         await nameInput.fill(CONTAINER_APP_NAME);
 
@@ -454,11 +483,13 @@ test.describe('Container App Tutorial', () => {
             await link.click();
             await page.waitForURL('**/dashboard/apps/**');
         } else {
+            // Click Next to step 4 (configuration)
+            await page.getByRole('button', { name: 'Next' }).click();
+
             // Set port
             const portInput = page.locator('input[type="number"][placeholder="8080"]');
-            if (await portInput.isVisible().catch(() => false)) {
-                await portInput.fill('8080');
-            }
+            await expect(portInput).toBeVisible({ timeout: 5_000 });
+            await portInput.fill('8080');
 
             const createBtn = page.getByRole('button', { name: /create application/i });
             await expect(createBtn).toBeEnabled();

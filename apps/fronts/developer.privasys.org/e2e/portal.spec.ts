@@ -194,9 +194,12 @@ test.describe('Developer Portal', () => {
     test('create app page shows pipeline wizard', async ({ page }) => {
         await page.goto('/dashboard/new/');
         await expect(page.locator('h1')).toContainText(/new application/i);
-        // Should show the commit URL input
+        // Step 1: type selection cards
+        await expect(page.getByRole('button', { name: 'Container' })).toBeVisible();
+        await expect(page.getByRole('button', { name: 'WASM Application' })).toBeVisible();
+        // Click Container to reach step 2 with commit URL input
+        await page.getByRole('button', { name: 'Container' }).click();
         await expect(page.getByPlaceholder(/github\.com/i)).toBeVisible();
-        await expect(page.getByRole('button', { name: /create application/i })).toBeVisible();
         await page.screenshot({ path: screenshot('new-app'), fullPage: true });
     });
 
@@ -335,28 +338,32 @@ test.describe('Developer Portal', () => {
 
     test('new app page shows upload option', async ({ page }) => {
         await page.goto('/dashboard/new/');
-        await expect(page.getByText(/upload manually/i)).toBeVisible();
+        // Click WASM to reach step 2 source selection
+        await page.getByRole('button', { name: 'WASM Application' }).click();
+        await expect(page.getByRole('button', { name: /upload \.cwasm/i })).toBeVisible();
         await page.screenshot({ path: screenshot('new-app-upload'), fullPage: true });
     });
 
-    test('new app page shows app type selector for GitHub commits', async ({ page }) => {
+    test('new app page shows app type selector with wizard steps', async ({ page }) => {
         await page.goto('/dashboard/new/');
         await expect(page.locator('h1')).toContainText(/new application/i);
 
+        // Step 1: type selection shows Container and WASM Application
+        const wasmBtn = page.getByRole('button', { name: 'WASM Application' });
+        const containerBtn = page.getByRole('button', { name: 'Container' });
+        await expect(wasmBtn).toBeVisible({ timeout: 5_000 });
+        await expect(containerBtn).toBeVisible();
+
+        // Click WASM to go to step 2
+        await wasmBtn.click();
+
+        // Step 2: GitHub tab selected by default, fill commit URL
         const commitInput = page.getByPlaceholder(/github\.com/i);
+        await expect(commitInput).toBeVisible({ timeout: 5_000 });
         await commitInput.fill(COMMIT_URL);
 
         // Wait for URL parsing
         await expect(page.getByText('Privasys/wasm-app-example')).toBeVisible({ timeout: 5_000 });
-
-        // Type toggle should appear with WASM App and Container buttons
-        const wasmBtn = page.getByRole('button', { name: 'WASM App' });
-        const containerBtn = page.getByRole('button', { name: 'Container' });
-        await expect(wasmBtn).toBeVisible({ timeout: 10_000 });
-        await expect(containerBtn).toBeVisible();
-
-        // For the wasm example repo, WASM should be auto-detected and selected
-        await expect(wasmBtn).toHaveClass(/bg-black|bg-white/);
 
         await page.screenshot({ path: screenshot('app-type-selector-wasm'), fullPage: true });
     });
@@ -365,26 +372,35 @@ test.describe('Developer Portal', () => {
         await page.goto('/dashboard/new/');
         await expect(page.locator('h1')).toContainText(/new application/i);
 
+        // Step 1: click Container
+        await page.getByRole('button', { name: 'Container' }).click();
+
+        // Step 2: fill commit URL
         const commitInput = page.getByPlaceholder(/github\.com/i);
+        await expect(commitInput).toBeVisible({ timeout: 5_000 });
         await commitInput.fill(COMMIT_URL);
         await expect(page.getByText('Privasys/wasm-app-example')).toBeVisible({ timeout: 5_000 });
 
-        // Wait for auto-detection to complete before clicking
-        await expect(page.getByText('(auto-detected)')).toBeVisible({ timeout: 10_000 });
+        // Click Next to go to step 3 (name)
+        await page.getByRole('button', { name: 'Next' }).click();
 
-        // Click Container button
-        const containerBtn = page.getByRole('button', { name: 'Container' });
-        await containerBtn.click();
+        // Clear auto-inferred name and use a unique test name
+        const nameInput = page.getByPlaceholder('my-confidential-app');
+        await expect(nameInput).toBeVisible({ timeout: 5_000 });
+        await nameInput.clear();
+        await nameInput.fill(`e2e-port-test-${Date.now()}`);
+        await expect(page.getByText(/\.apps\.privasys\.org is available/i)).toBeVisible({ timeout: 10_000 });
+
+        // Click Next to go to step 4 (configuration)
+        await page.getByRole('button', { name: 'Next' }).click();
 
         // Container-specific fields should appear
         await expect(page.getByText('Container port')).toBeVisible({ timeout: 5_000 });
-
-        // Fill container port
         const portInput = page.locator('input[type="number"][placeholder="8080"]');
         await expect(portInput).toBeVisible();
         await portInput.fill('8080');
 
-        // Storage checkbox should NOT exist — all containers have encrypted storage by default
+        // Storage checkbox should NOT exist
         const storageCheckbox = page.locator('#storage');
         expect(await storageCheckbox.isVisible().catch(() => false)).toBe(false);
 

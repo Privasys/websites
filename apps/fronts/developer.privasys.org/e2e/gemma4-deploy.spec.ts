@@ -182,7 +182,8 @@ test.describe('Gemma 4 Package Deploy', () => {
                 respText.includes('already exists') ||
                 respText.includes('service unavailable') ||
                 resp.status() === 502 ||
-                resp.status() === 500;
+                resp.status() === 500 ||
+                resp.status() === 503;
             if (retryable) {
                 console.log(`Retryable error (attempt ${attempt + 1}), waiting 30s...`);
                 await page.waitForTimeout(30_000);

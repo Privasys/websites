@@ -231,11 +231,12 @@ export interface AppDeployment {
     updated_at: string;
 }
 
-export type DeploymentStatus = 'pending' | 'deploying' | 'active' | 'failed' | 'stopped';
+export type DeploymentStatus = 'pending' | 'deploying' | 'starting' | 'active' | 'failed' | 'stopped';
 
 export const DEPLOYMENT_STATUS_LABELS: Record<DeploymentStatus, string> = {
     pending: 'Pending',
     deploying: 'Deploying',
+    starting: 'Starting',
     active: 'Active',
     failed: 'Failed',
     stopped: 'Stopped'
@@ -244,6 +245,7 @@ export const DEPLOYMENT_STATUS_LABELS: Record<DeploymentStatus, string> = {
 export const DEPLOYMENT_STATUS_COLORS: Record<DeploymentStatus, string> = {
     pending: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300',
     deploying: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300',
+    starting: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300',
     active: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300',
     failed: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300',
     stopped: 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-300'
