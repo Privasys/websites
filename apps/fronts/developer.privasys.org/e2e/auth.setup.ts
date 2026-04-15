@@ -29,10 +29,11 @@ setup('authenticate via GitHub', async ({ page }) => {
         await page.waitForLoadState('domcontentloaded');
         if (page.url().includes('/dashboard') && !page.url().includes('/login')) {
             const session = await page.evaluate(() => fetch('/api/auth/session').then(r => r.json()));
-            if (session?.accessToken) {
+            if (session?.accessToken && !session?.error) {
                 console.log('Existing auth state is still valid, reusing.');
                 return;
             }
+            if (session?.error) console.log(`Session error: ${session.error}`);
         }
         console.log('Auth state expired — re-authenticating...');
         fs.unlinkSync(stateFile);
@@ -51,12 +52,19 @@ setup('authenticate via GitHub', async ({ page }) => {
     try { fs.unlinkSync(otpRequestFile); } catch { /* ignore */ }
     try { fs.unlinkSync(otpResponseFile); } catch { /* ignore */ }
 
-    // Go to the portal — login page auto-redirects to Zitadel OIDC
+    // Go to the portal — login page shows provider buttons
     await page.goto('/dashboard/');
 
-    // Zitadel either auto-redirects to GitHub, shows IDP picker,
-    // or completes the OIDC flow instantly if sessions are still valid.
-    await page.waitForURL(/auth\.privasys\.org|github\.com|\/dashboard/, { timeout: 30_000 });
+    // Wait for login page, Zitadel, GitHub, or dashboard (auto-login)
+    await page.waitForURL(/\/login|auth\.privasys\.org|github\.com|\/dashboard/, { timeout: 30_000 });
+
+    // If on the login page, click "Continue with GitHub" to start the OIDC flow
+    if (page.url().includes('/login')) {
+        const githubBtn = page.getByRole('button', { name: /Continue with GitHub/i });
+        await githubBtn.waitFor({ state: 'visible', timeout: 15_000 });
+        await githubBtn.click();
+        await page.waitForURL(/auth\.privasys\.org|github\.com|\/dashboard/, { timeout: 30_000 });
+    }
 
     // If we landed on /dashboard (OIDC flow completed instantly), check session
     if (page.url().includes('/dashboard')) {
@@ -64,7 +72,7 @@ setup('authenticate via GitHub', async ({ page }) => {
         await page.waitForLoadState('domcontentloaded');
         const session = await page.evaluate(() => fetch('/api/auth/session').then(r => r.json()));
         console.log('Session after auto-redirect:', JSON.stringify(session).substring(0, 200));
-        if (session?.accessToken) {
+        if (session?.accessToken && !session?.error) {
             console.log('Already authenticated (valid OIDC session), saving state.');
             await page.context().storageState({ path: stateFile });
             return;
@@ -73,13 +81,19 @@ setup('authenticate via GitHub', async ({ page }) => {
         console.log('Stale session detected — clearing cookies and re-authenticating.');
         await page.context().clearCookies();
         await page.goto('/login');
-        // Wait for login page which should redirect to Zitadel
-        await page.waitForURL(/auth\.privasys\.org|github\.com|\/dashboard/, { timeout: 30_000 });
+        // Wait for login page or OIDC redirect
+        await page.waitForURL(/\/login|auth\.privasys\.org|github\.com|\/dashboard/, { timeout: 30_000 });
+        if (page.url().includes('/login')) {
+            const githubBtn = page.getByRole('button', { name: /Continue with GitHub/i });
+            await githubBtn.waitFor({ state: 'visible', timeout: 15_000 });
+            await githubBtn.click();
+            await page.waitForURL(/auth\.privasys\.org|github\.com|\/dashboard/, { timeout: 30_000 });
+        }
         if (page.url().includes('/dashboard')) {
             await page.waitForLoadState('domcontentloaded');
             const fresh = await page.evaluate(() => fetch('/api/auth/session').then(r => r.json()));
             console.log('Session after re-auth:', JSON.stringify(fresh).substring(0, 200));
-            if (fresh?.accessToken) {
+            if (fresh?.accessToken && !fresh?.error) {
                 console.log('Re-authenticated via OIDC auto-login, saving state.');
                 await page.context().storageState({ path: stateFile });
                 return;
