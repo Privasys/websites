@@ -52,7 +52,7 @@ export function Navbar({ brand, brandSuffix, items = [], cta, trailing, faviconP
                             <Image src={faviconPath} alt="" width={20} height={20} aria-hidden />
                             <span>Privasys</span>
                             {brandSuffix && (
-                                <span className="pui-navbar-brand-suffix">{brandSuffix}</span>
+                                <>{' '}<span className="pui-navbar-brand-suffix">{brandSuffix}</span></>
                             )}
                         </Link>
                     )}
