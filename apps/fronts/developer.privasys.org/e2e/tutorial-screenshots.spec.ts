@@ -20,6 +20,7 @@
 import { test, expect, Page } from '@playwright/test';
 import path from 'path';
 import fs from 'fs';
+import { setupAuth, getToken as getE2eToken } from './e2e-auth';
 
 const TUTORIAL_DIR = path.join(__dirname, 'test-results', 'tutorial');
 const API = process.env.NEXT_PUBLIC_API_URL || 'https://api-test.developer.privasys.org';
@@ -40,8 +41,7 @@ async function settle(page: Page, ms = 500) {
 }
 
 async function getToken(page: Page): Promise<string> {
-    const session = await page.evaluate(() => fetch('/api/auth/session').then(r => r.json()));
-    return session?.accessToken as string;
+    return await getE2eToken();
 }
 
 /** Delete an app by name via the API (clean slate). */
@@ -91,6 +91,10 @@ async function deleteAllApps(page: Page, token: string) {
 // ══════════════════════════════════════════════════════════════
 test.describe('WASM App Tutorial', () => {
     test.describe.configure({ mode: 'serial' });
+
+    test.beforeEach(async ({ page }) => {
+        await setupAuth(page);
+    });
 
     test('wasm-01 — Empty dashboard', async ({ page }) => {
         test.setTimeout(60_000);
@@ -200,7 +204,7 @@ test.describe('WASM App Tutorial', () => {
     test('wasm-04b — GitHub Actions: reproducible build log', async ({ page }) => {
         test.setTimeout(60_000);
 
-        // Navigate to the portal first so getToken can fetch /api/auth/session
+        // Navigate to the portal first so getToken can read the e2e token
         await page.goto('/dashboard/');
         await settle(page);
 
@@ -393,6 +397,10 @@ test.describe('WASM App Tutorial', () => {
 // ══════════════════════════════════════════════════════════════
 test.describe('Container App Tutorial', () => {
     test.describe.configure({ mode: 'serial' });
+
+    test.beforeEach(async ({ page }) => {
+        await setupAuth(page);
+    });
 
     test('container-01 — Empty dashboard', async ({ page }) => {
         test.setTimeout(60_000);

@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import path from 'path';
+import { setupAuth, getToken } from './e2e-auth';
 
 const screenshot = (name: string) => path.join(__dirname, 'test-results', `${name}.png`);
 
@@ -7,6 +8,10 @@ const COMMIT_URL = 'https://github.com/Privasys/wasm-app-example/commit/a6acb6da
 
 test.describe('Developer Portal', () => {
     test.describe.configure({ mode: 'serial' });
+
+    test.beforeEach(async ({ page }) => {
+        await setupAuth(page);
+    });
 
     test('App Store tab shows live banner for deployed app', async ({ page }) => {
         test.setTimeout(120_000);
@@ -411,11 +416,12 @@ test.describe('Developer Portal', () => {
         test.setTimeout(300_000);
         const API = process.env.NEXT_PUBLIC_API_URL || 'https://api-test.developer.privasys.org';
 
-        // Navigate to establish cookies, then extract the access token from the session
+        await setupAuth(page);
+
+        // Navigate to establish cookies
         await page.goto('/dashboard/');
         await page.waitForSelector('nav', { timeout: 5_000 });
-        const session = await page.evaluate(() => fetch('/api/auth/session').then(r => r.json()));
-        const token = session?.accessToken as string;
+        const token = await getToken();
         expect(token).toBeTruthy();
 
         // List apps via API

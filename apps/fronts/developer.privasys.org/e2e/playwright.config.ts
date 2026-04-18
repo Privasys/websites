@@ -1,8 +1,18 @@
 import { defineConfig, devices } from '@playwright/test';
 import path from 'path';
+import dotenv from 'dotenv';
+
+// ── Load environment ────────────────────────────────────────────
+// Usage:  E2E_ENV=dev  npx playwright test   (default)
+//         E2E_ENV=prod npx playwright test
+// .env.local always loaded last so it can override any value.
+const E2E_DIR = __dirname;
+const env = process.env.E2E_ENV || 'dev';
+
+dotenv.config({ path: path.join(E2E_DIR, `.env.${env}`) });
+dotenv.config({ path: path.join(E2E_DIR, '.env.local'), override: true });
 
 const BASE_URL = process.env.E2E_BASE_URL || 'https://developer-test.privasys.org';
-const E2E_DIR = __dirname;
 const AUTH_FILE = path.join(E2E_DIR, '.auth', 'state.json');
 
 export default defineConfig({
@@ -54,6 +64,14 @@ export default defineConfig({
         {
             name: 'gemma4',
             testMatch: 'gemma4-deploy.spec.ts',
+            dependencies: ['auth-setup'],
+            use: {
+                storageState: AUTH_FILE
+            }
+        },
+        {
+            name: 'register-enclave',
+            testMatch: 'register-enclave.spec.ts',
             dependencies: ['auth-setup'],
             use: {
                 storageState: AUTH_FILE
