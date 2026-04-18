@@ -118,6 +118,7 @@ export default function AppDetailPage() {
         setDeleting(true);
         try {
             await deleteApp(session.accessToken, id);
+            window.dispatchEvent(new Event('apps:changed'));
             router.push('/dashboard');
         } catch (e) {
             setError(e instanceof Error ? e.message : 'Delete failed');
