@@ -390,6 +390,7 @@ export default function NewApplicationPage() {
                 await uploadCwasm(session.accessToken, app.id, file);
             }
 
+            window.dispatchEvent(new Event('apps:changed'));
             router.push(`/dashboard/apps/${app.id}`);
         } catch (e) {
             setError(e instanceof Error ? e.message : 'Something went wrong');

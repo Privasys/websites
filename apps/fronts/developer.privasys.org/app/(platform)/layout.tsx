@@ -52,6 +52,12 @@ function Sidebar() {
     useEffect(() => { loadApps(); }, [loadApps]);
     useSSE(session?.accessToken, useCallback(() => { loadApps(); }, [loadApps]));
 
+    useEffect(() => {
+        const handler = () => { loadApps(); };
+        window.addEventListener('apps:changed', handler);
+        return () => window.removeEventListener('apps:changed', handler);
+    }, [loadApps]);
+
     return (
         <aside className="hidden lg:flex flex-col w-60 shrink-0 border-r border-black/5 dark:border-white/10 h-[calc(100vh-3.5rem)] sticky top-14">
             <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
