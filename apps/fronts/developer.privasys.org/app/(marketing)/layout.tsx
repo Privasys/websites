@@ -21,7 +21,7 @@ export default function MarketingLayout({ children }: { children: ReactNode }) {
             <Navbar
                 brandSuffix="Developer"
                 items={NAV_ITEMS}
-                cta={{ label: 'Sign in', href: '/login' }}
+                cta={{ label: 'Sign in', href: '/dashboard' }}
             />
             <main className="flex-grow pt-14">
                 {children}

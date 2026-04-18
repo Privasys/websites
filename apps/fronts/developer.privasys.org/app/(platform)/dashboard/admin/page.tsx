@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useSession } from 'next-auth/react';
+import { useAuth } from '~/lib/privasys-auth';
 import { useEffect, useState } from 'react';
 import { adminListApps } from '~/lib/api';
 import type { App, AppStatus } from '~/lib/types';
@@ -19,7 +19,7 @@ function StatusBadge({ status }: { status: string }) {
 const TABS = ['all', 'submitted', 'approved', 'deployed', 'rejected'] as const;
 
 export default function AdminPage() {
-    const { data: session } = useSession();
+    const { session } = useAuth();
     const router = useRouter();
     const [apps, setApps] = useState<App[]>([]);
     const [loading, setLoading] = useState(true);

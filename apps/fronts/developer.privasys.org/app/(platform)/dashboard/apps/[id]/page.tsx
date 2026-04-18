@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
-import { useSession } from 'next-auth/react';
+import { useAuth } from '~/lib/privasys-auth';
 import { useEffect, useState, useCallback } from 'react';
 import { getApp, listBuilds, listVersions, listDeployments, listEnclaves, deleteApp, deployVersion, stopDeployment, attestApp, verifyQuote, getAppSchema, rpcCall, updateStoreListing, getAppMcp, updateContainerMcp } from '~/lib/api';
 import type { AppSchema, FunctionSchema, WitType, QuoteVerifyResult, McpManifest } from '~/lib/api';
@@ -155,7 +155,7 @@ export default function AppDetailPage() {
     const { id } = useParams<{ id: string }>();
     const searchParams = useSearchParams();
     const router = useRouter();
-    const { data: session } = useSession();
+    const { session } = useAuth();
     const [app, setApp] = useState<App | null>(null);
     const [builds, setBuilds] = useState<BuildJob[]>([]);
     const [versions, setVersions] = useState<AppVersion[]>([]);
@@ -213,7 +213,7 @@ export default function AppDetailPage() {
                     [depId]: {
                         stage: ev.data.stage || 'unknown',
                         totalBytes: ev.data.pull_total_bytes ? Number(ev.data.pull_total_bytes) : undefined,
-                        downloadedBytes: ev.data.pull_downloaded_bytes ? Number(ev.data.pull_downloaded_bytes) : undefined,
+                        downloadedBytes: ev.data.pull_downloaded_bytes ? Number(ev.data.pull_downloaded_bytes) : undefined
                     }
                 }));
             }
@@ -2847,7 +2847,7 @@ function AppUITab({ appId, appName, hostname, token, containerMcp, onMcpUpdate }
         setHtmlContent(null);
         setFetchError(null);
         fetch(iframeSrc, {
-            headers: { Authorization: `Bearer ${token}` },
+            headers: { Authorization: `Bearer ${token}` }
         })
             .then(async (res) => {
                 if (cancelled) return;
@@ -2872,7 +2872,7 @@ function AppUITab({ appId, appName, hostname, token, containerMcp, onMcpUpdate }
                 appId,
                 appName,
                 hostname,
-                token,
+                token
             }, '*');
         } catch {
             // cross-origin - expected if CSP blocks
@@ -2885,7 +2885,7 @@ function AppUITab({ appId, appName, hostname, token, containerMcp, onMcpUpdate }
         try {
             const updated = await updateContainerMcp(token, appId, {
                 ...containerMcp,
-                ui: { ...(containerMcp.ui as Record<string, unknown> || {}), url: editUrl },
+                ui: { ...(containerMcp.ui as Record<string, unknown> || {}), url: editUrl }
             });
             onMcpUpdate(updated);
             setIframeKey(k => k + 1);

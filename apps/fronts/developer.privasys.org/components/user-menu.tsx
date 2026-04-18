@@ -1,12 +1,12 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { useSession, signOut } from 'next-auth/react';
 import Link from 'next/link';
+import { useAuth } from '~/lib/privasys-auth';
 import { getUserInfo } from '~/lib/api';
 
 export function UserMenu() {
-    const { data: session } = useSession();
+    const { session, signOut } = useAuth();
     const [open, setOpen] = useState(false);
     const ref = useRef<HTMLDivElement>(null);
     const [profileName, setProfileName] = useState<string | null>(null);
@@ -34,24 +34,15 @@ export function UserMenu() {
 
     useEffect(() => { fetchProfile(); }, [fetchProfile]);
 
-    // Auto sign-out when token refresh fails
-    useEffect(() => {
-        if (session?.error === 'RefreshTokenError') {
-            signOut({ callbackUrl: '/login' });
-        }
-    }, [session?.error]);
+    const handleSignOut = async () => {
+        await signOut();
+        window.location.href = '/';
+    };
 
-    // Sign out on expired backend token (dispatched by api.ts)
-    useEffect(() => {
-        const handler = () => signOut({ callbackUrl: '/login' });
-        window.addEventListener('auth:expired', handler);
-        return () => window.removeEventListener('auth:expired', handler);
-    }, []);
+    if (!session) return null;
 
-    if (!session?.user) return null;
-
-    const displayName = profileName || session.user.name || '';
-    const displayEmail = profileEmail || session.user.email || '';
+    const displayName = profileName || '';
+    const displayEmail = profileEmail || '';
     const initials = (displayName?.[0] ?? displayEmail?.[0] ?? '?').toUpperCase();
 
     return (
@@ -61,11 +52,7 @@ export function UserMenu() {
                 className="w-8 h-8 rounded-full bg-black/10 dark:bg-white/10 flex items-center justify-center text-xs font-medium hover:bg-black/20 dark:hover:bg-white/20 transition-colors overflow-hidden"
                 title={displayName || displayEmail || ''}
             >
-                {session.user.image ? (
-                    <img src={session.user.image} alt="" className="w-8 h-8 rounded-full" />
-                ) : (
-                    initials
-                )}
+                {initials}
             </button>
 
             {open && (
@@ -90,7 +77,7 @@ export function UserMenu() {
                         </Link>
                         <button
                             type="button"
-                            onClick={() => signOut({ callbackUrl: '/' })}
+                            onClick={handleSignOut}
                             className="flex items-center gap-2.5 w-full px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
                         >
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">

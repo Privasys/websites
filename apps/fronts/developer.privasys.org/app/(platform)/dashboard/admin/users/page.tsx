@@ -1,6 +1,6 @@
 'use client';
 
-import { useSession } from 'next-auth/react';
+import { useAuth } from '~/lib/privasys-auth';
 import { useEffect, useState, useCallback } from 'react';
 
 interface User {
@@ -17,7 +17,7 @@ const AVAILABLE_ROLES = [
 ];
 
 export default function AdminUsersPage() {
-    const { data: session } = useSession();
+    const { session } = useAuth();
     const [users, setUsers] = useState<User[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);

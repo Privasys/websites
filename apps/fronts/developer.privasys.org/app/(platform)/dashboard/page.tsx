@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useSession } from 'next-auth/react';
+import { useAuth } from '~/lib/privasys-auth';
 import { useEffect, useState, useCallback } from 'react';
 import { listApps } from '~/lib/api';
 import { useSSE } from '~/lib/use-sse';
@@ -121,7 +121,7 @@ function WelcomePage() {
 }
 
 export default function DashboardPage() {
-    const { data: session } = useSession();
+    const { session } = useAuth();
     const router = useRouter();
     const [apps, setApps] = useState<App[]>([]);
     const [loading, setLoading] = useState(true);

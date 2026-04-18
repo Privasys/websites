@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
-import { useSession } from 'next-auth/react';
+import { useAuth } from '~/lib/privasys-auth';
 import { useEffect, useState, useCallback } from 'react';
 import {
     adminGetApp,
@@ -80,7 +80,7 @@ export default function AdminAppDetailPage() {
     const { id } = useParams<{ id: string }>();
     const searchParams = useSearchParams();
     const router = useRouter();
-    const { data: session } = useSession();
+    const { session } = useAuth();
     const [app, setApp] = useState<App | null>(null);
     const [builds, setBuilds] = useState<BuildJob[]>([]);
     const [versions, setVersions] = useState<AppVersion[]>([]);
