@@ -3,19 +3,21 @@
  * Run: npx playwright test --headed register-enclave.spec.ts
  */
 import { test, expect } from '@playwright/test';
+import { getToken, setupAuth } from './e2e-auth';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'https://api-test.developer.privasys.org';
 
 test('register TDX dev enclave', async ({ page }) => {
     test.setTimeout(60_000);
 
+    await setupAuth(page);
+
     // Login
     await page.goto('/dashboard/');
     await page.waitForSelector('nav', { timeout: 10_000 });
 
-    // Get token from session
-    const session = await page.evaluate(() => fetch('/api/auth/session').then(r => r.json()));
-    const token = session?.accessToken as string;
+    // Get token from e2e helper
+    const token = await getToken();
     expect(token).toBeTruthy();
 
     // Check if enclave already exists

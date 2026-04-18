@@ -20,7 +20,9 @@
         "baseUrl": ".",
         "paths": {
             "@privasys/ui": ["libs/ui/src/index.ts"],
-            "@privasys/ui/*": ["libs/ui/src/*"]
+            "@privasys/ui/*": ["libs/ui/src/*"],
+            "@privasys/auth": ["../auth/sdk/src/index.ts"],
+            "@privasys/auth/*": ["../auth/sdk/src/*"]
         },
         "strict": true,
         "verbatimModuleSyntax": null,

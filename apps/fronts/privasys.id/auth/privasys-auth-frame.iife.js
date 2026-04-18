@@ -1,105 +1,215 @@
-"use strict";(()=>{var Ne=Object.create;var ue=Object.defineProperty;var Ee=Object.getOwnPropertyDescriptor;var Se=Object.getOwnPropertyNames;var Me=Object.getPrototypeOf,Be=Object.prototype.hasOwnProperty;var Re=(A,e)=>()=>(e||A((e={exports:{}}).exports,e),e.exports);var Pe=(A,e,n,d)=>{if(e&&typeof e=="object"||typeof e=="function")for(let f of Se(e))!Be.call(A,f)&&f!==n&&ue(A,f,{get:()=>e[f],enumerable:!(d=Ee(e,f))||d.enumerable});return A};var Le=(A,e,n)=>(n=A!=null?Ne(Me(A)):{},Pe(e||!A||!A.__esModule?ue(n,"default",{value:A,enumerable:!0}):n,A));var be=Re((ge,ve)=>{var pe=(function(){var A=function(x,k){var v=236,b=17,i=x,p=n[k],r=null,t=0,g=null,l=[],h={},T=function(a,o){t=i*4+17,r=(function(s){for(var u=new Array(s),c=0;c<s;c+=1){u[c]=new Array(s);for(var y=0;y<s;y+=1)u[c][y]=null}return u})(t),N(0,0),N(t-7,0),N(0,t-7),L(),B(),W(a,o),i>=7&&H(a),g==null&&(g=_e(i,p,l)),F(g,o)},N=function(a,o){for(var s=-1;s<=7;s+=1)if(!(a+s<=-1||t<=a+s))for(var u=-1;u<=7;u+=1)o+u<=-1||t<=o+u||(0<=s&&s<=6&&(u==0||u==6)||0<=u&&u<=6&&(s==0||s==6)||2<=s&&s<=4&&2<=u&&u<=4?r[a+s][o+u]=!0:r[a+s][o+u]=!1)},S=function(){for(var a=0,o=0,s=0;s<8;s+=1){T(!0,s);var u=f.getLostPoint(h);(s==0||a>u)&&(a=u,o=s)}return o},B=function(){for(var a=8;a<t-8;a+=1)r[a][6]==null&&(r[a][6]=a%2==0);for(var o=8;o<t-8;o+=1)r[6][o]==null&&(r[6][o]=o%2==0)},L=function(){for(var a=f.getPatternPosition(i),o=0;o<a.length;o+=1)for(var s=0;s<a.length;s+=1){var u=a[o],c=a[s];if(r[u][c]==null)for(var y=-2;y<=2;y+=1)for(var I=-2;I<=2;I+=1)y==-2||y==2||I==-2||I==2||y==0&&I==0?r[u+y][c+I]=!0:r[u+y][c+I]=!1}},H=function(a){for(var o=f.getBCHTypeNumber(i),s=0;s<18;s+=1){var u=!a&&(o>>s&1)==1;r[Math.floor(s/3)][s%3+t-8-3]=u}for(var s=0;s<18;s+=1){var u=!a&&(o>>s&1)==1;r[s%3+t-8-3][Math.floor(s/3)]=u}},W=function(a,o){for(var s=p<<3|o,u=f.getBCHTypeInfo(s),c=0;c<15;c+=1){var y=!a&&(u>>c&1)==1;c<6?r[c][8]=y:c<8?r[c+1][8]=y:r[t-15+c][8]=y}for(var c=0;c<15;c+=1){var y=!a&&(u>>c&1)==1;c<8?r[8][t-c-1]=y:c<9?r[8][15-c-1+1]=y:r[8][15-c-1]=y}r[t-8][8]=!a},F=function(a,o){for(var s=-1,u=t-1,c=7,y=0,I=f.getMaskFunction(o),C=t-1;C>0;C-=2)for(C==6&&(C-=1);;){for(var M=0;M<2;M+=1)if(r[u][C-M]==null){var P=!1;y<a.length&&(P=(a[y]>>>c&1)==1);var _=I(u,C-M);_&&(P=!P),r[u][C-M]=P,c-=1,c==-1&&(y+=1,c=7)}if(u+=s,u<0||t<=u){u-=s,s=-s;break}}},J=function(a,o){for(var s=0,u=0,c=0,y=new Array(o.length),I=new Array(o.length),C=0;C<o.length;C+=1){var M=o[C].dataCount,P=o[C].totalCount-M;u=Math.max(u,M),c=Math.max(c,P),y[C]=new Array(M);for(var _=0;_<y[C].length;_+=1)y[C][_]=255&a.getBuffer()[_+s];s+=M;var U=f.getErrorCorrectPolynomial(P),O=E(y[C],U.getLength()-1),ae=O.mod(U);I[C]=new Array(U.getLength()-1);for(var _=0;_<I[C].length;_+=1){var oe=_+ae.getLength()-I[C].length;I[C][_]=oe>=0?ae.getAt(oe):0}}for(var le=0,_=0;_<o.length;_+=1)le+=o[_].totalCount;for(var te=new Array(le),X=0,_=0;_<u;_+=1)for(var C=0;C<o.length;C+=1)_<y[C].length&&(te[X]=y[C][_],X+=1);for(var _=0;_<c;_+=1)for(var C=0;C<o.length;C+=1)_<I[C].length&&(te[X]=I[C][_],X+=1);return te},_e=function(a,o,s){for(var u=R.getRSBlocks(a,o),c=D(),y=0;y<s.length;y+=1){var I=s[y];c.put(I.getMode(),4),c.put(I.getLength(),f.getLengthInBits(I.getMode(),a)),I.write(c)}for(var C=0,y=0;y<u.length;y+=1)C+=u[y].dataCount;if(c.getLengthInBits()>C*8)throw"code length overflow. ("+c.getLengthInBits()+">"+C*8+")";for(c.getLengthInBits()+4<=C*8&&c.put(0,4);c.getLengthInBits()%8!=0;)c.putBit(!1);for(;!(c.getLengthInBits()>=C*8||(c.put(v,8),c.getLengthInBits()>=C*8));)c.put(b,8);return J(c,u)};h.addData=function(a,o){o=o||"Byte";var s=null;switch(o){case"Numeric":s=Q(a);break;case"Alphanumeric":s=$(a);break;case"Byte":s=K(a);break;case"Kanji":s=xe(a);break;default:throw"mode:"+o}l.push(s),g=null},h.isDark=function(a,o){if(a<0||t<=a||o<0||t<=o)throw a+","+o;return r[a][o]},h.getModuleCount=function(){return t},h.make=function(){if(i<1){for(var a=1;a<40;a++){for(var o=R.getRSBlocks(a,p),s=D(),u=0;u<l.length;u++){var c=l[u];s.put(c.getMode(),4),s.put(c.getLength(),f.getLengthInBits(c.getMode(),a)),c.write(s)}for(var y=0,u=0;u<o.length;u++)y+=o[u].dataCount;if(s.getLengthInBits()<=y*8)break}i=a}T(!1,S())},h.createTableTag=function(a,o){a=a||2,o=typeof o>"u"?a*4:o;var s="";s+='<table style="',s+=" border-width: 0px; border-style: none;",s+=" border-collapse: collapse;",s+=" padding: 0px; margin: "+o+"px;",s+='">',s+="<tbody>";for(var u=0;u<h.getModuleCount();u+=1){s+="<tr>";for(var c=0;c<h.getModuleCount();c+=1)s+='<td style="',s+=" border-width: 0px; border-style: none;",s+=" border-collapse: collapse;",s+=" padding: 0px; margin: 0px;",s+=" width: "+a+"px;",s+=" height: "+a+"px;",s+=" background-color: ",s+=h.isDark(u,c)?"#000000":"#ffffff",s+=";",s+='"/>';s+="</tr>"}return s+="</tbody>",s+="</table>",s},h.createSvgTag=function(a,o,s,u){var c={};typeof arguments[0]=="object"&&(c=arguments[0],a=c.cellSize,o=c.margin,s=c.alt,u=c.title),a=a||2,o=typeof o>"u"?a*4:o,s=typeof s=="string"?{text:s}:s||{},s.text=s.text||null,s.id=s.text?s.id||"qrcode-description":null,u=typeof u=="string"?{text:u}:u||{},u.text=u.text||null,u.id=u.text?u.id||"qrcode-title":null;var y=h.getModuleCount()*a+o*2,I,C,M,P,_="",U;for(U="l"+a+",0 0,"+a+" -"+a+",0 0,-"+a+"z ",_+='<svg version="1.1" xmlns="http://www.w3.org/2000/svg"',_+=c.scalable?"":' width="'+y+'px" height="'+y+'px"',_+=' viewBox="0 0 '+y+" "+y+'" ',_+=' preserveAspectRatio="xMinYMin meet"',_+=u.text||s.text?' role="img" aria-labelledby="'+V([u.id,s.id].join(" ").trim())+'"':"",_+=">",_+=u.text?'<title id="'+V(u.id)+'">'+V(u.text)+"</title>":"",_+=s.text?'<description id="'+V(s.id)+'">'+V(s.text)+"</description>":"",_+='<rect width="100%" height="100%" fill="white" cx="0" cy="0"/>',_+='<path d="',M=0;M<h.getModuleCount();M+=1)for(P=M*a+o,I=0;I<h.getModuleCount();I+=1)h.isDark(M,I)&&(C=I*a+o,_+="M"+C+","+P+U);return _+='" stroke="transparent" fill="black"/>',_+="</svg>",_},h.createDataURL=function(a,o){a=a||2,o=typeof o>"u"?a*4:o;var s=h.getModuleCount()*a+o*2,u=o,c=s-o;return Ie(s,s,function(y,I){if(u<=y&&y<c&&u<=I&&I<c){var C=Math.floor((y-u)/a),M=Math.floor((I-u)/a);return h.isDark(M,C)?0:1}else return 1})},h.createImgTag=function(a,o,s){a=a||2,o=typeof o>"u"?a*4:o;var u=h.getModuleCount()*a+o*2,c="";return c+="<img",c+=' src="',c+=h.createDataURL(a,o),c+='"',c+=' width="',c+=u,c+='"',c+=' height="',c+=u,c+='"',s&&(c+=' alt="',c+=V(s),c+='"'),c+="/>",c};var V=function(a){for(var o="",s=0;s<a.length;s+=1){var u=a.charAt(s);switch(u){case"<":o+="&lt;";break;case">":o+="&gt;";break;case"&":o+="&amp;";break;case'"':o+="&quot;";break;default:o+=u;break}}return o},Te=function(a){var o=1;a=typeof a>"u"?o*2:a;var s=h.getModuleCount()*o+a*2,u=a,c=s-a,y,I,C,M,P,_={"\u2588\u2588":"\u2588","\u2588 ":"\u2580"," \u2588":"\u2584","  ":" "},U={"\u2588\u2588":"\u2580","\u2588 ":"\u2580"," \u2588":" ","  ":" "},O="";for(y=0;y<s;y+=2){for(C=Math.floor((y-u)/o),M=Math.floor((y+1-u)/o),I=0;I<s;I+=1)P="\u2588",u<=I&&I<c&&u<=y&&y<c&&h.isDark(C,Math.floor((I-u)/o))&&(P=" "),u<=I&&I<c&&u<=y+1&&y+1<c&&h.isDark(M,Math.floor((I-u)/o))?P+=" ":P+="\u2588",O+=a<1&&y+1>=c?U[P]:_[P];O+=`
-`}return s%2&&a>0?O.substring(0,O.length-s-1)+Array(s+1).join("\u2580"):O.substring(0,O.length-1)};return h.createASCII=function(a,o){if(a=a||1,a<2)return Te(o);a-=1,o=typeof o>"u"?a*2:o;var s=h.getModuleCount()*a+o*2,u=o,c=s-o,y,I,C,M,P=Array(a+1).join("\u2588\u2588"),_=Array(a+1).join("  "),U="",O="";for(y=0;y<s;y+=1){for(C=Math.floor((y-u)/a),O="",I=0;I<s;I+=1)M=1,u<=I&&I<c&&u<=y&&y<c&&h.isDark(C,Math.floor((I-u)/a))&&(M=0),O+=M?P:_;for(C=0;C<a;C+=1)U+=O+`
-`}return U.substring(0,U.length-1)},h.renderTo2dContext=function(a,o){o=o||2;for(var s=h.getModuleCount(),u=0;u<s;u++)for(var c=0;c<s;c++)a.fillStyle=h.isDark(u,c)?"black":"white",a.fillRect(u*o,c*o,o,o)},h};A.stringToBytesFuncs={default:function(x){for(var k=[],v=0;v<x.length;v+=1){var b=x.charCodeAt(v);k.push(b&255)}return k}},A.stringToBytes=A.stringToBytesFuncs.default,A.createStringToBytes=function(x,k){var v=(function(){for(var i=Ae(x),p=function(){var B=i.read();if(B==-1)throw"eof";return B},r=0,t={};;){var g=i.read();if(g==-1)break;var l=p(),h=p(),T=p(),N=String.fromCharCode(g<<8|l),S=h<<8|T;t[N]=S,r+=1}if(r!=k)throw r+" != "+k;return t})(),b=63;return function(i){for(var p=[],r=0;r<i.length;r+=1){var t=i.charCodeAt(r);if(t<128)p.push(t);else{var g=v[i.charAt(r)];typeof g=="number"?(g&255)==g?p.push(g):(p.push(g>>>8),p.push(g&255)):p.push(b)}}return p}};var e={MODE_NUMBER:1,MODE_ALPHA_NUM:2,MODE_8BIT_BYTE:4,MODE_KANJI:8},n={L:1,M:0,Q:3,H:2},d={PATTERN000:0,PATTERN001:1,PATTERN010:2,PATTERN011:3,PATTERN100:4,PATTERN101:5,PATTERN110:6,PATTERN111:7},f=(function(){var x=[[],[6,18],[6,22],[6,26],[6,30],[6,34],[6,22,38],[6,24,42],[6,26,46],[6,28,50],[6,30,54],[6,32,58],[6,34,62],[6,26,46,66],[6,26,48,70],[6,26,50,74],[6,30,54,78],[6,30,56,82],[6,30,58,86],[6,34,62,90],[6,28,50,72,94],[6,26,50,74,98],[6,30,54,78,102],[6,28,54,80,106],[6,32,58,84,110],[6,30,58,86,114],[6,34,62,90,118],[6,26,50,74,98,122],[6,30,54,78,102,126],[6,26,52,78,104,130],[6,30,56,82,108,134],[6,34,60,86,112,138],[6,30,58,86,114,142],[6,34,62,90,118,146],[6,30,54,78,102,126,150],[6,24,50,76,102,128,154],[6,28,54,80,106,132,158],[6,32,58,84,110,136,162],[6,26,54,82,110,138,166],[6,30,58,86,114,142,170]],k=1335,v=7973,b=21522,i={},p=function(r){for(var t=0;r!=0;)t+=1,r>>>=1;return t};return i.getBCHTypeInfo=function(r){for(var t=r<<10;p(t)-p(k)>=0;)t^=k<<p(t)-p(k);return(r<<10|t)^b},i.getBCHTypeNumber=function(r){for(var t=r<<12;p(t)-p(v)>=0;)t^=v<<p(t)-p(v);return r<<12|t},i.getPatternPosition=function(r){return x[r-1]},i.getMaskFunction=function(r){switch(r){case d.PATTERN000:return function(t,g){return(t+g)%2==0};case d.PATTERN001:return function(t,g){return t%2==0};case d.PATTERN010:return function(t,g){return g%3==0};case d.PATTERN011:return function(t,g){return(t+g)%3==0};case d.PATTERN100:return function(t,g){return(Math.floor(t/2)+Math.floor(g/3))%2==0};case d.PATTERN101:return function(t,g){return t*g%2+t*g%3==0};case d.PATTERN110:return function(t,g){return(t*g%2+t*g%3)%2==0};case d.PATTERN111:return function(t,g){return(t*g%3+(t+g)%2)%2==0};default:throw"bad maskPattern:"+r}},i.getErrorCorrectPolynomial=function(r){for(var t=E([1],0),g=0;g<r;g+=1)t=t.multiply(E([1,w.gexp(g)],0));return t},i.getLengthInBits=function(r,t){if(1<=t&&t<10)switch(r){case e.MODE_NUMBER:return 10;case e.MODE_ALPHA_NUM:return 9;case e.MODE_8BIT_BYTE:return 8;case e.MODE_KANJI:return 8;default:throw"mode:"+r}else if(t<27)switch(r){case e.MODE_NUMBER:return 12;case e.MODE_ALPHA_NUM:return 11;case e.MODE_8BIT_BYTE:return 16;case e.MODE_KANJI:return 10;default:throw"mode:"+r}else if(t<41)switch(r){case e.MODE_NUMBER:return 14;case e.MODE_ALPHA_NUM:return 13;case e.MODE_8BIT_BYTE:return 16;case e.MODE_KANJI:return 12;default:throw"mode:"+r}else throw"type:"+t},i.getLostPoint=function(r){for(var t=r.getModuleCount(),g=0,l=0;l<t;l+=1)for(var h=0;h<t;h+=1){for(var T=0,N=r.isDark(l,h),S=-1;S<=1;S+=1)if(!(l+S<0||t<=l+S))for(var B=-1;B<=1;B+=1)h+B<0||t<=h+B||S==0&&B==0||N==r.isDark(l+S,h+B)&&(T+=1);T>5&&(g+=3+T-5)}for(var l=0;l<t-1;l+=1)for(var h=0;h<t-1;h+=1){var L=0;r.isDark(l,h)&&(L+=1),r.isDark(l+1,h)&&(L+=1),r.isDark(l,h+1)&&(L+=1),r.isDark(l+1,h+1)&&(L+=1),(L==0||L==4)&&(g+=3)}for(var l=0;l<t;l+=1)for(var h=0;h<t-6;h+=1)r.isDark(l,h)&&!r.isDark(l,h+1)&&r.isDark(l,h+2)&&r.isDark(l,h+3)&&r.isDark(l,h+4)&&!r.isDark(l,h+5)&&r.isDark(l,h+6)&&(g+=40);for(var h=0;h<t;h+=1)for(var l=0;l<t-6;l+=1)r.isDark(l,h)&&!r.isDark(l+1,h)&&r.isDark(l+2,h)&&r.isDark(l+3,h)&&r.isDark(l+4,h)&&!r.isDark(l+5,h)&&r.isDark(l+6,h)&&(g+=40);for(var H=0,h=0;h<t;h+=1)for(var l=0;l<t;l+=1)r.isDark(l,h)&&(H+=1);var W=Math.abs(100*H/t/t-50)/5;return g+=W*10,g},i})(),w=(function(){for(var x=new Array(256),k=new Array(256),v=0;v<8;v+=1)x[v]=1<<v;for(var v=8;v<256;v+=1)x[v]=x[v-4]^x[v-5]^x[v-6]^x[v-8];for(var v=0;v<255;v+=1)k[x[v]]=v;var b={};return b.glog=function(i){if(i<1)throw"glog("+i+")";return k[i]},b.gexp=function(i){for(;i<0;)i+=255;for(;i>=256;)i-=255;return x[i]},b})();function E(x,k){if(typeof x.length>"u")throw x.length+"/"+k;var v=(function(){for(var i=0;i<x.length&&x[i]==0;)i+=1;for(var p=new Array(x.length-i+k),r=0;r<x.length-i;r+=1)p[r]=x[r+i];return p})(),b={};return b.getAt=function(i){return v[i]},b.getLength=function(){return v.length},b.multiply=function(i){for(var p=new Array(b.getLength()+i.getLength()-1),r=0;r<b.getLength();r+=1)for(var t=0;t<i.getLength();t+=1)p[r+t]^=w.gexp(w.glog(b.getAt(r))+w.glog(i.getAt(t)));return E(p,0)},b.mod=function(i){if(b.getLength()-i.getLength()<0)return b;for(var p=w.glog(b.getAt(0))-w.glog(i.getAt(0)),r=new Array(b.getLength()),t=0;t<b.getLength();t+=1)r[t]=b.getAt(t);for(var t=0;t<i.getLength();t+=1)r[t]^=w.gexp(w.glog(i.getAt(t))+p);return E(r,0).mod(i)},b}var R=(function(){var x=[[1,26,19],[1,26,16],[1,26,13],[1,26,9],[1,44,34],[1,44,28],[1,44,22],[1,44,16],[1,70,55],[1,70,44],[2,35,17],[2,35,13],[1,100,80],[2,50,32],[2,50,24],[4,25,9],[1,134,108],[2,67,43],[2,33,15,2,34,16],[2,33,11,2,34,12],[2,86,68],[4,43,27],[4,43,19],[4,43,15],[2,98,78],[4,49,31],[2,32,14,4,33,15],[4,39,13,1,40,14],[2,121,97],[2,60,38,2,61,39],[4,40,18,2,41,19],[4,40,14,2,41,15],[2,146,116],[3,58,36,2,59,37],[4,36,16,4,37,17],[4,36,12,4,37,13],[2,86,68,2,87,69],[4,69,43,1,70,44],[6,43,19,2,44,20],[6,43,15,2,44,16],[4,101,81],[1,80,50,4,81,51],[4,50,22,4,51,23],[3,36,12,8,37,13],[2,116,92,2,117,93],[6,58,36,2,59,37],[4,46,20,6,47,21],[7,42,14,4,43,15],[4,133,107],[8,59,37,1,60,38],[8,44,20,4,45,21],[12,33,11,4,34,12],[3,145,115,1,146,116],[4,64,40,5,65,41],[11,36,16,5,37,17],[11,36,12,5,37,13],[5,109,87,1,110,88],[5,65,41,5,66,42],[5,54,24,7,55,25],[11,36,12,7,37,13],[5,122,98,1,123,99],[7,73,45,3,74,46],[15,43,19,2,44,20],[3,45,15,13,46,16],[1,135,107,5,136,108],[10,74,46,1,75,47],[1,50,22,15,51,23],[2,42,14,17,43,15],[5,150,120,1,151,121],[9,69,43,4,70,44],[17,50,22,1,51,23],[2,42,14,19,43,15],[3,141,113,4,142,114],[3,70,44,11,71,45],[17,47,21,4,48,22],[9,39,13,16,40,14],[3,135,107,5,136,108],[3,67,41,13,68,42],[15,54,24,5,55,25],[15,43,15,10,44,16],[4,144,116,4,145,117],[17,68,42],[17,50,22,6,51,23],[19,46,16,6,47,17],[2,139,111,7,140,112],[17,74,46],[7,54,24,16,55,25],[34,37,13],[4,151,121,5,152,122],[4,75,47,14,76,48],[11,54,24,14,55,25],[16,45,15,14,46,16],[6,147,117,4,148,118],[6,73,45,14,74,46],[11,54,24,16,55,25],[30,46,16,2,47,17],[8,132,106,4,133,107],[8,75,47,13,76,48],[7,54,24,22,55,25],[22,45,15,13,46,16],[10,142,114,2,143,115],[19,74,46,4,75,47],[28,50,22,6,51,23],[33,46,16,4,47,17],[8,152,122,4,153,123],[22,73,45,3,74,46],[8,53,23,26,54,24],[12,45,15,28,46,16],[3,147,117,10,148,118],[3,73,45,23,74,46],[4,54,24,31,55,25],[11,45,15,31,46,16],[7,146,116,7,147,117],[21,73,45,7,74,46],[1,53,23,37,54,24],[19,45,15,26,46,16],[5,145,115,10,146,116],[19,75,47,10,76,48],[15,54,24,25,55,25],[23,45,15,25,46,16],[13,145,115,3,146,116],[2,74,46,29,75,47],[42,54,24,1,55,25],[23,45,15,28,46,16],[17,145,115],[10,74,46,23,75,47],[10,54,24,35,55,25],[19,45,15,35,46,16],[17,145,115,1,146,116],[14,74,46,21,75,47],[29,54,24,19,55,25],[11,45,15,46,46,16],[13,145,115,6,146,116],[14,74,46,23,75,47],[44,54,24,7,55,25],[59,46,16,1,47,17],[12,151,121,7,152,122],[12,75,47,26,76,48],[39,54,24,14,55,25],[22,45,15,41,46,16],[6,151,121,14,152,122],[6,75,47,34,76,48],[46,54,24,10,55,25],[2,45,15,64,46,16],[17,152,122,4,153,123],[29,74,46,14,75,47],[49,54,24,10,55,25],[24,45,15,46,46,16],[4,152,122,18,153,123],[13,74,46,32,75,47],[48,54,24,14,55,25],[42,45,15,32,46,16],[20,147,117,4,148,118],[40,75,47,7,76,48],[43,54,24,22,55,25],[10,45,15,67,46,16],[19,148,118,6,149,119],[18,75,47,31,76,48],[34,54,24,34,55,25],[20,45,15,61,46,16]],k=function(i,p){var r={};return r.totalCount=i,r.dataCount=p,r},v={},b=function(i,p){switch(p){case n.L:return x[(i-1)*4+0];case n.M:return x[(i-1)*4+1];case n.Q:return x[(i-1)*4+2];case n.H:return x[(i-1)*4+3];default:return}};return v.getRSBlocks=function(i,p){var r=b(i,p);if(typeof r>"u")throw"bad rs block @ typeNumber:"+i+"/errorCorrectionLevel:"+p;for(var t=r.length/3,g=[],l=0;l<t;l+=1)for(var h=r[l*3+0],T=r[l*3+1],N=r[l*3+2],S=0;S<h;S+=1)g.push(k(T,N));return g},v})(),D=function(){var x=[],k=0,v={};return v.getBuffer=function(){return x},v.getAt=function(b){var i=Math.floor(b/8);return(x[i]>>>7-b%8&1)==1},v.put=function(b,i){for(var p=0;p<i;p+=1)v.putBit((b>>>i-p-1&1)==1)},v.getLengthInBits=function(){return k},v.putBit=function(b){var i=Math.floor(k/8);x.length<=i&&x.push(0),b&&(x[i]|=128>>>k%8),k+=1},v},Q=function(x){var k=e.MODE_NUMBER,v=x,b={};b.getMode=function(){return k},b.getLength=function(r){return v.length},b.write=function(r){for(var t=v,g=0;g+2<t.length;)r.put(i(t.substring(g,g+3)),10),g+=3;g<t.length&&(t.length-g==1?r.put(i(t.substring(g,g+1)),4):t.length-g==2&&r.put(i(t.substring(g,g+2)),7))};var i=function(r){for(var t=0,g=0;g<r.length;g+=1)t=t*10+p(r.charAt(g));return t},p=function(r){if("0"<=r&&r<="9")return r.charCodeAt(0)-48;throw"illegal char :"+r};return b},$=function(x){var k=e.MODE_ALPHA_NUM,v=x,b={};b.getMode=function(){return k},b.getLength=function(p){return v.length},b.write=function(p){for(var r=v,t=0;t+1<r.length;)p.put(i(r.charAt(t))*45+i(r.charAt(t+1)),11),t+=2;t<r.length&&p.put(i(r.charAt(t)),6)};var i=function(p){if("0"<=p&&p<="9")return p.charCodeAt(0)-48;if("A"<=p&&p<="Z")return p.charCodeAt(0)-65+10;switch(p){case" ":return 36;case"$":return 37;case"%":return 38;case"*":return 39;case"+":return 40;case"-":return 41;case".":return 42;case"/":return 43;case":":return 44;default:throw"illegal char :"+p}};return b},K=function(x){var k=e.MODE_8BIT_BYTE,v=x,b=A.stringToBytes(x),i={};return i.getMode=function(){return k},i.getLength=function(p){return b.length},i.write=function(p){for(var r=0;r<b.length;r+=1)p.put(b[r],8)},i},xe=function(x){var k=e.MODE_KANJI,v=x,b=A.stringToBytesFuncs.SJIS;if(!b)throw"sjis not supported.";(function(r,t){var g=b(r);if(g.length!=2||(g[0]<<8|g[1])!=t)throw"sjis not supported."})("\u53CB",38726);var i=b(x),p={};return p.getMode=function(){return k},p.getLength=function(r){return~~(i.length/2)},p.write=function(r){for(var t=i,g=0;g+1<t.length;){var l=(255&t[g])<<8|255&t[g+1];if(33088<=l&&l<=40956)l-=33088;else if(57408<=l&&l<=60351)l-=49472;else throw"illegal char at "+(g+1)+"/"+l;l=(l>>>8&255)*192+(l&255),r.put(l,13),g+=2}if(g<t.length)throw"illegal char at "+(g+1)},p},ie=function(){var x=[],k={};return k.writeByte=function(v){x.push(v&255)},k.writeShort=function(v){k.writeByte(v),k.writeByte(v>>>8)},k.writeBytes=function(v,b,i){b=b||0,i=i||v.length;for(var p=0;p<i;p+=1)k.writeByte(v[p+b])},k.writeString=function(v){for(var b=0;b<v.length;b+=1)k.writeByte(v.charCodeAt(b))},k.toByteArray=function(){return x},k.toString=function(){var v="";v+="[";for(var b=0;b<x.length;b+=1)b>0&&(v+=","),v+=x[b];return v+="]",v},k},ke=function(){var x=0,k=0,v=0,b="",i={},p=function(t){b+=String.fromCharCode(r(t&63))},r=function(t){if(!(t<0)){if(t<26)return 65+t;if(t<52)return 97+(t-26);if(t<62)return 48+(t-52);if(t==62)return 43;if(t==63)return 47}throw"n:"+t};return i.writeByte=function(t){for(x=x<<8|t&255,k+=8,v+=1;k>=6;)p(x>>>k-6),k-=6},i.flush=function(){if(k>0&&(p(x<<6-k),x=0,k=0),v%3!=0)for(var t=3-v%3,g=0;g<t;g+=1)b+="="},i.toString=function(){return b},i},Ae=function(x){var k=x,v=0,b=0,i=0,p={};p.read=function(){for(;i<8;){if(v>=k.length){if(i==0)return-1;throw"unexpected end of file./"+i}var t=k.charAt(v);if(v+=1,t=="=")return i=0,-1;if(t.match(/^\s$/))continue;b=b<<6|r(t.charCodeAt(0)),i+=6}var g=b>>>i-8&255;return i-=8,g};var r=function(t){if(65<=t&&t<=90)return t-65;if(97<=t&&t<=122)return t-97+26;if(48<=t&&t<=57)return t-48+52;if(t==43)return 62;if(t==47)return 63;throw"c:"+t};return p},Ce=function(x,k){var v=x,b=k,i=new Array(x*k),p={};p.setPixel=function(l,h,T){i[h*v+l]=T},p.write=function(l){l.writeString("GIF87a"),l.writeShort(v),l.writeShort(b),l.writeByte(128),l.writeByte(0),l.writeByte(0),l.writeByte(0),l.writeByte(0),l.writeByte(0),l.writeByte(255),l.writeByte(255),l.writeByte(255),l.writeString(","),l.writeShort(0),l.writeShort(0),l.writeShort(v),l.writeShort(b),l.writeByte(0);var h=2,T=t(h);l.writeByte(h);for(var N=0;T.length-N>255;)l.writeByte(255),l.writeBytes(T,N,255),N+=255;l.writeByte(T.length-N),l.writeBytes(T,N,T.length-N),l.writeByte(0),l.writeString(";")};var r=function(l){var h=l,T=0,N=0,S={};return S.write=function(B,L){if(B>>>L)throw"length over";for(;T+L>=8;)h.writeByte(255&(B<<T|N)),L-=8-T,B>>>=8-T,N=0,T=0;N=B<<T|N,T=T+L},S.flush=function(){T>0&&h.writeByte(N)},S},t=function(l){for(var h=1<<l,T=(1<<l)+1,N=l+1,S=g(),B=0;B<h;B+=1)S.add(String.fromCharCode(B));S.add(String.fromCharCode(h)),S.add(String.fromCharCode(T));var L=ie(),H=r(L);H.write(h,N);var W=0,F=String.fromCharCode(i[W]);for(W+=1;W<i.length;){var J=String.fromCharCode(i[W]);W+=1,S.contains(F+J)?F=F+J:(H.write(S.indexOf(F),N),S.size()<4095&&(S.size()==1<<N&&(N+=1),S.add(F+J)),F=J)}return H.write(S.indexOf(F),N),H.write(T,N),H.flush(),L.toByteArray()},g=function(){var l={},h=0,T={};return T.add=function(N){if(T.contains(N))throw"dup key:"+N;l[N]=h,h+=1},T.size=function(){return h},T.indexOf=function(N){return l[N]},T.contains=function(N){return typeof l[N]<"u"},T};return p},Ie=function(x,k,v){for(var b=Ce(x,k),i=0;i<k;i+=1)for(var p=0;p<x;p+=1)b.setPixel(p,i,v(p,i));var r=ie();b.write(r);for(var t=ke(),g=r.toByteArray(),l=0;l<g.length;l+=1)t.writeByte(g[l]);return t.flush(),"data:image/gif;base64,"+t};return A})();(function(){pe.stringToBytesFuncs["UTF-8"]=function(A){function e(n){for(var d=[],f=0;f<n.length;f++){var w=n.charCodeAt(f);w<128?d.push(w):w<2048?d.push(192|w>>6,128|w&63):w<55296||w>=57344?d.push(224|w>>12,128|w>>6&63,128|w&63):(f++,w=65536+((w&1023)<<10|n.charCodeAt(f)&1023),d.push(240|w>>18,128|w>>12&63,128|w>>6&63,128|w&63))}return d}return e(A)}})();(function(A){typeof define=="function"&&define.amd?define([],A):typeof ge=="object"&&(ve.exports=A())})(function(){return pe})});function re(){let A=new Uint8Array(32);return crypto.getRandomValues(A),Array.from(A,e=>e.toString(16).padStart(2,"0")).join("")}var De="privasys.id";function ce(A){let e=btoa(A).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");return`https://${De}/scp?p=${e}`}function de(A){let e=A.sessionId??re(),n={origin:A.rpId,sessionId:e,rpId:A.rpId,brokerUrl:A.brokerUrl};return{sessionId:e,payload:ce(JSON.stringify(n))}}function fe(A){let e=A.sessionId??re(),n=A.apps.map(f=>({rpId:f.rpId,sessionId:f.sessionId??re()})),d={origin:A.apps[0]?.rpId??"",sessionId:e,brokerUrl:A.brokerUrl,apps:n};return{sessionId:e,appSessions:n,payload:ce(JSON.stringify(d))}}var ne="privasys_sessions",j=class{constructor(){this.listeners=new Set}store(e){let n=this.getAll(),d=n.findIndex(f=>f.rpId===e.rpId);d>=0?n[d]=e:n.push(e),this.persist(n),this.notify(n)}get(e){return this.getAll().find(n=>n.rpId===e)}getAll(){try{let e=localStorage.getItem(ne);return e?JSON.parse(e):[]}catch{return[]}}has(e){return this.get(e)!==void 0}remove(e){let n=this.getAll().filter(d=>d.rpId!==e);this.persist(n),this.notify(n)}clear(){localStorage.removeItem(ne),this.notify([])}subscribe(e){return this.listeners.add(e),()=>this.listeners.delete(e)}persist(e){localStorage.setItem(ne,JSON.stringify(e))}notify(e){for(let n of this.listeners)n(e)}};var se=12e4,z=class{constructor(e,n={}){this.activeConnections=new Map;this.config={attestation:"required",timeout:se,...e},this.events=n,this.sessions=new j}createQR(e){return de({rpId:this.config.rpId,brokerUrl:this.config.brokerUrl,sessionId:e})}waitForResult(e){return new Promise((n,d)=>{let f=this.config.timeout??se,w=new URL(this.config.brokerUrl);w.searchParams.set("session",e),w.searchParams.set("role","browser");let E=new WebSocket(w.toString());this.activeConnections.set(e,E),this.setState("waiting-for-scan");let R=setTimeout(()=>{this.setState("timeout"),this.cleanup(e),d(new Error("Authentication timed out"))},f);E.onopen=()=>{this.setState("waiting-for-scan")},E.onmessage=D=>{try{let Q=JSON.parse(typeof D.data=="string"?D.data:"{}");this.handleMessage(e,Q,n,R)}catch{}},E.onerror=()=>{clearTimeout(R),this.setState("error"),this.cleanup(e),d(new Error("WebSocket connection failed"))},E.onclose=D=>{clearTimeout(R),this.cleanup(e),D.code!==1e3&&(this.setState("error"),d(new Error(`Connection closed (code ${D.code})`)))}})}async notifyAndWait(e,n){let d=n??this.createQR().sessionId,f=this.config.brokerUrl.replace("wss://","https://").replace("ws://","http://").replace(/\/relay\/?$/,""),w=await fetch(`${f}/notify`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({pushToken:e,sessionId:d,rpId:this.config.rpId,origin:globalThis.location?.origin??"",brokerUrl:this.config.brokerUrl})});if(!w.ok){let E=await w.text();throw new Error(`Push notification failed: ${E}`)}return this.waitForResult(d)}cancel(e){this.cleanup(e),this.setState("idle")}destroy(){for(let e of this.activeConnections.keys())this.cleanup(e);this.setState("idle")}getMultiple(e){let{sessionId:n,appSessions:d,payload:f}=fe({brokerUrl:this.config.brokerUrl,apps:e.map(E=>({rpId:E.rpId}))}),w=this.waitForBatch(d);return{sessionId:n,appSessions:d,payload:f,result:w}}on(e){this.events={...this.events,...e}}handleMessage(e,n,d,f){switch(n.type){case"peer-joined":case"wallet-waiting":this.setState("wallet-connected");break;case"auth-result":{clearTimeout(f),this.setState("complete");let w={sessionToken:n.sessionToken,sessionId:e,attestation:n.attestation,pushToken:n.pushToken||void 0};this.sessions.store({token:w.sessionToken,rpId:this.config.rpId,origin:globalThis.location?.origin??"",authenticatedAt:Date.now(),pushToken:w.pushToken}),this.events.onAuthenticated?.(w),this.cleanup(e),d(w);break}case"auth-error":{clearTimeout(f),this.setState("error"),this.cleanup(e);let w=new Error(n.message??"Authentication failed");this.events.onError?.(w);break}case"authenticating":this.setState("authenticating");break}}setState(e){this.events.onStateChange?.(e)}async waitForBatch(e){let n=this.config.timeout??se;this.setState("waiting-for-scan");let d=await Promise.allSettled(e.map(E=>Promise.race([this.waitForResult(E.sessionId),new Promise((R,D)=>setTimeout(()=>D(new Error("Batch item timed out")),n))]))),f=[],w=[];for(let E=0;E<d.length;E++){let R=d[E];R.status==="fulfilled"?f.push(R.value):w.push({rpId:e[E].rpId,error:R.reason instanceof Error?R.reason.message:String(R.reason)})}return this.setState(w.length===0?"complete":"error"),{results:f,errors:w}}cleanup(e){let n=this.activeConnections.get(e);n&&((n.readyState===WebSocket.OPEN||n.readyState===WebSocket.CONNECTING)&&n.close(1e3),this.activeConnections.delete(e))}};function q(A){let e=new Uint8Array(A),n="";for(let d=0;d<e.length;d++)n+=String.fromCharCode(e[d]);return btoa(n).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"")}function Y(A){let e=A.replace(/-/g,"+").replace(/_/g,"/");for(;e.length%4!==0;)e+="=";let n=atob(e),d=new Uint8Array(n.length);for(let f=0;f<n.length;f++)d[f]=n.charCodeAt(f);return d.buffer}function he(A){let e=new Uint8Array(A);return crypto.getRandomValues(e),Array.from(e,n=>n.toString(16).padStart(2,"0")).join("")}var Z=class{constructor(e,n={}){this.state="idle";this.config={timeout:6e4,...e},this.events=n,this.sessions=new j}on(e){this.events={...this.events,...e}}getState(){return this.state}async register(e){this.setState("requesting-options");try{let n=q(crypto.getRandomValues(new Uint8Array(32)).buffer),d=he(16),f=await this.fido2Fetch({type:"register_begin",user_name:e??globalThis.location?.hostname??"user",user_handle:n,browser_session_id:d});if(f.type==="error")throw new Error(f.error??"Registration begin failed");if(f.type!=="register_options")throw new Error(`Unexpected response: ${f.type}`);let w=f.authenticator_selection??{},E={authenticatorAttachment:"platform",residentKey:w.resident_key??"preferred",userVerification:w.user_verification??"preferred"},R={publicKey:{challenge:Y(f.challenge),rp:{id:f.rp.id,name:f.rp.name},user:{id:Y(f.user.id),name:f.user.name,displayName:f.user.display_name??f.user.name},pubKeyCredParams:(f.pub_key_cred_params??[]).map(K=>({type:K.type??"public-key",alg:K.alg})),timeout:this.config.timeout,attestation:f.attestation??"none",authenticatorSelection:E,...f.exclude_credentials?{excludeCredentials:f.exclude_credentials.map(K=>({type:"public-key",id:Y(K.id)}))}:{}}};this.setState("ceremony");let D=await navigator.credentials.create(R);if(!D)throw new Error("No credential returned");this.setState("verifying");let Q=D.response,$=await this.fido2Fetch({type:"register_complete",challenge:f.challenge,attestation_object:q(Q.attestationObject),client_data_json:q(Q.clientDataJSON),credential_id:q(D.rawId),browser_session_id:d});if($.type==="error")throw new Error($.error??"Registration failed");if($.type!=="register_ok")throw new Error(`Unexpected: ${$.type}`);return this.complete($.session_token??"",d)}catch(n){return this.fail(n)}}async authenticate(){this.setState("requesting-options");try{let e=he(16),n=await this.fido2Fetch({type:"authenticate_begin",browser_session_id:e});if(n.type==="error")throw new Error(n.error??"Authentication begin failed");if(n.type!=="authenticate_options")throw new Error(`Unexpected response: ${n.type}`);let d={publicKey:{challenge:Y(n.challenge),rpId:n.rp_id,timeout:this.config.timeout,userVerification:n.user_verification??"preferred",...n.allow_credentials?.length?{allowCredentials:n.allow_credentials.map(R=>({type:"public-key",id:Y(R.id),...R.transports?.length?{transports:R.transports}:{}}))}:{}}};this.setState("ceremony");let f=await navigator.credentials.get(d);if(!f)throw new Error("No assertion returned");this.setState("verifying");let w=f.response,E=await this.fido2Fetch({type:"authenticate_complete",challenge:n.challenge,credential_id:q(f.rawId),authenticator_data:q(w.authenticatorData),signature:q(w.signature),client_data_json:q(w.clientDataJSON),browser_session_id:e});if(E.type==="error")throw new Error(E.error??"Authentication failed");if(E.type!=="authenticate_ok")throw new Error(`Unexpected: ${E.type}`);return this.complete(E.session_token??"",e)}catch(e){return this.fail(e)}}static isSupported(){return typeof globalThis.PublicKeyCredential<"u"}async fido2Fetch(e){let d=`${this.config.apiBase.replace(/\/+$/,"")}/api/v1/apps/${encodeURIComponent(this.config.appName)}/fido2`,f=await fetch(d,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(e)});if(!f.ok){let w=await f.json().catch(()=>({error:f.statusText}));throw new Error(w.error??`HTTP ${f.status}`)}return f.json()}complete(e,n){this.setState("complete");let d={sessionToken:e,sessionId:n};return this.sessions.store({token:e,rpId:this.config.appName,origin:globalThis.location?.origin??"",authenticatedAt:Date.now()}),this.events.onAuthenticated?.(d),d}fail(e){this.setState("error");let n=e instanceof Error?e.name==="NotAllowedError"?new Error("Credential operation was cancelled or timed out"):e:new Error(String(e));throw this.events.onError?.(n),n}setState(e){this.state=e,this.events.onStateChange?.(e)}};var ye=Le(be(),1),Ue=`
+"use strict";(()=>{var Me=Object.create;var we=Object.defineProperty;var Re=Object.getOwnPropertyDescriptor;var De=Object.getOwnPropertyNames;var Le=Object.getPrototypeOf,Fe=Object.prototype.hasOwnProperty;var Ue=(f,e)=>()=>(e||f((e={exports:{}}).exports,e),e.exports);var Oe=(f,e,r,s)=>{if(e&&typeof e=="object"||typeof e=="function")for(let l of De(e))!Fe.call(f,l)&&l!==r&&we(f,l,{get:()=>e[l],enumerable:!(s=Re(e,l))||s.enumerable});return f};var He=(f,e,r)=>(r=f!=null?Me(Le(f)):{},Oe(e||!f||!f.__esModule?we(r,"default",{value:f,enumerable:!0}):r,f));var Se=Ue((Te,Ee)=>{var Ce=(function(){var f=function(k,A){var w=236,b=17,o=k,m=r[A],n=null,t=0,g=null,d=[],v={},B=function(c,h){t=o*4+17,n=(function(i){for(var p=new Array(i),u=0;u<i;u+=1){p[u]=new Array(i);for(var x=0;x<i;x+=1)p[u][x]=null}return p})(t),N(0,0),N(t-7,0),N(0,t-7),U(),L(),$(c,h),o>=7&&O(c),g==null&&(g=X(o,m,d)),j(g,h)},N=function(c,h){for(var i=-1;i<=7;i+=1)if(!(c+i<=-1||t<=c+i))for(var p=-1;p<=7;p+=1)h+p<=-1||t<=h+p||(0<=i&&i<=6&&(p==0||p==6)||0<=p&&p<=6&&(i==0||i==6)||2<=i&&i<=4&&2<=p&&p<=4?n[c+i][h+p]=!0:n[c+i][h+p]=!1)},M=function(){for(var c=0,h=0,i=0;i<8;i+=1){B(!0,i);var p=l.getLostPoint(v);(i==0||c>p)&&(c=p,h=i)}return h},L=function(){for(var c=8;c<t-8;c+=1)n[c][6]==null&&(n[c][6]=c%2==0);for(var h=8;h<t-8;h+=1)n[6][h]==null&&(n[6][h]=h%2==0)},U=function(){for(var c=l.getPatternPosition(o),h=0;h<c.length;h+=1)for(var i=0;i<c.length;i+=1){var p=c[h],u=c[i];if(n[p][u]==null)for(var x=-2;x<=2;x+=1)for(var T=-2;T<=2;T+=1)x==-2||x==2||T==-2||T==2||x==0&&T==0?n[p+x][u+T]=!0:n[p+x][u+T]=!1}},O=function(c){for(var h=l.getBCHTypeNumber(o),i=0;i<18;i+=1){var p=!c&&(h>>i&1)==1;n[Math.floor(i/3)][i%3+t-8-3]=p}for(var i=0;i<18;i+=1){var p=!c&&(h>>i&1)==1;n[i%3+t-8-3][Math.floor(i/3)]=p}},$=function(c,h){for(var i=m<<3|h,p=l.getBCHTypeInfo(i),u=0;u<15;u+=1){var x=!c&&(p>>u&1)==1;u<6?n[u][8]=x:u<8?n[u+1][8]=x:n[t-15+u][8]=x}for(var u=0;u<15;u+=1){var x=!c&&(p>>u&1)==1;u<8?n[8][t-u-1]=x:u<9?n[8][15-u-1+1]=x:n[8][15-u-1]=x}n[t-8][8]=!c},j=function(c,h){for(var i=-1,p=t-1,u=7,x=0,T=l.getMaskFunction(h),C=t-1;C>0;C-=2)for(C==6&&(C-=1);;){for(var D=0;D<2;D+=1)if(n[p][C-D]==null){var F=!1;x<c.length&&(F=(c[x]>>>u&1)==1);var E=T(p,C-D);E&&(F=!F),n[p][C-D]=F,u-=1,u==-1&&(x+=1,u=7)}if(p+=i,p<0||t<=p){p-=i,i=-i;break}}},J=function(c,h){for(var i=0,p=0,u=0,x=new Array(h.length),T=new Array(h.length),C=0;C<h.length;C+=1){var D=h[C].dataCount,F=h[C].totalCount-D;p=Math.max(p,D),u=Math.max(u,F),x[C]=new Array(D);for(var E=0;E<x[C].length;E+=1)x[C][E]=255&c.getBuffer()[E+i];i+=D;var W=l.getErrorCorrectPolynomial(F),q=I(x[C],W.getLength()-1),me=q.mod(W);T[C]=new Array(W.getLength()-1);for(var E=0;E<T[C].length;E+=1){var ye=E+me.getLength()-T[C].length;T[C][E]=ye>=0?me.getAt(ye):0}}for(var be=0,E=0;E<h.length;E+=1)be+=h[E].totalCount;for(var he=new Array(be),oe=0,E=0;E<p;E+=1)for(var C=0;C<h.length;C+=1)E<x[C].length&&(he[oe]=x[C][E],oe+=1);for(var E=0;E<u;E+=1)for(var C=0;C<h.length;C+=1)E<T[C].length&&(he[oe]=T[C][E],oe+=1);return he},X=function(c,h,i){for(var p=P.getRSBlocks(c,h),u=S(),x=0;x<i.length;x+=1){var T=i[x];u.put(T.getMode(),4),u.put(T.getLength(),l.getLengthInBits(T.getMode(),c)),T.write(u)}for(var C=0,x=0;x<p.length;x+=1)C+=p[x].dataCount;if(u.getLengthInBits()>C*8)throw"code length overflow. ("+u.getLengthInBits()+">"+C*8+")";for(u.getLengthInBits()+4<=C*8&&u.put(0,4);u.getLengthInBits()%8!=0;)u.putBit(!1);for(;!(u.getLengthInBits()>=C*8||(u.put(w,8),u.getLengthInBits()>=C*8));)u.put(b,8);return J(u,p)};v.addData=function(c,h){h=h||"Byte";var i=null;switch(h){case"Numeric":i=_(c);break;case"Alphanumeric":i=R(c);break;case"Byte":i=Y(c);break;case"Kanji":i=Q(c);break;default:throw"mode:"+h}d.push(i),g=null},v.isDark=function(c,h){if(c<0||t<=c||h<0||t<=h)throw c+","+h;return n[c][h]},v.getModuleCount=function(){return t},v.make=function(){if(o<1){for(var c=1;c<40;c++){for(var h=P.getRSBlocks(c,m),i=S(),p=0;p<d.length;p++){var u=d[p];i.put(u.getMode(),4),i.put(u.getLength(),l.getLengthInBits(u.getMode(),c)),u.write(i)}for(var x=0,p=0;p<h.length;p++)x+=h[p].dataCount;if(i.getLengthInBits()<=x*8)break}o=c}B(!1,M())},v.createTableTag=function(c,h){c=c||2,h=typeof h>"u"?c*4:h;var i="";i+='<table style="',i+=" border-width: 0px; border-style: none;",i+=" border-collapse: collapse;",i+=" padding: 0px; margin: "+h+"px;",i+='">',i+="<tbody>";for(var p=0;p<v.getModuleCount();p+=1){i+="<tr>";for(var u=0;u<v.getModuleCount();u+=1)i+='<td style="',i+=" border-width: 0px; border-style: none;",i+=" border-collapse: collapse;",i+=" padding: 0px; margin: 0px;",i+=" width: "+c+"px;",i+=" height: "+c+"px;",i+=" background-color: ",i+=v.isDark(p,u)?"#000000":"#ffffff",i+=";",i+='"/>';i+="</tr>"}return i+="</tbody>",i+="</table>",i},v.createSvgTag=function(c,h,i,p){var u={};typeof arguments[0]=="object"&&(u=arguments[0],c=u.cellSize,h=u.margin,i=u.alt,p=u.title),c=c||2,h=typeof h>"u"?c*4:h,i=typeof i=="string"?{text:i}:i||{},i.text=i.text||null,i.id=i.text?i.id||"qrcode-description":null,p=typeof p=="string"?{text:p}:p||{},p.text=p.text||null,p.id=p.text?p.id||"qrcode-title":null;var x=v.getModuleCount()*c+h*2,T,C,D,F,E="",W;for(W="l"+c+",0 0,"+c+" -"+c+",0 0,-"+c+"z ",E+='<svg version="1.1" xmlns="http://www.w3.org/2000/svg"',E+=u.scalable?"":' width="'+x+'px" height="'+x+'px"',E+=' viewBox="0 0 '+x+" "+x+'" ',E+=' preserveAspectRatio="xMinYMin meet"',E+=p.text||i.text?' role="img" aria-labelledby="'+Z([p.id,i.id].join(" ").trim())+'"':"",E+=">",E+=p.text?'<title id="'+Z(p.id)+'">'+Z(p.text)+"</title>":"",E+=i.text?'<description id="'+Z(i.id)+'">'+Z(i.text)+"</description>":"",E+='<rect width="100%" height="100%" fill="white" cx="0" cy="0"/>',E+='<path d="',D=0;D<v.getModuleCount();D+=1)for(F=D*c+h,T=0;T<v.getModuleCount();T+=1)v.isDark(D,T)&&(C=T*c+h,E+="M"+C+","+F+W);return E+='" stroke="transparent" fill="black"/>',E+="</svg>",E},v.createDataURL=function(c,h){c=c||2,h=typeof h>"u"?c*4:h;var i=v.getModuleCount()*c+h*2,p=h,u=i-h;return ie(i,i,function(x,T){if(p<=x&&x<u&&p<=T&&T<u){var C=Math.floor((x-p)/c),D=Math.floor((T-p)/c);return v.isDark(D,C)?0:1}else return 1})},v.createImgTag=function(c,h,i){c=c||2,h=typeof h>"u"?c*4:h;var p=v.getModuleCount()*c+h*2,u="";return u+="<img",u+=' src="',u+=v.createDataURL(c,h),u+='"',u+=' width="',u+=p,u+='"',u+=' height="',u+=p,u+='"',i&&(u+=' alt="',u+=Z(i),u+='"'),u+="/>",u};var Z=function(c){for(var h="",i=0;i<c.length;i+=1){var p=c.charAt(i);switch(p){case"<":h+="&lt;";break;case">":h+="&gt;";break;case"&":h+="&amp;";break;case'"':h+="&quot;";break;default:h+=p;break}}return h},_e=function(c){var h=1;c=typeof c>"u"?h*2:c;var i=v.getModuleCount()*h+c*2,p=c,u=i-c,x,T,C,D,F,E={"\u2588\u2588":"\u2588","\u2588 ":"\u2580"," \u2588":"\u2584","  ":" "},W={"\u2588\u2588":"\u2580","\u2588 ":"\u2580"," \u2588":" ","  ":" "},q="";for(x=0;x<i;x+=2){for(C=Math.floor((x-p)/h),D=Math.floor((x+1-p)/h),T=0;T<i;T+=1)F="\u2588",p<=T&&T<u&&p<=x&&x<u&&v.isDark(C,Math.floor((T-p)/h))&&(F=" "),p<=T&&T<u&&p<=x+1&&x+1<u&&v.isDark(D,Math.floor((T-p)/h))?F+=" ":F+="\u2588",q+=c<1&&x+1>=u?W[F]:E[F];q+=`
+`}return i%2&&c>0?q.substring(0,q.length-i-1)+Array(i+1).join("\u2580"):q.substring(0,q.length-1)};return v.createASCII=function(c,h){if(c=c||1,c<2)return _e(h);c-=1,h=typeof h>"u"?c*2:h;var i=v.getModuleCount()*c+h*2,p=h,u=i-h,x,T,C,D,F=Array(c+1).join("\u2588\u2588"),E=Array(c+1).join("  "),W="",q="";for(x=0;x<i;x+=1){for(C=Math.floor((x-p)/c),q="",T=0;T<i;T+=1)D=1,p<=T&&T<u&&p<=x&&x<u&&v.isDark(C,Math.floor((T-p)/c))&&(D=0),q+=D?F:E;for(C=0;C<c;C+=1)W+=q+`
+`}return W.substring(0,W.length-1)},v.renderTo2dContext=function(c,h){h=h||2;for(var i=v.getModuleCount(),p=0;p<i;p++)for(var u=0;u<i;u++)c.fillStyle=v.isDark(p,u)?"black":"white",c.fillRect(p*h,u*h,h,h)},v};f.stringToBytesFuncs={default:function(k){for(var A=[],w=0;w<k.length;w+=1){var b=k.charCodeAt(w);A.push(b&255)}return A}},f.stringToBytes=f.stringToBytesFuncs.default,f.createStringToBytes=function(k,A){var w=(function(){for(var o=ce(k),m=function(){var L=o.read();if(L==-1)throw"eof";return L},n=0,t={};;){var g=o.read();if(g==-1)break;var d=m(),v=m(),B=m(),N=String.fromCharCode(g<<8|d),M=v<<8|B;t[N]=M,n+=1}if(n!=A)throw n+" != "+A;return t})(),b=63;return function(o){for(var m=[],n=0;n<o.length;n+=1){var t=o.charCodeAt(n);if(t<128)m.push(t);else{var g=w[o.charAt(n)];typeof g=="number"?(g&255)==g?m.push(g):(m.push(g>>>8),m.push(g&255)):m.push(b)}}return m}};var e={MODE_NUMBER:1,MODE_ALPHA_NUM:2,MODE_8BIT_BYTE:4,MODE_KANJI:8},r={L:1,M:0,Q:3,H:2},s={PATTERN000:0,PATTERN001:1,PATTERN010:2,PATTERN011:3,PATTERN100:4,PATTERN101:5,PATTERN110:6,PATTERN111:7},l=(function(){var k=[[],[6,18],[6,22],[6,26],[6,30],[6,34],[6,22,38],[6,24,42],[6,26,46],[6,28,50],[6,30,54],[6,32,58],[6,34,62],[6,26,46,66],[6,26,48,70],[6,26,50,74],[6,30,54,78],[6,30,56,82],[6,30,58,86],[6,34,62,90],[6,28,50,72,94],[6,26,50,74,98],[6,30,54,78,102],[6,28,54,80,106],[6,32,58,84,110],[6,30,58,86,114],[6,34,62,90,118],[6,26,50,74,98,122],[6,30,54,78,102,126],[6,26,52,78,104,130],[6,30,56,82,108,134],[6,34,60,86,112,138],[6,30,58,86,114,142],[6,34,62,90,118,146],[6,30,54,78,102,126,150],[6,24,50,76,102,128,154],[6,28,54,80,106,132,158],[6,32,58,84,110,136,162],[6,26,54,82,110,138,166],[6,30,58,86,114,142,170]],A=1335,w=7973,b=21522,o={},m=function(n){for(var t=0;n!=0;)t+=1,n>>>=1;return t};return o.getBCHTypeInfo=function(n){for(var t=n<<10;m(t)-m(A)>=0;)t^=A<<m(t)-m(A);return(n<<10|t)^b},o.getBCHTypeNumber=function(n){for(var t=n<<12;m(t)-m(w)>=0;)t^=w<<m(t)-m(w);return n<<12|t},o.getPatternPosition=function(n){return k[n-1]},o.getMaskFunction=function(n){switch(n){case s.PATTERN000:return function(t,g){return(t+g)%2==0};case s.PATTERN001:return function(t,g){return t%2==0};case s.PATTERN010:return function(t,g){return g%3==0};case s.PATTERN011:return function(t,g){return(t+g)%3==0};case s.PATTERN100:return function(t,g){return(Math.floor(t/2)+Math.floor(g/3))%2==0};case s.PATTERN101:return function(t,g){return t*g%2+t*g%3==0};case s.PATTERN110:return function(t,g){return(t*g%2+t*g%3)%2==0};case s.PATTERN111:return function(t,g){return(t*g%3+(t+g)%2)%2==0};default:throw"bad maskPattern:"+n}},o.getErrorCorrectPolynomial=function(n){for(var t=I([1],0),g=0;g<n;g+=1)t=t.multiply(I([1,a.gexp(g)],0));return t},o.getLengthInBits=function(n,t){if(1<=t&&t<10)switch(n){case e.MODE_NUMBER:return 10;case e.MODE_ALPHA_NUM:return 9;case e.MODE_8BIT_BYTE:return 8;case e.MODE_KANJI:return 8;default:throw"mode:"+n}else if(t<27)switch(n){case e.MODE_NUMBER:return 12;case e.MODE_ALPHA_NUM:return 11;case e.MODE_8BIT_BYTE:return 16;case e.MODE_KANJI:return 10;default:throw"mode:"+n}else if(t<41)switch(n){case e.MODE_NUMBER:return 14;case e.MODE_ALPHA_NUM:return 13;case e.MODE_8BIT_BYTE:return 16;case e.MODE_KANJI:return 12;default:throw"mode:"+n}else throw"type:"+t},o.getLostPoint=function(n){for(var t=n.getModuleCount(),g=0,d=0;d<t;d+=1)for(var v=0;v<t;v+=1){for(var B=0,N=n.isDark(d,v),M=-1;M<=1;M+=1)if(!(d+M<0||t<=d+M))for(var L=-1;L<=1;L+=1)v+L<0||t<=v+L||M==0&&L==0||N==n.isDark(d+M,v+L)&&(B+=1);B>5&&(g+=3+B-5)}for(var d=0;d<t-1;d+=1)for(var v=0;v<t-1;v+=1){var U=0;n.isDark(d,v)&&(U+=1),n.isDark(d+1,v)&&(U+=1),n.isDark(d,v+1)&&(U+=1),n.isDark(d+1,v+1)&&(U+=1),(U==0||U==4)&&(g+=3)}for(var d=0;d<t;d+=1)for(var v=0;v<t-6;v+=1)n.isDark(d,v)&&!n.isDark(d,v+1)&&n.isDark(d,v+2)&&n.isDark(d,v+3)&&n.isDark(d,v+4)&&!n.isDark(d,v+5)&&n.isDark(d,v+6)&&(g+=40);for(var v=0;v<t;v+=1)for(var d=0;d<t-6;d+=1)n.isDark(d,v)&&!n.isDark(d+1,v)&&n.isDark(d+2,v)&&n.isDark(d+3,v)&&n.isDark(d+4,v)&&!n.isDark(d+5,v)&&n.isDark(d+6,v)&&(g+=40);for(var O=0,v=0;v<t;v+=1)for(var d=0;d<t;d+=1)n.isDark(d,v)&&(O+=1);var $=Math.abs(100*O/t/t-50)/5;return g+=$*10,g},o})(),a=(function(){for(var k=new Array(256),A=new Array(256),w=0;w<8;w+=1)k[w]=1<<w;for(var w=8;w<256;w+=1)k[w]=k[w-4]^k[w-5]^k[w-6]^k[w-8];for(var w=0;w<255;w+=1)A[k[w]]=w;var b={};return b.glog=function(o){if(o<1)throw"glog("+o+")";return A[o]},b.gexp=function(o){for(;o<0;)o+=255;for(;o>=256;)o-=255;return k[o]},b})();function I(k,A){if(typeof k.length>"u")throw k.length+"/"+A;var w=(function(){for(var o=0;o<k.length&&k[o]==0;)o+=1;for(var m=new Array(k.length-o+A),n=0;n<k.length-o;n+=1)m[n]=k[n+o];return m})(),b={};return b.getAt=function(o){return w[o]},b.getLength=function(){return w.length},b.multiply=function(o){for(var m=new Array(b.getLength()+o.getLength()-1),n=0;n<b.getLength();n+=1)for(var t=0;t<o.getLength();t+=1)m[n+t]^=a.gexp(a.glog(b.getAt(n))+a.glog(o.getAt(t)));return I(m,0)},b.mod=function(o){if(b.getLength()-o.getLength()<0)return b;for(var m=a.glog(b.getAt(0))-a.glog(o.getAt(0)),n=new Array(b.getLength()),t=0;t<b.getLength();t+=1)n[t]=b.getAt(t);for(var t=0;t<o.getLength();t+=1)n[t]^=a.gexp(a.glog(o.getAt(t))+m);return I(n,0).mod(o)},b}var P=(function(){var k=[[1,26,19],[1,26,16],[1,26,13],[1,26,9],[1,44,34],[1,44,28],[1,44,22],[1,44,16],[1,70,55],[1,70,44],[2,35,17],[2,35,13],[1,100,80],[2,50,32],[2,50,24],[4,25,9],[1,134,108],[2,67,43],[2,33,15,2,34,16],[2,33,11,2,34,12],[2,86,68],[4,43,27],[4,43,19],[4,43,15],[2,98,78],[4,49,31],[2,32,14,4,33,15],[4,39,13,1,40,14],[2,121,97],[2,60,38,2,61,39],[4,40,18,2,41,19],[4,40,14,2,41,15],[2,146,116],[3,58,36,2,59,37],[4,36,16,4,37,17],[4,36,12,4,37,13],[2,86,68,2,87,69],[4,69,43,1,70,44],[6,43,19,2,44,20],[6,43,15,2,44,16],[4,101,81],[1,80,50,4,81,51],[4,50,22,4,51,23],[3,36,12,8,37,13],[2,116,92,2,117,93],[6,58,36,2,59,37],[4,46,20,6,47,21],[7,42,14,4,43,15],[4,133,107],[8,59,37,1,60,38],[8,44,20,4,45,21],[12,33,11,4,34,12],[3,145,115,1,146,116],[4,64,40,5,65,41],[11,36,16,5,37,17],[11,36,12,5,37,13],[5,109,87,1,110,88],[5,65,41,5,66,42],[5,54,24,7,55,25],[11,36,12,7,37,13],[5,122,98,1,123,99],[7,73,45,3,74,46],[15,43,19,2,44,20],[3,45,15,13,46,16],[1,135,107,5,136,108],[10,74,46,1,75,47],[1,50,22,15,51,23],[2,42,14,17,43,15],[5,150,120,1,151,121],[9,69,43,4,70,44],[17,50,22,1,51,23],[2,42,14,19,43,15],[3,141,113,4,142,114],[3,70,44,11,71,45],[17,47,21,4,48,22],[9,39,13,16,40,14],[3,135,107,5,136,108],[3,67,41,13,68,42],[15,54,24,5,55,25],[15,43,15,10,44,16],[4,144,116,4,145,117],[17,68,42],[17,50,22,6,51,23],[19,46,16,6,47,17],[2,139,111,7,140,112],[17,74,46],[7,54,24,16,55,25],[34,37,13],[4,151,121,5,152,122],[4,75,47,14,76,48],[11,54,24,14,55,25],[16,45,15,14,46,16],[6,147,117,4,148,118],[6,73,45,14,74,46],[11,54,24,16,55,25],[30,46,16,2,47,17],[8,132,106,4,133,107],[8,75,47,13,76,48],[7,54,24,22,55,25],[22,45,15,13,46,16],[10,142,114,2,143,115],[19,74,46,4,75,47],[28,50,22,6,51,23],[33,46,16,4,47,17],[8,152,122,4,153,123],[22,73,45,3,74,46],[8,53,23,26,54,24],[12,45,15,28,46,16],[3,147,117,10,148,118],[3,73,45,23,74,46],[4,54,24,31,55,25],[11,45,15,31,46,16],[7,146,116,7,147,117],[21,73,45,7,74,46],[1,53,23,37,54,24],[19,45,15,26,46,16],[5,145,115,10,146,116],[19,75,47,10,76,48],[15,54,24,25,55,25],[23,45,15,25,46,16],[13,145,115,3,146,116],[2,74,46,29,75,47],[42,54,24,1,55,25],[23,45,15,28,46,16],[17,145,115],[10,74,46,23,75,47],[10,54,24,35,55,25],[19,45,15,35,46,16],[17,145,115,1,146,116],[14,74,46,21,75,47],[29,54,24,19,55,25],[11,45,15,46,46,16],[13,145,115,6,146,116],[14,74,46,23,75,47],[44,54,24,7,55,25],[59,46,16,1,47,17],[12,151,121,7,152,122],[12,75,47,26,76,48],[39,54,24,14,55,25],[22,45,15,41,46,16],[6,151,121,14,152,122],[6,75,47,34,76,48],[46,54,24,10,55,25],[2,45,15,64,46,16],[17,152,122,4,153,123],[29,74,46,14,75,47],[49,54,24,10,55,25],[24,45,15,46,46,16],[4,152,122,18,153,123],[13,74,46,32,75,47],[48,54,24,14,55,25],[42,45,15,32,46,16],[20,147,117,4,148,118],[40,75,47,7,76,48],[43,54,24,22,55,25],[10,45,15,67,46,16],[19,148,118,6,149,119],[18,75,47,31,76,48],[34,54,24,34,55,25],[20,45,15,61,46,16]],A=function(o,m){var n={};return n.totalCount=o,n.dataCount=m,n},w={},b=function(o,m){switch(m){case r.L:return k[(o-1)*4+0];case r.M:return k[(o-1)*4+1];case r.Q:return k[(o-1)*4+2];case r.H:return k[(o-1)*4+3];default:return}};return w.getRSBlocks=function(o,m){var n=b(o,m);if(typeof n>"u")throw"bad rs block @ typeNumber:"+o+"/errorCorrectionLevel:"+m;for(var t=n.length/3,g=[],d=0;d<t;d+=1)for(var v=n[d*3+0],B=n[d*3+1],N=n[d*3+2],M=0;M<v;M+=1)g.push(A(B,N));return g},w})(),S=function(){var k=[],A=0,w={};return w.getBuffer=function(){return k},w.getAt=function(b){var o=Math.floor(b/8);return(k[o]>>>7-b%8&1)==1},w.put=function(b,o){for(var m=0;m<o;m+=1)w.putBit((b>>>o-m-1&1)==1)},w.getLengthInBits=function(){return A},w.putBit=function(b){var o=Math.floor(A/8);k.length<=o&&k.push(0),b&&(k[o]|=128>>>A%8),A+=1},w},_=function(k){var A=e.MODE_NUMBER,w=k,b={};b.getMode=function(){return A},b.getLength=function(n){return w.length},b.write=function(n){for(var t=w,g=0;g+2<t.length;)n.put(o(t.substring(g,g+3)),10),g+=3;g<t.length&&(t.length-g==1?n.put(o(t.substring(g,g+1)),4):t.length-g==2&&n.put(o(t.substring(g,g+2)),7))};var o=function(n){for(var t=0,g=0;g<n.length;g+=1)t=t*10+m(n.charAt(g));return t},m=function(n){if("0"<=n&&n<="9")return n.charCodeAt(0)-48;throw"illegal char :"+n};return b},R=function(k){var A=e.MODE_ALPHA_NUM,w=k,b={};b.getMode=function(){return A},b.getLength=function(m){return w.length},b.write=function(m){for(var n=w,t=0;t+1<n.length;)m.put(o(n.charAt(t))*45+o(n.charAt(t+1)),11),t+=2;t<n.length&&m.put(o(n.charAt(t)),6)};var o=function(m){if("0"<=m&&m<="9")return m.charCodeAt(0)-48;if("A"<=m&&m<="Z")return m.charCodeAt(0)-65+10;switch(m){case" ":return 36;case"$":return 37;case"%":return 38;case"*":return 39;case"+":return 40;case"-":return 41;case".":return 42;case"/":return 43;case":":return 44;default:throw"illegal char :"+m}};return b},Y=function(k){var A=e.MODE_8BIT_BYTE,w=k,b=f.stringToBytes(k),o={};return o.getMode=function(){return A},o.getLength=function(m){return b.length},o.write=function(m){for(var n=0;n<b.length;n+=1)m.put(b[n],8)},o},Q=function(k){var A=e.MODE_KANJI,w=k,b=f.stringToBytesFuncs.SJIS;if(!b)throw"sjis not supported.";(function(n,t){var g=b(n);if(g.length!=2||(g[0]<<8|g[1])!=t)throw"sjis not supported."})("\u53CB",38726);var o=b(k),m={};return m.getMode=function(){return A},m.getLength=function(n){return~~(o.length/2)},m.write=function(n){for(var t=o,g=0;g+1<t.length;){var d=(255&t[g])<<8|255&t[g+1];if(33088<=d&&d<=40956)d-=33088;else if(57408<=d&&d<=60351)d-=49472;else throw"illegal char at "+(g+1)+"/"+d;d=(d>>>8&255)*192+(d&255),n.put(d,13),g+=2}if(g<t.length)throw"illegal char at "+(g+1)},m},V=function(){var k=[],A={};return A.writeByte=function(w){k.push(w&255)},A.writeShort=function(w){A.writeByte(w),A.writeByte(w>>>8)},A.writeBytes=function(w,b,o){b=b||0,o=o||w.length;for(var m=0;m<o;m+=1)A.writeByte(w[m+b])},A.writeString=function(w){for(var b=0;b<w.length;b+=1)A.writeByte(w.charCodeAt(b))},A.toByteArray=function(){return k},A.toString=function(){var w="";w+="[";for(var b=0;b<k.length;b+=1)b>0&&(w+=","),w+=k[b];return w+="]",w},A},te=function(){var k=0,A=0,w=0,b="",o={},m=function(t){b+=String.fromCharCode(n(t&63))},n=function(t){if(!(t<0)){if(t<26)return 65+t;if(t<52)return 97+(t-26);if(t<62)return 48+(t-52);if(t==62)return 43;if(t==63)return 47}throw"n:"+t};return o.writeByte=function(t){for(k=k<<8|t&255,A+=8,w+=1;A>=6;)m(k>>>A-6),A-=6},o.flush=function(){if(A>0&&(m(k<<6-A),k=0,A=0),w%3!=0)for(var t=3-w%3,g=0;g<t;g+=1)b+="="},o.toString=function(){return b},o},ce=function(k){var A=k,w=0,b=0,o=0,m={};m.read=function(){for(;o<8;){if(w>=A.length){if(o==0)return-1;throw"unexpected end of file./"+o}var t=A.charAt(w);if(w+=1,t=="=")return o=0,-1;if(t.match(/^\s$/))continue;b=b<<6|n(t.charCodeAt(0)),o+=6}var g=b>>>o-8&255;return o-=8,g};var n=function(t){if(65<=t&&t<=90)return t-65;if(97<=t&&t<=122)return t-97+26;if(48<=t&&t<=57)return t-48+52;if(t==43)return 62;if(t==47)return 63;throw"c:"+t};return m},de=function(k,A){var w=k,b=A,o=new Array(k*A),m={};m.setPixel=function(d,v,B){o[v*w+d]=B},m.write=function(d){d.writeString("GIF87a"),d.writeShort(w),d.writeShort(b),d.writeByte(128),d.writeByte(0),d.writeByte(0),d.writeByte(0),d.writeByte(0),d.writeByte(0),d.writeByte(255),d.writeByte(255),d.writeByte(255),d.writeString(","),d.writeShort(0),d.writeShort(0),d.writeShort(w),d.writeShort(b),d.writeByte(0);var v=2,B=t(v);d.writeByte(v);for(var N=0;B.length-N>255;)d.writeByte(255),d.writeBytes(B,N,255),N+=255;d.writeByte(B.length-N),d.writeBytes(B,N,B.length-N),d.writeByte(0),d.writeString(";")};var n=function(d){var v=d,B=0,N=0,M={};return M.write=function(L,U){if(L>>>U)throw"length over";for(;B+U>=8;)v.writeByte(255&(L<<B|N)),U-=8-B,L>>>=8-B,N=0,B=0;N=L<<B|N,B=B+U},M.flush=function(){B>0&&v.writeByte(N)},M},t=function(d){for(var v=1<<d,B=(1<<d)+1,N=d+1,M=g(),L=0;L<v;L+=1)M.add(String.fromCharCode(L));M.add(String.fromCharCode(v)),M.add(String.fromCharCode(B));var U=V(),O=n(U);O.write(v,N);var $=0,j=String.fromCharCode(o[$]);for($+=1;$<o.length;){var J=String.fromCharCode(o[$]);$+=1,M.contains(j+J)?j=j+J:(O.write(M.indexOf(j),N),M.size()<4095&&(M.size()==1<<N&&(N+=1),M.add(j+J)),j=J)}return O.write(M.indexOf(j),N),O.write(B,N),O.flush(),U.toByteArray()},g=function(){var d={},v=0,B={};return B.add=function(N){if(B.contains(N))throw"dup key:"+N;d[N]=v,v+=1},B.size=function(){return v},B.indexOf=function(N){return d[N]},B.contains=function(N){return typeof d[N]<"u"},B};return m},ie=function(k,A,w){for(var b=de(k,A),o=0;o<A;o+=1)for(var m=0;m<k;m+=1)b.setPixel(m,o,w(m,o));var n=V();b.write(n);for(var t=te(),g=n.toByteArray(),d=0;d<g.length;d+=1)t.writeByte(g[d]);return t.flush(),"data:image/gif;base64,"+t};return f})();(function(){Ce.stringToBytesFuncs["UTF-8"]=function(f){function e(r){for(var s=[],l=0;l<r.length;l++){var a=r.charCodeAt(l);a<128?s.push(a):a<2048?s.push(192|a>>6,128|a&63):a<55296||a>=57344?s.push(224|a>>12,128|a>>6&63,128|a&63):(l++,a=65536+((a&1023)<<10|r.charCodeAt(l)&1023),s.push(240|a>>18,128|a>>12&63,128|a>>6&63,128|a&63))}return s}return e(f)}})();(function(f){typeof define=="function"&&define.amd?define([],f):typeof Te=="object"&&(Ee.exports=f())})(function(){return Ce})});function pe(){let f=new Uint8Array(32);return crypto.getRandomValues(f),Array.from(f,e=>e.toString(16).padStart(2,"0")).join("")}var $e="privasys.id";function xe(f){let e=btoa(f).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");return`https://${$e}/scp?p=${e}`}function ke(f){let e=f.sessionId??pe(),r={origin:f.rpId,sessionId:e,rpId:f.rpId,brokerUrl:f.brokerUrl};return f.requestedAttributes?.length&&(r.requestedAttributes=f.requestedAttributes),f.appName&&(r.appName=f.appName),f.privacyPolicyUrl&&(r.privacyPolicyUrl=f.privacyPolicyUrl),{sessionId:e,payload:xe(JSON.stringify(r))}}function Ae(f){let e=f.sessionId??pe(),r=f.apps.map(l=>({rpId:l.rpId,sessionId:l.sessionId??pe()})),s={origin:f.apps[0]?.rpId??"",sessionId:e,brokerUrl:f.brokerUrl,apps:r};return{sessionId:e,appSessions:r,payload:xe(JSON.stringify(s))}}var ue="privasys_sessions",fe="privasys_device_hints",G=class{constructor(){this.listeners=new Set}store(e){let r=this.getAll(),s=r.findIndex(l=>l.rpId===e.rpId);s>=0?r[s]=e:r.push(e),this.persist(r),this.notify(r)}get(e){return this.getAll().find(r=>r.rpId===e)}getAll(){try{let e=localStorage.getItem(ue);return e?JSON.parse(e):[]}catch{return[]}}has(e){return this.get(e)!==void 0}findPushToken(){let e=this.getAll().filter(r=>!!r.pushToken).sort((r,s)=>s.authenticatedAt-r.authenticatedAt);return e[0]?.pushToken?e[0].pushToken:this.getDeviceHint()?.pushToken}remove(e){let r=this.getAll().filter(s=>s.rpId!==e);this.persist(r),this.notify(r)}clear(){localStorage.removeItem(ue),this.notify([])}subscribe(e){return this.listeners.add(e),()=>this.listeners.delete(e)}saveDeviceHint(e,r){let s={pushToken:e,brokerUrl:r,updatedAt:Date.now()};try{localStorage.setItem(fe,JSON.stringify(s))}catch{}}getDeviceHint(){try{let e=localStorage.getItem(fe);return e?JSON.parse(e):void 0}catch{return}}clearDeviceHint(){localStorage.removeItem(fe)}persist(e){localStorage.setItem(ue,JSON.stringify(e))}notify(e){for(let r of this.listeners)r(e)}};var ge=12e4,ae=class{constructor(e,r={}){this.activeConnections=new Map;this.config={attestation:"required",timeout:ge,...e},this.events=r,this.sessions=new G}createQR(e){return ke({rpId:this.config.rpId,brokerUrl:this.config.brokerUrl,sessionId:e,requestedAttributes:this.config.requestedAttributes,appName:this.config.appName,privacyPolicyUrl:this.config.privacyPolicyUrl})}waitForResult(e){return new Promise((r,s)=>{let l=this.config.timeout??ge,a=new URL(this.config.brokerUrl);a.searchParams.set("session",e),a.searchParams.set("role","browser");let I=new WebSocket(a.toString());this.activeConnections.set(e,I),this.setState("waiting-for-scan");let P=setTimeout(()=>{this.setState("timeout"),this.cleanup(e),s(new Error("Authentication timed out"))},l);I.onopen=()=>{this.setState("waiting-for-scan")},I.onmessage=S=>{try{let _=JSON.parse(typeof S.data=="string"?S.data:"{}");this.handleMessage(e,_,r,P)}catch{}},I.onerror=()=>{clearTimeout(P),this.setState("error"),this.cleanup(e),s(new Error("WebSocket connection failed"))},I.onclose=S=>{clearTimeout(P),this.cleanup(e),S.code!==1e3&&(this.setState("error"),s(new Error(`Connection closed (code ${S.code})`)))}})}async notifyAndWait(e,r){let s=r??this.createQR().sessionId,l=this.config.brokerUrl.replace("wss://","https://").replace("ws://","http://").replace(/\/relay\/?$/,""),a=await fetch(`${l}/notify`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({pushToken:e,sessionId:s,rpId:this.config.rpId,appName:this.config.appName,origin:this.config.rpId,brokerUrl:this.config.brokerUrl})});if(!a.ok){let I=await a.text();throw new Error(`Push notification failed: ${I}`)}return this.waitForResult(s)}cancel(e){this.cleanup(e),this.setState("idle")}destroy(){for(let e of this.activeConnections.keys())this.cleanup(e);this.setState("idle")}getMultiple(e){let{sessionId:r,appSessions:s,payload:l}=Ae({brokerUrl:this.config.brokerUrl,apps:e.map(I=>({rpId:I.rpId}))}),a=this.waitForBatch(s);return{sessionId:r,appSessions:s,payload:l,result:a}}on(e){this.events={...this.events,...e}}handleMessage(e,r,s,l){switch(r.type){case"peer-joined":case"wallet-waiting":this.setState("wallet-connected");break;case"auth-result":{clearTimeout(l),this.setState("complete");let a={sessionToken:r.sessionToken,sessionId:e,attestation:r.attestation,pushToken:r.pushToken||void 0,attributes:r.attributes||void 0};this.sessions.store({token:a.sessionToken,rpId:this.config.rpId,origin:globalThis.location?.origin??"",authenticatedAt:Date.now(),pushToken:a.pushToken,brokerUrl:this.config.brokerUrl}),this.events.onAuthenticated?.(a),this.cleanup(e),s(a);break}case"auth-error":{clearTimeout(l),this.setState("error"),this.cleanup(e);let a=new Error(r.message??"Authentication failed");this.events.onError?.(a);break}case"authenticating":this.setState("authenticating");break}}setState(e){this.events.onStateChange?.(e)}async waitForBatch(e){let r=this.config.timeout??ge;this.setState("waiting-for-scan");let s=await Promise.allSettled(e.map(I=>Promise.race([this.waitForResult(I.sessionId),new Promise((P,S)=>setTimeout(()=>S(new Error("Batch item timed out")),r))]))),l=[],a=[];for(let I=0;I<s.length;I++){let P=s[I];P.status==="fulfilled"?l.push(P.value):a.push({rpId:e[I].rpId,error:P.reason instanceof Error?P.reason.message:String(P.reason)})}return this.setState(a.length===0?"complete":"error"),{results:l,errors:a}}cleanup(e){let r=this.activeConnections.get(e);r&&((r.readyState===WebSocket.OPEN||r.readyState===WebSocket.CONNECTING)&&r.close(1e3),this.activeConnections.delete(e))}};function K(f){let e=new Uint8Array(f),r="";for(let s=0;s<e.length;s++)r+=String.fromCharCode(e[s]);return btoa(r).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"")}function re(f){let e=f.replace(/-/g,"+").replace(/_/g,"/");for(;e.length%4!==0;)e+="=";let r=atob(e),s=new Uint8Array(r.length);for(let l=0;l<r.length;l++)s[l]=r.charCodeAt(l);return s.buffer}function Ie(f){let e=new Uint8Array(f);return crypto.getRandomValues(e),Array.from(e,r=>r.toString(16).padStart(2,"0")).join("")}var ee=class{constructor(e,r={}){this.state="idle";this.config={timeout:6e4,...e},this.events=r,this.sessions=new G}on(e){this.events={...this.events,...e}}getState(){return this.state}async register(e){this.setState("requesting-options");try{let r=K(crypto.getRandomValues(new Uint8Array(32)).buffer),s=this.config.sessionId??Ie(16),a=(await this.fido2Fetch("register/begin",{userName:e??globalThis.location?.hostname??"user",userHandle:r},{session_id:s})).publicKey;if(!a)throw new Error("Missing publicKey in registration options");let I={publicKey:{challenge:re(a.challenge),rp:{id:a.rp.id,name:a.rp.name},user:{id:re(a.user.id),name:a.user.name,displayName:a.user.displayName??a.user.name},pubKeyCredParams:(a.pubKeyCredParams??[]).map(R=>({type:R.type??"public-key",alg:R.alg})),timeout:this.config.timeout,attestation:a.attestation??"none",authenticatorSelection:{authenticatorAttachment:"platform",residentKey:a.authenticatorSelection?.residentKey??"preferred",userVerification:a.authenticatorSelection?.userVerification??"preferred"},...a.excludeCredentials?{excludeCredentials:a.excludeCredentials.map(R=>({type:"public-key",id:re(R.id)}))}:{}}};this.setState("ceremony");let P=await navigator.credentials.create(I);if(!P)throw new Error("No credential returned");this.setState("verifying");let S=P.response,_=await this.fido2Fetch("register/complete",{id:K(P.rawId),rawId:K(P.rawId),type:"public-key",response:{attestationObject:K(S.attestationObject),clientDataJSON:K(S.clientDataJSON)}},{challenge:a.challenge});return this.complete(_.sessionToken??"",s)}catch(r){return this.fail(r)}}async authenticate(){this.setState("requesting-options");try{let e=this.config.sessionId??Ie(16),s=(await this.fido2Fetch("authenticate/begin",{},{session_id:e})).publicKey;if(!s)throw new Error("Missing publicKey in authentication options");let l={publicKey:{challenge:re(s.challenge),rpId:s.rpId,timeout:this.config.timeout,userVerification:s.userVerification??"preferred",...s.allowCredentials?.length?{allowCredentials:s.allowCredentials.map(S=>({type:"public-key",id:re(S.id),...S.transports?.length?{transports:S.transports}:{}}))}:{}}};this.setState("ceremony");let a=await navigator.credentials.get(l);if(!a)throw new Error("No assertion returned");this.setState("verifying");let I=a.response,P=await this.fido2Fetch("authenticate/complete",{id:K(a.rawId),rawId:K(a.rawId),type:"public-key",response:{clientDataJSON:K(I.clientDataJSON),authenticatorData:K(I.authenticatorData),signature:K(I.signature)}},{challenge:s.challenge});return this.complete(P.sessionToken??"",e)}catch(e){return this.fail(e)}}static isSupported(){return typeof globalThis.PublicKeyCredential<"u"}async fido2Fetch(e,r,s){let l=(this.config.fido2Base??this.config.apiBase).replace(/\/+$/,""),a=this.config.fido2Base?new URL(`${l}/${e}`):new URL(`${l}/api/v1/apps/${encodeURIComponent(this.config.appName)}/fido2/${e}`);if(s)for(let[P,S]of Object.entries(s))a.searchParams.set(P,S);let I=await fetch(a.toString(),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(r)});if(!I.ok){let P=await I.json().catch(()=>({error:I.statusText}));throw new Error(P.error??`HTTP ${I.status}`)}return I.json()}complete(e,r){this.setState("complete");let s={sessionToken:e,sessionId:r};return this.sessions.store({token:e,rpId:this.config.appName,origin:globalThis.location?.origin??"",authenticatedAt:Date.now()}),this.events.onAuthenticated?.(s),s}fail(e){this.setState("error");let r=e instanceof Error?e.name==="NotAllowedError"?new Error("Credential operation was cancelled or timed out"):e:new Error(String(e));throw this.events.onError?.(r),r}setState(e){this.state=e,this.events.onStateChange?.(e)}};var Ne=He(Se(),1),je=`
+@import url('https://rsms.me/inter/inter.css');
 :host {
     all: initial;
     position: fixed;
     inset: 0;
     z-index: 2147483647;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    color: #111;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    color: #0F172A;
+    background: #fff;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow-y: auto;
 }
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-.overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,0.35);
-    backdrop-filter: blur(4px);
-    -webkit-backdrop-filter: blur(4px);
+/* Close button \u2014 top right */
+.btn-close {
+    position: absolute;
+    top: 24px;
+    right: 24px;
+    z-index: 10;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    cursor: pointer;
+    color: #94A3B8;
+    transition: background 0.15s, color 0.15s;
 }
+.btn-close:hover { background: #F1F5F9; color: #64748B; }
+.btn-close svg { width: 20px; height: 20px; }
 
-.modal {
-    position: relative;
+/* Back button \u2014 top of auth panel */
+.btn-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 13px;
+    color: #64748B;
+    padding: 6px 10px 6px 4px;
+    border-radius: 8px;
+    margin-bottom: 24px;
+    transition: background 0.15s, color 0.15s;
+    align-self: flex-start;
+}
+.btn-back:hover { background: #F1F5F9; color: #0F172A; }
+.btn-back svg { width: 16px; height: 16px; }
+
+/* Full-screen two-column layout */
+.page {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr auto;
     width: 100%;
-    max-width: 420px;
-    margin: 16px;
-    background: #fff;
-    border-radius: 16px;
-    padding: 40px 36px 28px;
-    text-align: center;
-    box-shadow: 0 24px 64px rgba(0,0,0,0.15), 0 2px 8px rgba(0,0,0,0.08);
-    animation: modal-enter 0.2s ease-out;
+    min-height: 100vh;
+    animation: page-enter 0.25s ease-out;
 }
-@keyframes modal-enter {
-    from { opacity: 0; transform: translateY(12px) scale(0.97); }
-    to   { opacity: 1; transform: translateY(0) scale(1); }
+@keyframes page-enter {
+    from { opacity: 0; }
+    to   { opacity: 1; }
 }
 
-/* Brand header */
-.brand {
+/* Left: brand panel */
+.brand-panel {
     display: flex;
     flex-direction: column;
-    align-items: center;
-    gap: 12px;
-    margin-bottom: 28px;
+    justify-content: center;
+    padding: 64px 48px 64px 64px;
+    min-width: 360px;
+    max-width: 560px;
+    margin-left: auto;
 }
-.brand-icon {
-    width: 48px;
-    height: 48px;
-    border-radius: 14px;
-    overflow: hidden;
+.brand-panel-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 32px;
+}
+.brand-panel-logo {
+    width: 44px;
+    height: 44px;
     flex-shrink: 0;
 }
-.brand-icon svg { width: 100%; height: 100%; display: block; }
-.brand-title {
-    font-size: 18px;
-    font-weight: 600;
-    line-height: 1.3;
+.brand-panel-logo svg { width: 100%; height: 100%; display: block; }
+.brand-panel-name {
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: #0F172A;
 }
-.brand-sub {
-    font-size: 13px;
-    color: rgba(0,0,0,0.45);
-    font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', Consolas, monospace;
+.brand-panel-desc {
+    font-size: 17px;
+    color: #64748B;
+    line-height: 1.6;
+    max-width: 400px;
+}
+
+/* Right: auth panel */
+.auth-panel {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 64px 64px 64px 48px;
+    max-width: 460px;
+}
+.auth-panel-heading {
+    font-size: 20px;
+    font-weight: 600;
+    color: #0F172A;
+    letter-spacing: -0.01em;
+    margin-bottom: 28px;
+}
+/* Center content in auth panel for non-idle states */
+.auth-panel--centered {
+    align-items: center;
+    text-align: center;
+}
+
+/* Mobile: single column, compact brand header */
+@media (max-width: 768px) {
+    .page {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto 1fr auto;
+        min-height: 100vh;
+    }
+    .brand-panel {
+        padding: 20px 24px;
+        padding-right: 56px;
+        flex-direction: row;
+        align-items: center;
+        max-width: none;
+        margin: 0;
+    }
+    .brand-panel-header { margin-bottom: 0; }
+    .brand-panel-logo { width: 28px; height: 28px; }
+    .brand-panel-name { font-size: 16px; }
+    .brand-panel-desc { display: none; }
+    .auth-panel {
+        padding: 0 24px 32px;
+        max-width: 420px;
+        margin: 0 auto;
+        justify-content: center;
+    }
+    .auth-panel--centered { margin: 0 auto; }
+    .btn-close { top: 14px; right: 16px; width: 36px; height: 36px; }
+    .btn-hint { display: none; }
+    .footer { padding: 16px 24px; }
 }
 
 /* Provider buttons */
+.btn-provider + .btn-provider { margin-top: 10px; }
 .btn-provider {
     display: flex;
     align-items: center;
     width: 100%;
     gap: 12px;
-    padding: 13px 16px;
-    border: 1px solid rgba(0,0,0,0.1);
-    border-radius: 10px;
+    padding: 14px 16px;
+    border: 1px solid #E2E8F0;
+    border-radius: 12px;
     background: #fff;
     cursor: pointer;
-    transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+    transition: background 0.15s, border-color 0.15s, box-shadow 0.15s, transform 0.1s;
     text-align: left;
     font-family: inherit;
     font-size: 14px;
-    color: #111;
+    color: #0F172A;
 }
 .btn-provider:hover {
-    background: rgba(0,0,0,0.03);
-    border-color: rgba(0,0,0,0.2);
-    box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+    background: #F8FAFC;
+    border-color: #CBD5E1;
+    box-shadow: 0 1px 3px rgba(15,23,42,0.04);
 }
-.btn-provider:active { transform: scale(0.995); }
-.btn-provider svg {
-    width: 22px;
-    height: 22px;
+.btn-provider:active { transform: scale(0.98); }
+.btn-provider > span:not(.btn-label):not(.btn-hint) {
+    display: flex;
+    align-items: center;
     flex-shrink: 0;
-    color: rgba(0,0,0,0.45);
 }
-.btn-provider.wallet svg { color: #059669; }
+.btn-provider svg {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+    color: #64748B;
+}
+.btn-provider.primary {
+    background: #0F172A;
+    border-color: #0F172A;
+    color: #fff;
+    padding: 15px 18px;
+}
+.btn-provider.primary:hover {
+    background: #1E293B;
+    border-color: #1E293B;
+    box-shadow: 0 2px 8px rgba(15,23,42,0.15);
+}
+.btn-provider.primary svg { color: #fff; }
+.btn-provider.primary .btn-hint { color: rgba(255,255,255,0.6); }
 .btn-label { font-weight: 500; flex: 1; }
 .btn-hint {
     font-size: 11px;
-    color: rgba(0,0,0,0.45);
+    color: #94A3B8;
     flex-shrink: 0;
 }
 
@@ -108,23 +218,27 @@
     display: flex;
     align-items: center;
     gap: 12px;
-    margin: 16px 0;
-    color: rgba(0,0,0,0.35);
+    margin: 20px 0 16px;
+    color: #94A3B8;
     font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    width: 100%;
 }
 .divider::before, .divider::after {
     content: '';
     flex: 1;
     height: 1px;
-    background: rgba(0,0,0,0.1);
+    background: #E2E8F0;
 }
 
-/* Register link */
-.register-link {
-    margin-top: 16px;
-    font-size: 13px;
-    color: rgba(0,0,0,0.45);
+/* Alternative actions (push-waiting fallbacks) */
+.alt-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
 }
+
 .link-btn {
     background: none;
     border: none;
@@ -171,7 +285,7 @@
 }
 .scan-hint {
     font-size: 13px;
-    color: rgba(0,0,0,0.45);
+    color: #64748B;
     max-width: 280px;
     line-height: 1.5;
 }
@@ -188,7 +302,7 @@
     width: 44px;
     height: 44px;
     border: 3px solid rgba(0,0,0,0.08);
-    border-top-color: #059669;
+    border-top-color: #0F172A;
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
 }
@@ -206,11 +320,12 @@
     align-items: center;
     gap: 8px;
     font-size: 13px;
-    color: rgba(0,0,0,0.45);
+    color: #94A3B8;
     transition: color 0.2s;
 }
-.step.active { color: #111; font-weight: 500; }
-.step.done   { color: #059669; }
+.step.active { color: #0F172A; font-weight: 500; }
+.step.done   { color: #0F172A; }
+.step.done .step-icon { color: #059669; }
 .step-icon {
     width: 18px;
     text-align: center;
@@ -225,7 +340,6 @@
 .success-method {
     display: flex;
     align-items: center;
-    justify-content: center;
     gap: 8px;
     margin-bottom: 20px;
 }
@@ -238,12 +352,76 @@
     padding: 2px 10px;
     border-radius: 999px;
 }
-.method-detail { font-size: 12px; color: rgba(0,0,0,0.45); }
+.method-detail { font-size: 12px; color: #64748B; }
+
+/* Brand progress steps (left column during flow states) */
+.brand-progress {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    margin-top: 28px;
+}
+.brand-progress .steps {
+    max-width: none;
+    gap: 6px;
+}
+.brand-progress .step {
+    font-size: 14px;
+    gap: 10px;
+    padding: 4px 0;
+}
+.brand-progress .step-icon {
+    width: 20px;
+    font-size: 14px;
+}
+.brand-progress .spinner {
+    width: 28px;
+    height: 28px;
+    border-width: 2.5px;
+    margin-bottom: 8px;
+}
+.brand-progress .brand-progress-label {
+    font-size: 14px;
+    font-weight: 600;
+    color: #059669;
+    margin-top: 16px;
+}
+.brand-progress .success-method {
+    margin-top: 8px;
+    margin-bottom: 0;
+}
+@media (max-width: 768px) {
+    .brand-progress { display: none; }
+    .auth-panel .mobile-progress-header { display: flex; }
+}
+.mobile-progress-header {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    margin-bottom: 20px;
+    width: 100%;
+}
+.mobile-progress-header .brand-progress { display: flex; align-items: center; }
+.mobile-progress-header .steps { align-items: flex-start; width: 100%; max-width: 280px; }
+.mobile-progress-header .step { font-size: 13px; }
+.mobile-progress-header .spinner { width: 24px; height: 24px; border-width: 2px; margin-bottom: 6px; }
+.mobile-progress-header .brand-progress-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: #059669;
+    margin-top: 10px;
+}
+.mobile-progress-header .success-method {
+    margin-top: 6px;
+    margin-bottom: 0;
+    justify-content: center;
+}
 .session-info {
     text-align: left;
-    border: 1px solid rgba(0,0,0,0.06);
+    border: 1px solid #E2E8F0;
     border-radius: 8px;
     overflow: hidden;
+    width: 100%;
 }
 .session-row {
     display: flex;
@@ -252,11 +430,11 @@
     padding: 10px 14px;
     font-size: 13px;
 }
-.session-row + .session-row { border-top: 1px solid rgba(0,0,0,0.06); }
+.session-row + .session-row { border-top: 1px solid #E2E8F0; }
 .session-label {
     font-weight: 500;
     min-width: 56px;
-    color: rgba(0,0,0,0.45);
+    color: #64748B;
     font-size: 12px;
 }
 .session-value {
@@ -274,11 +452,9 @@
 .error-title { font-size: 18px; font-weight: 600; margin-bottom: 8px; }
 .error-msg {
     font-size: 13px;
-    color: rgba(0,0,0,0.45);
+    color: #64748B;
     margin-bottom: 20px;
     max-width: 320px;
-    margin-left: auto;
-    margin-right: auto;
     line-height: 1.5;
 }
 .btn-retry {
@@ -287,70 +463,82 @@
     justify-content: center;
     width: 100%;
     padding: 13px 16px;
-    border: 1px solid rgba(0,0,0,0.1);
+    border: 1px solid #E2E8F0;
     border-radius: 10px;
     background: #fff;
     cursor: pointer;
     font-family: inherit;
     font-size: 14px;
     font-weight: 500;
-    color: #111;
+    color: #0F172A;
     transition: background 0.15s;
 }
-.btn-retry:hover { background: rgba(0,0,0,0.03); }
+.btn-retry:hover { background: #F8FAFC; }
 
 /* Footer */
 .footer {
-    margin-top: 24px;
-    padding-top: 16px;
-    border-top: 1px solid rgba(0,0,0,0.06);
+    grid-column: 1 / -1;
+    padding: 16px 64px;
+    border-top: 1px solid #E2E8F0;
     font-size: 11px;
-    color: rgba(0,0,0,0.35);
+    color: #94A3B8;
+    text-align: center;
 }
 
 /* Dark mode */
 @media (prefers-color-scheme: dark) {
-    :host { color: #f0f0f0; }
-    .modal {
-        background: #1a1a1a;
-        box-shadow: 0 24px 64px rgba(0,0,0,0.4), 0 2px 8px rgba(0,0,0,0.3);
-    }
+    :host { color: #E2E8F0; background: #0F172A; }
+    .btn-close { color: #64748B; }
+    .btn-close:hover { background: rgba(255,255,255,0.06); color: #94A3B8; }
+    .btn-back { color: #64748B; }
+    .btn-back:hover { background: rgba(255,255,255,0.06); color: #E2E8F0; }
+    .brand-panel-name { color: #F1F5F9; }
+    .brand-panel-desc { color: #64748B; }
+    .auth-panel-heading { color: #F1F5F9; }
     .btn-provider {
-        background: #1a1a1a;
+        background: rgba(255,255,255,0.04);
         border-color: rgba(255,255,255,0.1);
-        color: #f0f0f0;
+        color: #E2E8F0;
     }
     .btn-provider:hover {
-        background: rgba(255,255,255,0.05);
-        border-color: rgba(255,255,255,0.2);
+        background: rgba(255,255,255,0.07);
+        border-color: rgba(255,255,255,0.18);
     }
-    .btn-provider svg { color: rgba(255,255,255,0.45); }
-    .btn-provider.wallet svg { color: #059669; }
-    .brand-sub { color: rgba(255,255,255,0.45); }
-    .btn-hint { color: rgba(255,255,255,0.45); }
-    .btn-label { color: #f0f0f0; }
-    .divider { color: rgba(255,255,255,0.3); }
-    .divider::before, .divider::after { background: rgba(255,255,255,0.1); }
-    .register-link { color: rgba(255,255,255,0.45); }
-    .scan-hint { color: rgba(255,255,255,0.45); }
-    .qr-frame { border-color: rgba(255,255,255,0.1); }
-    .step { color: rgba(255,255,255,0.45); }
-    .step.active { color: #f0f0f0; }
-    .spinner { border-color: rgba(255,255,255,0.1); border-top-color: #059669; }
+    .btn-provider svg { color: #94A3B8; }
+    .btn-provider.primary {
+        background: #F1F5F9;
+        border-color: #F1F5F9;
+        color: #0F172A;
+    }
+    .btn-provider.primary:hover {
+        background: #E2E8F0;
+        border-color: #E2E8F0;
+    }
+    .btn-provider.primary svg { color: #0F172A; }
+    .btn-provider.primary .btn-hint { color: rgba(15,23,42,0.5); }
+    .btn-hint { color: #64748B; }
+    .btn-label { color: #E2E8F0; }
+    .divider { color: #475569; }
+    .divider::before, .divider::after { background: rgba(255,255,255,0.08); }
+    .scan-hint { color: #64748B; }
+    .qr-frame { border-color: rgba(255,255,255,0.1); background: #1E293B; }
+    .step { color: #64748B; }
+    .step.active { color: #E2E8F0; }
+    .step.done { color: #E2E8F0; }
+    .step.done .step-icon { color: #34D399; }
+    .spinner { border-color: rgba(255,255,255,0.08); border-top-color: #F1F5F9; }
     .session-info { border-color: rgba(255,255,255,0.08); }
     .session-row + .session-row { border-color: rgba(255,255,255,0.08); }
-    .session-label { color: rgba(255,255,255,0.45); }
-    .method-detail { color: rgba(255,255,255,0.45); }
-    .error-msg { color: rgba(255,255,255,0.45); }
-    .btn-retry { background: #1a1a1a; border-color: rgba(255,255,255,0.1); color: #f0f0f0; }
-    .btn-retry:hover { background: rgba(255,255,255,0.05); }
-    .footer { border-color: rgba(255,255,255,0.06); color: rgba(255,255,255,0.3); }
-    .overlay { background: rgba(0,0,0,0.55); }
+    .session-label { color: #64748B; }
+    .method-detail { color: #64748B; }
+    .error-msg { color: #64748B; }
+    .btn-retry { background: rgba(255,255,255,0.04); border-color: rgba(255,255,255,0.1); color: #E2E8F0; }
+    .btn-retry:hover { background: rgba(255,255,255,0.07); }
+    .footer { border-color: rgba(255,255,255,0.06); color: #475569; }
+    .footer .link-btn { color: #64748B; }
+    .scan-label { color: #E2E8F0; }
 
-    .brand-title { color: #f0f0f0; }
-    .scan-label { color: #f0f0f0; }
-    .success-title { color: #f0f0f0; }
-    .error-title { color: #f0f0f0; }
+    .error-title { color: #E2E8F0; }
 }
-`,Oe='<svg viewBox="0 0 500 500"><style>.ld{fill:#fff}@media(prefers-color-scheme:dark){.ld{fill:#2a2a2a}}</style><defs><linearGradient id="pg" y2="1"><stop offset="21%" stop-color="#34E89E"/><stop offset="42%" stop-color="#12B06E"/></linearGradient><linearGradient id="pb" x1="1" y1="1" x2="0" y2="0"><stop offset="21%" stop-color="#00BCF2"/><stop offset="42%" stop-color="#00A0EB"/></linearGradient></defs><path d="M100 0H450L0 450V100A100 100 0 0 1 100 0Z" fill="url(#pg)"/><path d="M500 50V400A100 100 0 0 1 400 500H50L500 50Z" fill="url(#pb)"/><polygon class="ld" points="0,500 50,500 500,50 500,0"/></svg>';var He='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l7 4v5c0 5.25-3.5 9.74-7 11-3.5-1.26-7-5.75-7-11V6l7-4z"/></svg>',me='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 11c0-1.1.9-2 2-2s2 .9 2 2-.9 2-2 2-2-.9-2-2z"/><path d="M17.5 15.5c0-1.93-1.57-3.5-3.5-3.5s-3.5 1.57-3.5 3.5"/><rect x="3" y="4" width="18" height="16" rx="3"/></svg>',We='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 12l3 3 5-6"/></svg>',Fe='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg>';function m(A,e,...n){let d=document.createElement(A);if(e!=null)for(let[f,w]of Object.entries(e))f==="className"?d.className=w:f.startsWith("on")&&typeof w=="function"?d.addEventListener(f.slice(2).toLowerCase(),w):f==="html"?d.innerHTML=w:w===!1||w==null||(w===!0?d.setAttribute(f,""):d.setAttribute(f,String(w)));for(let f of n.flat(1/0))f==null||f===!1||d.appendChild(typeof f=="string"?document.createTextNode(f):f);return d}function je(A){try{let e=(0,ye.default)(0,"M");e.addData(A),e.make();let n=e.getModuleCount(),d=Math.max(3,Math.floor(200/n));return e.createSvgTag({cellSize:d,margin:4,scalable:!0})}catch{return`<div style="padding:16px;font-size:11px;word-break:break-all">${A}</div>`}}var ee=class{constructor(e){this.host=null;this.shadow=null;this.resolve=null;this.reject=null;this.relayClient=null;this.webauthnClient=null;this.state="idle";this.errorMsg="";this.sessionToken="";this.sessionId="";this.method="wallet";this.cfg={brokerUrl:"wss://relay.privasys.org/relay",timeout:12e4,...e}}get rpId(){return this.cfg.rpId??this.cfg.appName}signIn(){return this.close(),new Promise((e,n)=>{this.resolve=e,this.reject=n,this.state="idle",this.errorMsg="",this.sessionToken="",this.sessionId="",this.attestation=void 0,this.mount(),this.render()})}close(){this.cleanup(),this.host&&(this.host.remove(),this.host=null,this.shadow=null)}destroy(){this.close(),this.reject&&(this.reject(new Error("AuthUI destroyed")),this.resolve=null,this.reject=null)}mount(){this.host=document.createElement("div"),this.host.setAttribute("data-privasys-auth",""),this.shadow=this.host.attachShadow({mode:"closed"});let e=document.createElement("style");e.textContent=Ue,this.shadow.appendChild(e),(this.cfg.container??document.body).appendChild(this.host)}render(){if(!this.shadow)return;let e=this.shadow.querySelector("style");this.shadow.innerHTML="",this.shadow.appendChild(e);let n=m("div",{className:"overlay",onClick:()=>this.handleCancel()});this.shadow.appendChild(n);let d;switch(this.state){case"idle":d=this.renderIdle();break;case"qr-scanning":d=this.renderQR();break;case"wallet-connected":case"authenticating":d=this.renderWalletProgress();break;case"passkey-requesting":case"passkey-ceremony":case"passkey-verifying":d=this.renderPasskeyProgress();break;case"success":d=this.renderSuccess();break;case"error":d=this.renderError();break;default:d=this.renderIdle()}d.addEventListener("click",f=>f.stopPropagation()),this.shadow.appendChild(d)}renderIdle(){let e=Z.isSupported();return m("div",{className:"modal"},this.brandHeader(),m("button",{className:"btn-provider wallet",onClick:()=>this.startWallet()},m("span",{html:He}),m("span",{className:"btn-label"},"Continue with Privasys Wallet"),m("span",{className:"btn-hint"},"Attestation verified")),e?m("div",{className:"divider"},m("span",null,"or")):null,e?m("button",{className:"btn-provider",onClick:()=>this.startPasskey("authenticate")},m("span",{html:me}),m("span",{className:"btn-label"},"Sign in with passkey"),m("span",{className:"btn-hint"},"Windows Hello, Touch ID, Face ID")):null,e?m("div",{className:"register-link"},"No passkey yet? ",m("button",{className:"link-btn",onClick:()=>this.startPasskey("register")},"Register one")):null,m("div",{className:"footer"},"Secured by end-to-end encryption inside a hardware enclave"))}renderQR(){let e=this.getRelayClient(),{payload:n}=e.createQR(this.sessionId);return m("div",{className:"modal"},this.brandHeader(),m("div",{className:"qr-section"},m("div",{className:"qr-frame",html:je(n)}),m("div",{className:"scan-label"},m("span",{className:"pulse"}),"Scan with Privasys Wallet"),m("p",{className:"scan-hint"},"Open the wallet app on your phone and scan this QR code to authenticate.")),m("div",{className:"footer"},m("button",{className:"link-btn",onClick:()=>this.handleCancel()},"Cancel")))}renderWalletProgress(){let e=this.state==="authenticating";return m("div",{className:"modal"},this.brandHeader(),m("div",{className:"progress-section"},m("div",{className:"spinner"}),m("div",{className:"steps"},m("div",{className:"step done"},m("span",{className:"step-icon"},"\u2713"),"QR code scanned"),m("div",{className:`step ${e?"done":"active"}`},m("span",{className:"step-icon"},e?"\u2713":"\u2022"),"Verifying enclave attestation"),m("div",{className:`step ${e?"active":""}`},m("span",{className:"step-icon"},"\u2022"),"FIDO2 biometric ceremony"))),m("div",{className:"footer"},m("button",{className:"link-btn",onClick:()=>this.handleCancel()},"Cancel")))}renderPasskeyProgress(){let e=this.method==="passkey",n=this.state;return m("div",{className:"modal"},m("div",{className:"brand"},m("div",{className:"brand-icon",html:me}),m("div",null,m("div",{className:"brand-title"},n==="passkey-requesting"?"Preparing\u2026":"Verify your identity"),m("div",{className:"brand-sub"},this.rpId))),m("div",{className:"progress-section"},m("div",{className:"spinner"}),m("div",{className:"steps"},m("div",{className:`step ${n!=="passkey-requesting"?"done":"active"}`},m("span",{className:"step-icon"},n!=="passkey-requesting"?"\u2713":"\u2022"),"Requesting options from enclave"),m("div",{className:`step ${n==="passkey-ceremony"?"active":n==="passkey-verifying"?"done":""}`},m("span",{className:"step-icon"},n==="passkey-verifying"?"\u2713":"\u2022"),"Complete biometric prompt"),m("div",{className:`step ${n==="passkey-verifying"?"active":""}`},m("span",{className:"step-icon"},"\u2022"),"Enclave verification"))),m("div",{className:"footer"},m("button",{className:"link-btn",onClick:()=>this.handleCancel()},"Cancel")))}renderSuccess(){let e=this.sessionToken?"\u25CF".repeat(8)+this.sessionToken.slice(-6):"\u2014",n=this.method==="wallet"?"Privasys Wallet":"Passkey",d=this.method==="wallet"?"Attestation verified":"This device";return m("div",{className:"modal"},m("div",{className:"success-icon",html:We}),m("div",{className:"success-title"},"Authenticated"),m("div",{className:"success-method"},m("span",{className:"method-badge"},n),m("span",{className:"method-detail"},d)),m("div",{className:"session-info"},m("div",{className:"session-row"},m("span",{className:"session-label"},"Session"),m("span",{className:"session-value"},e)),m("div",{className:"session-row"},m("span",{className:"session-label"},"App"),m("span",{className:"session-value"},this.rpId))),m("div",{className:"footer"},"Your session is ready. This dialog will close automatically."))}renderError(){return m("div",{className:"modal"},m("div",{className:"error-icon",html:Fe}),m("div",{className:"error-title"},"Authentication failed"),m("div",{className:"error-msg"},this.errorMsg||"An unknown error occurred."),m("button",{className:"btn-retry",onClick:()=>{this.state="idle",this.errorMsg="",this.render()}},"Try again"),m("div",{className:"footer"},m("button",{className:"link-btn",onClick:()=>this.handleCancel()},"Cancel")))}brandHeader(){return m("div",{className:"brand"},m("div",{className:"brand-icon",html:Oe}),m("div",null,m("div",{className:"brand-title"},`Sign in to ${this.cfg.appName}`),m("div",{className:"brand-sub"},this.rpId)))}startWallet(){this.method="wallet";let e=this.getRelayClient(),{sessionId:n}=e.createQR();this.sessionId=n,this.state="qr-scanning",this.render(),e.waitForResult(n).then(d=>{this.sessionToken=d.sessionToken,this.attestation=d.attestation,this.sessionId=d.sessionId,this.pushToken=d.pushToken,this.complete()},d=>{this.state="error",this.errorMsg=d?.message??"Wallet authentication failed",this.render()})}async startPasskey(e){this.method="passkey",this.state="passkey-requesting",this.render();let n=this.getWebAuthnClient();try{let d=e==="register"?await n.register(globalThis.location?.hostname??"user"):await n.authenticate();this.sessionToken=d.sessionToken,this.sessionId=d.sessionId,this.complete()}catch(d){this.state="error",this.errorMsg=d?.message??"Passkey authentication failed",this.render()}}complete(){this.state="success",this.render(),setTimeout(()=>{let e={sessionToken:this.sessionToken,method:this.method,attestation:this.attestation,sessionId:this.sessionId,pushToken:this.pushToken};this.close(),this.resolve?.(e),this.resolve=null,this.reject=null},1200)}handleCancel(){this.cleanup(),this.close(),this.reject?.(new Error("Authentication cancelled")),this.resolve=null,this.reject=null}cleanup(){this.relayClient&&(this.relayClient.destroy(),this.relayClient=null)}getRelayClient(){return this.relayClient||(this.relayClient=new z({rpId:this.rpId,brokerUrl:this.cfg.brokerUrl,timeout:this.cfg.timeout},{onStateChange:e=>{let n={"waiting-for-scan":"qr-scanning","wallet-connected":"wallet-connected",authenticating:"authenticating"};n[e]&&(this.state=n[e],this.render())}})),this.relayClient}getWebAuthnClient(){return this.webauthnClient||(this.webauthnClient=new Z({apiBase:this.cfg.apiBase,appName:this.cfg.appName},{onStateChange:e=>{let n={"requesting-options":"passkey-requesting",ceremony:"passkey-ceremony",verifying:"passkey-verifying"};n[e]&&(this.state=n[e],this.render())}})),this.webauthnClient}};var we=new j,G=null;window.addEventListener("message",async A=>{let e=A.data;if(!(!e||typeof e.type!="string")){if(e.type==="privasys:init"){let n=e.config,d=A.origin;G&&(G.destroy(),G=null),G=new ee(n);try{let f=await G.signIn();we.store({token:f.sessionToken,rpId:n.rpId||n.appName,origin:n.apiBase,authenticatedAt:Date.now(),pushToken:f.pushToken}),window.parent.postMessage({type:"privasys:result",result:f},d)}catch(f){let w=f instanceof Error?f.message:"Authentication failed";w==="Authentication cancelled"||w==="AuthUI destroyed"?window.parent.postMessage({type:"privasys:cancel"},d):window.parent.postMessage({type:"privasys:error",error:w},d)}finally{G=null}}if(e.type==="privasys:check-session"){let n=we.get(e.rpId);window.parent.postMessage({type:"privasys:session",session:n||null},A.origin)}}});window.parent.postMessage({type:"privasys:ready"},"*");})();
+`,ve='<svg viewBox="0 0 500 500"><style>.ld{fill:#fff}@media(prefers-color-scheme:dark){.ld{fill:#2a2a2a}}</style><defs><linearGradient id="pg" y2="1"><stop offset="21%" stop-color="#34E89E"/><stop offset="42%" stop-color="#12B06E"/></linearGradient><linearGradient id="pb" x1="1" y1="1" x2="0" y2="0"><stop offset="21%" stop-color="#00BCF2"/><stop offset="42%" stop-color="#00A0EB"/></linearGradient></defs><path d="M100 0H450L0 450V100A100 100 0 0 1 100 0Z" fill="url(#pg)"/><path d="M500 50V400A100 100 0 0 1 400 500H50L500 50Z" fill="url(#pb)"/><polygon class="ld" points="0,500 50,500 500,50 500,0"/></svg>',Be='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="10.5" cy="7.5" r="3"/><path d="M10.5 13c-3.3 0-6 2-6 4.5V19h12v-1.5c0-1-.4-2-1-2.7"/><line x1="18" y1="12" x2="18" y2="18"/><line x1="15" y1="15" x2="21" y2="15"/></svg>';var We='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg>',qe='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="3"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>',Ke='<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.167 6.839 9.49.5.092.682-.217.682-.482 0-.237-.009-.866-.013-1.7-2.782.604-3.369-1.341-3.369-1.341-.454-1.155-1.11-1.462-1.11-1.462-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.831.092-.646.35-1.086.636-1.337-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0112 6.836a9.59 9.59 0 012.504.337c1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.163 22 16.418 22 12c0-5.523-4.477-10-10-10z"/></svg>',Qe='<svg viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18A10.96 10.96 0 001 12c0 1.77.42 3.45 1.18 4.93l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>',ze='<svg viewBox="0 0 24 24"><rect fill="#F25022" x="2" y="2" width="9.5" height="9.5"/><rect fill="#7FBA00" x="12.5" y="2" width="9.5" height="9.5"/><rect fill="#00A4EF" x="2" y="12.5" width="9.5" height="9.5"/><rect fill="#FFB900" x="12.5" y="12.5" width="9.5" height="9.5"/></svg>',Ve='<svg viewBox="0 0 24 24"><path fill="#0A66C2" d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>',Je='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',Ge='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>';var Ye='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>';function y(f,e,...r){let s=document.createElement(f);if(e!=null)for(let[l,a]of Object.entries(e))l==="className"?s.className=a:l.startsWith("on")&&typeof a=="function"?s.addEventListener(l.slice(2).toLowerCase(),a):l==="html"?s.innerHTML=a:a===!1||a==null||(a===!0?s.setAttribute(l,""):s.setAttribute(l,String(a)));for(let l of r.flat(1/0))l==null||l===!1||s.appendChild(typeof l=="string"?document.createTextNode(l):l);return s}function Xe(f){try{let e=(0,Ne.default)(0,"M");e.addData(f),e.make();let r=e.getModuleCount(),s=Math.max(3,Math.floor(200/r));return e.createSvgTag({cellSize:s,margin:4,scalable:!0})}catch{return`<div style="padding:16px;font-size:11px;word-break:break-all">${f}</div>`}}var ne=class{constructor(e){this.host=null;this.shadow=null;this.resolve=null;this.reject=null;this.relayClient=null;this.webauthnClient=null;this.state="idle";this.errorMsg="";this.sessionToken="";this.sessionId="";this.method="wallet";this.cfg={brokerUrl:"wss://relay.privasys.org/relay",timeout:12e4,...e}}get rpId(){return this.cfg.rpId??this.cfg.appName}signIn(){return this.close(),new Promise((e,r)=>{this.resolve=e,this.reject=r,this.state="idle",this.errorMsg="",this.sessionToken="",this.sessionId="",this.attestation=void 0,this.attributes=void 0,this.mount(),this.cfg.pushToken?this.startPush():this.render()})}close(){this.cleanup(),this.host&&(this.host.remove(),this.host=null,this.shadow=null)}destroy(){this.close(),this.reject&&(this.reject(new Error("AuthUI destroyed")),this.resolve=null,this.reject=null)}mount(){this.host=document.createElement("div"),this.host.setAttribute("data-privasys-auth",""),this.shadow=this.host.attachShadow({mode:"closed"});let e=document.createElement("style");e.textContent=je,this.shadow.appendChild(e),(this.cfg.container??document.body).appendChild(this.host)}render(){if(!this.shadow)return;let e=this.shadow.querySelector("style");this.shadow.innerHTML="",this.shadow.appendChild(e);let r=this.cfg.appName.replace(/[-_]/g," ").replace(/\b\w/g,P=>P.toUpperCase()),s=this.state==="idle",l;switch(this.state){case"qr-scanning":l="Open Privasys Wallet on your phone and scan the QR code displayed on the right to authenticate.";break;case"push-waiting":l="Check your phone \u2014 tap the notification from Privasys ID to approve this sign-in.";break;case"wallet-connected":case"authenticating":l="Verifying your identity\u2026 This will only take a moment.";break;case"passkey-requesting":case"passkey-ceremony":case"passkey-verifying":l="Complete the biometric prompt on your device to verify your identity.";break;case"success":l="";break;case"error":l="Something went wrong. You can try again or choose a different method.";break;default:l=`<strong>${r}</strong> needs to verify your identity. Please choose one of the authentication options.`}let a;switch(this.state){case"push-waiting":a=this.renderPushWaiting();break;case"qr-scanning":a=this.renderQR();break;case"wallet-connected":case"authenticating":a=this.renderWalletProgress();break;case"passkey-requesting":case"passkey-ceremony":case"passkey-verifying":a=this.renderPasskeyProgress();break;case"success":a=this.renderSuccess();break;case"error":a=this.renderError();break;default:a=this.renderIdle()}let I=y("div",{className:"page"},y("button",{className:"btn-close",html:Je,onClick:()=>this.handleCancel()}),y("div",{className:"brand-panel"},y("div",{className:"brand-panel-header"},y("div",{className:"brand-panel-logo",html:ve}),y("div",{className:"brand-panel-name"},"Privasys")),l?y("p",{className:"brand-panel-desc",html:l}):null,this.isFlowState()?this.renderBrandProgress():null),y("div",{className:`auth-panel${s?"":" auth-panel--centered"}`},!s&&this.state!=="success"?y("button",{className:"btn-back",onClick:()=>this.goBack()},y("span",{html:Ye}),"Back"):null,this.isFlowState()?y("div",{className:"mobile-progress-header"},this.renderBrandProgress()):null,a),y("div",{className:"footer"},"By continuing, you agree to the ",y("a",{href:"https://privasys.org/legal/terms",target:"_blank",className:"link-btn",style:"font-size:inherit"},"Terms of Service")," and ",y("a",{href:"https://privasys.org/legal/privacy",target:"_blank",className:"link-btn",style:"font-size:inherit"},"Privacy Policy"),"."));this.shadow.appendChild(I)}goBack(){this.cleanup(),this.state="idle",this.errorMsg="",this.render()}renderIdle(){let e=ee.isSupported(),r=!!this.cfg.pushToken,s=this.cfg.socialProviders??[],l=this.cfg.appName.replace(/[-_]/g," ").replace(/\b\w/g,_=>_.toUpperCase()),a=[];r&&a.push(y("button",{className:"btn-provider primary",onClick:()=>this.startPush()},y("span",{html:qe}),y("span",{className:"btn-label"},"Sign in with Privasys ID"),y("span",{className:"btn-hint"},"Notification"))),a.push(y("button",{className:`btn-provider ${r?"":"primary"}`,onClick:()=>this.startWallet()},y("span",{html:ve}),y("span",{className:"btn-label"},r?"Scan QR code instead":"Continue with Privasys ID"))),(e||s.length>0)&&a.push(y("div",{className:"divider"},y("span",null,"or"))),e&&a.push(y("button",{className:"btn-provider",onClick:()=>this.startPasskey("authenticate")},y("span",{html:Be}),y("span",{className:"btn-label"},"Passkey"),y("span",{className:"btn-hint"},"Face ID, Touch ID, Windows Hello")));let P={github:Ke,google:Qe,microsoft:ze,linkedin:Ve},S={github:"GitHub",google:"Google",microsoft:"Microsoft",linkedin:"LinkedIn"};for(let _ of s){let R=P[_]??"",Y=S[_]??_;a.push(y("button",{className:"btn-provider",onClick:()=>this.startSocial(_)},R?y("span",{html:R}):null,y("span",{className:"btn-label"},Y)))}return y("div",null,y("h2",{className:"auth-panel-heading"},`Sign in to ${l}`),...a)}renderQR(){let e=this.getRelayClient(),{payload:r}=e.createQR(this.sessionId);return y("div",null,y("div",{className:"qr-section"},y("div",{className:"qr-frame",html:Xe(r)}),y("div",{className:"scan-label"},y("span",{className:"pulse"}),"Scan with Privasys Wallet")))}renderPushWaiting(){let e=ee.isSupported();return y("div",null,y("p",{className:"scan-hint",style:"margin-bottom: 20px; max-width: none; text-align: center;"},"Check your phone \u2014 tap the notification to approve this connection."),y("div",{className:"divider"},y("span",null,"or")),y("div",{className:"alt-actions"},y("button",{className:"btn-provider",onClick:()=>{this.cleanup(),this.startWallet()}},y("span",{html:ve}),y("span",{className:"btn-label"},"Scan QR code instead")),e?y("button",{className:"btn-provider",onClick:()=>{this.cleanup(),this.startPasskey("authenticate")}},y("span",{html:Be}),y("span",{className:"btn-label"},"Passkey")):null))}renderWalletProgress(){return y("div",null,y("p",{className:"scan-hint",style:"max-width: none; text-align: center;"},"Verifying your identity\u2026 This will only take a moment."))}renderPasskeyProgress(){let r=this.state==="passkey-requesting"?"Preparing\u2026":"Complete the biometric prompt on your device.";return y("div",null,y("p",{className:"scan-hint",style:"max-width: none; text-align: center;"},r))}isFlowState(){return["push-waiting","qr-scanning","wallet-connected","authenticating","passkey-requesting","passkey-ceremony","passkey-verifying","success"].includes(this.state)}renderBrandProgress(){let e=this.state==="success",r=this.method==="wallet"?"Privasys ID":"Passkey",s=this.method==="wallet"&&this.attestation?.valid,l=this.method==="passkey"?"This device":s?"Attestation verified":null,a;if(this.method==="passkey"){let I=this.state;a=y("div",{className:"steps"},y("div",{className:`step ${I!=="passkey-requesting"?"done":"active"}`},y("span",{className:"step-icon"},I!=="passkey-requesting"?"\u2713":"\u2022"),"Options received from enclave"),y("div",{className:`step ${I==="passkey-ceremony"?"active":I==="passkey-verifying"||e?"done":""}`},y("span",{className:"step-icon"},I==="passkey-verifying"||e?"\u2713":"\u2022"),"Biometric prompt completed"),y("div",{className:`step ${I==="passkey-verifying"?"active":e?"done":""}`},y("span",{className:"step-icon"},e?"\u2713":"\u2022"),"Enclave verification"),y("div",{className:`step ${e?"done":""}`},y("span",{className:"step-icon"},e?"\u2713":"\u2022"),"Session established"))}else{let I=!!this.cfg.pushToken,P=["wallet-connected","authenticating","success"].includes(this.state),S=this.state==="authenticating"||e,_=I?["push-waiting","wallet-connected","authenticating","success"].includes(this.state):P||S,R=!_&&this.state==="qr-scanning",Y=I?"Notification sent":"QR code scanned",Q=I?"Approved on Privasys ID":"Server attestation verified",V=I&&this.state==="push-waiting"||P&&!S;a=y("div",{className:"steps"},y("div",{className:`step ${_?"done":R?"active":""}`},y("span",{className:"step-icon"},_?"\u2713":"\u2022"),Y),y("div",{className:`step ${V?"active":S?"done":""}`},y("span",{className:"step-icon"},S?"\u2713":"\u2022"),Q),y("div",{className:`step ${this.state==="authenticating"?"active":e?"done":""}`},y("span",{className:"step-icon"},e?"\u2713":"\u2022"),"Biometric authentication"),y("div",{className:`step ${e?"done":""}`},y("span",{className:"step-icon"},e?"\u2713":"\u2022"),"Session established"))}return y("div",{className:"brand-progress"},a,e?y("div",{className:"step done",style:"margin-top: 2px;"},y("span",{className:"step-icon"},"\u2713"),`Authenticated via ${r}`):null)}renderSuccess(){let e=!!this.pushToken&&!this.cfg.deviceTrusted,r=this.method==="wallet"?"Privasys ID":"Passkey",s=this.method==="wallet"&&this.attestation?.valid,l=this.method==="passkey"?"This device":s?"Attestation verified":null;return y("div",null,e?y("div",{style:"width: 100%;"},y("p",{style:"font-size: 14px; font-weight: 500; margin-bottom: 6px;"},"Trust this device?"),y("p",{className:"scan-hint",style:"margin-bottom: 16px; max-width: none;"},"Next time, we\u2019ll send a notification to your phone instead of showing a QR code."),y("button",{className:"btn-provider primary",onClick:()=>this.finishWithTrust(!0)},y("span",{html:Ge}),y("span",{className:"btn-label"},"Trust this device")),y("button",{className:"link-btn",style:"margin-top: 12px; font-size: 13px; display: block; text-align: center; width: 100%;",onClick:()=>this.finishWithTrust(!1)},"Not now")):y("div",{className:"footer"},"Your session is ready. This dialog will close automatically."))}renderError(){return y("div",null,y("div",{className:"error-icon",html:We}),y("div",{className:"error-title"},"Authentication failed"),y("div",{className:"error-msg"},this.errorMsg||"An unknown error occurred."),y("button",{className:"btn-retry",onClick:()=>{this.errorMsg="",this.state="idle",this.render()}},"Try again"))}startPush(){this.method="wallet";let e=this.getRelayClient();this.state="push-waiting",this.render(),e.notifyAndWait(this.cfg.pushToken).then(r=>{this.sessionToken=r.sessionToken,this.attestation=r.attestation,this.sessionId=r.sessionId,this.pushToken=r.pushToken,this.attributes=r.attributes,this.complete()},r=>{this.state="error",this.errorMsg=r?.message??"Push authentication failed",this.render()})}startWallet(){this.method="wallet";let e=this.getRelayClient(),{sessionId:r}=e.createQR(this.cfg.sessionId);this.sessionId=r,this.state="qr-scanning",this.render(),e.waitForResult(r).then(s=>{this.sessionToken=s.sessionToken,this.attestation=s.attestation,this.sessionId=s.sessionId,this.pushToken=s.pushToken,this.attributes=s.attributes,this.complete()},s=>{this.state="error",this.errorMsg=s?.message??"Wallet authentication failed",this.render()})}async startPasskey(e){this.method="passkey",this.state="passkey-requesting",this.render();let r=this.getWebAuthnClient();try{let s;if(e==="register")s=await r.register(globalThis.location?.hostname??"user");else try{s=await r.authenticate()}catch(l){if(l?.message?.includes("no credentials")||l?.message?.includes("not found"))this.state="passkey-requesting",this.render(),s=await r.register(globalThis.location?.hostname??"user");else throw l}this.sessionToken=s.sessionToken,this.sessionId=s.sessionId,this.complete()}catch(s){this.state="error",this.errorMsg=s?.message??"Passkey authentication failed",this.render()}}async startSocial(e){if(this.cfg.onSocialAuth){this.state="authenticating",this.render();try{await this.cfg.onSocialAuth(e),this.method="wallet",this.sessionToken="",this.sessionId=this.cfg.sessionId??"",this.complete()}catch(r){this.state="error",this.errorMsg=r?.message??`${e} authentication failed`,this.render()}}}complete(){this.state="success",this.render(),(!this.pushToken||this.cfg.deviceTrusted)&&setTimeout(()=>this.finishWithTrust(!1),1200)}finishWithTrust(e){let r={sessionToken:this.sessionToken,method:this.method,attestation:this.attestation,sessionId:this.sessionId,pushToken:this.pushToken,attributes:this.attributes,trustDevice:e};this.close(),this.resolve?.(r),this.resolve=null,this.reject=null}handleCancel(){this.cleanup(),this.close(),this.reject?.(new Error("Authentication cancelled")),this.resolve=null,this.reject=null}cleanup(){this.relayClient&&(this.relayClient.destroy(),this.relayClient=null)}getRelayClient(){return this.relayClient||(this.relayClient=new ae({rpId:this.rpId,brokerUrl:this.cfg.brokerUrl,timeout:this.cfg.timeout,requestedAttributes:this.cfg.requestedAttributes,appName:this.cfg.appName,privacyPolicyUrl:this.cfg.privacyPolicyUrl},{onStateChange:e=>{let r={"waiting-for-scan":"qr-scanning","wallet-connected":"wallet-connected",authenticating:"authenticating"};if(r[e]){if(this.state==="push-waiting"&&e==="waiting-for-scan")return;this.state=r[e],this.render()}}})),this.relayClient}getWebAuthnClient(){return this.webauthnClient||(this.webauthnClient=new ee({apiBase:this.cfg.apiBase,appName:this.cfg.appName,sessionId:this.cfg.sessionId,fido2Base:this.cfg.fido2Base},{onStateChange:e=>{let r={"requesting-options":"passkey-requesting",ceremony:"passkey-ceremony",verifying:"passkey-verifying"};r[e]&&(this.state=r[e],this.render())}})),this.webauthnClient}};var H=new G,z=null,Ze=780*1e3,se=new Map;function Pe(f){let e=se.get(f);e&&(clearTimeout(e),se.delete(f))}function le(f,e){if(Pe(f.rpId),!f.refreshToken||!f.clientId)return;let r=setTimeout(async()=>{se.delete(f.rpId);let s=H.get(f.rpId);if(!(!s?.refreshToken||!s?.clientId))try{await et(s,e);let l=H.get(f.rpId);l&&le(l,e)}catch(l){console.warn("[frame-host] renewal failed, expiring session:",l),H.remove(f.rpId),window.parent.postMessage({type:"privasys:session-expired",rpId:f.rpId},e)}},Ze);se.set(f.rpId,r)}async function et(f,e){let r=globalThis.location.origin,s=await fetch(`${r}/token`,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:new URLSearchParams({grant_type:"refresh_token",refresh_token:f.refreshToken,client_id:f.clientId})});if(!s.ok){let a=await s.json().catch(()=>({error:s.statusText}));throw new Error(a.error_description||a.error||`Refresh failed: ${s.status}`)}let l=await s.json();H.store({...f,token:l.access_token,refreshToken:l.refresh_token,authenticatedAt:Date.now()}),window.parent.postMessage({type:"privasys:session-renewed",rpId:f.rpId,accessToken:l.access_token},e)}async function tt(){let f=new Uint8Array(32);crypto.getRandomValues(f);let e=Array.from(f,l=>l.toString(16).padStart(2,"0")).join(""),r=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(e)),s=btoa(String.fromCharCode(...new Uint8Array(r))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");return{codeVerifier:e,codeChallenge:s}}async function rt(f,e=12e4){let r=Date.now()+e;for(;Date.now()<r;){let s=await fetch(f);if(!s.ok)throw new Error(`poll failed: ${s.status}`);let l=await s.json();if(l.authenticated&&l.redirect_uri){let I=new URL(l.redirect_uri,globalThis.location.origin).searchParams.get("code");if(I)return I}await new Promise(a=>setTimeout(a,1500))}throw new Error("OIDC session timed out")}async function nt(f,e,r){let s=await fetch(`${f}/session/complete`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({session_id:e,user_id:r?.sub||"",attributes:r||{}})});if(!s.ok){let a=await s.json().catch(()=>({error:s.statusText}));throw new Error(a.error_description||a.error||`Session complete failed: ${s.status}`)}let l=await s.json();if(!l.code)throw new Error("No authorization code returned");return l.code}async function st(f,e,r,s){let l=await fetch(`${f}/token`,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:new URLSearchParams({grant_type:"authorization_code",code:e,client_id:r,code_verifier:s})});if(!l.ok){let a=await l.json().catch(()=>({error:l.statusText}));throw new Error(a.error_description||a.error||`Token exchange failed: ${l.status}`)}return l.json()}window.addEventListener("message",async f=>{let e=f.data;if(!(!e||typeof e.type!="string")){if(e.type==="privasys:init"){let r=e.config,s=f.origin;z&&(z.destroy(),z=null);let l=globalThis.location.origin,a=r.clientId;if(a){try{let{codeVerifier:S,codeChallenge:_}=await tt(),R=new URL("/authorize",l);R.searchParams.set("client_id",a),R.searchParams.set("response_type","code"),R.searchParams.set("code_challenge",_),R.searchParams.set("code_challenge_method","S256");let Y=Array.isArray(r.scope)?r.scope.join(" "):r.scope||"openid offline_access";R.searchParams.set("scope",Y),R.searchParams.set("response_mode","json");let Q=await fetch(R.toString(),{headers:{Accept:"application/json"}});if(!Q.ok){let g=await Q.json().catch(()=>({error:Q.statusText}));throw new Error(g.error_description||g.error||`Authorize failed: ${Q.status}`)}let V=await Q.json(),te=V.session_id,ce=V.poll_url,de=V.requested_attributes,ie=[];try{let g=await fetch(`${l}/auth/social/providers`);g.ok&&(ie=(await g.json()).providers??[])}catch{}let k=H.findPushToken(),A=!!H.getDeviceHint(),w=g=>new Promise((d,v)=>{let M=window.screenX+(window.innerWidth-500)/2,L=window.screenY+(window.innerHeight-650)/2,U=`${l}/auth/social?provider=${encodeURIComponent(g)}&session_id=${encodeURIComponent(te)}`,O=window.open(U,"privasys-social",`width=500,height=650,left=${M},top=${L}`);if(!O){v(new Error("Popup blocked \u2014 please allow popups for this site"));return}let $=()=>{window.removeEventListener("message",j),clearInterval(J)},j=X=>{X.source===O&&(X.data?.type==="privasys:social-complete"?($(),O.close(),d()):X.data?.type==="privasys:social-error"&&($(),O.close(),v(new Error(X.data.error||"Social authentication failed"))))};window.addEventListener("message",j);let J=setInterval(()=>{O.closed&&($(),v(new Error("Authentication cancelled")))},500)});z=new ne({...r,apiBase:l,sessionId:te,fido2Base:`${l}/fido2`,pushToken:k,deviceTrusted:A,socialProviders:ie,onSocialAuth:w,requestedAttributes:de});let b=await z.signIn(),o;b.method==="passkey"?o=await rt(ce):o=await nt(l,te,b.attributes);let m=await st(l,o,a,S),n=r.rpId||r.appName,t={token:m.access_token,rpId:n,origin:r.apiBase,authenticatedAt:Date.now(),pushToken:b.pushToken,brokerUrl:r.brokerUrl||"",refreshToken:m.refresh_token,clientId:a};H.store(t),t.pushToken&&t.brokerUrl&&(b.trustDevice||A)&&H.saveDeviceHint(t.pushToken,t.brokerUrl),le(t,s),window.parent.postMessage({type:"privasys:result",result:{...b,accessToken:m.access_token}},s)}catch(S){let _=S instanceof Error?S.message:"Authentication failed";_==="Authentication cancelled"||_==="AuthUI destroyed"?window.parent.postMessage({type:"privasys:cancel"},s):window.parent.postMessage({type:"privasys:error",error:_},s)}finally{z=null}return}let I=H.findPushToken(),P=!!H.getDeviceHint();z=new ne({...r,pushToken:I,deviceTrusted:P});try{let S=await z.signIn(),_=r.brokerUrl||"",R={token:S.sessionToken,rpId:r.rpId||r.appName,origin:r.apiBase,authenticatedAt:Date.now(),pushToken:S.pushToken,brokerUrl:_};H.store(R),R.pushToken&&R.brokerUrl&&((S.trustDevice||P)&&H.saveDeviceHint(R.pushToken,R.brokerUrl),le(R,s)),window.parent.postMessage({type:"privasys:result",result:S},s)}catch(S){let _=S instanceof Error?S.message:"Authentication failed";_==="Authentication cancelled"||_==="AuthUI destroyed"?window.parent.postMessage({type:"privasys:cancel"},s):window.parent.postMessage({type:"privasys:error",error:_},s)}finally{z=null}}if(e.type==="privasys:check-session"){let r=H.get(e.rpId);r?.refreshToken&&r?.clientId&&!se.has(r.rpId)&&le(r,f.origin),window.parent.postMessage({type:"privasys:session",session:r||null},f.origin)}e.type==="privasys:clear-session"&&(Pe(e.rpId),H.remove(e.rpId),H.clearDeviceHint(),window.parent.postMessage({type:"privasys:session-cleared"},f.origin))}});window.parent.postMessage({type:"privasys:ready"},"*");})();
 //# sourceMappingURL=privasys-auth-frame.iife.js.map

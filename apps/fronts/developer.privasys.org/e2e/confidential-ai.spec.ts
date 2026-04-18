@@ -14,6 +14,7 @@
  */
 import { test, expect } from '@playwright/test';
 import path from 'path';
+import { setupAuth, getToken as getE2eToken } from './e2e-auth';
 
 const screenshot = (name: string) => path.join(__dirname, 'test-results', `${name}.png`);
 const API = process.env.NEXT_PUBLIC_API_URL || 'https://api-test.developer.privasys.org';
@@ -35,12 +36,10 @@ let versionId: string;
 // ── Helpers ────────────────────────────────────────────────────────
 async function getToken(page: import('@playwright/test').Page): Promise<string> {
     if (token) return token;
+    await setupAuth(page);
     await page.goto('/dashboard/');
     await page.waitForSelector('nav', { timeout: 10_000 });
-    const session = await page.evaluate(() =>
-        fetch('/api/auth/session').then(r => r.json()),
-    );
-    token = session?.accessToken as string;
+    token = await getE2eToken();
     expect(token).toBeTruthy();
     return token;
 }
