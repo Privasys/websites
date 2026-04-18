@@ -239,7 +239,7 @@ export default function AppDetailPage() {
         setDeleting(true);
         try {
             await deleteApp(session.accessToken, id);
-            window.location.href = '/dashboard';
+            router.push('/dashboard');
         } catch (e) {
             setError(e instanceof Error ? e.message : 'Delete failed');
             setDeleting(false);
