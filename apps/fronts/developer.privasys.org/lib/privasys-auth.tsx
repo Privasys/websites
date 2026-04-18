@@ -23,6 +23,8 @@ interface AuthContextValue {
     session: AuthSession | null;
     /** Whether the initial session check is still in progress. */
     loading: boolean;
+    /** Whether the session expired mid-use (API returned 401). */
+    expired: boolean;
     /** Trigger the SDK sign-in modal (OIDC PKCE via privasys.id iframe). */
     signIn: () => Promise<void>;
     /** Clear the session (both local and privasys.id iframe). */
@@ -36,6 +38,7 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue>({
     session: null,
     loading: true,
+    expired: false,
     signIn: async () => {},
     signOut: async () => {}
 });
@@ -90,6 +93,7 @@ interface PrivasysAuthProviderProps {
 export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderProps) {
     const [session, setSession] = useState<AuthSession | null>(null);
     const [loading, setLoading] = useState(true);
+    const [expired, setExpired] = useState(false);
     const frameRef = useRef<AuthFrame | null>(null);
 
     // Lazy-init the AuthFrame instance.
@@ -98,6 +102,7 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
             frameRef.current = new AuthFrame(config);
             frameRef.current.onSessionExpired = () => {
                 setSession(null);
+                setExpired(true);
                 clearSessionCookie();
             };
             frameRef.current.onSessionRenewed = () => {
@@ -133,6 +138,7 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
         const token = result.accessToken ?? result.sessionToken;
         setSession(sessionFromToken(token, config.rpId ?? config.appName));
         setSessionCookie(token);
+        setExpired(false);
 
         // Bootstrap the hidden renewal iframe so the frame-host can
         // silently renew the session before the 5-minute TTL expires.
@@ -149,14 +155,16 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
     // Listen for auth:expired from api.ts (401 responses).
     useEffect(() => {
         const handler = () => {
-            signOut();
+            setExpired(true);
+            setSession(null);
+            clearSessionCookie();
         };
         window.addEventListener('auth:expired', handler);
         return () => window.removeEventListener('auth:expired', handler);
-    }, [signOut]);
+    }, []);
 
     return (
-        <AuthContext.Provider value={{ session, loading, signIn, signOut }}>
+        <AuthContext.Provider value={{ session, loading, expired, signIn, signOut }}>
             {children}
         </AuthContext.Provider>
     );
