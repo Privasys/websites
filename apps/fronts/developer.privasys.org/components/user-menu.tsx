@@ -27,8 +27,8 @@ export function UserMenu() {
         if (!session?.accessToken) return;
         try {
             const info = await getUserInfo(session.accessToken);
-            if (info.display_name || info.name) setProfileName(info.display_name || info.name);
-            if (info.display_email || info.email) setProfileEmail(info.display_email || info.email);
+            if (info.name) setProfileName(info.name);
+            if (info.email) setProfileEmail(info.email);
         } catch { /* ignore */ }
     }, [session?.accessToken]);
 
