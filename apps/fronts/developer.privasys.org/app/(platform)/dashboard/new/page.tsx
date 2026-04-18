@@ -7,15 +7,7 @@ import { createApp, uploadCwasm, checkAppName, detectAppType } from '~/lib/api';
 import type { AppType } from '~/lib/types';
 
 type SourceMode = 'github' | 'upload' | 'package';
-type WizardState = 'input' | 'submitted';
 type NameStatus = 'idle' | 'checking' | 'available' | 'taken';
-
-interface SubmittedApp {
-    id: string;
-    name: string;
-    source_type: string;
-    status: string;
-}
 
 // ── Helpers ──
 
@@ -90,40 +82,6 @@ function CollapsibleStep({ step, label, summary, active, done, last, onEdit, chi
                 ) : (
                     <h2 className="text-lg font-semibold text-black/25 dark:text-white/25">{label}</h2>
                 )}
-            </div>
-        </div>
-    );
-}
-
-// ── PipelineStep (for submitted state) ──
-
-function PipelineStep({ step, active, done, last, children }: {
-    step: number; active: boolean; done: boolean; last?: boolean; children: React.ReactNode;
-}) {
-    return (
-        <div className="flex gap-4">
-            <div className="flex flex-col items-center">
-                <div className={`w-8 h-8 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${
-                    done
-                        ? 'border-emerald-500 bg-emerald-500 text-white'
-                        : active
-                            ? 'border-black dark:border-white bg-transparent'
-                            : 'border-black/15 dark:border-white/15 bg-transparent'
-                }`}>
-                    {done ? (
-                        <CheckIcon />
-                    ) : (
-                        <span className={`text-xs font-semibold ${active ? 'text-black dark:text-white' : 'text-black/25 dark:text-white/25'}`}>
-                            {step}
-                        </span>
-                    )}
-                </div>
-                {!last && (
-                    <div className={`w-0.5 flex-1 min-h-[24px] transition-colors ${done ? 'bg-emerald-500' : 'bg-black/10 dark:bg-white/10'}`} />
-                )}
-            </div>
-            <div className={`pb-8 flex-1 ${!active && !done ? 'opacity-40' : ''}`}>
-                {children}
             </div>
         </div>
     );
@@ -276,8 +234,6 @@ export default function NewApplicationPage() {
 
     // Wizard navigation
     const [currentStep, setCurrentStep] = useState(1);
-    const [wizardState, setWizardState] = useState<WizardState>('input');
-    const [submittedApp, setSubmittedApp] = useState<SubmittedApp | null>(null);
 
     // Step 1: Type
     const [appType, setAppType] = useState<AppType | null>(null);
@@ -434,8 +390,7 @@ export default function NewApplicationPage() {
                 await uploadCwasm(session.accessToken, app.id, file);
             }
 
-            setSubmittedApp({ id: app.id, name: app.name || appName, source_type: sourceMode, status: app.status || 'submitted' });
-            setWizardState('submitted');
+            router.push(`/dashboard/apps/${app.id}`);
         } catch (e) {
             setError(e instanceof Error ? e.message : 'Something went wrong');
             setSubmitting(false);
@@ -443,95 +398,7 @@ export default function NewApplicationPage() {
     }, [session?.accessToken, sourceMode, name, parsed, file, commitUrl, submitting, appType, containerPort, containerImage, envVars]);
 
 
-
-    // ── Submitted state ──
-
-    if (wizardState === 'submitted' && submittedApp) {
-        return (
-            <div className="max-w-xl">
-                <div className="flex items-center gap-3 mb-2">
-                    <div className="w-10 h-10 rounded-full bg-emerald-500 flex items-center justify-center text-white shrink-0">
-                        <CheckIcon className="w-5 h-5" />
-                    </div>
-                    <h1 className="text-2xl font-semibold">Application submitted</h1>
-                </div>
-                <p className="text-sm text-black/60 dark:text-white/60 mb-8">
-                    <strong>{submittedApp.name}</strong> has been created successfully.
-                    {submittedApp.status === 'building'
-                        ? ' A reproducible build has been triggered automatically.'
-                        : submittedApp.status === 'built'
-                            ? ' Your container image is ready to deploy.'
-                            : submittedApp.status === 'approved'
-                                ? ' Your application has been approved and is being prepared.'
-                                : ' Your application is being processed.'}
-                </p>
-
-                <div className="space-y-0">
-                    {(() => {
-                        const s = submittedApp.status;
-                        const stepIdx: number = s === 'built' ? 4 : (s === 'building' || s === 'approved') ? 3 : 2;
-                        return (
-                            <>
-                                <PipelineStep step={1} active={stepIdx === 1} done={stepIdx > 1}>
-                                    <h2 className="text-lg font-semibold">Application details</h2>
-                                    <div className="mt-1 text-sm text-black/50 dark:text-white/50">
-                                        {submittedApp.source_type === 'github' ? 'Created from GitHub commit' : submittedApp.source_type === 'package' ? 'Created from container image' : 'Uploaded manually'}
-                                    </div>
-                                </PipelineStep>
-
-                                <PipelineStep step={2} active={stepIdx === 2} done={stepIdx > 2}>
-                                    <h2 className="text-lg font-semibold">Review &amp; approval</h2>
-                                    <div className="mt-1 text-sm text-black/50 dark:text-white/50">
-                                        {stepIdx > 2 ? 'Automatically approved.' : 'Your application is queued for review.'}
-                                    </div>
-                                </PipelineStep>
-
-                                {submittedApp.source_type !== 'package' && (
-                                    <PipelineStep step={3} active={stepIdx === 3} done={stepIdx > 3}>
-                                        <h2 className="text-lg font-semibold">{submittedApp.source_type === 'github' && appType === 'container' ? 'Image build' : 'Reproducible build'}</h2>
-                                        <div className="mt-1 text-sm text-black/50 dark:text-white/50">
-                                            {stepIdx === 3
-                                                ? (appType === 'container' ? 'Building container image via GitHub Actions...' : 'Building via GitHub Actions...')
-                                                : stepIdx > 3
-                                                    ? 'Build complete.'
-                                                    : (appType === 'container' ? 'Build your container image via GitHub Actions.' : 'Compile your application into a .cwasm artifact.')}
-                                        </div>
-                                    </PipelineStep>
-                                )}
-
-                                <PipelineStep step={submittedApp.source_type === 'package' ? 3 : 4} active={false} done={stepIdx > 3 || (submittedApp.source_type === 'package' && stepIdx > 2)} last>
-                                    <h2 className="text-lg font-semibold">Ready</h2>
-                                    <div className="mt-1 text-sm text-black/50 dark:text-white/50">
-                                        Your application is built and ready to deploy.
-                                    </div>
-                                </PipelineStep>
-                            </>
-                        );
-                    })()}
-                </div>
-
-                <div className="flex items-center gap-3 mt-4">
-                    <button
-                        type="button"
-                        onClick={() => router.push(`/dashboard/apps/${submittedApp.id}`)}
-                        className="px-5 py-2 text-sm font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-80 transition-opacity"
-                    >
-                        View application
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => router.push('/dashboard')}
-                        className="text-sm text-black/50 dark:text-white/50 hover:underline"
-                    >
-                        Back to dashboard
-                    </button>
-                </div>
-
-            </div>
-        );
-    }
-
-    // ── Input state: multi-step wizard ──
+    // ── Wizard ──
 
     return (
         <div className="max-w-xl">
