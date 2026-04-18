@@ -79,7 +79,7 @@ function CollapsibleStep({ step, label, summary, active, done, last, onEdit, chi
             <div className={`pb-8 flex-1 ${!active && !done ? 'opacity-40' : ''}`}>
                 {done && !active ? (
                     <button type="button" onClick={onEdit} className="text-left group w-full">
-                        <span className="text-sm text-emerald-600 dark:text-emerald-400">{label}: {summary}</span>
+                        <span className="text-sm text-black/70 dark:text-white/70">{label}: {summary}</span>
                         <span className="ml-2 text-xs text-black/30 dark:text-white/30 opacity-0 group-hover:opacity-100 transition-opacity">Edit</span>
                     </button>
                 ) : active ? (
@@ -321,6 +321,8 @@ export default function NewApplicationPage() {
 
     const canSubmit = appType !== null && isSourceComplete && isNameComplete && !submitting;
 
+    const needsConfigStep = appType === 'container' || sourceMode === 'package';
+
     // ── Summaries for collapsed steps ──
 
     const typeSummary = appType === 'container' ? 'Container' : appType === 'wasm' ? 'WASM Application' : '';
@@ -440,13 +442,7 @@ export default function NewApplicationPage() {
         }
     }, [session?.accessToken, sourceMode, name, parsed, file, commitUrl, submitting, appType, containerPort, containerImage, envVars]);
 
-    // Auto-redirect after submit
-    useEffect(() => {
-        if (wizardState === 'submitted' && submittedApp) {
-            const t = setTimeout(() => router.push(`/dashboard/apps/${submittedApp.id}`), 3000);
-            return () => clearTimeout(t);
-        }
-    }, [wizardState, submittedApp, router]);
+
 
     // ── Submitted state ──
 
@@ -530,9 +526,7 @@ export default function NewApplicationPage() {
                         Back to dashboard
                     </button>
                 </div>
-                <p className="mt-3 text-xs text-black/40 dark:text-white/40">
-                    Redirecting to your application in a few seconds...
-                </p>
+
             </div>
         );
     }
@@ -718,7 +712,7 @@ export default function NewApplicationPage() {
                 <CollapsibleStep
                     step={3} label="Application name" summary={nameSummary}
                     active={currentStep === 3} done={currentStep > 3 && isNameComplete}
-                    onEdit={() => setCurrentStep(3)}
+                    onEdit={() => setCurrentStep(3)} last={!needsConfigStep}
                 >
                     <div className="space-y-3">
                         <NameInput
@@ -726,19 +720,30 @@ export default function NewApplicationPage() {
                             nameStatus={nameStatus} nameReason={nameReason}
                             disabled={submitting}
                         />
-                        <button
-                            type="button"
-                            onClick={() => setCurrentStep(4)}
-                            disabled={!isNameComplete}
-                            className="px-4 py-2 text-sm font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-80 disabled:opacity-40 transition-opacity"
-                        >
-                            Next
-                        </button>
+                        {needsConfigStep ? (
+                            <button
+                                type="button"
+                                onClick={() => setCurrentStep(4)}
+                                disabled={!isNameComplete}
+                                className="px-4 py-2 text-sm font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-80 disabled:opacity-40 transition-opacity"
+                            >
+                                Next
+                            </button>
+                        ) : (
+                            <button
+                                type="button"
+                                onClick={handleSubmit}
+                                disabled={!canSubmit}
+                                className="px-5 py-2 text-sm font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-80 disabled:opacity-40 transition-opacity"
+                            >
+                                {submitting ? 'Creating...' : 'Create application'}
+                            </button>
+                        )}
                     </div>
                 </CollapsibleStep>
 
-                {/* ── Step 4: Configuration & Submit ── */}
-                <CollapsibleStep
+                {/* ── Step 4: Configuration & Submit (containers only) ── */}
+                {needsConfigStep && <CollapsibleStep
                     step={4} label="Configuration" active={currentStep === 4} done={false} last
                 >
                     <div className="space-y-4">
@@ -774,7 +779,7 @@ export default function NewApplicationPage() {
                             {submitting ? 'Creating...' : 'Create application'}
                         </button>
                     </div>
-                </CollapsibleStep>
+                </CollapsibleStep>}
             </div>
 
             {/* Status message */}
