@@ -446,7 +446,8 @@ function OverviewTab({ app, versions, builds, deployments, deleting, onDelete }:
             {/* Recent builds */}
             {builds.length > 0 && (
                 <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">
-                    <h2 className="text-sm font-semibold mb-3">Recent builds</h2>
+                    <h2 className="text-sm font-semibold mb-3">{builds.length === 1 && (builds[0].status === 'pending' ||
+                        builds[0].status === 'dispatched' || builds[0].status === 'running') ? 'Building' : 'Recent builds'}</h2>
                     <div className="space-y-2">
                         {builds.slice(0, 5).map((build) => (
                             <div key={build.id} className="flex items-center justify-between py-2 border-b border-black/5 dark:border-white/5 last:border-0">
