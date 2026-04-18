@@ -197,22 +197,48 @@ function buildVersionString(): string | undefined {
 }
 
 export default function PlatformLayout({ children }: { children: ReactNode }) {
-    const { session, loading, signIn } = useAuth();
+    const { session, loading, signIn, expired } = useAuth();
     const triggered = useRef(false);
 
-    // Auto-trigger sign-in modal when user is not authenticated.
+    // Auto-trigger sign-in modal on first visit (no prior session).
+    // Skip when session expired mid-use — show a banner instead.
     useEffect(() => {
-        if (loading || session || triggered.current) return;
+        if (loading || session || triggered.current || expired) return;
         triggered.current = true;
         signIn().catch(() => {
             window.location.href = '/';
         });
-    }, [loading, session, signIn]);
+    }, [loading, session, signIn, expired]);
 
     // Reset trigger when session is cleared (e.g. token expired then re-auth).
     useEffect(() => {
         if (!session) triggered.current = false;
     }, [session]);
+
+    // Session expired mid-use — show a banner instead of silently popping auth.
+    if (expired && !session) {
+        return (
+            <div className="min-h-screen flex items-center justify-center">
+                <div className="max-w-sm text-center space-y-4">
+                    <div className="mx-auto w-12 h-12 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
+                        <svg className="w-6 h-6 text-amber-600 dark:text-amber-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                    </div>
+                    <h2 className="text-lg font-semibold">Session expired</h2>
+                    <p className="text-sm text-black/50 dark:text-white/50">
+                        Your session has expired. Please sign in again to continue.
+                    </p>
+                    <button
+                        onClick={() => signIn().catch(() => { window.location.href = '/'; })}
+                        className="px-4 py-2 text-sm font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-80 transition-opacity"
+                    >
+                        Sign in
+                    </button>
+                </div>
+            </div>
+        );
+    }
 
     if (loading || !session) {
         return (
