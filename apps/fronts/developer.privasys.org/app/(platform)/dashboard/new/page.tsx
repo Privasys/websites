@@ -1,7 +1,7 @@
 ﻿'use client';
 
 import { useRouter } from 'next/navigation';
-import { useSession } from 'next-auth/react';
+import { useAuth } from '~/lib/privasys-auth';
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { createApp, uploadCwasm, checkAppName, detectAppType } from '~/lib/api';
 import type { AppType } from '~/lib/types';
@@ -271,7 +271,7 @@ function EnvVarsEditor({ envVars, setEnvVars, disabled }: {
 // ── Main page ──
 
 export default function NewApplicationPage() {
-    const { data: session } = useSession();
+    const { session } = useAuth();
     const router = useRouter();
 
     // Wizard navigation
@@ -314,8 +314,8 @@ export default function NewApplicationPage() {
 
     const isSourceComplete = sourceMode === 'github' ? !!parsed
         : sourceMode === 'package' ? !!containerImage.trim()
-        : sourceMode === 'upload' ? !!file
-        : false;
+            : sourceMode === 'upload' ? !!file
+                : false;
 
     const isNameComplete = name.trim().length >= 3 && nameStatus === 'available';
 
@@ -425,7 +425,7 @@ export default function NewApplicationPage() {
                 container_port: (sourceMode === 'package' || appType === 'container') && containerPort ? parseInt(containerPort, 10) : undefined,
                 container_env: filteredEnv.length > 0
                     ? Object.fromEntries(filteredEnv.map(e => [e.key.trim(), e.value]))
-                    : undefined,
+                    : undefined
             });
 
             if (sourceMode === 'upload' && file) {

@@ -3,9 +3,9 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { ReactNode } from 'react';
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { Navbar, Footer } from '@privasys/ui';
-import { useSession } from 'next-auth/react';
+import { useAuth } from '~/lib/privasys-auth';
 import { listApps } from '~/lib/api';
 import { useSSE } from '~/lib/use-sse';
 import type { App } from '~/lib/types';
@@ -36,7 +36,7 @@ const NAVBAR_ITEMS = [
 
 function Sidebar() {
     const pathname = usePathname();
-    const { data: session } = useSession();
+    const { session } = useAuth();
     const isManager = session?.roles?.some(r => r.endsWith(':manager') || r === 'privasys-platform:admin' || r === 'privasys-platform:manager') ?? false;
     const isAdmin = session?.roles?.includes('privasys-platform:admin') ?? false;
     const [apps, setApps] = useState<App[]>([]);
@@ -197,6 +197,31 @@ function buildVersionString(): string | undefined {
 }
 
 export default function PlatformLayout({ children }: { children: ReactNode }) {
+    const { session, loading, signIn } = useAuth();
+    const triggered = useRef(false);
+
+    // Auto-trigger sign-in modal when user is not authenticated.
+    useEffect(() => {
+        if (loading || session || triggered.current) return;
+        triggered.current = true;
+        signIn().catch(() => {
+            window.location.href = '/';
+        });
+    }, [loading, session, signIn]);
+
+    // Reset trigger when session is cleared (e.g. token expired then re-auth).
+    useEffect(() => {
+        if (!session) triggered.current = false;
+    }, [session]);
+
+    if (loading || !session) {
+        return (
+            <div className="min-h-screen flex items-center justify-center">
+                <div className="animate-pulse text-sm text-black/50 dark:text-white/50">Loading…</div>
+            </div>
+        );
+    }
+
     return (
         <>
             <Navbar brandSuffix="Developer" items={NAVBAR_ITEMS} fullWidth trailing={<UserMenu />} />

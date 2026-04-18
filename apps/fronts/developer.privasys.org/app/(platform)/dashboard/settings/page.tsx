@@ -1,12 +1,12 @@
 'use client';
 
-import { useSession, signOut } from 'next-auth/react';
+import { useAuth } from '~/lib/privasys-auth';
 import { useEffect, useState, useCallback } from 'react';
 import { getUserInfo, updateProfile } from '~/lib/api';
 import type { UserInfo } from '~/lib/api';
 
 export default function SettingsPage() {
-    const { data: session } = useSession();
+    const { session, signOut } = useAuth();
     const [profile, setProfile] = useState<UserInfo | null>(null);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -61,8 +61,8 @@ export default function SettingsPage() {
         setSaving(false);
     }
 
-    const oidcName = profile?.name || session?.user?.name || '';
-    const oidcEmail = profile?.email || session?.user?.email || '';
+    const oidcName = profile?.name || '';
+    const oidcEmail = profile?.email || '';
 
     return (
         <div className="max-w-2xl">
@@ -219,7 +219,7 @@ export default function SettingsPage() {
             <section className="mt-10 pt-8 border-t border-black/5 dark:border-white/10">
                 <button
                     type="button"
-                    onClick={() => signOut({ callbackUrl: '/' })}
+                    onClick={async () => { await signOut(); window.location.href = '/'; }}
                     className="px-5 py-2 text-sm font-medium rounded-lg border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
                 >
                     Sign out

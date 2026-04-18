@@ -1,6 +1,6 @@
 'use client';
 
-import { useSession } from 'next-auth/react';
+import { useAuth } from '~/lib/privasys-auth';
 import { useEffect, useState } from 'react';
 import { listApps } from '~/lib/api';
 import type { App, AppStatus } from '~/lib/types';
@@ -16,7 +16,7 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 export default function DeploymentsPage() {
-    const { data: session } = useSession();
+    const { session } = useAuth();
     const [apps, setApps] = useState<App[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);

@@ -62,7 +62,7 @@ export default function MarketingPage() {
                 </p>
                 <div className="mt-10 flex flex-wrap gap-4">
                     <Link
-                        href="/login"
+                        href="/dashboard"
                         className="px-6 py-2.5 font-bold rounded-full bg-black text-white dark:bg-white dark:text-black hover:opacity-80 transition-opacity"
                     >
                         Get started

@@ -137,7 +137,7 @@ function buildProviders(): any[] {
             clientId: process.env.AUTH_PRIVASYS_ID!,
             clientSecret: process.env.AUTH_PRIVASYS_SECRET!,
             client: {
-                token_endpoint_auth_method: 'client_secret_post',
+                token_endpoint_auth_method: 'client_secret_post'
             },
             authorization: {
                 params: {

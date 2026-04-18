@@ -1,6 +1,6 @@
 'use client';
 
-import { useSession } from 'next-auth/react';
+import { useAuth } from '~/lib/privasys-auth';
 import { useEffect, useState, useCallback } from 'react';
 import { adminGetSettings, adminUpdateSettings } from '~/lib/api';
 import type { SettingEntry } from '~/lib/api';
@@ -26,7 +26,7 @@ const SENSITIVE_FIELDS = new Set([
 ]);
 
 export default function AdminSettingsPage() {
-    const { data: session } = useSession();
+    const { session } = useAuth();
     const [activeGroup, setActiveGroup] = useState<string>(GROUPS[0].id);
     const [settings, setSettings] = useState<SettingEntry[]>([]);
     const [edits, setEdits] = useState<Record<string, string>>({});

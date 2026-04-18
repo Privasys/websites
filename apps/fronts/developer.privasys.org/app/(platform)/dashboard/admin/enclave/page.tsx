@@ -1,6 +1,6 @@
 'use client';
 
-import { useSession } from 'next-auth/react';
+import { useAuth } from '~/lib/privasys-auth';
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { adminEnclaveHealth, adminInspectEnclave, adminListEnclaves, adminCreateEnclave, adminUpdateEnclave, adminDeleteEnclave } from '~/lib/api';
 import { useSSE } from '~/lib/use-sse';
@@ -22,7 +22,7 @@ const PAGE_SIZE = 50;
 const INPUT_CLS = 'w-full px-3 py-2 text-sm rounded-lg border border-black/10 dark:border-white/10 bg-transparent focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/20';
 
 export default function AdminEnclavePage() {
-    const { data: session } = useSession();
+    const { session } = useAuth();
     const [enclaves, setEnclaves] = useState<Enclave[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);

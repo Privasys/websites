@@ -58,6 +58,16 @@ export default defineConfig({
             use: {
                 storageState: AUTH_FILE
             }
+        },
+        {
+            name: 'interactive',
+            testMatch: 'interactive-auth.spec.ts',
+            // No dependencies — these tests handle their own auth interactively
+            use: {
+                headless: false,
+                launchOptions: { slowMo: 250 },
+                video: 'on'
+            }
         }
     ]
 });
