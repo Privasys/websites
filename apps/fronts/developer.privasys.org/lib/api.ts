@@ -284,8 +284,6 @@ export function getUserInfo(token: string): Promise<UserInfo> {
 }
 
 export function updateProfile(token: string, profile: {
-    display_name: string;
-    display_email: string;
     company_name: string;
     company_domain: string;
     is_individual: boolean;

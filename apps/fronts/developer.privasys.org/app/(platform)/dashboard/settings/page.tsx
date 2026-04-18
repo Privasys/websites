@@ -12,8 +12,6 @@ export default function SettingsPage() {
     const [saving, setSaving] = useState(false);
     const [success, setSuccess] = useState('');
     const [error, setError] = useState('');
-    const [displayName, setDisplayName] = useState('');
-    const [displayEmail, setDisplayEmail] = useState('');
     const [companyName, setCompanyName] = useState('');
     const [companyDomain, setCompanyDomain] = useState('');
     const [isIndividual, setIsIndividual] = useState(false);
@@ -23,8 +21,6 @@ export default function SettingsPage() {
         try {
             const data = await getUserInfo(session.accessToken);
             setProfile(data);
-            setDisplayName(data.display_name || '');
-            setDisplayEmail(data.display_email || '');
             setCompanyName(data.company_name || '');
             setCompanyDomain(data.company_domain || '');
             setIsIndividual(data.is_individual ?? false);
@@ -41,101 +37,62 @@ export default function SettingsPage() {
         setSuccess('');
         try {
             const data = await updateProfile(session.accessToken, {
-                display_name: displayName.trim(),
-                display_email: displayEmail.trim(),
                 company_name: companyName.trim(),
                 company_domain: companyDomain.trim(),
                 is_individual: isIndividual
             });
             setProfile(data);
-            setDisplayName(data.display_name || '');
-            setDisplayEmail(data.display_email || '');
             setCompanyName(data.company_name || '');
             setCompanyDomain(data.company_domain || '');
             setIsIndividual(data.is_individual ?? false);
-            setSuccess('Profile updated.');
+            setSuccess('Settings updated.');
             setTimeout(() => setSuccess(''), 3000);
         } catch (e) {
-            setError(e instanceof Error ? e.message : 'Failed to update profile');
+            setError(e instanceof Error ? e.message : 'Failed to update settings');
         }
         setSaving(false);
     }
-
-    const oidcName = profile?.name || '';
-    const oidcEmail = profile?.email || '';
 
     return (
         <div className="max-w-2xl">
             <h1 className="text-2xl font-semibold">Settings</h1>
             <p className="mt-2 text-sm text-black/60 dark:text-white/60">
-                Manage your account and profile details.
+                Manage your account and organisation details.
             </p>
 
-            {/* OIDC identity (read-only) */}
+            {/* Identity (read-only, sourced from IdP via management-service) */}
             <section className="mt-10">
                 <h2 className="text-lg font-medium">Identity</h2>
                 <p className="mt-1 text-sm text-black/50 dark:text-white/50">
-                    These fields come from your identity provider and cannot be changed here.
+                    Your identity is managed by your authentication provider and cannot be changed here.
                 </p>
-                <div className="mt-4 p-5 rounded-xl border border-black/10 dark:border-white/10 space-y-4">
-                    <div>
-                        <div className="text-xs font-medium text-black/50 dark:text-white/50">Provider</div>
-                        <div className="text-sm mt-0.5">Zitadel (GitHub)</div>
-                    </div>
-                    {oidcName && (
-                        <div>
-                            <div className="text-xs font-medium text-black/50 dark:text-white/50">Name</div>
-                            <div className="text-sm mt-0.5">{oidcName}</div>
-                        </div>
-                    )}
-                    {oidcEmail && (
-                        <div>
-                            <div className="text-xs font-medium text-black/50 dark:text-white/50">Email</div>
-                            <div className="text-sm mt-0.5">{oidcEmail}</div>
-                        </div>
-                    )}
-                    {profile?.sub && (
-                        <div>
-                            <div className="text-xs font-medium text-black/50 dark:text-white/50">Subject ID</div>
-                            <div className="text-sm mt-0.5 font-mono text-black/40 dark:text-white/40">{profile.sub}</div>
-                        </div>
-                    )}
-                </div>
-            </section>
-
-            {/* Editable profile */}
-            <section className="mt-10">
-                <h2 className="text-lg font-medium">Profile</h2>
-                <p className="mt-1 text-sm text-black/50 dark:text-white/50">
-                    Override how your name and email appear on the platform.
-                </p>
-
                 {loading ? (
                     <div className="mt-4 text-sm text-black/40 dark:text-white/40">Loading…</div>
                 ) : (
-                    <div className="mt-4 space-y-4">
-                        <div>
-                            <label className="block text-sm font-medium mb-1">Display name</label>
-                            <input
-                                type="text"
-                                value={displayName}
-                                onChange={e => setDisplayName(e.target.value)}
-                                placeholder={oidcName || 'Your name'}
-                                className="w-full px-3 py-2 text-sm rounded-lg border border-black/10 dark:border-white/10 bg-transparent focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/20"
-                            />
-                            <p className="mt-1 text-xs text-black/40 dark:text-white/40">Leave empty to use your identity provider name.</p>
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium mb-1">Display email</label>
-                            <input
-                                type="email"
-                                value={displayEmail}
-                                onChange={e => setDisplayEmail(e.target.value)}
-                                placeholder={oidcEmail || 'your@email.com'}
-                                className="w-full px-3 py-2 text-sm rounded-lg border border-black/10 dark:border-white/10 bg-transparent focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/20"
-                            />
-                            <p className="mt-1 text-xs text-black/40 dark:text-white/40">Leave empty to use your identity provider email.</p>
-                        </div>
+                    <div className="mt-4 p-5 rounded-xl border border-black/10 dark:border-white/10 space-y-4">
+                        {profile?.name && (
+                            <div>
+                                <div className="text-xs font-medium text-black/50 dark:text-white/50">Name</div>
+                                <div className="text-sm mt-0.5">{profile.name}</div>
+                            </div>
+                        )}
+                        {profile?.email && (
+                            <div>
+                                <div className="text-xs font-medium text-black/50 dark:text-white/50">Email</div>
+                                <div className="text-sm mt-0.5">{profile.email}</div>
+                            </div>
+                        )}
+                        {!profile?.name && !profile?.email && (
+                            <div className="text-sm text-black/40 dark:text-white/40">
+                                No profile information available. Sign in again to share your name and email.
+                            </div>
+                        )}
+                        {profile?.sub && (
+                            <div>
+                                <div className="text-xs font-medium text-black/50 dark:text-white/50">Subject ID</div>
+                                <div className="text-sm mt-0.5 font-mono text-black/40 dark:text-white/40">{profile.sub}</div>
+                            </div>
+                        )}
                     </div>
                 )}
             </section>
