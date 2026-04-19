@@ -10,8 +10,8 @@
     let attestationServerToken = '';
     let currentTab = 'attestation';
     const ENV_CONFIG = {
-        production:  { baseUrl: 'https://api.developer.privasys.org',      gatewayDomain: 'apps.privasys.org' },
-        development: { baseUrl: 'https://api-test.developer.privasys.org',  gatewayDomain: 'apps-test.privasys.org' }
+        production:  { baseUrl: 'https://api.developer.privasys.org',      gatewayDomain: 'apps.privasys.org',      authOrigin: 'https://privasys.id' },
+        development: { baseUrl: 'https://api-test.developer.privasys.org',  gatewayDomain: 'apps-test.privasys.org', authOrigin: 'https://dev.privasys.id' }
     };
     var currentEnv = 'production';
     const DEFAULT_BASE_URL = ENV_CONFIG.production.baseUrl;
@@ -173,8 +173,7 @@
         var nameInput = ($('#app-name-input') || {}).value || '';
         nameInput = nameInput.trim();
 
-        authToken = ($('#auth-token-input') || {}).value || '';
-        authToken = authToken.trim();
+        authToken = '';
         attestationServerUrl = ($('#attestation-url-input') || {}).value || '';
         attestationServerUrl = attestationServerUrl.trim().replace(/\/+$/, '');
         attestationServerToken = ($('#attestation-token-input') || {}).value || '';
@@ -223,8 +222,28 @@
         $('#connection-info').innerHTML = '';
         $('#connection-info').appendChild(h('span', {}, appName + ' — ' + baseUrl));
         $('#connection-info').appendChild(h('span', { className: 'gateway-badge', title: 'Direct RA-TLS gateway endpoint for this app' }, gatewayUrl + ':443'));
+        updateHeaderAuth();
         renderTabs();
         switchTab('attestation');
+    }
+
+    // Expose signOut for the header button
+    window.__explorerSignOut = function () { signOutFido2(); };
+
+    function updateHeaderAuth() {
+        var statusEl = $('#header-auth-status');
+        var signoutBtn = $('#header-signout-btn');
+        if (!statusEl || !signoutBtn) return;
+        if (fido2State === 'complete' && fido2SessionToken) {
+            statusEl.innerHTML = '';
+            statusEl.appendChild(h('span', { className: 'badge badge-ok' }, '\u2713 Authenticated'));
+            statusEl.style.display = '';
+            signoutBtn.style.display = '';
+        } else {
+            statusEl.innerHTML = '';
+            statusEl.style.display = 'none';
+            signoutBtn.style.display = 'none';
+        }
     }
 
     // ── Tab switching ──────────────────────────────
@@ -617,29 +636,36 @@
     var authFrame = null;
 
     function getAuthFrame() {
+        var container = $('#auth-iframe-container');
         if (!authFrame || authFrame.rpId !== getRpId()) {
             authFrame = new Privasys.AuthFrame({
                 apiBase: baseUrl,
                 appName: appName,
                 rpId: getRpId(),
                 brokerUrl: brokerUrl,
-                timeout: FIDO2_TIMEOUT
+                authOrigin: ENV_CONFIG[currentEnv].authOrigin,
+                timeout: FIDO2_TIMEOUT,
+                container: container || undefined
             });
         }
         return authFrame;
     }
 
     function startSignIn() {
+        var container = $('#auth-iframe-container');
+        if (container) container.innerHTML = '';
         getAuthFrame().signIn().then(function (result) {
-            fido2SessionToken = result.sessionToken || '';
+            fido2SessionToken = result.accessToken || result.sessionToken || '';
             fido2Attestation = result.attestation || null;
             fido2State = 'complete';
             fido2SessionId = result.sessionId || '';
+            updateHeaderAuth();
             renderAuth();
             renderTabs();
         }).catch(function (e) {
-            // User cancelled — just stay idle
+            // User cancelled — just stay idle, don't re-render (avoids loop)
             if (e && e.message === 'Authentication cancelled') return;
+
             fido2State = 'error';
             fido2Error = e.message || 'Authentication failed';
             renderAuth();
@@ -656,6 +682,7 @@
             fido2Attestation = null;
             fido2Error = '';
             sessionChecked = true; // prevent auto-re-login
+            updateHeaderAuth();
             renderAuth();
             renderTabs();
         });
@@ -670,57 +697,19 @@
 
         var rpId = getRpId();
 
-        // Auto-restore session from privasys.id on first render
-        if (fido2State === 'idle' && !sessionChecked) {
-            sessionChecked = true;
-
-            // Listen for session lifecycle events from the frame host
-            var frame = getAuthFrame();
-            frame.onSessionExpired = function (rpId) {
-                console.log('[explorer] session expired for', rpId);
-                fido2SessionToken = null;
-                fido2SessionId = null;
-                fido2State = 'idle';
-                sessionChecked = false;
-                renderAuth();
-                renderTabs();
-            };
-            frame.onSessionRenewed = function (rpId) {
-                console.log('[explorer] session renewed for', rpId);
-            };
-
-            frame.getSession().then(function (session) {
-                if (session && session.token) {
-                    // Session tokens have a 5-minute client-side TTL;
-                    // the frame host renews them automatically via push.
-                    var age = Date.now() - (session.authenticatedAt || 0);
-                    if (age > 5 * 60 * 1000) {
-                        getAuthFrame().clearSession().catch(function () {});
-                        return;
-                    }
-                    fido2SessionToken = session.token;
-                    fido2State = 'complete';
-                    renderAuth();
-                    renderTabs();
-                }
-            }).catch(function () {});
-        }
-
         // ── Complete: show session info ──
         if (fido2State === 'complete' && fido2SessionToken) {
             var masked = '\u25CF'.repeat(8) + fido2SessionToken.slice(-6);
             var method = fido2SessionId ? 'Privasys Wallet' : 'Passkey';
             var methodDetail = fido2SessionId ? 'Attestation verified' : 'This device';
 
-            var successCard = h('div', { className: 'auth-modal auth-modal-success' },
-                h('div', { className: 'auth-success-icon' },
-                    h('svg', { 'viewBox': '0 0 24 24', 'fill': 'none', 'stroke': 'currentColor', 'stroke-width': '2', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' },
+            var successCard = h('div', { className: 'auth-inline-success' },
+                h('div', { className: 'flex items-center gap-2 mb-2' },
+                    h('svg', { 'viewBox': '0 0 24 24', 'width': '20', 'height': '20', 'fill': 'none', 'stroke': 'var(--emerald)', 'stroke-width': '2', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' },
                         h('circle', { cx: '12', cy: '12', r: '10' }),
                         h('path', { d: 'M8 12l3 3 5-6' })
-                    )
-                ),
-                h('div', { className: 'auth-success-title' }, 'Authenticated'),
-                h('div', { className: 'auth-success-method' },
+                    ),
+                    h('strong', null, 'Authenticated'),
                     h('span', { className: 'auth-method-badge' }, method),
                     h('span', { className: 'auth-method-detail' }, methodDetail)
                 ),
@@ -741,13 +730,19 @@
                     )
                 ),
                 h('p', { className: 'auth-session-note' },
-                    'Your session token is sent automatically on API calls.'
+                    'Your session token is sent automatically as X-App-Auth on API calls.'
                 ),
-                h('div', { className: 'auth-modal-footer' },
-                    h('button', { className: 'auth-signout-btn', onClick: signOutFido2 }, 'Sign out')
+                h('div', { style: 'margin-top:12px' },
+                    h('button', { className: 'btn btn-outline btn-sm', onClick: signOutFido2 }, 'Sign out'),
+                    h('button', { className: 'btn btn-outline btn-sm', style: 'margin-left:8px', onClick: function () {
+                        fido2State = 'idle';
+                        sessionChecked = true;
+                        authFrame = null;
+                        renderAuth();
+                    } }, 'Re-authenticate')
                 )
             );
-            content.appendChild(h('div', { className: 'auth-modal-wrap' }, successCard));
+            content.appendChild(successCard);
 
             // Show wallet attestation details if available
             if (fido2Attestation) {
@@ -768,33 +763,80 @@
             return;
         }
 
-        // ── Idle / Error: show sign-in prompt ──
-        var modal = h('div', { className: 'auth-modal' },
-            h('div', { className: 'auth-brand' },
-                h('div', { className: 'auth-brand-icon', html: '<svg viewBox="0 0 500 500"><defs><linearGradient id="eg" y2="1"><stop offset="21%" stop-color="#34E89E"/><stop offset="42%" stop-color="#12B06E"/></linearGradient><linearGradient id="eb" x1="1" y1="1" x2="0" y2="0"><stop offset="21%" stop-color="#00BCF2"/><stop offset="42%" stop-color="#00A0EB"/></linearGradient></defs><path d="M100 0H450L0 450V100A100 100 0 0 1 100 0Z" fill="url(#eg)"/><path d="M500 50V400A100 100 0 0 1 400 500H50L500 50Z" fill="url(#eb)"/><polygon points="0,500 50,500 500,50 500,0" fill="#fff"/></svg>' }),
-                h('div', { className: 'auth-brand-text' },
-                    h('div', { className: 'auth-brand-title' }, 'Authenticate with ' + appName),
-                    h('div', { className: 'auth-brand-sub' }, rpId)
-                )
-            ),
-            fido2Error ? h('div', { className: 'auth-error mb-3' },
-                h('span', null, fido2Error)
-            ) : null,
-            h('p', { style: 'font-size:13px;color:var(--muted);margin-bottom:20px;line-height:1.5' },
-                'Sign in using the Privasys Wallet (QR scan) or a browser passkey (Touch\u00A0ID, Windows\u00A0Hello). The SDK overlay handles the full ceremony.'
-            ),
-            h('button', { className: 'auth-provider-btn auth-provider-wallet', onClick: startSignIn },
-                h('svg', { 'className': 'auth-provider-icon', 'viewBox': '0 0 24 24', 'fill': 'none', 'stroke': 'currentColor', 'stroke-width': '1.5', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' },
-                    h('path', { d: 'M12 2l7 4v5c0 5.25-3.5 9.74-7 11-3.5-1.26-7-5.75-7-11V6l7-4z' })
-                ),
-                h('span', { className: 'auth-provider-label' }, 'Sign in'),
-                h('span', { className: 'auth-provider-hint' }, 'Opens SDK overlay')
-            ),
-            h('div', { className: 'auth-modal-footer' },
-                h('span', null, 'Authentication is handled by the @privasys/auth SDK')
-            )
-        );
-        content.appendChild(h('div', { className: 'auth-modal-wrap' }, modal));
+        // ── Error banner ──
+        if (fido2Error) {
+            content.appendChild(h('div', { className: 'auth-error mb-4' },
+                h('span', null, fido2Error),
+                h('button', { className: 'btn btn-outline btn-sm', style: 'margin-left:12px', onClick: function () {
+                    fido2Error = '';
+                    fido2State = 'idle';
+                    sessionChecked = false;
+                    authFrame = null;
+                    renderAuth();
+                } }, 'Retry')
+            ));
+            return;
+        }
+
+        // ── Idle: embed the auth iframe directly ──
+        var iframeContainer = h('div', { className: 'auth-iframe-container', id: 'auth-iframe-container' });
+        content.appendChild(iframeContainer);
+
+        // Auto-restore session from privasys.id on first render
+        if (!sessionChecked) {
+            sessionChecked = true;
+
+            // Listen for session lifecycle events from the frame host
+            var frame = getAuthFrame();
+            frame.onSessionExpired = function (rpId) {
+                console.log('[explorer] session expired for', rpId);
+                fido2SessionToken = null;
+                fido2SessionId = null;
+                fido2State = 'idle';
+                sessionChecked = false;
+                authFrame = null;
+                updateHeaderAuth();
+                renderAuth();
+                renderTabs();
+            };
+            frame.onSessionRenewed = function (rpId, accessToken) {
+                console.log('[explorer] session renewed for', rpId);
+                if (accessToken) {
+                    fido2SessionToken = accessToken;
+                } else {
+                    frame.getSession().then(function (session) {
+                        if (session && session.token) {
+                            fido2SessionToken = session.token;
+                        }
+                    }).catch(function () {});
+                }
+            };
+
+            frame.getSession().then(function (session) {
+                if (session && session.token) {
+                    fido2SessionToken = session.token;
+                    fido2State = 'complete';
+                    updateHeaderAuth();
+                    renderAuth();
+                    renderTabs();
+                } else {
+                    // No existing session — start sign-in directly in the embedded iframe
+                    startSignIn();
+                }
+            }).catch(function () {
+                // Session check failed — start sign-in anyway
+                startSignIn();
+            });
+        } else {
+            // Already checked (e.g. after sign-out) — show a sign-in button
+            iframeContainer.appendChild(h('div', { className: 'auth-signin-prompt' },
+                h('p', { style: 'color:var(--muted);margin-bottom:12px' }, 'You are not signed in.'),
+                h('button', { className: 'btn btn-primary', onClick: function () {
+                    iframeContainer.innerHTML = '';
+                    startSignIn();
+                } }, 'Sign in')
+            ));
+        }
     }
 
     // ═══════════════════════════════════════════════
@@ -1091,7 +1133,7 @@
     // ── Init ───────────────────────────────────────
     document.addEventListener('DOMContentLoaded', function () {
         $('#connect-btn').addEventListener('click', handleConnect);
-        var ids = ['endpoint-input', 'base-url-input', 'app-name-input', 'auth-token-input', 'attestation-url-input', 'attestation-token-input', 'broker-url-input'];
+        var ids = ['endpoint-input', 'base-url-input', 'app-name-input', 'attestation-url-input', 'attestation-token-input', 'broker-url-input'];
         for (var i = 0; i < ids.length; i++) {
             var el = $('#' + ids[i]);
             if (el) el.addEventListener('keydown', function (e) { if (e.key === 'Enter') handleConnect(); });
@@ -1110,23 +1152,12 @@
             });
         }
 
-        // Advanced section toggle
-        var toggle = $('#advanced-toggle');
-        if (toggle) {
-            toggle.addEventListener('click', function () {
-                var section = $('#advanced-section');
-                if (section) section.classList.toggle('collapsed');
-            });
-        }
-
         // Pre-fill from URL params
         var params = new URLSearchParams(window.location.search);
         if (params.get('name')) $('#app-name-input').value = params.get('name');
         if (params.get('app')) $('#app-name-input').value = params.get('app');
         if (params.get('base')) $('#base-url-input').value = params.get('base');
         if (params.get('url')) {
-            var section = $('#advanced-section');
-            if (section) section.classList.remove('collapsed');
             $('#endpoint-input').value = params.get('url');
         }
         if (params.get('as')) $('#attestation-url-input').value = params.get('as');

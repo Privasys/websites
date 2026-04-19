@@ -19,6 +19,8 @@
         </a>
         <span class="sep"></span>
         <span class="header-connected text-xs text-muted" id="connection-info"></span>
+        <span class="header-connected header-auth-status" id="header-auth-status"></span>
+        <button class="header-connected btn btn-outline btn-sm btn-signout" id="header-signout-btn" style="display:none" onclick="window.__explorerSignOut()">Sign out</button>
         <button class="header-connected btn btn-outline btn-sm" style="margin-left:auto" onclick="location.reload()">Disconnect</button>
     </header>
 
@@ -39,38 +41,21 @@
                     <option value="production" selected>Production</option>
                     <option value="development">Development</option>
                 </select>
-            </fieldset>
 
-            <fieldset class="connect-section collapsed" id="advanced-section">
-                <legend>
-                    <button type="button" class="toggle-btn" id="advanced-toggle">
-                        Advanced
-                        <svg class="toggle-chevron" viewBox="0 0 16 16" width="12" height="12"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
-                    </button>
-                </legend>
-                <div class="collapsible-body">
-                    <label for="endpoint-input">Full endpoint URL</label>
-                    <input type="text" id="endpoint-input" placeholder="https://api.developer.privasys.org/api/v1/apps/wasm-app-example">
-                    <div class="field-hint">Overrides the default management service if provided.</div>
+                <label for="endpoint-input">Full endpoint URL <span class="optional">(optional)</span></label>
+                <input type="text" id="endpoint-input" placeholder="https://api.developer.privasys.org/api/v1/apps/wasm-app-example">
+                <div class="field-hint">Overrides the default management service if provided.</div>
 
-                    <label for="base-url-input">Management service URL</label>
-                    <input type="text" id="base-url-input" placeholder="https://api.developer.privasys.org" value="https://api.developer.privasys.org">
+                <label for="base-url-input">Management service URL</label>
+                <input type="text" id="base-url-input" placeholder="https://api.developer.privasys.org" value="https://api.developer.privasys.org">
 
-                    <label for="gateway-domain-input">Gateway domain</label>
-                    <input type="text" id="gateway-domain-input" placeholder="apps.privasys.org" value="apps.privasys.org">
-                    <div class="field-hint">Domain suffix for RA-TLS gateway routing. Use <code>apps-test.privasys.org</code> for dev instances.</div>
+                <label for="gateway-domain-input">Gateway domain</label>
+                <input type="text" id="gateway-domain-input" placeholder="apps.privasys.org" value="apps.privasys.org">
+                <div class="field-hint">Domain suffix for RA-TLS gateway routing. Use <code>apps-test.privasys.org</code> for dev instances.</div>
 
-                    <label for="broker-url-input">Auth broker URL <span class="optional">(optional)</span></label>
-                    <input type="text" id="broker-url-input" placeholder="wss://relay.privasys.org/relay" value="wss://relay.privasys.org/relay">
-                    <div class="field-hint">WebSocket relay for wallet-to-browser authentication.</div>
-                </div>
-            </fieldset>
-
-            <fieldset class="connect-section">
-                <legend>Authentication</legend>
-                <label for="auth-token-input">Bearer Token <span class="optional">(optional)</span></label>
-                <input type="password" id="auth-token-input" placeholder="eyJhbGciOi...">
-                <div class="field-hint">Required for authenticated management service endpoints (schema, RPC calls).</div>
+                <label for="broker-url-input">Auth broker URL <span class="optional">(optional)</span></label>
+                <input type="text" id="broker-url-input" placeholder="wss://relay.privasys.org/relay" value="wss://relay.privasys.org/relay">
+                <div class="field-hint">WebSocket relay for wallet-to-browser authentication.</div>
             </fieldset>
 
             <fieldset class="connect-section">
@@ -84,12 +69,6 @@
             </fieldset>
 
             <button class="connect-btn" id="connect-btn">Connect</button>
-
-            <div class="example">
-                <strong>Quick connect:</strong> Just enter an app name like <code>wasm-app-example</code> and hit Connect.
-                <br>
-                <strong>Direct URL:</strong> Expand Advanced to use a custom management service URL.
-            </div>
         </div>
     </div>
 
@@ -98,7 +77,7 @@
         <div class="main-content" id="tab-container"></div>
     </div>
 
-    <script src="https://privasys.id/auth/privasys-auth-client.iife.js"></script>
+    <script src="privasys-auth.js"></script>
     <script src="explorer.js"></script>
 </body>
 </html>
