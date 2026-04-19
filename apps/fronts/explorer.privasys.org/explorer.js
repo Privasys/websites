@@ -653,7 +653,13 @@
 
     function startSignIn() {
         var container = $('#auth-iframe-container');
-        if (container) container.innerHTML = '';
+        if (container) {
+            container.innerHTML = '';
+            container.appendChild(h('div', { className: 'auth-loading' },
+                h('div', { className: 'auth-loading-spinner' }),
+                h('span', null, 'Loading authentication…')
+            ));
+        }
         getAuthFrame().signIn().then(function (result) {
             fido2SessionToken = result.accessToken || result.sessionToken || '';
             fido2Attestation = result.attestation || null;
@@ -674,8 +680,11 @@
     }
 
     function signOutFido2() {
-        // Clear privasys.id session first, then reset local state
-        getAuthFrame().clearSession().catch(function () {}).then(function () {
+        // Grab and discard the old frame so a fresh one is created with the new container
+        var frame = authFrame;
+        authFrame = null;
+        var cleanup = function () {
+            if (frame) frame.destroy();
             fido2SessionToken = '';
             fido2State = 'idle';
             fido2SessionId = '';
@@ -685,7 +694,12 @@
             updateHeaderAuth();
             renderAuth();
             renderTabs();
-        });
+        };
+        if (frame) {
+            frame.clearSession().catch(function () {}).then(cleanup);
+        } else {
+            cleanup();
+        }
     }
 
     var sessionChecked = false;
