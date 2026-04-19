@@ -669,8 +669,13 @@
             renderAuth();
             renderTabs();
         }).catch(function (e) {
-            // User cancelled — just stay idle, don't re-render (avoids loop)
-            if (e && e.message === 'Authentication cancelled') return;
+            if (e && e.message === 'Authentication cancelled') {
+                // User closed the auth iframe — discard stale frame and show sign-in prompt
+                authFrame = null;
+                sessionChecked = true;
+                renderAuth();
+                return;
+            }
 
             fido2State = 'error';
             fido2Error = e.message || 'Authentication failed';
@@ -846,6 +851,7 @@
             iframeContainer.appendChild(h('div', { className: 'auth-signin-prompt' },
                 h('p', { style: 'color:var(--muted);margin-bottom:12px' }, 'You are not signed in.'),
                 h('button', { className: 'btn btn-primary', onClick: function () {
+                    authFrame = null; // ensure fresh frame with current container
                     iframeContainer.innerHTML = '';
                     startSignIn();
                 } }, 'Sign in')
