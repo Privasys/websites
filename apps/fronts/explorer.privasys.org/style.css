@@ -1047,3 +1047,39 @@ textarea.param-input { resize: vertical; min-height: 60px; }
     text-align: left;
     padding: 12px;
 }
+
+/* ── Embedded auth iframe ───────────────────── */
+.auth-iframe-container {
+    width: 100%;
+    height: calc(100vh - 200px);
+    min-height: 500px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    background: #fff;
+}
+@media (prefers-color-scheme: dark) {
+    .auth-iframe-container { background: var(--card-bg); }
+}
+
+/* Inline success card (replaces old auth-modal centered layout) */
+.auth-inline-success {
+    border: 1px solid var(--emerald-border);
+    background: var(--emerald-bg);
+    border-radius: var(--radius);
+    padding: 20px 24px;
+}
+
+/* ── Header auth status + sign-out ──────────── */
+.header-auth-status {
+    display: inline-flex;
+    align-items: center;
+}
+.btn-signout {
+    color: var(--muted);
+    border-color: var(--border);
+}
+.btn-signout:hover {
+    color: var(--red);
+    border-color: var(--red);
+}

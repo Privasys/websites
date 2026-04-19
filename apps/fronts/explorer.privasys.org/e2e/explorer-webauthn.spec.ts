@@ -27,11 +27,16 @@ async function switchToAuthTab(page: Page) {
 }
 
 /**
- * Mock the AuthFrame IIFE loaded from privasys.id so tests run without
+ * Mock the AuthFrame IIFE loaded locally so tests run without
  * the real SDK.  Supports signIn(), getSession(), clearSession().
+ *
+ * The explorer now auto-starts signIn() when the auth tab opens (embedded mode).
+ * By default the mock signIn() resolves immediately.  Pass autoSignIn: false to
+ * defer it (useful for testing the idle→authenticated transition manually).
  */
-async function mockAuthFrame(page: Page, opts?: { error?: string; attestation?: Record<string, string> }) {
-    await page.route('**/privasys-auth-client.iife.js', async (route) => {
+async function mockAuthFrame(page: Page, opts?: { error?: string; attestation?: Record<string, string>; autoSignIn?: boolean }) {
+    const autoSignIn = opts?.autoSignIn !== false;
+    await page.route('**/privasys-auth.js', async (route) => {
         const errorExpr = opts?.error ? `'${opts.error.replace(/'/g, "\\'")}'` : 'null';
         const attestationExpr = opts?.attestation ? JSON.stringify(opts.attestation) : 'null';
         await route.fulfill({
@@ -42,23 +47,36 @@ async function mockAuthFrame(page: Page, opts?: { error?: string; attestation?: 
                     error: ${errorExpr},
                     attestation: ${attestationExpr},
                     sessionToken: '${MOCK_SESSION_TOKEN}',
+                    accessToken: 'mock-access-token-e2e-test',
                     sessionId: 'mock-session-id-e2e',
                     session: null,
+                    autoSignIn: ${autoSignIn},
                 };
                 window.Privasys = {
                     AuthFrame: class AuthFrame {
                         constructor(config) {
                             this.config = config;
                             this.rpId = config.rpId;
-                            this.onSessionExpired = null;
-                            this.onSessionRenewed = null;
+                            this.container = config.container || null;
+                            this._onSessionExpired = null;
+                            this._onSessionRenewed = null;
                         }
+                        set onSessionExpired(cb) { this._onSessionExpired = cb; }
+                        set onSessionRenewed(cb) { this._onSessionRenewed = cb; }
                         async signIn() {
                             var m = window.__mockAuth;
                             if (m.error) throw new Error(m.error);
-                            var result = { sessionToken: m.sessionToken, sessionId: m.sessionId };
+                            if (!m.autoSignIn) {
+                                // Simulate user needing to interact — wait for manual trigger
+                                await new Promise(function(r) { window.__mockTriggerSignIn = r; });
+                            }
+                            var result = {
+                                sessionToken: m.sessionToken,
+                                accessToken: m.accessToken,
+                                sessionId: m.sessionId,
+                            };
                             if (m.attestation) result.attestation = m.attestation;
-                            m.session = { token: m.sessionToken, authenticatedAt: Date.now() };
+                            m.session = { token: m.accessToken, authenticatedAt: Date.now() };
                             return result;
                         }
                         async getSession() {
@@ -81,39 +99,26 @@ async function mockAuthFrame(page: Page, opts?: { error?: string; attestation?: 
 test.describe('Explorer — AuthFrame Sign-in', () => {
     test.describe.configure({ mode: 'serial' });
 
-    test('auth tab shows sign-in button with SDK overlay hint', async ({ page }) => {
-        await mockAuthFrame(page);
-        await connectToApp(page);
-        await switchToAuthTab(page);
-
-        // Single sign-in button that delegates to AuthFrame overlay
-        await expect(page.locator('button', { hasText: 'Sign in' })).toBeVisible();
-        await expect(page.locator('.auth-provider-hint', { hasText: 'Opens SDK overlay' })).toBeVisible();
-
-        // Brand section with app name
-        await expect(page.locator('.auth-brand-title')).toContainText(APP_NAME);
-
-        await page.screenshot({ path: screenshot('webauthn-01-auth-idle'), fullPage: true });
-    });
-
-    test('sign-in completes and shows authenticated state', async ({ page }) => {
+    test('auth tab auto-authenticates and shows authenticated state', async ({ page }) => {
         test.setTimeout(30_000);
         await mockAuthFrame(page);
         await connectToApp(page);
         await switchToAuthTab(page);
 
-        await page.locator('button', { hasText: 'Sign in' }).click();
-
-        // Should show authenticated state
-        await expect(page.locator('.auth-success-title', { hasText: 'Authenticated' })).toBeVisible({ timeout: 10_000 });
+        // Auth tab now auto-starts signIn() — should show authenticated state
+        await expect(page.locator('strong', { hasText: 'Authenticated' })).toBeVisible({ timeout: 10_000 });
 
         // Session info should be displayed
         await expect(page.locator('.auth-session-label', { hasText: 'Session' })).toBeVisible();
 
-        // Sign out button should be present
-        await expect(page.locator('.auth-signout-btn', { hasText: 'Sign out' })).toBeVisible();
+        // Sign out button should be present (inline and in header)
+        await expect(page.locator('.auth-inline-success button', { hasText: 'Sign out' })).toBeVisible();
+        await expect(page.locator('#header-signout-btn')).toBeVisible();
 
-        await page.screenshot({ path: screenshot('webauthn-02-authenticated'), fullPage: true });
+        // Header auth badge
+        await expect(page.locator('#header-auth-status .badge-ok')).toBeVisible();
+
+        await page.screenshot({ path: screenshot('webauthn-01-authenticated'), fullPage: true });
     });
 
     test('session token appears in header after auth and enables API tab', async ({ page }) => {
@@ -133,13 +138,13 @@ test.describe('Explorer — AuthFrame Sign-in', () => {
         await connectToApp(page);
         await switchToAuthTab(page);
 
-        await page.locator('button', { hasText: 'Sign in' }).click();
-        await expect(page.locator('.auth-success-title', { hasText: 'Authenticated' })).toBeVisible({ timeout: 10_000 });
+        // Auto-signs in — wait for authenticated state
+        await expect(page.locator('strong', { hasText: 'Authenticated' })).toBeVisible({ timeout: 10_000 });
 
         // Switch to API tab — schema fetch should include X-App-Auth header
         await page.locator('.tab-btn[data-tab="api"]').click();
         await page.waitForTimeout(2_000);
-        expect(capturedAuthHeader).toBe(MOCK_SESSION_TOKEN);
+        expect(capturedAuthHeader).toBe('mock-access-token-e2e-test');
 
         await page.screenshot({ path: screenshot('webauthn-03-api-with-token'), fullPage: true });
     });
@@ -149,28 +154,36 @@ test.describe('Explorer — AuthFrame Sign-in', () => {
         await connectToApp(page);
         await switchToAuthTab(page);
 
-        await page.locator('button', { hasText: 'Sign in' }).click();
-
+        // Auto sign-in triggers and fails — error should appear
         await expect(page.locator('.auth-error')).toBeVisible({ timeout: 10_000 });
         await expect(page.locator('.auth-error')).toContainText('enclave not available');
 
         await page.screenshot({ path: screenshot('webauthn-04-error'), fullPage: true });
     });
 
-    test('sign out resets to idle state', async ({ page }) => {
+    test('sign out resets and re-embeds auth iframe', async ({ page }) => {
         test.setTimeout(30_000);
         await mockAuthFrame(page);
         await connectToApp(page);
         await switchToAuthTab(page);
 
-        await page.locator('button', { hasText: 'Sign in' }).click();
-        await expect(page.locator('.auth-success-title', { hasText: 'Authenticated' })).toBeVisible({ timeout: 10_000 });
+        // Auto-signs in
+        await expect(page.locator('strong', { hasText: 'Authenticated' })).toBeVisible({ timeout: 10_000 });
 
-        await page.locator('.auth-signout-btn', { hasText: 'Sign out' }).click();
+        // Header should show authenticated badge
+        await expect(page.locator('#header-signout-btn')).toBeVisible();
 
-        // Should be back to idle with sign-in button
-        await expect(page.locator('button', { hasText: 'Sign in' })).toBeVisible({ timeout: 5_000 });
-        await expect(page.locator('.auth-provider-hint', { hasText: 'Opens SDK overlay' })).toBeVisible();
+        // Disable auto-sign-in so the iframe container stays visible after sign-out
+        await page.evaluate(() => { (window as any).__mockAuth.autoSignIn = false; });
+
+        // Sign out from inline button
+        await page.locator('.auth-inline-success button', { hasText: 'Sign out' }).click();
+
+        // Should show the embedded iframe container (waiting for user to sign in again)
+        await expect(page.locator('#auth-iframe-container')).toBeVisible({ timeout: 5_000 });
+
+        // Header sign-out button should be hidden
+        await expect(page.locator('#header-signout-btn')).toBeHidden();
 
         await page.screenshot({ path: screenshot('webauthn-05-signed-out'), fullPage: true });
     });
@@ -183,8 +196,8 @@ test.describe('Explorer — AuthFrame Sign-in', () => {
         await connectToApp(page);
         await switchToAuthTab(page);
 
-        await page.locator('button', { hasText: 'Sign in' }).click();
-        await expect(page.locator('.auth-success-title', { hasText: 'Authenticated' })).toBeVisible({ timeout: 10_000 });
+        // Auto-signs in
+        await expect(page.locator('strong', { hasText: 'Authenticated' })).toBeVisible({ timeout: 10_000 });
 
         // Wallet attestation card should be visible
         await expect(page.locator('h3', { hasText: 'Wallet Attestation' })).toBeVisible({ timeout: 5_000 });
@@ -267,10 +280,11 @@ test.describe('Explorer — Real E2E (wasm-app-example / dev)', () => {
         await page.screenshot({ path: screenshot('real-e2e-01-connected'), fullPage: true });
     });
 
-    test('auth tab shows sign-in button', async ({ page }) => {
+    test('auth tab embeds authentication iframe', async ({ page }) => {
         await connectToDevApp(page);
         await switchToAuthTab(page);
-        await expect(page.locator('button', { hasText: 'Sign in' })).toBeVisible();
+        // The auth tab now embeds the iframe directly — container should be visible
+        await expect(page.locator('#auth-iframe-container')).toBeVisible({ timeout: 10_000 });
         await page.screenshot({ path: screenshot('real-e2e-02-auth-tab'), fullPage: true });
     });
 
