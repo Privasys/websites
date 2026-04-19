@@ -4,7 +4,9 @@
         "target": {
             "namespace": "android_app",
             "package_name": "org.privasys.wallet",
-            "sha256_cert_fingerprints": []
+            "sha256_cert_fingerprints": [
+                "5E:E5:08:E5:04:E1:F2:56:C5:21:BE:B8:E4:17:0D:1A:13:CC:9A:33:11:DF:25:60:72:D3:3A:E5:EA:CD:9F:64"
+            ]
         }
     }
 ]
