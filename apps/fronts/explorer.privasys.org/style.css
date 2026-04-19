@@ -1050,6 +1050,7 @@ textarea.param-input { resize: vertical; min-height: 60px; }
 
 /* ── Embedded auth iframe ───────────────────── */
 .auth-iframe-container {
+    position: relative;
     width: 100%;
     height: calc(100vh - 200px);
     min-height: 500px;
@@ -1123,14 +1124,16 @@ textarea.param-input { resize: vertical; min-height: 60px; }
 
 /* ── Auth iframe loading state ──────────────── */
 .auth-loading {
+    position: absolute;
+    inset: 0;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    height: 100%;
     color: var(--muted);
     font-size: 14px;
     gap: 12px;
+    z-index: 0;
 }
 @keyframes auth-spin {
     to { transform: rotate(360deg); }
