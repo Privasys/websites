@@ -14,7 +14,6 @@
         development: { baseUrl: 'https://api-test.developer.privasys.org',  gatewayDomain: 'apps-test.privasys.org', authOrigin: 'https://privasys.id' }
     };
     var currentEnv = 'production';
-    const DEFAULT_BASE_URL = ENV_CONFIG.production.baseUrl;
     var gatewayDomain = ENV_CONFIG.production.gatewayDomain;
     const DEFAULT_BROKER_URL = 'wss://relay.privasys.org/relay';
     const FIDO2_TIMEOUT = 120000;
@@ -24,7 +23,6 @@
     let attestLoading = false;
     let challenge = generateHex(32);
     let verifyResult = null;
-    let verifyDebug = null;
     let quoteVerifyResult = null;
     let quoteVerifying = false;
 
@@ -277,7 +275,6 @@
         attestLoading = true;
         attestResult = null;
         verifyResult = null;
-        verifyDebug = null;
         quoteVerifyResult = null;
         quoteVerifying = false;
         renderAttestation();
@@ -321,9 +318,8 @@
             var hash = await crypto.subtle.digest('SHA-512', concat);
             var computed = Array.from(new Uint8Array(hash), function (b) { return b.toString(16).padStart(2, '0'); }).join('');
             var actual = r.quote.report_data.toLowerCase();
-            verifyDebug = { computed: computed, actual: actual };
             verifyResult = computed === actual ? 'match' : 'mismatch';
-        } catch (e) {
+        } catch (_e) {
             verifyResult = 'error';
         }
         renderAttestation();
@@ -1127,7 +1123,7 @@
                 return h('input', { type: 'text', className: 'param-input', value: String(paramValues[p.name] != null ? paramValues[p.name] : ''), placeholder: ty.kind === 'char' ? 'single character' : 'Enter ' + p.name + '\u2026', onInput: function (e) { paramValues[p.name] = e.target.value; } });
             default: {
                 var val = typeof paramValues[p.name] === 'string' ? paramValues[p.name] : JSON.stringify(paramValues[p.name], null, 2);
-                return h('textarea', { className: 'param-input', rows: '3', spellcheck: 'false', placeholder: 'JSON value', onInput: function (e) { try { paramValues[p.name] = JSON.parse(e.target.value); } catch (err) { paramValues[p.name] = e.target.value; } } }, val);
+                return h('textarea', { className: 'param-input', rows: '3', spellcheck: 'false', placeholder: 'JSON value', onInput: function (e) { try { paramValues[p.name] = JSON.parse(e.target.value); } catch (_err) { paramValues[p.name] = e.target.value; } } }, val);
             }
         }
     }
