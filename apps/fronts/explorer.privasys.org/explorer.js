@@ -11,7 +11,7 @@
     let currentTab = 'attestation';
     const ENV_CONFIG = {
         production:  { baseUrl: 'https://api.developer.privasys.org',      gatewayDomain: 'apps.privasys.org',      authOrigin: 'https://privasys.id' },
-        development: { baseUrl: 'https://api-test.developer.privasys.org',  gatewayDomain: 'apps-test.privasys.org', authOrigin: 'https://dev.privasys.id' }
+        development: { baseUrl: 'https://api-test.developer.privasys.org',  gatewayDomain: 'apps-test.privasys.org', authOrigin: 'https://privasys.id' }
     };
     var currentEnv = 'production';
     const DEFAULT_BASE_URL = ENV_CONFIG.production.baseUrl;

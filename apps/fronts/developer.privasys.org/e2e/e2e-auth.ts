@@ -22,7 +22,7 @@
 import { type Page, type BrowserContext } from '@playwright/test';
 
 const BASE_URL = process.env.E2E_BASE_URL || 'https://developer-test.privasys.org';
-const AUTH_ORIGIN = process.env.E2E_AUTH_ORIGIN || 'https://dev.privasys.id';
+const AUTH_ORIGIN = process.env.E2E_AUTH_ORIGIN || 'https://privasys.id';
 const E2E_SECRET = process.env.E2E_SECRET || '';
 const RP_ID = 'privasys.id';
 
