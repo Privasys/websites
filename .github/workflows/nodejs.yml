@@ -51,6 +51,8 @@ jobs:
           fi
 
       - name: Install repo dependencies
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           yarn install --network-timeout 1000000 --immutable
 
@@ -107,6 +109,8 @@ jobs:
           fi
 
       - name: Install repo dependencies
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           yarn install --network-timeout 1000000 --immutable
 

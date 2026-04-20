@@ -4263,6 +4263,17 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@privasys/auth@npm:^0.1.1":
+  version: 0.1.1
+  resolution: "@privasys/auth@npm:0.1.1::__archiveUrl=https%3A%2F%2Fnpm.pkg.github.com%2Fdownload%2F%40privasys%2Fauth%2F0.1.1%2Fa59efd769dc24fb7d088b7b8de1973ab29ca1084"
+  dependencies:
+    qrcode-generator: "npm:^1.4.4"
+  peerDependencies:
+    react: ">=18"
+  checksum: 10c0/0ce75638bb88acdcf6555ed564f9287a08748db922181d8234cacece21edd09746df0234a1c1c50bae1aa9a9ca268a5a5736a36e3510d3c9e60b60b0eae50168
+  languageName: node
+  linkType: hard
+
 "@privasys/ui@workspace:libs/ui":
   version: 0.0.0-use.local
   resolution: "@privasys/ui@workspace:libs/ui"
@@ -4291,6 +4302,7 @@ __metadata:
     "@nx/web": "npm:21.4.1"
     "@nx/workspace": "npm:21.4.1"
     "@playwright/test": "npm:^1.58.2"
+    "@privasys/auth": "npm:^0.1.1"
     "@stylistic/eslint-plugin": "npm:^5.3.1"
     "@swc/core": "npm:1.13.5"
     "@swc/jest": "npm:0.2.39"
@@ -17374,6 +17386,13 @@ __metadata:
   version: 7.0.1
   resolution: "pure-rand@npm:7.0.1"
   checksum: 10c0/9cade41030f5ec95f5d55a11a71404cd6f46b69becaad892097cd7f58e2c6248cd0a933349ca7d21336ab629f1da42ffe899699b671bc4651600eaf6e57f837e
+  languageName: node
+  linkType: hard
+
+"qrcode-generator@npm:^1.4.4":
+  version: 1.5.2
+  resolution: "qrcode-generator@npm:1.5.2"
+  checksum: 10c0/4e0a43ba1c0212cf8ec39654cc7a5bebda96ee00453dc5732e98af4cf681c6786d2c189d4657d8d4fa6486f07573c1edb85fbb7af5e78972f843b7db8457a9b7
   languageName: node
   linkType: hard
 
