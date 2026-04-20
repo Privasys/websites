@@ -1,9 +1,5 @@
 import { execSync } from 'node:child_process';
-import { resolve, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { composePlugins, withNx } from '@nx/next';
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
 
 let gitSha = '';
 try {
@@ -19,10 +15,6 @@ const nextConfig = {
     env: {
         NEXT_PUBLIC_GIT_SHA: gitSha,
         NEXT_PUBLIC_APP_VERSION: process.env.APP_VERSION || '0.1.0',
-    },
-    webpack(config) {
-        config.resolve.alias['@privasys/auth'] = resolve(__dirname, '../../../../auth/sdk/dist/index.js');
-        return config;
     },
 };
 
