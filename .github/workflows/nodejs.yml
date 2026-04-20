@@ -114,6 +114,12 @@ jobs:
         run: |
           yarn install --network-timeout 1000000 --immutable
 
+      - name: Verify @privasys/auth installed
+        run: |
+          ls -la node_modules/@privasys/ || true
+          ls -la node_modules/@privasys/auth/ || echo "MISSING @privasys/auth"
+          cat node_modules/@privasys/auth/package.json || true
+
       - name: Build
         run: |
           yarn run nx affected --target=build --base=${{ env.NX_BASE }} --head=${{ env.NX_HEAD }}
