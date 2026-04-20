@@ -105,7 +105,6 @@ export async function injectAuthCookies(context: BrowserContext): Promise<void> 
  */
 export async function mockAuthFrame(page: Page): Promise<void> {
     const token = await fetchToken();
-    const claims = decodeJwtPayload(token);
 
     // Intercept the AuthFrame iframe HTML — return a minimal page that
     // responds to the postMessage protocol expected by frame-client.ts.
