@@ -332,12 +332,11 @@ test.describe('Developer Portal', () => {
         }
     });
 
-    test('settings page shows identity and profile', async ({ page }) => {
+    test('settings page shows identity and organisation', async ({ page }) => {
         await page.goto('/dashboard/settings/');
         await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
         await expect(page.getByRole('heading', { name: 'Identity' })).toBeVisible();
-        await expect(page.getByText('Provider', { exact: true })).toBeVisible();
-        await expect(page.getByRole('heading', { name: 'Profile' })).toBeVisible();
+        await expect(page.getByRole('heading', { name: 'Organisation' })).toBeVisible();
         await page.screenshot({ path: screenshot('settings'), fullPage: true });
     });
 
