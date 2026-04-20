@@ -1,17 +1,13 @@
-import { NextResponse } from 'next/server';
-import { auth } from '~/lib/auth';
+import { NextRequest, NextResponse } from 'next/server';
+import { verifyJwt } from '~/lib/verify-jwt';
 
 const IDP_URL = process.env.AUTH_PRIVASYS_ISSUER || process.env.IDP_ADMIN_URL || '';
 const IDP_ADMIN_TOKEN = process.env.IDP_ADMIN_TOKEN || '';
 
-function isAdmin(session: any): boolean {
-    return session?.roles?.includes('privasys-platform:admin') ?? false;
-}
-
 // GET /api/admin/users — list all IdP users with roles.
-export async function GET() {
-    const session = await auth();
-    if (!isAdmin(session)) {
+export async function GET(req: NextRequest) {
+    const claims = await verifyJwt(req);
+    if (!claims?.roles?.includes('privasys-platform:admin')) {
         return NextResponse.json({ error: 'forbidden' }, { status: 403 });
     }
 
