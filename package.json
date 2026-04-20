@@ -31,6 +31,7 @@
         "ws": "^8"
     },
     "dependencies": {
+        "@privasys/auth": "^0.1.1",
         "fumadocs-core": "^15.0.0",
         "fumadocs-mdx": "^11.0.0",
         "fumadocs-ui": "^15.0.0",

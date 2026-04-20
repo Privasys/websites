@@ -14,9 +14,7 @@
         "paths": {
             "~/*": ["./*"],
             "@privasys/ui": ["../../../libs/ui/src/index.ts"],
-            "@privasys/ui/*": ["../../../libs/ui/src/*"],
-            "@privasys/auth": ["../../../../auth/sdk/dist/index.d.ts"],
-            "@privasys/auth/*": ["../../../../auth/sdk/dist/*"]
+            "@privasys/ui/*": ["../../../libs/ui/src/*"]
         },
         "plugins": [{ "name": "next" }]
     },
