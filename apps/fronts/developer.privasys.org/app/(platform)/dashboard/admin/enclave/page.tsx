@@ -1,6 +1,6 @@
 'use client';
 
-import { useAuth } from '~/lib/privasys-auth';
+import { useAuth, hasManagerRole } from '~/lib/privasys-auth';
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { adminEnclaveHealth, adminInspectEnclave, adminListEnclaves, adminCreateEnclave, adminUpdateEnclave, adminDeleteEnclave } from '~/lib/api';
 import { useSSE } from '~/lib/use-sse';
@@ -43,7 +43,7 @@ export default function AdminEnclavePage() {
     const [filterTeeType, setFilterTeeType] = useState('');
     const [page, setPage] = useState(0);
 
-    const isManager = session?.roles?.some((r: string) => r.endsWith(':manager') || r === 'privasys-platform:admin') ?? false;
+    const isManager = hasManagerRole(session?.roles);
 
     const load = useCallback(async () => {
         if (!session?.accessToken) return;

@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { Navbar, Footer } from '@privasys/ui';
-import { useAuth } from '~/lib/privasys-auth';
+import { useAuth, hasAdminRole, hasManagerRole } from '~/lib/privasys-auth';
 import { listApps } from '~/lib/api';
 import { useSSE } from '~/lib/use-sse';
 import type { App } from '~/lib/types';
@@ -37,8 +37,8 @@ const NAVBAR_ITEMS = [
 function Sidebar() {
     const pathname = usePathname();
     const { session } = useAuth();
-    const isManager = session?.roles?.some(r => r.endsWith(':manager') || r === 'privasys-platform:admin' || r === 'privasys-platform:manager') ?? false;
-    const isAdmin = session?.roles?.includes('privasys-platform:admin') ?? false;
+    const isManager = hasManagerRole(session?.roles);
+    const isAdmin = hasAdminRole(session?.roles);
     const [apps, setApps] = useState<App[]>([]);
 
     const loadApps = useCallback(async () => {

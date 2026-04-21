@@ -7,7 +7,8 @@ const IDP_ADMIN_TOKEN = process.env.IDP_ADMIN_TOKEN || '';
 // GET /api/admin/users — list all IdP users with roles.
 export async function GET(req: NextRequest) {
     const claims = await verifyJwt(req);
-    if (!claims?.roles?.includes('privasys-platform:admin')) {
+    const roles = claims?.roles as string[] | undefined;
+    if (!roles?.some(r => r === 'platform:admin' || r === 'privasys-platform:admin')) {
         return NextResponse.json({ error: 'forbidden' }, { status: 403 });
     }
 
