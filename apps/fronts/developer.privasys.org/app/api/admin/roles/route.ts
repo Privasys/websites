@@ -8,7 +8,8 @@ const IDP_ADMIN_TOKEN = process.env.IDP_ADMIN_TOKEN || '';
 // Body: { user_id, role }
 export async function POST(req: NextRequest) {
     const claims = await verifyJwt(req);
-    if (!claims?.roles?.includes('privasys-platform:admin')) {
+    const roles = claims?.roles as string[] | undefined;
+    if (!roles?.some(r => r === 'platform:admin' || r === 'privasys-platform:admin')) {
         return NextResponse.json({ error: 'forbidden' }, { status: 403 });
     }
 
@@ -32,7 +33,8 @@ export async function POST(req: NextRequest) {
 // Body: { user_id, role }
 export async function DELETE(req: NextRequest) {
     const claims = await verifyJwt(req);
-    if (!claims?.roles?.includes('privasys-platform:admin')) {
+    const roles = claims?.roles as string[] | undefined;
+    if (!roles?.some(r => r === 'platform:admin' || r === 'privasys-platform:admin')) {
         return NextResponse.json({ error: 'forbidden' }, { status: 403 });
     }
 

@@ -48,6 +48,27 @@ export function useAuth(): AuthContextValue {
 }
 
 // ---------------------------------------------------------------------------
+// Role helpers
+// ---------------------------------------------------------------------------
+// Accept both the short-form role names (e.g. `platform:admin`, issued by
+// privasys.id) and the legacy Zitadel-style names (`privasys-platform:admin`)
+// so sessions established against either issuer keep working.
+
+const ADMIN_ROLES = new Set(['platform:admin', 'privasys-platform:admin']);
+const MANAGER_ROLES = new Set([
+    'platform:admin', 'platform:manager',
+    'privasys-platform:admin', 'privasys-platform:manager'
+]);
+
+export function hasAdminRole(roles: string[] | undefined | null): boolean {
+    return !!roles?.some(r => ADMIN_ROLES.has(r));
+}
+
+export function hasManagerRole(roles: string[] | undefined | null): boolean {
+    return !!roles?.some(r => MANAGER_ROLES.has(r) || r.endsWith(':manager'));
+}
+
+// ---------------------------------------------------------------------------
 // Provider
 // ---------------------------------------------------------------------------
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useAuth } from '~/lib/privasys-auth';
+import { useAuth, hasAdminRole } from '~/lib/privasys-auth';
 import { useEffect, useState, useCallback } from 'react';
 
 interface User {
@@ -25,7 +25,7 @@ export default function AdminUsersPage() {
     const [expandedUser, setExpandedUser] = useState<string | null>(null);
     const [grantRole, setGrantRole] = useState('');
 
-    const isAdmin = session?.roles?.includes('privasys-platform:admin') ?? false;
+    const isAdmin = hasAdminRole(session?.roles);
 
     const loadUsers = useCallback(async () => {
         try {

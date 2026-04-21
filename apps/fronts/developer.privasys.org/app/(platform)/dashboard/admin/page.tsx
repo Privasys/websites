@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useAuth } from '~/lib/privasys-auth';
+import { useAuth, hasManagerRole } from '~/lib/privasys-auth';
 import { useEffect, useState } from 'react';
 import { adminListApps } from '~/lib/api';
 import type { App, AppStatus } from '~/lib/types';
@@ -35,7 +35,7 @@ export default function AdminPage() {
             .finally(() => setLoading(false));
     }, [session?.accessToken, tab]);
 
-    const isManager = session?.roles?.some(r => r.endsWith(':manager') || r === 'privasys-platform:admin') ?? false;
+    const isManager = hasManagerRole(session?.roles);
 
     if (!isManager) {
         return (
