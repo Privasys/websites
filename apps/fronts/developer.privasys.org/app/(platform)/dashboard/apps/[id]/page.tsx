@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { useAuth } from '~/lib/privasys-auth';
 import { useEffect, useState, useCallback } from 'react';
-import { getApp, listBuilds, listVersions, listDeployments, listEnclaves, deleteApp, deployVersion, stopDeployment, attestApp, verifyQuote, getAppSchema, rpcCall, updateStoreListing, getAppMcp, updateContainerMcp } from '~/lib/api';
+import { getApp, listBuilds, listVersions, listDeployments, listEnclaves, deleteApp, deployVersion, stopDeployment, attestApp, verifyQuote, getAppSchema, rpcCall, updateStoreListing, getAppMcp, updateContainerMcp, retryBuild } from '~/lib/api';
 import type { AppSchema, FunctionSchema, WitType, QuoteVerifyResult, McpManifest } from '~/lib/api';
 import { useSSE } from '~/lib/use-sse';
 import { getApiBaseUrl } from '~/lib/api-base-url';
@@ -127,6 +127,20 @@ export default function AppDetailPage() {
         }
     }
 
+    const [retrying, setRetrying] = useState(false);
+    async function handleRetry() {
+        if (!session?.accessToken || !id || !app) return;
+        setRetrying(true);
+        try {
+            await retryBuild(session.accessToken, id);
+            await load();
+        } catch (e) {
+            setError(e instanceof Error ? e.message : 'Retry failed');
+        } finally {
+            setRetrying(false);
+        }
+    }
+
     if (loading) {
         return (
             <div className="max-w-4xl">
@@ -224,7 +238,7 @@ export default function AppDetailPage() {
             {/* Tab content */}
             <div className="mt-6">
                 {tab === 'overview' && (
-                    <OverviewTab app={app} versions={versions} builds={builds} deployments={deployments} deleting={deleting} onDelete={handleDelete} />
+                    <OverviewTab app={app} versions={versions} builds={builds} deployments={deployments} deleting={deleting} onDelete={handleDelete} retrying={retrying} onRetry={handleRetry} />
                 )}
                 {tab === 'deployments' && session?.accessToken && (
                     <DeploymentsTab
@@ -259,7 +273,9 @@ export default function AppDetailPage() {
 }
 
 // ------- Overview Tab -------
-function OverviewTab({ app, versions, builds, deployments, deleting, onDelete }: { app: App; versions: AppVersion[]; builds: BuildJob[]; deployments: AppDeployment[]; deleting: boolean; onDelete: () => void }) {
+function OverviewTab({ app, versions, builds, deployments, deleting, onDelete, retrying, onRetry }: { app: App; versions: AppVersion[]; builds: BuildJob[]; deployments: AppDeployment[]; deleting: boolean; onDelete: () => void; retrying: boolean; onRetry: () => void }) {
+    const lastBuild = builds[0];
+    const canRetry = !!lastBuild && (lastBuild.status === 'failed' || lastBuild.status === 'cancelled');
     const activeDeployments = deployments.filter(d => d.status === 'active');
 
     return (
@@ -448,25 +464,44 @@ function OverviewTab({ app, versions, builds, deployments, deleting, onDelete }:
             {/* Recent builds */}
             {builds.length > 0 && (
                 <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">
-                    <h2 className="text-sm font-semibold mb-3">{builds.length === 1 && (builds[0].status === 'pending' ||
-                        builds[0].status === 'dispatched' || builds[0].status === 'running') ? 'Building' : 'Recent builds'}</h2>
+                    <div className="flex items-center justify-between mb-3">
+                        <h2 className="text-sm font-semibold">{builds.length === 1 && (builds[0].status === 'pending' ||
+                            builds[0].status === 'dispatched' || builds[0].status === 'running') ? 'Building' : 'Recent builds'}</h2>
+                        {canRetry && (
+                            <button
+                                onClick={onRetry}
+                                disabled={retrying}
+                                className="px-3 py-1 text-xs font-medium rounded-md border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50 disabled:cursor-not-allowed"
+                                title="Re-dispatch the GitHub Actions build for this commit"
+                            >
+                                {retrying ? 'Retrying…' : 'Retry build'}
+                            </button>
+                        )}
+                    </div>
                     <div className="space-y-2">
                         {builds.slice(0, 5).map((build) => (
-                            <div key={build.id} className="flex items-center justify-between py-2 border-b border-black/5 dark:border-white/5 last:border-0">
-                                <div className="flex items-center gap-3">
-                                    <BuildStatusDot status={build.status} />
-                                    <span className="text-sm font-medium capitalize">{build.status}</span>
-                                    <code className="text-xs text-black/40 dark:text-white/40 font-mono">{build.github_commit.slice(0, 8)}</code>
-                                    {build.run_url && (
-                                        <a href={build.run_url} target="_blank" rel="noopener noreferrer"
-                                            className="text-xs text-blue-600 dark:text-blue-400 hover:underline">
-                                            View run &rarr;
-                                        </a>
-                                    )}
+                            <div key={build.id} className="py-2 border-b border-black/5 dark:border-white/5 last:border-0">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-3">
+                                        <BuildStatusDot status={build.status} />
+                                        <span className="text-sm font-medium capitalize">{build.status}</span>
+                                        <code className="text-xs text-black/40 dark:text-white/40 font-mono">{build.github_commit.slice(0, 8)}</code>
+                                        {build.run_url && (
+                                            <a href={build.run_url} target="_blank" rel="noopener noreferrer"
+                                                className="text-xs text-blue-600 dark:text-blue-400 hover:underline">
+                                                View run &rarr;
+                                            </a>
+                                        )}
+                                    </div>
+                                    <span className="text-xs text-black/40 dark:text-white/40">
+                                        {new Date(build.created_at).toLocaleString()}
+                                    </span>
                                 </div>
-                                <span className="text-xs text-black/40 dark:text-white/40">
-                                    {new Date(build.created_at).toLocaleString()}
-                                </span>
+                                {build.status === 'failed' && build.error_message && (
+                                    <div className="mt-1.5 ml-5 text-xs text-red-600 dark:text-red-400 break-words">
+                                        {build.error_message}
+                                    </div>
+                                )}
                             </div>
                         ))}
                     </div>
