@@ -154,7 +154,7 @@ export function listBuilds(token: string, id: string): Promise<BuildJob[]> {
 
 export function retryBuild(token: string, id: string): Promise<BuildJob> {
     return request<BuildJob>(`/api/v1/apps/${encodeURIComponent(id)}/builds/retry`, token, {
-        method: 'POST',
+        method: 'POST'
     });
 }
 

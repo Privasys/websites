@@ -51,20 +51,20 @@ async function main(): Promise<void> {
     // user as signed-in on next page load.
     const snippet = [
         `// Pasted from dump-token.ts — expires ${new Date(exp * 1000).toISOString()}`,
-        `localStorage.setItem('privasys.auth', JSON.stringify({`,
+        'localStorage.setItem(\'privasys.auth\', JSON.stringify({',
         `  access_token: ${JSON.stringify(token)},`,
-        `  token_type: 'Bearer',`,
+        '  token_type: \'Bearer\',',
         `  expires_at: ${exp * 1000},`,
-        `}));`,
-        `location.reload();`,
+        '}));',
+        'location.reload();'
     ].join('\n');
     console.log(snippet);
 
     console.log('\n━━━ curl smoke test (public hello) ━━━');
     console.log(
         `curl -sk -H 'Authorization: Bearer ${token}' \\\n` +
-        `  -H 'Content-Type: application/json' \\\n` +
-        `  -X POST '${API}/api/v1/apps/<APP_ID>/rpc/hello' -d '{}'`,
+        '  -H \'Content-Type: application/json\' \\\n' +
+        `  -X POST '${API}/api/v1/apps/<APP_ID>/rpc/hello' -d '{}'`
     );
 
     console.log(`\nPortal: ${PORTAL}`);
