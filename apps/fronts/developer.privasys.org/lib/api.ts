@@ -419,6 +419,12 @@ export function adminListUsers(token: string): Promise<AdminUser[]> {
     return request<AdminUser[]>('/api/v1/admin/users', token);
 }
 
+export function adminDeleteUser(token: string, sub: string): Promise<void> {
+    return request<void>(`/api/v1/admin/users/${encodeURIComponent(sub)}`, token, {
+        method: 'DELETE',
+    });
+}
+
 // ---------------------------------------------------------------------------
 // Deployments API
 // ---------------------------------------------------------------------------
