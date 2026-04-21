@@ -1,9 +1,11 @@
 /**
- * Gemma 4 package deployment - e2e test.
+ * Gemma 4 dynamic-load deployment - e2e test.
  *
- * Deploys the confidential-ai-gemma4 container image (pre-built package)
- * to the ai-gpu TDX enclave. Model weights are pre-loaded on a persistent
- * disk, bind-mounted at /models/ via the image's ai.privasys.volume label.
+ * Deploys the generic confidential-ai container image to the ai-gpu TDX
+ * enclave, then loads the gemma4 model on demand via the dynamic
+ * /v1/models/load API. The /mnt directory is bind-mounted at /models
+ * (read-only) via the image's ai.privasys.volume label, exposing each
+ * pre-provisioned model disk as a subdirectory (e.g. /models/model-gemma4-31b).
  *
  * Run:
  *   cd websites
@@ -16,8 +18,10 @@ import { setupAuth, getToken as getE2eToken } from './e2e-auth';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'https://api-test.developer.privasys.org';
 const APP_NAME = 'e2e-gemma4-pkg';
-const CONTAINER_IMAGE = 'ghcr.io/privasys/confidential-ai-gemma4:latest';
+const CONTAINER_IMAGE = 'ghcr.io/privasys/confidential-ai:latest';
 const CONTAINER_PORT = 8080;
+// Model directory name under /models (bind-mounted from /mnt on the host).
+const MODEL_NAME = 'model-gemma4-31b';
 
 let token: string;
 let appId: string;
@@ -108,7 +112,12 @@ test.describe('Gemma 4 Package Deploy', () => {
 
         // container_mcp should be auto-detected from OCI label
         expect(body.container_mcp).toBeTruthy();
-        console.log('container_mcp tools:', body.container_mcp?.tools?.map((t: { name: string }) => t.name));
+        const toolNames: string[] = body.container_mcp?.tools?.map((t: { name: string }) => t.name) ?? [];
+        console.log('container_mcp tools:', toolNames);
+        // The generic image exposes the dynamic model loading tools.
+        for (const expected of ['load_model', 'model_status', 'unload_model', 'readiness']) {
+            expect(toolNames, `missing tool: ${expected}`).toContain(expected);
+        }
 
         appId = body.id;
         console.log(`Created: ${APP_NAME} (${appId})`);
@@ -132,7 +141,9 @@ test.describe('Gemma 4 Package Deploy', () => {
     });
 
     test('deploy to TDX enclave', async ({ page }) => {
-        test.setTimeout(720_000); // 12 min - WaitReady blocks until model loaded
+        // Generic image starts the proxy immediately; the container is
+        // healthy in seconds. Model load happens later via API.
+        test.setTimeout(180_000);
         token = await getToken(page);
 
         // Find TDX enclave
@@ -163,7 +174,7 @@ test.describe('Gemma 4 Package Deploy', () => {
                         enclave_id: tdx!.id,
                         runtime_env: {},
                     },
-                    timeout: 660_000,
+                    timeout: 120_000,
                 },
             );
 
@@ -241,23 +252,55 @@ test.describe('Gemma 4 Package Deploy', () => {
         const schema = await resp.json();
         console.log('Schema:', JSON.stringify(schema).substring(0, 500));
         const functions = schema.schema?.functions ?? schema.functions ?? [];
-        expect(functions.length).toBeGreaterThanOrEqual(4);
+        expect(functions.length).toBeGreaterThanOrEqual(8);
 
         const toolNames = functions.map((f: { name: string }) => f.name);
-        for (const expected of ['chat', 'complete', 'models', 'health']) {
+        for (const expected of [
+            'chat', 'complete', 'models', 'health',
+            'load_model', 'model_status', 'unload_model', 'readiness',
+        ]) {
             expect(toolNames, `missing tool: ${expected}`).toContain(expected);
         }
     });
 
-    test('wait for model ready', async ({ page }) => {
-        test.setTimeout(600_000); // 10 min - model download + load can be very slow
+    test('trigger dynamic model load', async ({ page }) => {
+        test.setTimeout(60_000);
         token = await getToken(page);
 
-        // Poll the health RPC endpoint until vLLM is ready
+        // POST /v1/models/load via the gateway RPC route. This is
+        // idempotent: returns 202 if loading starts or already in progress,
+        // returns 200 if already loaded.
+        const resp = await page.request.post(
+            `${API}/api/v1/apps/${appId}/rpc/load_model`,
+            {
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                },
+                data: {
+                    model: MODEL_NAME,
+                    dtype: 'bfloat16',
+                    max_model_len: 8192,
+                    gpu_memory_utilization: 0.90,
+                },
+                timeout: 30_000,
+            },
+        );
+        const body = await resp.text();
+        console.log(`load_model HTTP ${resp.status()}: ${body.substring(0, 300)}`);
+        // 200 (already loaded) or 202 (loading started) are both acceptable.
+        expect([200, 202]).toContain(resp.status());
+    });
+
+    test('wait for model ready', async ({ page }) => {
+        test.setTimeout(600_000); // 10 min - model load can be slow
+        token = await getToken(page);
+
+        // Poll model_status until state == 'ready'.
         for (let i = 0; i < 120; i++) {
             try {
                 const resp = await page.request.post(
-                    `${API}/api/v1/apps/${appId}/rpc/health`,
+                    `${API}/api/v1/apps/${appId}/rpc/model_status`,
                     {
                         headers: {
                             Authorization: `Bearer ${token}`,
@@ -268,12 +311,23 @@ test.describe('Gemma 4 Package Deploy', () => {
                     },
                 );
                 if (resp.ok()) {
-                    console.log(`Model ready after ${i * 5}s`);
-                    return;
+                    const status = await resp.json();
+                    const state = status?.state ?? status?.status;
+                    const progress = status?.progress ?? 0;
+                    const elapsed = status?.elapsed_s ?? 0;
+                    console.log(`Model status ${i + 1}/120: state=${state} progress=${progress} elapsed=${elapsed}s msg=${status?.message ?? ''}`);
+                    if (state === 'ready') {
+                        console.log(`Model ready after ${i * 5}s`);
+                        return;
+                    }
+                    if (state === 'failed') {
+                        expect(false, `model load failed: ${status?.error ?? 'unknown error'}`).toBeTruthy();
+                    }
+                } else {
+                    console.log(`Model status poll ${i + 1}/120: HTTP ${resp.status()}`);
                 }
-                console.log(`Health poll ${i + 1}/120: HTTP ${resp.status()}`);
             } catch {
-                console.log(`Health poll ${i + 1}/120: request failed`);
+                console.log(`Model status poll ${i + 1}/120: request failed`);
             }
             await page.waitForTimeout(5_000);
         }
