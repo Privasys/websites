@@ -28,8 +28,11 @@ export default function AdminUsersPage() {
     const isAdmin = hasAdminRole(session?.roles);
 
     const loadUsers = useCallback(async () => {
+        if (!session?.accessToken) return;
         try {
-            const res = await fetch('/api/admin/users');
+            const res = await fetch('/api/admin/users', {
+                headers: { Authorization: `Bearer ${session.accessToken}` },
+            });
             if (!res.ok) {
                 const data = await res.json().catch(() => ({ error: res.statusText }));
                 throw new Error(data.error || `HTTP ${res.status}`);
@@ -41,7 +44,7 @@ export default function AdminUsersPage() {
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [session?.accessToken]);
 
     useEffect(() => {
         if (session) loadUsers();
@@ -49,10 +52,11 @@ export default function AdminUsersPage() {
 
     const handleGrant = async (userId: string, role: string) => {
         setActionError(null);
+        if (!session?.accessToken) return;
         try {
             const res = await fetch('/api/admin/roles', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.accessToken}` },
                 body: JSON.stringify({ user_id: userId, role }),
             });
             if (!res.ok) {
@@ -68,10 +72,11 @@ export default function AdminUsersPage() {
 
     const handleRevoke = async (userId: string, role: string) => {
         setActionError(null);
+        if (!session?.accessToken) return;
         try {
             const res = await fetch('/api/admin/roles', {
                 method: 'DELETE',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.accessToken}` },
                 body: JSON.stringify({ user_id: userId, role }),
             });
             if (!res.ok) {
