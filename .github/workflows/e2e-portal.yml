@@ -43,12 +43,12 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install chromium --with-deps
 
-      - name: Restore auth state
+      - name: Restore FIDO2 test identity
         run: |
           mkdir -p apps/fronts/developer.privasys.org/e2e/.auth
-          echo "$E2E_AUTH_STATE" | base64 -d > apps/fronts/developer.privasys.org/e2e/.auth/state.json
+          echo "$E2E_FIDO2_IDENTITY" | base64 -d > apps/fronts/developer.privasys.org/e2e/.auth/fido2-privasys.id.json
         env:
-          E2E_AUTH_STATE: ${{ secrets.E2E_AUTH_STATE }}
+          E2E_FIDO2_IDENTITY: ${{ secrets.E2E_FIDO2_IDENTITY }}
 
       - name: Determine spec files
         id: specs
@@ -72,7 +72,6 @@ jobs:
         env:
           E2E_USER_EMAIL: ${{ secrets.E2E_USER_EMAIL }}
           E2E_USER_PASSWORD: ${{ secrets.E2E_USER_PASSWORD }}
-          E2E_SECRET: ${{ secrets.E2E_SECRET }}
 
       - name: Upload test artifacts
         uses: actions/upload-artifact@v4
