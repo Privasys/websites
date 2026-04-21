@@ -1,10 +1,11 @@
 /**
- * Playwright auth setup — fetches a fresh JWT from the IdP /e2e/token
- * endpoint and mocks the AuthFrame iframe so PrivasysAuthProvider picks
- * up the session.
+ * Playwright auth setup — runs the full Privasys IdP OIDC flow with a
+ * software FIDO2 client to obtain a fresh JWT, then mocks the AuthFrame
+ * iframe so PrivasysAuthProvider picks up the session.
  *
- * Required env vars (via .env.dev / .env.prod):
- *   E2E_SECRET — shared secret matching IDP_E2E_SECRET on the IdP
+ * The persistent test identity lives at `e2e/.auth/fido2-<RP>.json` so
+ * subsequent runs reuse the same server-side `user_id` (preserves any
+ * roles seeded by IDP_BOOTSTRAP_ADMIN).
  */
 import { test as setup, expect } from '@playwright/test';
 import path from 'path';
