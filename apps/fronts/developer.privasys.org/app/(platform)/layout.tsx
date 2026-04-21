@@ -59,7 +59,7 @@ function Sidebar() {
     }, [loadApps]);
 
     return (
-        <aside className="hidden lg:flex flex-col w-60 shrink-0 border-r border-black/5 dark:border-white/10 h-[calc(100vh-3.5rem)] sticky top-14">
+        <aside className="hidden lg:flex flex-col w-60 shrink-0 border-r border-black/5 dark:border-white/10 max-h-[calc(100vh-3.5rem)] sticky top-14 self-start">
             <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
                 {/* Overview link */}
                 <Link
@@ -259,7 +259,7 @@ export default function PlatformLayout({ children }: { children: ReactNode }) {
             <Navbar brandSuffix="Developer" items={NAVBAR_ITEMS} fullWidth trailing={<UserMenu />} />
             <div className="flex flex-1 pt-14">
                 <Sidebar />
-                <main className="flex-1 p-6 lg:p-10 overflow-y-auto">
+                <main className="flex-1 p-6 lg:p-10 min-w-0">
                     {children}
                 </main>
             </div>
