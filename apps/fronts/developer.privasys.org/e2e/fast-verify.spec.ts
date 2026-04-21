@@ -346,6 +346,65 @@ test.describe('Fast Verification Suite', () => {
         console.log(`WASM MCP tools: ${names.join(', ')}`);
     });
 
+    test('WASM: public hello RPC returns greeting', async ({ page }) => {
+        test.skip(!wasmDeployed, 'WASM deploy failed — skipping');
+        test.setTimeout(30_000);
+        token = await getToken(page);
+
+        // Goes through management-service → enclave via RA-TLS.
+        // `hello` is declared `auth:hello = "public"` in the WIT, so no
+        // `app_auth` is required. This is the canary for the RPC path.
+        const resp = await page.request.post(
+            `${API}/api/v1/apps/${wasmAppId}/rpc/hello`,
+            {
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                },
+                data: {},
+                timeout: 20_000,
+            },
+        );
+        expect(resp.ok()).toBeTruthy();
+        const body = await resp.json();
+        expect(body.status).toBe('ok');
+        expect(body.returns?.[0]?.value).toMatch(/Hello/i);
+        console.log(`WASM hello: ${body.returns[0].value}`);
+    });
+
+    test('WASM: auth-hello requires JWT and returns caller identity', async ({ page }) => {
+        test.skip(!wasmDeployed, 'WASM deploy failed — skipping');
+        test.setTimeout(30_000);
+        token = await getToken(page);
+
+        // With a valid JWT the enclave validates against the app's OIDC
+        // config (injected via AppPermissions.oidc at wasm_load time) and
+        // returns the caller's claims.
+        const resp = await page.request.post(
+            `${API}/api/v1/apps/${wasmAppId}/rpc/auth-hello`,
+            {
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                },
+                // The portal's RpcProxy forwards the bearer JWT as
+                // `app_auth` when the caller is the app developer.
+                data: {},
+                timeout: 20_000,
+            },
+        );
+        expect(resp.ok()).toBeTruthy();
+        const body = await resp.json();
+        expect(body.status).toBe('ok');
+        const payload = body.returns?.[0]?.value;
+        expect(payload).toBeTruthy();
+        // WIT returns a string that contains a JSON body.
+        const parsed = typeof payload === 'string' ? JSON.parse(payload) : payload;
+        expect(parsed.caller).toBeTruthy();
+        expect(parsed.message).toMatch(/authenticated/i);
+        console.log(`WASM auth-hello caller=${parsed.caller}`);
+    });
+
     test('WASM: portal tabs visible', async ({ page }) => {
         test.skip(!wasmDeployed, 'WASM deploy failed — skipping');
         test.setTimeout(30_000);
