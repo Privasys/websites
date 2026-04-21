@@ -400,6 +400,25 @@ export function adminDeployVersion(token: string, appId: string, versionId: stri
     });
 }
 
+// Developer-platform seen user (from management-service seen_users table).
+// NOTE: PII (email/name) lives here, NOT in the IdP.
+export interface AdminUser {
+    sub: string;
+    email: string;
+    name: string;
+    display_name?: string;
+    display_email?: string;
+    company_name?: string;
+    company_domain?: string;
+    is_individual: boolean;
+    first_seen_at: string;
+    app_count: number;
+}
+
+export function adminListUsers(token: string): Promise<AdminUser[]> {
+    return request<AdminUser[]>('/api/v1/admin/users', token);
+}
+
 // ---------------------------------------------------------------------------
 // Deployments API
 // ---------------------------------------------------------------------------

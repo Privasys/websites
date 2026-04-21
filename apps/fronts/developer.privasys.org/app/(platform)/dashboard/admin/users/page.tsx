@@ -2,12 +2,9 @@
 
 import { useAuth, hasAdminRole } from '~/lib/privasys-auth';
 import { useEffect, useState, useCallback } from 'react';
+import { adminListUsers, type AdminUser } from '~/lib/api';
 
-interface User {
-    user_id: string;
-    display_name: string;
-    email: string;
-    created_at: string;
+interface UserRow extends AdminUser {
     roles: string[];
 }
 
@@ -18,7 +15,7 @@ const AVAILABLE_ROLES = [
 
 export default function AdminUsersPage() {
     const { session } = useAuth();
-    const [users, setUsers] = useState<User[]>([]);
+    const [users, setUsers] = useState<UserRow[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [actionError, setActionError] = useState<string | null>(null);
@@ -30,14 +27,24 @@ export default function AdminUsersPage() {
     const loadUsers = useCallback(async () => {
         if (!session?.accessToken) return;
         try {
-            const res = await fetch('/api/admin/users', {
-                headers: { Authorization: `Bearer ${session.accessToken}` },
-            });
-            if (!res.ok) {
-                const data = await res.json().catch(() => ({ error: res.statusText }));
-                throw new Error(data.error || `HTTP ${res.status}`);
-            }
-            setUsers(await res.json());
+            // Users (including PII) come from the developer platform's
+            // management-service, NOT from the IdP.
+            const base = await adminListUsers(session.accessToken);
+            // Roles live in the IdP, keyed by the opaque sub. Fetch each in
+            // parallel; fall back to [] on error so the table still renders.
+            const withRoles = await Promise.all(base.map(async (u): Promise<UserRow> => {
+                try {
+                    const res = await fetch(`/api/admin/roles?user_id=${encodeURIComponent(u.sub)}`, {
+                        headers: { Authorization: `Bearer ${session.accessToken}` },
+                    });
+                    if (!res.ok) return { ...u, roles: [] };
+                    const data = await res.json();
+                    return { ...u, roles: Array.isArray(data.roles) ? data.roles : [] };
+                } catch {
+                    return { ...u, roles: [] };
+                }
+            }));
+            setUsers(withRoles);
             setError(null);
         } catch (e) {
             setError(e instanceof Error ? e.message : 'Failed to load users');
@@ -143,13 +150,13 @@ export default function AdminUsersPage() {
                     </thead>
                     <tbody>
                         {users.map((user) => (
-                            <tr key={user.user_id} className="border-b border-black/5 dark:border-white/5 last:border-0">
+                            <tr key={user.sub} className="border-b border-black/5 dark:border-white/5 last:border-0">
                                 <td className="px-4 py-3">
-                                    <div className="font-medium">{user.display_name || user.email || 'Anonymous'}</div>
+                                    <div className="font-medium">{user.display_name || user.name || user.email || 'Anonymous'}</div>
                                     <div className="text-xs text-black/40 dark:text-white/40 font-mono mt-0.5">
-                                        {user.user_id.length > 24 ? user.user_id.slice(0, 24) + '…' : user.user_id}
+                                        {user.sub.length > 24 ? user.sub.slice(0, 24) + '…' : user.sub}
                                     </div>
-                                    {user.email && user.display_name && (
+                                    {user.email && (user.display_name || user.name) && (
                                         <div className="text-xs text-black/40 dark:text-white/40 mt-0.5">{user.email}</div>
                                     )}
                                 </td>
@@ -165,7 +172,7 @@ export default function AdminUsersPage() {
                                             >
                                                 {role}
                                                 <button
-                                                    onClick={() => handleRevoke(user.user_id, role)}
+                                                    onClick={() => handleRevoke(user.sub, role)}
                                                     className="ml-0.5 text-indigo-400 hover:text-red-500 transition-colors"
                                                     title={`Revoke ${role}`}
                                                 >
@@ -176,11 +183,11 @@ export default function AdminUsersPage() {
                                     </div>
                                 </td>
                                 <td className="px-4 py-3 text-black/50 dark:text-white/50 text-xs">
-                                    {new Date(user.created_at).toLocaleDateString()}
+                                    {new Date(user.first_seen_at).toLocaleDateString()}
                                 </td>
                                 <td className="px-4 py-3">
                                     <button
-                                        onClick={() => setExpandedUser(expandedUser === user.user_id ? null : user.user_id)}
+                                        onClick={() => setExpandedUser(expandedUser === user.sub ? null : user.sub)}
                                         className="text-black/40 dark:text-white/40 hover:text-black dark:hover:text-white transition-colors"
                                         title="Add role"
                                     >
@@ -204,7 +211,7 @@ export default function AdminUsersPage() {
                                         >
                                             <option value="">Select a role…</option>
                                             {AVAILABLE_ROLES.filter(
-                                                (r) => !users.find((u) => u.user_id === expandedUser)?.roles.includes(r)
+                                                (r) => !users.find((u) => u.sub === expandedUser)?.roles.includes(r)
                                             ).map((r) => (
                                                 <option key={r} value={r}>{r}</option>
                                             ))}
