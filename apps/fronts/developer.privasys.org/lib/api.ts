@@ -1,6 +1,7 @@
 import type { App, CreateAppRequest, ReviewRequest, DeploymentLog, BuildJob, Enclave, CreateEnclaveRequest, AppVersion, AppDeployment, AttestationResult, TeeType } from './types';
+import { getApiBaseUrl } from './api-base-url';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+const API_URL = getApiBaseUrl();
 
 class ApiError extends Error {
     status: number;
@@ -9,6 +10,10 @@ class ApiError extends Error {
         this.name = 'ApiError';
         this.status = status;
     }
+}
+
+export function isApiStatus(error: unknown, status: number): boolean {
+    return error instanceof ApiError && error.status === status;
 }
 
 async function request<T>(path: string, token: string, init?: RequestInit): Promise<T> {
@@ -21,7 +26,7 @@ async function request<T>(path: string, token: string, init?: RequestInit): Prom
         }
     });
     if (!res.ok) {
-        if (res.status === 401 && typeof window !== 'undefined') {
+        if (res.status === 401) {
             window.dispatchEvent(new Event('auth:expired'));
         }
         const body = await res.json().catch(() => ({ error: res.statusText }));

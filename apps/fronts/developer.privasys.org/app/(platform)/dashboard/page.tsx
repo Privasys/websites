@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '~/lib/privasys-auth';
 import { useEffect, useState, useCallback } from 'react';
-import { listApps } from '~/lib/api';
+import { isApiStatus, listApps } from '~/lib/api';
 import { useSSE } from '~/lib/use-sse';
 import type { App, AppStatus } from '~/lib/types';
 import { STATUS_LABELS, STATUS_COLORS } from '~/lib/types';
@@ -133,6 +133,7 @@ export default function DashboardPage() {
             const data = await listApps(session.accessToken);
             setApps(data);
         } catch (e) {
+            if (isApiStatus(e, 401)) return;
             setError(e instanceof Error ? e.message : 'Failed to load');
         } finally {
             setLoading(false);

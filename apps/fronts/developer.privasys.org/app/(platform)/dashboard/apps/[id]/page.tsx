@@ -7,6 +7,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { getApp, listBuilds, listVersions, listDeployments, listEnclaves, deleteApp, deployVersion, stopDeployment, attestApp, verifyQuote, getAppSchema, rpcCall, updateStoreListing, getAppMcp, updateContainerMcp } from '~/lib/api';
 import type { AppSchema, FunctionSchema, WitType, QuoteVerifyResult, McpManifest } from '~/lib/api';
 import { useSSE } from '~/lib/use-sse';
+import { getApiBaseUrl } from '~/lib/api-base-url';
 import type { App, BuildJob, AppVersion, AppDeployment, Enclave, AttestationResult } from '~/lib/types';
 import { STATUS_LABELS, STATUS_COLORS, DEPLOYMENT_STATUS_LABELS, DEPLOYMENT_STATUS_COLORS } from '~/lib/types';
 import { RtmrVerifier } from '~/components/rtmr-verifier';
@@ -2602,7 +2603,7 @@ function AppUITab({ appId, appName, hostname, token, containerMcp, onMcpUpdate }
     appId: string; appName: string; hostname?: string; token: string;
     containerMcp: Record<string, unknown>; onMcpUpdate: (app: App) => void;
 }) {
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+    const apiUrl = getApiBaseUrl();
     const iframeSrc = `${apiUrl}/api/v1/apps/${encodeURIComponent(appId)}/ui`;
     const currentUrl = (containerMcp?.ui as { url?: string })?.url || '';
     const [editUrl, setEditUrl] = useState(currentUrl);
