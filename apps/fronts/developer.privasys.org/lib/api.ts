@@ -152,6 +152,12 @@ export function listBuilds(token: string, id: string): Promise<BuildJob[]> {
     return request<BuildJob[]>(`/api/v1/apps/${encodeURIComponent(id)}/builds`, token);
 }
 
+export function retryBuild(token: string, id: string): Promise<BuildJob> {
+    return request<BuildJob>(`/api/v1/apps/${encodeURIComponent(id)}/builds/retry`, token, {
+        method: 'POST',
+    });
+}
+
 // ---------------------------------------------------------------------------
 // Attestation & Enclave API (app must be deployed)
 // ---------------------------------------------------------------------------
