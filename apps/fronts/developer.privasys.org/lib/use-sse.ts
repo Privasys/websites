@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
+import { getApiBaseUrl } from './api-base-url';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+const API_URL = getApiBaseUrl();
 
 interface SSEEvent {
     event: string;
@@ -37,7 +38,7 @@ export function useSSE(token: string | undefined, handler: SSEHandler) {
                     });
 
                     if (!resp.ok || !resp.body) {
-                        if (resp.status === 401 && typeof window !== 'undefined') {
+                        if (resp.status === 401) {
                             window.dispatchEvent(new Event('auth:expired'));
                             return; // Stop reconnecting — session needs refresh
                         }
@@ -75,6 +76,10 @@ export function useSSE(token: string | undefined, handler: SSEHandler) {
                         }
                     }
                 } catch (_e) {
+                    if (_e instanceof DOMException && _e.name === 'AbortError') {
+                        if (cancelled) return;
+                        continue;
+                    }
                     if (cancelled) return;
                     // Reconnect with backoff
                     await new Promise(resolve => setTimeout(resolve, retryDelay));

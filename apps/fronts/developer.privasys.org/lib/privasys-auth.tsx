@@ -107,10 +107,13 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
             };
             frameRef.current.onSessionRenewed = () => {
                 // Re-fetch session to get the refreshed token.
+                // The SDK already handles expiry — if the token is expired, it returns null
+                // and fires onSessionExpired which clears the session.
                 frameRef.current?.getSession().then((s) => {
                     if (s) {
                         setSession(sessionFromToken(s.token, s.rpId, s.authenticatedAt));
                         setSessionCookie(s.token);
+                        setExpired(false);
                     }
                 });
             };
@@ -121,8 +124,10 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
     // Check for existing session on mount (cross-site SSO).
     useEffect(() => {
         const frame = getFrame();
+        // The SDK filters expired tokens — if the stored token is JWT-expired,
+        // getSession() returns null and fires onSessionExpired automatically.
         frame.getSession().then((s) => {
-            if (s?.token) {
+            if (s) {
                 setSession(sessionFromToken(s.token, s.rpId, s.authenticatedAt));
                 setSessionCookie(s.token);
             }
@@ -139,7 +144,6 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
         setSession(sessionFromToken(token, config.rpId ?? config.appName));
         setSessionCookie(token);
         setExpired(false);
-
         // Bootstrap the hidden renewal iframe so the frame-host can
         // silently renew the session before the 5-minute TTL expires.
         frame.getSession();

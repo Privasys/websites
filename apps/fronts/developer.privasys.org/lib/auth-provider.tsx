@@ -2,9 +2,10 @@
 
 import type { ReactNode } from 'react';
 import { PrivasysAuthProvider } from '~/lib/privasys-auth';
+import { getApiBaseUrl } from './api-base-url';
 
 const SDK_CONFIG = {
-    apiBase: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080',
+    apiBase: getApiBaseUrl(),
     appName: 'Privasys Platform',
     authOrigin: process.env.NEXT_PUBLIC_IDP_ORIGIN || 'https://privasys.id',
     rpId: process.env.NEXT_PUBLIC_IDP_RP_ID || 'privasys.id',
