@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Privasys ID | Your data, truly yours</title>
-    <meta name="description" content="Privasys ID keeps your personal data on your device, under your control. Sign in, share, and let services process your information without ever giving it up. Open source. Verifiable. Hardware-enforced.">
+    <title>Privasys ID | Your data. Your rules.</title>
+    <meta name="description" content="Privasys ID is an identity provider that physically cannot see your data. Sign in to any service from your phone. Share only what you choose. No copies on our servers, ever.">
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://privasys.id/">
-    <meta property="og:title" content="Privasys ID | Your data, truly yours">
-    <meta property="og:description" content="Your personal data stays on your device. Services can process it, but you stay in control. Open source. Verifiable. Hardware-enforced.">
+    <meta property="og:title" content="Privasys ID | Your data. Your rules.">
+    <meta property="og:description" content="An identity provider that physically cannot see your data. Sign in from your phone. Share only what you choose. Open source. Hardware-enforced.">
     <meta property="og:site_name" content="Privasys">
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
     <link rel="preconnect" href="https://rsms.me/">
@@ -29,8 +29,8 @@
                 <span>Privasys</span>
             </a>
             <div class="navbar-links">
+                <a href="/how-it-works/">How it works</a>
                 <a href="https://privasys.org/solutions/wallet">Wallet</a>
-                <a href="https://privasys.org">Solutions</a>
                 <a href="https://docs.privasys.org">Docs</a>
             </div>
         </div>
@@ -39,203 +39,138 @@
     <main>
         <!-- Hero -->
         <section class="hero">
-            <h1>Your data, truly&nbsp;yours.</h1>
+            <h1>Your data.<br>Your&nbsp;rules.</h1>
             <p class="hero-intro">
-                Your name, email, and personal information should not live on someone else's servers.
-                Privasys ID keeps your data on your device, under your control.
-                You decide what to share, with whom, and you can verify exactly how it is used.
-                Sign in to websites, let AI agents work with your data, share what you choose, without ever giving it up.
+                Privasys ID is an identity provider that <strong>physically cannot see your data</strong>.
+                Your name, your email, your profile live on your phone, not on our servers.
+                Sign in to any service. Share only what you choose. We never hold a copy.
             </p>
-        </section>
-
-        <!-- The problem -->
-        <section class="section">
-            <h2>The problem with signing in today.</h2>
-            <p class="section-lead">
-                When you use "Sign in with Google" or "Sign in with Facebook," those companies
-                collect your name, email, what you sign in to, and when. They store it on their servers.
-                They use it. You have no real control over what happens next.
-            </p>
-            <p class="section-body">
-                Even when companies promise to protect your data, breaches happen constantly.
-                Billions of personal records have been leaked. The problem is not that companies are careless.
-                The problem is that they have your data in the first place.
-            </p>
-        </section>
-
-        <!-- What Privasys does differently -->
-        <section class="section">
-            <h2>What if the sign-in system could not see your data?</h2>
-            <p class="section-lead">
-                Privasys is an identity provider, the system that verifies who you are when you sign in.
-                But unlike Google, Facebook, or Apple, we designed ours so that the server
-                genuinely cannot access your personal information. Not "we promise we won't look."
-                Physically cannot.
-            </p>
-            <p class="section-body">
-                Your name, email, and profile live in the Privasys Wallet on your phone.
-                When you sign in, the wallet sends only the specific information the website needs,
-                directly to the website, through a secure channel that even our servers cannot read.
-                We verify your identity. We never see your identity.
-            </p>
-        </section>
-
-        <!-- How it works -->
-        <section class="section">
-            <h2>How it works</h2>
-            <div class="steps">
-                <div class="step">
-                    <span class="step-num">1</span>
-                    <div>
-                        <h3>A website asks you to sign in</h3>
-                        <p>You see a QR code or get a notification on your phone. No username. No password.</p>
-                    </div>
-                </div>
-                <div class="step">
-                    <span class="step-num">2</span>
-                    <div>
-                        <h3>Your phone checks the connection</h3>
-                        <p>Before you share anything, your wallet verifies the server's identity. When the service runs inside secure hardware, the wallet can also verify exactly what code is running. Two-way trust.</p>
-                    </div>
-                </div>
-                <div class="step">
-                    <span class="step-num">3</span>
-                    <div>
-                        <h3>You approve with your face or fingerprint</h3>
-                        <p>Your biometrics unlock a cryptographic key stored in your phone's security chip. This key never leaves the device. It cannot be copied, phished, or stolen.</p>
-                    </div>
-                </div>
-                <div class="step">
-                    <span class="step-num">4</span>
-                    <div>
-                        <h3>You choose what to share</h3>
-                        <p>The website might need your email. Or your name. You see exactly what is being requested and approve each piece. Nothing else is sent.</p>
-                    </div>
-                </div>
-                <div class="step">
-                    <span class="step-num">5</span>
-                    <div>
-                        <h3>You are signed in</h3>
-                        <p>The website gets what it needs. Privasys never stored your personal data. There is nothing to breach, nothing to leak, nothing to sell.</p>
-                    </div>
-                </div>
+            <div class="wallet-cta" data-platform-cta>
+                <a href="https://apps.apple.com/app/privasys-wallet/id6761209489"
+                   class="btn btn-primary" data-store="ios"
+                   target="_blank" rel="noopener noreferrer">Download for iPhone</a>
+                <a href="https://play.google.com/store/apps/details?id=org.privasys.wallet"
+                   class="btn btn-primary" data-store="android"
+                   target="_blank" rel="noopener noreferrer">Download for Android</a>
+                <a href="/how-it-works/" class="btn btn-outline">How it works</a>
             </div>
         </section>
 
-        <!-- Why this matters -->
+        <!-- Manifesto -->
         <section class="section">
-            <h2>Why this matters</h2>
+            <h2>Most companies hold your identity. We&nbsp;refuse&nbsp;to.</h2>
+            <p class="section-lead">
+                &ldquo;Sign in with Google.&rdquo; &ldquo;Sign in with Facebook.&rdquo;
+                Every login leaks who you are, what you use, and when.
+                Then it sits on a server, waiting for the next breach.
+            </p>
+        </section>
+
+        <!-- The model -->
+        <section class="section">
+            <h2>Your phone holds your personal data. Our servers&nbsp;don&rsquo;t.</h2>
+            <p class="section-lead">
+                The safest way to protect data is not to have it. So we built an identity provider that doesn&rsquo;t.
+                Your data stays on your phone, in your secure hardware. We verify your identity. We never see it.
+            </p>
+        </section>
+
+        <!-- Four promises -->
+        <section class="section">
+            <h2>Four promises. No fine&nbsp;print.</h2>
             <div class="commitments">
                 <div class="commitment">
                     <div class="commitment-icon">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M12 2l7 4v5c0 5.25-3.5 9.74-7 11-3.5-1.26-7-5.75-7-11V6l7-4z"/>
-                            <path d="M9.5 12l2 2 3.5-4" stroke-width="2"/>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <ellipse cx="12" cy="6" rx="7.5" ry="2.5"/>
+                            <path d="M4.5 6v12c0 1.4 3.4 2.5 7.5 2.5s7.5-1.1 7.5-2.5V6"/>
+                            <path d="M4.5 12c0 1.4 3.4 2.5 7.5 2.5s7.5-1.1 7.5-2.5"/>
+                            <line x1="4" y1="20" x2="20" y2="4" stroke-width="1.8"/>
                         </svg>
                     </div>
-                    <h3>Nothing to breach</h3>
-                    <p>
-                        We do not have your personal data on our servers. If someone broke in, they would find nothing.
-                        The safest way to protect data is to never have it.
-                    </p>
+                    <h3>Nothing to breach.</h3>
+                    <p>We don&rsquo;t store your personal data. If our servers were stolen tomorrow, there would be nothing inside.</p>
                 </div>
                 <div class="commitment">
                     <div class="commitment-icon">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-                            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M3 14a9 9 0 0 1 1.5-4.6"/>
+                            <path d="M21 14v-2a9 9 0 0 0-3.7-7.3"/>
+                            <path d="M5.5 12a6.5 6.5 0 0 1 13 0v2"/>
+                            <path d="M8 13a4 4 0 1 1 8 0v1a8 8 0 0 1-1.8 5"/>
+                            <path d="M11.5 11.5v3a3 3 0 0 1-3 3"/>
+                            <path d="M6 21a14 14 0 0 0 1.5-2"/>
                         </svg>
                     </div>
-                    <h3>No passwords ever</h3>
-                    <p>
-                        Your face or fingerprint replaces every password. The cryptographic key lives in your phone's
-                        security chip and cannot be extracted, phished, or guessed.
-                    </p>
+                    <h3>No passwords. Ever.</h3>
+                    <p>Your face or fingerprint replaces every password. The key lives in your phone&rsquo;s secure chip and cannot be phished, copied, or guessed.</p>
                 </div>
                 <div class="commitment">
                     <div class="commitment-icon">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                            <circle cx="12" cy="12" r="10"/>
-                            <path d="M12 6v6l4 2"/>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M3.5 9.5h13.5"/>
+                            <path d="M14 6.5l3 3-3 3"/>
+                            <path d="M20.5 14.5H7"/>
+                            <path d="M10 17.5l-3-3 3-3"/>
                         </svg>
                     </div>
-                    <h3>You verify the server</h3>
-                    <p>
-                        Normally, you have to trust that a server is doing the right thing. With Privasys,
-                        your phone checks the server's hardware and code before you authenticate.
-                        You do not need to take anyone's word for it.
-                    </p>
+                    <h3>You verify the server.</h3>
+                    <p>Before you authenticate, your phone checks that the service is genuine and unchanged. Trust flows both ways, not just from you.</p>
                 </div>
                 <div class="commitment">
                     <div class="commitment-icon">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
-                            <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <polyline points="8 7 3 12 8 17"/>
+                            <polyline points="16 7 21 12 16 17"/>
+                            <line x1="14" y1="5" x2="10" y2="19"/>
                         </svg>
                     </div>
-                    <h3>Fully open source</h3>
-                    <p>
-                        Every line of code that protects your identity is public. Anyone can inspect it,
-                        audit it, or verify it. Privacy you can check, not privacy you have to believe.
-                    </p>
+                    <h3>Fully open source.</h3>
+                    <p>Every line of code that protects your identity is public. Privacy you can audit, not privacy you have to believe.</p>
                 </div>
             </div>
         </section>
 
-        <!-- Wallet -->
-        <section class="section wallet-section">
-            <h2>The Privasys Wallet</h2>
-            <p class="section-lead">
-                Your identity lives on your phone, protected by your biometrics.
-                The wallet stores your name, email, and personal information in your device's
-                security chip. When a website asks who you are, you see exactly what it wants,
-                approve only what you choose, and your data goes straight to the website, not through us.
-            </p>
-            <p class="section-body">
-                Works with any website that supports Privasys. No account to create.
-                No password to remember. Just your phone and your fingerprint.
-            </p>
-            <div class="wallet-cta">
-                <a href="https://apps.apple.com/app/privasys-wallet/id6761209489" class="btn btn-primary" target="_blank" rel="noopener noreferrer">
-                    Download on the App Store
-                </a>
-                <a href="https://privasys.org/solutions/wallet" class="btn btn-outline">
-                    Learn more
-                </a>
-            </div>
-        </section>
-
-        <!-- Endorsements -->
+        <!-- GDPR / Schrems -->
         <section class="section">
-            <h2>The world is moving towards verifiable data protection.</h2>
+            <h2>The privacy law was right. The architecture was&nbsp;wrong.</h2>
             <p class="section-lead">
-                The most advanced technology companies, financial institutions, and government agencies
-                are investing in the same secure hardware technology that powers Privasys.
+                Max Schrems took Facebook to court and won, twice. The Court of Justice
+                struck down Safe Harbour. Then Privacy Shield. The principle is now
+                settled European law: your personal data belongs to you, and no contract,
+                policy or transfer agreement can wash that away.
             </p>
-            <div class="quotes">
-                <blockquote>
-                    <p>There are solutions available today, like confidential computing, which give organisations stronger controls to protect their data.</p>
-                    <cite>JPMorgan</cite>
-                </blockquote>
-                <blockquote>
-                    <p>Nothing short of the world-leading security architecture for cloud AI compute at scale.</p>
-                    <cite>Apple</cite>
-                </blockquote>
-                <blockquote>
-                    <p>Trusted computing infrastructure supports the integrity of data processes and creates a more robust and transparent AI ecosystem.</p>
-                    <cite>National Security Agency</cite>
-                </blockquote>
-            </div>
+            <p class="section-lead">
+                But every &ldquo;Sign in with&rdquo; button still ships your identity off to a
+                server that promises to behave. GDPR turned that promise into a legal
+                obligation. We turned it into an architectural impossibility. Privasys
+                cannot misuse data it does not hold, cannot share data it cannot read,
+                and cannot transfer data that never left your phone.
+            </p>
+            <p class="section-lead">
+                Compliance by construction, not by paperwork. A new model for personal
+                data: minimisation, purpose limitation and user control, enforced in
+                hardware rather than promised in a privacy policy.
+            </p>
+        </section>
+
+        <!-- Wallet / Stores -->
+        <section class="section wallet-section">
+            <h2>Your identity, in your&nbsp;pocket.</h2>
+            <p class="section-lead">
+                The Privasys Wallet turns your phone into a passwordless authenticator.
+                It stores your identity in your device&rsquo;s security chip, lets you import attributes from
+                Google, Microsoft, GitHub or LinkedIn, and shares only what you approve, one attribute at a time.
+            </p>
         </section>
 
         <!-- For developers -->
         <section class="section">
-            <h2>For developers</h2>
+            <h2>For developers: drop-in OIDC. Zero PII&nbsp;liability.</h2>
             <p class="section-lead">
-                Privasys is a standard OIDC identity provider. If your app supports "Sign in with Google,"
-                it can support Privasys with minimal changes. Your users get passwordless sign-in with
-                hardware-backed security. You get a standard JWT with the claims you need, and
-                no liability for storing personal data you do not want.
+                If your app supports &ldquo;Sign in with Google,&rdquo; it can support Privasys.
+                Standard OIDC. Standard JWT. Your users get hardware-backed passwordless sign-in.
+                You get only the claims you actually need, and never have to store the rest.
             </p>
             <div class="wallet-cta">
                 <a href="https://developer.privasys.org" class="btn btn-primary">Developer portal</a>
@@ -243,12 +178,17 @@
             </div>
         </section>
 
-        <!-- CTA -->
+        <!-- Final CTA -->
         <section class="section cta-section">
-            <h2>Your identity should be yours.</h2>
-            <div class="cta-buttons">
-                <a href="https://apps.apple.com/app/privasys-wallet/id6761209489" class="btn btn-primary" target="_blank" rel="noopener noreferrer">Get the Wallet</a>
-                <a href="https://privasys.org" class="btn btn-outline">Learn more</a>
+            <h2>Reclaim your&nbsp;identity.</h2>
+            <div class="cta-buttons" data-platform-cta>
+                <a href="https://apps.apple.com/app/privasys-wallet/id6761209489"
+                   class="btn btn-primary" data-store="ios"
+                   target="_blank" rel="noopener noreferrer">Download for iPhone</a>
+                <a href="https://play.google.com/store/apps/details?id=org.privasys.wallet"
+                   class="btn btn-primary" data-store="android"
+                   target="_blank" rel="noopener noreferrer">Download for Android</a>
+                <a href="/how-it-works/" class="btn btn-outline">How it works</a>
             </div>
         </section>
     </main>
@@ -265,32 +205,60 @@
         </div>
     </footer>
 
-    <!-- Deep link handler for /scp routes -->
+    <!-- Deep link handler for /scp routes + platform-aware store CTAs -->
     <script>
-        // When the wallet app is not installed and a QR universal link opens
-        // in the browser, show a helpful message instead of a blank page.
-        if (location.pathname.startsWith('/scp')) {
-            document.querySelector('main').innerHTML = `
-                <section class="hero" style="min-height:80vh;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center">
-                    <svg viewBox="0 0 500 500" width="64" height="64" style="margin-bottom:2rem">
-                        <path d="M100 0H450L0 450V100A100 100 0 0 1 100 0Z" fill="#34E89E"/>
-                        <path d="M500 50V400A100 100 0 0 1 400 500H50L500 50Z" fill="#00BCF2"/>
-                        <polygon points="0,500 50,500 500,50 500,0" fill="#fff"/>
-                    </svg>
-                    <h1 style="font-size:2.5rem">Get the Privasys Wallet</h1>
-                    <p class="hero-intro" style="max-width:28rem">
-                        This link is meant to be opened with the Privasys Wallet app.
-                        Download it to authenticate securely with your biometrics.
-                    </p>
-                    <div style="margin-top:2rem;display:flex;gap:1rem;flex-wrap:wrap;justify-content:center">
-                        <a href="https://apps.apple.com/app/privasys-wallet/id6761209489" class="btn btn-primary" target="_blank" rel="noopener noreferrer">
-                            App Store
-                        </a>
-                        <a href="/" class="btn btn-outline">Back to privasys.id</a>
-                    </div>
-                </section>
-            `;
-        }
+        (function () {
+            // Detect platform once and re-order store buttons so the matching
+            // platform appears first as the primary CTA. The non-matching
+            // store stays visible (just secondary) so a user on desktop sees
+            // both options.
+            var ua = navigator.userAgent || '';
+            var isAndroid = /Android/i.test(ua);
+            var isIOS = /iPad|iPhone|iPod/i.test(ua) ||
+                        (ua.indexOf('Mac') !== -1 && navigator.maxTouchPoints > 1);
+
+            function applyPlatformCta() {
+                if (!isAndroid && !isIOS) return;
+                var groups = document.querySelectorAll('[data-platform-cta]');
+                groups.forEach(function (g) {
+                    var primary = g.querySelector(isAndroid ? '[data-store="android"]' : '[data-store="ios"]');
+                    var secondary = g.querySelector(isAndroid ? '[data-store="ios"]' : '[data-store="android"]');
+                    if (secondary) {
+                        secondary.classList.remove('btn-primary');
+                        secondary.classList.add('btn-outline');
+                    }
+                    if (primary && g.firstElementChild !== primary) {
+                        g.insertBefore(primary, g.firstElementChild);
+                    }
+                });
+            }
+            applyPlatformCta();
+
+            // /scp/... universal links: when the wallet app is not installed
+            // and the link opens in a browser, offer both stores.
+            if (location.pathname.startsWith('/scp')) {
+                var iosBtn = '<a href="https://apps.apple.com/app/privasys-wallet/id6761209489" class="btn btn-primary" target="_blank" rel="noopener noreferrer">Download for iPhone</a>';
+                var androidBtn = '<a href="https://play.google.com/store/apps/details?id=org.privasys.wallet" class="btn btn-primary" target="_blank" rel="noopener noreferrer">Download for Android</a>';
+                var primaryBtn = isAndroid ? androidBtn : iosBtn;
+                var secondaryBtn = (isAndroid ? iosBtn : androidBtn).replace('btn-primary', 'btn-outline');
+                var buttons = (isAndroid || isIOS) ? primaryBtn + secondaryBtn : iosBtn + androidBtn;
+
+                document.querySelector('main').innerHTML =
+                    '<section class="hero" style="min-height:80vh;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center">' +
+                        '<svg viewBox="0 0 500 500" width="64" height="64" style="margin-bottom:2rem">' +
+                            '<path d="M100 0H450L0 450V100A100 100 0 0 1 100 0Z" fill="#34E89E"/>' +
+                            '<path d="M500 50V400A100 100 0 0 1 400 500H50L500 50Z" fill="#00BCF2"/>' +
+                            '<polygon points="0,500 50,500 500,50 500,0" fill="#fff"/>' +
+                        '</svg>' +
+                        '<h1 style="font-size:2.5rem">Get the Privasys Wallet</h1>' +
+                        '<p class="hero-intro" style="max-width:28rem">This link is meant to be opened with the Privasys Wallet app. Download it to authenticate securely with your biometrics.</p>' +
+                        '<div style="margin-top:2rem;display:flex;gap:1rem;flex-wrap:wrap;justify-content:center">' +
+                            buttons +
+                            '<a href="/" class="btn btn-outline">Back to privasys.id</a>' +
+                        '</div>' +
+                    '</section>';
+            }
+        })();
     </script>
 </body>
 </html>

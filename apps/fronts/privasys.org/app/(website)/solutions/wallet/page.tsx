@@ -11,11 +11,21 @@ export default function Wallet() {
                 <p className='text-sm font-medium tracking-wide uppercase text-[#1d1d1f]/50 dark:text-[#f5f5f7]/50 mb-4'>Solution</p>
                 <h1 className='text-5xl lg:text-[4rem]'>Privasys Wallet</h1>
                 <p className='hero-intro mt-8'>
-                    Your identity, verified by hardware on both sides.
-                    Privasys Wallet turns your phone into a FIDO2 authenticator that verifies the server
-                    is running inside a genuine hardware enclave before you sign anything.
-                    Two-way trust, no blind faith.
+                    Your phone, turned into a hardware-grade authenticator.
+                    Privasys Wallet verifies the server is genuine before you sign anything,
+                    keeps your identity in your device&rsquo;s secure chip, and shares only what you choose.
+                    No passwords. No data on our servers. Now available on iPhone and Android.
                 </p>
+                <div className='mt-10 flex flex-wrap gap-4'>
+                    <a href='https://apps.apple.com/app/privasys-wallet/id6761209489' target='_blank' rel='noopener noreferrer'
+                        className='px-6 py-2.5 font-bold border rounded-full bg-black text-white border-black hover:bg-transparent hover:text-black dark:bg-white dark:text-black dark:border-white dark:hover:bg-transparent dark:hover:text-white transition-colors'>
+                        Download for iPhone
+                    </a>
+                    <a href='https://play.google.com/store/apps/details?id=org.privasys.wallet' target='_blank' rel='noopener noreferrer'
+                        className='px-6 py-2.5 font-bold border rounded-full bg-black text-white border-black hover:bg-transparent hover:text-black dark:bg-white dark:text-black dark:border-white dark:hover:bg-transparent dark:hover:text-white transition-colors'>
+                        Download for Android
+                    </a>
+                </div>
             </section>
 
             <section className='mt-20 lg:mt-40'>
@@ -124,21 +134,29 @@ export default function Wallet() {
 
             <section className='mt-20 lg:mt-40'>
                 <h2 className='text-2xl lg:text-4xl'>
-                    <Balancer>For everyone who believes identity should be private and verifiable.</Balancer>
+                    <Balancer>Available now on iPhone and Android.</Balancer>
                 </h2>
                 <p className='mt-8 text-lg'>
-                    Privasys Wallet is currently in beta with early testers and will be available
-                    on the App Store and Google Play soon.
-                    It is open source under the AGPL-3.0 licence, like all Privasys software.
+                    Free. Open source under AGPL-3.0. No account to create.
+                    Bring your own identity, back it up with a 24-word recovery phrase or trusted guardians,
+                    and sign in to anything that supports Privasys ID.
                 </p>
                 <div className='mt-10 flex flex-wrap gap-4'>
-                    <a href='mailto:contact@privasys.org?subject=Privasys%20Wallet%20beta' target='_blank' rel='noopener noreferrer'
+                    <a href='https://apps.apple.com/app/privasys-wallet/id6761209489' target='_blank' rel='noopener noreferrer'
+                        className='px-6 py-2.5 font-bold border rounded-full bg-black text-white border-black hover:bg-transparent hover:text-black dark:bg-white dark:text-black dark:border-white dark:hover:bg-transparent dark:hover:text-white transition-colors'>
+                        Download for iPhone
+                    </a>
+                    <a href='https://play.google.com/store/apps/details?id=org.privasys.wallet' target='_blank' rel='noopener noreferrer'
+                        className='px-6 py-2.5 font-bold border rounded-full bg-black text-white border-black hover:bg-transparent hover:text-black dark:bg-white dark:text-black dark:border-white dark:hover:bg-transparent dark:hover:text-white transition-colors'>
+                        Download for Android
+                    </a>
+                    <a href='https://privasys.id/how-it-works/' target='_blank' rel='noopener noreferrer'
                         className='px-6 py-2.5 font-bold border rounded-full text-black dark:text-white hover:bg-black hover:text-white dark:border-white dark:hover:bg-white dark:hover:text-black transition-colors'>
-                        Join the beta
+                        How it works
                     </a>
                     <a href='https://docs.privasys.org/solutions/wallet/overview' target='_blank' rel='noopener noreferrer'
                         className='px-6 py-2.5 font-bold border rounded-full text-black dark:text-white hover:bg-black hover:text-white dark:border-white dark:hover:bg-white dark:hover:text-black transition-colors'>
-                        Read the documentation
+                        Documentation
                     </a>
                 </div>
             </section>
