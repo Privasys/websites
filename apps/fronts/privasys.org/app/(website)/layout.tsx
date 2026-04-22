@@ -15,7 +15,7 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
         <ViewTransitions>
             <html lang="en">
                 <head>
-                    <script defer data-domain="privasys.org" src="https://plausible.privasys.org/js/script.js" />
+                    <script defer data-domain="privasys.org" data-api="/pa/event" src="/pa/script.js" />
                 </head>
                 <body
                     className={'antialiased text-foreground leading-relaxed flex flex-col min-h-screen'}
