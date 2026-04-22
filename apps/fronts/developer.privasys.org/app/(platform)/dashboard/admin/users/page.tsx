@@ -11,6 +11,7 @@ interface UserRow extends AdminUser {
 const AVAILABLE_ROLES = [
     'privasys-platform:admin',
     'privasys-platform:manager',
+    'privasys-platform:monitoring',
 ];
 
 const PAGE_SIZE = 100;
