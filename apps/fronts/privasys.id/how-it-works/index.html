@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How Privasys ID works | Sign-in without giving up your data</title>
+    <meta name="description" content="The plain-English explanation of how Privasys ID lets you sign in to any website without ever handing your personal data to a server. Identity providers, OIDC, SSO, secure enclaves, all explained.">
+    <meta property="og:type" content="article">
+    <meta property="og:url" content="https://privasys.id/how-it-works/">
+    <meta property="og:title" content="How Privasys ID works">
+    <meta property="og:description" content="An identity provider that physically cannot see your data, explained step by step.">
+    <meta property="og:site_name" content="Privasys">
+    <link rel="icon" type="image/svg+xml" href="../favicon.svg">
+    <link rel="preconnect" href="https://rsms.me/">
+    <link rel="stylesheet" href="https://rsms.me/inter/inter.css">
+    <link rel="stylesheet" href="../style.css">
+    <script defer data-domain="privasys.id" src="https://plausible.privasys.org/js/script.js"></script>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="navbar-inner">
+            <a class="navbar-brand" href="/">
+                <svg viewBox="0 0 500 500" width="22" height="22" aria-hidden="true">
+                    <path d="M100 0H450L0 450V100A100 100 0 0 1 100 0Z" fill="#34E89E"/>
+                    <path d="M500 50V400A100 100 0 0 1 400 500H50L500 50Z" fill="#00BCF2"/>
+                    <polygon points="0,500 50,500 500,50 500,0" fill="#fff"/>
+                </svg>
+                <span>Privasys</span>
+            </a>
+            <div class="navbar-links">
+                <a href="/how-it-works/">How it works</a>
+                <a href="https://privasys.org/solutions/wallet">Wallet</a>
+                <a href="https://docs.privasys.org">Docs</a>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <!-- Hero -->
+        <section class="hero">
+            <p class="section-lead" style="margin: 0 0 1rem; font-size: 0.95rem; text-transform: uppercase; letter-spacing: 0.08em;">How it works</p>
+            <h1>Sign in to anything.<br>Hand over&nbsp;nothing.</h1>
+            <p class="hero-intro">
+                A plain-English walkthrough of what an identity provider is, how Privasys ID is different,
+                and why your data never has to leave your phone for a website to know who you are.
+            </p>
+        </section>
+
+        <!-- What's an identity provider -->
+        <section class="section">
+            <h2>First, what is an identity&nbsp;provider?</h2>
+            <p class="section-body">
+                Every time you click &ldquo;Sign in with Google&rdquo; or &ldquo;Sign in with Apple,&rdquo;
+                you&rsquo;re using an <em>identity provider</em>. It&rsquo;s the system that
+                vouches for who you are so the website you&rsquo;re visiting doesn&rsquo;t have to ask for a new password.
+            </p>
+            <p class="section-body">
+                That&rsquo;s convenient. But it comes with a hidden cost: the identity provider sees every site you sign in to,
+                stores your name and email on its servers, and can usually read or share that data
+                under conditions you don&rsquo;t fully control.
+            </p>
+        </section>
+
+        <!-- OIDC and SSO -->
+        <section class="section">
+            <h2>What about OIDC and&nbsp;SSO?</h2>
+            <p class="section-body">
+                The standard most identity providers speak is <em>OIDC</em>, short for OpenID Connect.
+                It was designed for trust between corporations, not for personal sovereignty.
+                <em>SSO</em> (single sign-on) is the user-facing convenience built on top:
+                one identity, many services, no separate password to remember each time.
+            </p>
+            <p class="section-body">
+                Privasys ID speaks the same OIDC standard, so any service that already supports
+                &ldquo;Sign in with Google&rdquo; can support Privasys with minimal changes.
+                The difference is in what the provider can see. With Google, that is everything.
+                With us, that is nothing.
+            </p>
+        </section>
+
+        <!-- The five steps -->
+        <section class="section">
+            <h2>What happens when you sign&nbsp;in.</h2>
+            <p class="section-lead">
+                A real Privasys sign-in takes about three seconds. Here&rsquo;s what those three seconds actually do.
+            </p>
+            <div class="steps">
+                <div class="step">
+                    <span class="step-num">1</span>
+                    <div>
+                        <h3>The website asks for proof.</h3>
+                        <p>You see a QR code on screen, or get a push notification on your phone. No username field. No password field.</p>
+                    </div>
+                </div>
+                <div class="step">
+                    <span class="step-num">2</span>
+                    <div>
+                        <h3>Your phone checks the website first.</h3>
+                        <p>Before anything is sent, your wallet verifies the server&rsquo;s identity. When the service runs inside secure hardware, your wallet can also verify exactly what code is running on the other side. That&rsquo;s called <em>remote attestation</em>, and it&rsquo;s why we say trust flows in both directions.</p>
+                    </div>
+                </div>
+                <div class="step">
+                    <span class="step-num">3</span>
+                    <div>
+                        <h3>You approve with your face or fingerprint.</h3>
+                        <p>Your biometrics unlock a cryptographic key stored in your phone&rsquo;s security chip (Apple&rsquo;s Secure Enclave or Android StrongBox). That key never leaves the device. It can&rsquo;t be copied, phished, or stolen by malware.</p>
+                    </div>
+                </div>
+                <div class="step">
+                    <span class="step-num">4</span>
+                    <div>
+                        <h3>You choose what to share.</h3>
+                        <p>Maybe the website only needs your email. Maybe it needs your name too. The wallet shows you exactly what is being requested, attribute by attribute, and you approve each piece. Nothing else is sent.</p>
+                    </div>
+                </div>
+                <div class="step">
+                    <span class="step-num">5</span>
+                    <div>
+                        <h3>You&rsquo;re signed in. We saw nothing.</h3>
+                        <p>The website receives the attributes you approved, sealed inside a standard token (a JWT) it can trust. Privasys never stored your personal data in the process. There is nothing to breach, nothing to leak, nothing to sell.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Why this is different -->
+        <section class="section">
+            <h2>How is this different from &ldquo;Sign in with Google&rdquo;?</h2>
+            <p class="section-lead">
+                Same convenience. Different power balance.
+            </p>
+            <div class="comparison">
+                <div class="comparison-col comparison-col--them">
+                    <h3>Big-tech sign-in</h3>
+                    <ul>
+                        <li>Your name and email live on the provider&rsquo;s servers, forever.</li>
+                        <li>The provider sees every site you sign in to.</li>
+                        <li>A server breach puts your identity in the leak.</li>
+                        <li>One password per provider, still phishable.</li>
+                        <li>You cannot verify what the server is actually doing.</li>
+                        <li>Source code is closed.</li>
+                    </ul>
+                </div>
+                <div class="comparison-col comparison-col--us">
+                    <h3>Privasys ID</h3>
+                    <ul>
+                        <li>Your name and email stay in your phone&rsquo;s secure chip.</li>
+                        <li>Nobody, not even us, sees what you sign in to.</li>
+                        <li>If our servers were breached, there would be nothing inside.</li>
+                        <li>No passwords. Your face or fingerprint, on your device only.</li>
+                        <li>Your phone verifies the server with hardware attestation.</li>
+                        <li>Open source, AGPL-3.0. Audit it yourself.</li>
+                    </ul>
+                </div>
+            </div>
+            <style>
+                .comparison{display:grid;gap:1.5rem;margin-top:2rem}
+                @media(min-width:760px){.comparison{grid-template-columns:1fr 1fr}}
+                .comparison-col{padding:1.75rem;border-radius:14px;border:1px solid rgba(0,0,0,.08)}
+                .comparison-col h3{margin:0 0 1rem;font-size:1.05rem;letter-spacing:.02em}
+                .comparison-col ul{margin:0;padding-left:1.1rem;line-height:1.55}
+                .comparison-col li+li{margin-top:.6rem}
+                .comparison-col--them{background:rgba(0,0,0,.025);color:#555}
+                .comparison-col--us{background:linear-gradient(135deg,rgba(52,232,158,.08),rgba(0,188,242,.08));border-color:rgba(52,232,158,.35)}
+                @media(prefers-color-scheme:dark){
+                    .comparison-col{border-color:rgba(255,255,255,.1)}
+                    .comparison-col--them{background:rgba(255,255,255,.03);color:#aaa}
+                    .comparison-col--us{background:linear-gradient(135deg,rgba(52,232,158,.12),rgba(0,188,242,.12))}
+                }
+            </style>
+        </section>
+
+        <!-- The technology -->
+        <section class="section">
+            <h2>The two technologies that make it&nbsp;possible.</h2>
+            <p class="section-lead">
+                You don&rsquo;t need to understand them to use Privasys. But if you want to look under the hood:
+            </p>
+            <div class="commitments">
+                <div class="commitment">
+                    <h3>Hardware-bound passkeys.</h3>
+                    <p>
+                        Modern phones have a tiny dedicated chip that can generate and use cryptographic keys
+                        without the rest of the system ever seeing them. Apple calls it the Secure Enclave;
+                        Android calls it StrongBox. Privasys uses the same FIDO2 / WebAuthn standard the rest
+                        of the industry uses for passkeys, so the keys that prove you&rsquo;re you cannot be exported,
+                        even by us.
+                    </p>
+                </div>
+                <div class="commitment">
+                    <h3>Confidential computing.</h3>
+                    <p>
+                        The Privasys identity service itself runs inside a hardware-protected enclave on the
+                        server side: an environment where even the operator (us) cannot read what&rsquo;s
+                        happening inside. Your wallet verifies that enclave before it sends anything.
+                        The same technology is being adopted by Apple, Microsoft, JPMorgan and the NSA.
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Anonymous server-side permissioning -->
+        <section class="section">
+            <h2>What we do hold, and why it&rsquo;s still&nbsp;anonymous.</h2>
+            <p class="section-body">
+                We&rsquo;ve been clear about what stays on your phone: your name, your email,
+                your verified attributes. But to run an identity service we do keep one
+                thing on the server side, the list of permissions you&rsquo;ve granted.
+                Which services you&rsquo;ve approved, what each is allowed to ask for, and
+                when you revoke them. Without that, signing in from a new device or
+                revoking access remotely would be impossible.
+            </p>
+            <p class="section-body">
+                Here&rsquo;s the catch we built in: those permissions are attached to a random
+                identifier generated on your phone, never to your name, your email or
+                anything that identifies you. We have no directory mapping that
+                identifier back to a person. We literally do not know whose permissions
+                we&rsquo;re storing, and neither does anyone who breaks in.
+            </p>
+            <p class="section-body">
+                The only piece that can resolve the anonymous identifier back to you is
+                the wallet on your phone, unlocked by your biometrics. Lose the phone
+                without a backup and the permissions stay locked forever, even from us.
+                That&rsquo;s the point.
+            </p>
+        </section>
+
+        <!-- Account recovery -->
+        <section class="section">
+            <h2>What happens if I lose my&nbsp;phone?</h2>
+            <p class="section-lead">
+                Your data lives on your phone, so the answer matters.
+                Privasys gives you four ways to stay in control.
+            </p>
+            <p class="section-body">
+                <strong>1. Export your data, anytime.</strong>
+                The wallet can export everything you&rsquo;ve stored locally, your profile, your verified attributes,
+                the services you&rsquo;ve signed in to, into a single file.
+                Your data is yours, full stop. You can take it with you whenever you want, no permission needed.
+            </p>
+            <p class="section-body">
+                <strong>2. A 24-word recovery phrase.</strong>
+                Personal data lives only on your device, but the permissions you&rsquo;ve granted
+                (which services may ask for what) are stored in the cloud so a new device can
+                resume where the old one left off. The 24-word phrase (BIP39, the same standard cryptocurrency
+                wallets use) is the only key that unlocks them. We never see it.
+            </p>
+            <p class="section-body">
+                <strong>3. Single-use recovery codes.</strong>
+                A small set of one-time codes you can print and stash in a drawer for emergencies,
+                much like the backup codes most services already offer.
+            </p>
+            <p class="section-body">
+                <strong>4. Trusted guardians.</strong>
+                You can nominate friends or family as guardians. If you ever lose every other backup,
+                a quorum of them (you choose how many) can collectively approve a recovery on your behalf.
+                We just route the messages. We never see what is being recovered.
+            </p>
+        </section>
+
+        <!-- For developers -->
+        <section class="section">
+            <h2>Want to add Privasys sign-in to your&nbsp;app?</h2>
+            <p class="section-lead">
+                If you already support &ldquo;Sign in with Google,&rdquo; the work is roughly an afternoon.
+                Same OIDC. Same JWT. New issuer, new client ID, done.
+            </p>
+            <div class="wallet-cta">
+                <a href="https://developer.privasys.org" class="btn btn-primary">Developer portal</a>
+                <a href="https://docs.privasys.org" class="btn btn-outline">Documentation</a>
+            </div>
+        </section>
+
+        <!-- CTA -->
+        <section class="section cta-section">
+            <h2>Ready to take your identity&nbsp;back?</h2>
+            <div class="cta-buttons" data-platform-cta>
+                <a href="https://apps.apple.com/app/privasys-wallet/id6761209489"
+                   class="btn btn-primary" data-store="ios"
+                   target="_blank" rel="noopener noreferrer">Download for iPhone</a>
+                <a href="https://play.google.com/store/apps/details?id=org.privasys.wallet"
+                   class="btn btn-primary" data-store="android"
+                   target="_blank" rel="noopener noreferrer">Download for Android</a>
+                <a href="/" class="btn btn-outline">Back to privasys.id</a>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="footer-inner">
+            <span class="footer-copy">&copy; 2026 Privasys Ltd. All rights reserved.</span>
+            <div class="footer-links">
+                <a href="https://privasys.org">privasys.org</a>
+                <a href="https://docs.privasys.org">Documentation</a>
+                <a href="https://github.com/privasys" target="_blank" rel="noopener noreferrer">GitHub</a>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Platform-aware store CTAs -->
+    <script>
+        (function () {
+            var ua = navigator.userAgent || '';
+            var isAndroid = /Android/i.test(ua);
+            var isIOS = /iPad|iPhone|iPod/i.test(ua) ||
+                        (ua.indexOf('Mac') !== -1 && navigator.maxTouchPoints > 1);
+            if (!isAndroid && !isIOS) return;
+            document.querySelectorAll('[data-platform-cta]').forEach(function (g) {
+                var primary = g.querySelector(isAndroid ? '[data-store="android"]' : '[data-store="ios"]');
+                var secondary = g.querySelector(isAndroid ? '[data-store="ios"]' : '[data-store="android"]');
+                if (secondary) { secondary.classList.remove('btn-primary'); secondary.classList.add('btn-outline'); }
+                if (primary && g.firstElementChild !== primary) { g.insertBefore(primary, g.firstElementChild); }
+            });
+        })();
+    </script>
+</body>
+</html>
