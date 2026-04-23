@@ -3,10 +3,10 @@
 import { useRouter } from 'next/navigation';
 import { useAuth } from '~/lib/privasys-auth';
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { createApp, uploadCwasm, checkAppName, detectAppType } from '~/lib/api';
-import type { AppType } from '~/lib/types';
+import { createApp, uploadCwasm, checkAppName, detectAppType, listCachedImages } from '~/lib/api';
+import type { AppType, CachedImage } from '~/lib/types';
 
-type SourceMode = 'github' | 'upload' | 'package';
+type SourceMode = 'github' | 'upload' | 'package' | 'cloud_image';
 type NameStatus = 'idle' | 'checking' | 'available' | 'taken';
 
 // ── Helpers ──
@@ -246,6 +246,10 @@ export default function NewApplicationPage() {
     const fileRef = useRef<HTMLInputElement>(null);
     const [detectedType, setDetectedType] = useState<AppType | null>(null);
     const [detecting, setDetecting] = useState(false);
+    // cloud_image source: a published per-cloud disk (e.g. GCE image-<name>-<channel>-<digest12>)
+    const [cachedImages, setCachedImages] = useState<CachedImage[]>([]);
+    const [cloudImageName, setCloudImageName] = useState('');
+    const [cloudImageChannel, setCloudImageChannel] = useState('prod');
 
     // Step 3: Name
     const [name, setName] = useState('');
@@ -266,18 +270,19 @@ export default function NewApplicationPage() {
 
     const availableSourceModes: SourceMode[] = appType === 'wasm'
         ? ['github', 'upload']
-        : ['github', 'package'];
+        : ['github', 'package', 'cloud_image'];
 
     const isSourceComplete = sourceMode === 'github' ? !!parsed
         : sourceMode === 'package' ? !!containerImage.trim()
-            : sourceMode === 'upload' ? !!file
-                : false;
+            : sourceMode === 'cloud_image' ? !!cloudImageName && !!cloudImageChannel
+                : sourceMode === 'upload' ? !!file
+                    : false;
 
     const isNameComplete = name.trim().length >= 3 && nameStatus === 'available';
 
     const canSubmit = appType !== null && isSourceComplete && isNameComplete && !submitting;
 
-    const needsConfigStep = appType === 'container' || sourceMode === 'package';
+    const needsConfigStep = appType === 'container' || sourceMode === 'package' || sourceMode === 'cloud_image';
 
     // ── Summaries for collapsed steps ──
 
@@ -286,9 +291,11 @@ export default function NewApplicationPage() {
         ? `GitHub (${parsed.owner}/${parsed.repo}@${parsed.commit.slice(0, 8)})`
         : sourceMode === 'package' && containerImage
             ? `Package (${containerImage.split(':')[0].split('/').pop()})`
-            : sourceMode === 'upload' && file
-                ? `Upload (${file.name})`
-                : '';
+            : sourceMode === 'cloud_image' && cloudImageName
+                ? `Cloud image (${cloudImageName}/${cloudImageChannel})`
+                : sourceMode === 'upload' && file
+                    ? `Upload (${file.name})`
+                    : '';
     const nameSummary = name ? `${name}.apps.privasys.org` : '';
 
     // ── Auto-infer app name from source ──
@@ -300,12 +307,26 @@ export default function NewApplicationPage() {
             inferred = repoToAppName(parsed.repo);
         } else if (sourceMode === 'package' && containerImage) {
             inferred = imageToAppName(containerImage);
+        } else if (sourceMode === 'cloud_image' && cloudImageName) {
+            inferred = cloudImageName;
         }
         if (inferred && (name === '' || name === prevInferred.current)) {
             setName(inferred);
         }
         prevInferred.current = inferred;
-    }, [sourceMode, parsed?.repo, containerImage]);
+    }, [sourceMode, parsed?.repo, containerImage, cloudImageName]);
+
+    // Load cached images when the user selects the cloud_image source.
+    // We deliberately fetch lazily so non-cloud-image flows incur no GCE
+    // round-trip on the wizard load.
+    useEffect(() => {
+        if (sourceMode !== 'cloud_image' || !session?.accessToken) return;
+        let cancelled = false;
+        listCachedImages(session.accessToken)
+            .then(images => { if (!cancelled) setCachedImages(images); })
+            .catch(() => { /* leave list empty */ });
+        return () => { cancelled = true; };
+    }, [sourceMode, session?.accessToken]);
 
     // Auto-detect app type from GitHub commit URL (used as a hint)
     useEffect(() => {
@@ -360,8 +381,9 @@ export default function NewApplicationPage() {
         if (sourceMode === 'github' && !parsed) return;
         if (sourceMode === 'upload' && !file) return;
         if (sourceMode === 'package' && !containerImage.trim()) return;
+        if (sourceMode === 'cloud_image' && (!cloudImageName || !cloudImageChannel)) return;
 
-        if (appType === 'container' || sourceMode === 'package') {
+        if (appType === 'container' || sourceMode === 'package' || sourceMode === 'cloud_image') {
             const port = parseInt(containerPort, 10);
             if (!port || port < 1 || port > 65535) {
                 setError('Container port must be between 1 and 65535');
@@ -374,17 +396,22 @@ export default function NewApplicationPage() {
 
         try {
             const filteredEnv = envVars.filter(e => e.key.trim());
-            const app = await createApp(session.accessToken, {
-                name: appName,
-                source_type: sourceMode === 'github' ? 'github' : sourceMode === 'package' ? 'package' : 'upload',
-                commit_url: sourceMode === 'github' ? commitUrl.trim() : undefined,
-                app_type: sourceMode === 'package' ? 'container' : appType,
-                container_image: sourceMode === 'package' ? containerImage.trim() : undefined,
-                container_port: (sourceMode === 'package' || appType === 'container') && containerPort ? parseInt(containerPort, 10) : undefined,
-                container_env: filteredEnv.length > 0
-                    ? Object.fromEntries(filteredEnv.map(e => [e.key.trim(), e.value]))
-                    : undefined
-            });
+                            const app = await createApp(session.accessToken, {
+                                name: appName,
+                                source_type: sourceMode === 'github' ? 'github'
+                                    : sourceMode === 'package' ? 'package'
+                                        : sourceMode === 'cloud_image' ? 'cloud_image'
+                                            : 'upload',
+                                commit_url: sourceMode === 'github' ? commitUrl.trim() : undefined,
+                                app_type: (sourceMode === 'package' || sourceMode === 'cloud_image') ? 'container' : appType,
+                                container_image: sourceMode === 'package' ? containerImage.trim() : undefined,
+                                container_port: (sourceMode === 'package' || sourceMode === 'cloud_image' || appType === 'container') && containerPort ? parseInt(containerPort, 10) : undefined,
+                                container_env: filteredEnv.length > 0
+                                    ? Object.fromEntries(filteredEnv.map(e => [e.key.trim(), e.value]))
+                                    : undefined,
+                                cloud_image_name: sourceMode === 'cloud_image' ? cloudImageName : undefined,
+                                cloud_image_channel: sourceMode === 'cloud_image' ? cloudImageChannel : undefined
+                            });
 
             if (sourceMode === 'upload' && file) {
                 await uploadCwasm(session.accessToken, app.id, file);
@@ -396,7 +423,7 @@ export default function NewApplicationPage() {
             setError(e instanceof Error ? e.message : 'Something went wrong');
             setSubmitting(false);
         }
-    }, [session?.accessToken, sourceMode, name, parsed, file, commitUrl, submitting, appType, containerPort, containerImage, envVars]);
+    }, [session?.accessToken, sourceMode, name, parsed, file, commitUrl, submitting, appType, containerPort, containerImage, envVars, cloudImageName, cloudImageChannel]);
 
 
     // ── Wizard ──
@@ -439,7 +466,7 @@ export default function NewApplicationPage() {
                             type="button"
                             onClick={() => {
                                 setAppType('wasm');
-                                if (sourceMode === 'package') setSourceMode('github');
+                                if (sourceMode === 'package' || sourceMode === 'cloud_image') setSourceMode('github');
                                 setCurrentStep(2);
                             }}
                             className={`p-4 rounded-xl border-2 text-left transition-all hover:border-black/30 dark:hover:border-white/30 ${
@@ -473,7 +500,7 @@ export default function NewApplicationPage() {
                                         : 'border-black/10 dark:border-white/10 hover:border-black/30 dark:hover:border-white/30'
                                 }`}
                             >
-                                {m === 'github' ? 'GitHub' : m === 'package' ? 'Package URL' : 'Upload .cwasm'}
+                                {m === 'github' ? 'GitHub' : m === 'package' ? 'Package URL' : m === 'cloud_image' ? 'Cloud-optimised image' : 'Upload .cwasm'}
                             </button>
                         ))}
                     </div>
@@ -536,6 +563,95 @@ export default function NewApplicationPage() {
                             </p>
                         </div>
                     )}
+
+                    {sourceMode === 'cloud_image' && (() => {
+                        // Group cached images by (name, channel). Each group represents one deployable
+                        // image that may be present in several zones; the manager picks the right zone
+                        // automatically at deploy time.
+                        const groups = new Map<string, CachedImage>();
+                        for (const ci of cachedImages) {
+                            const key = `${ci.name}|${ci.channel}`;
+                            const existing = groups.get(key);
+                            if (!existing || ci.created_at > existing.created_at) groups.set(key, ci);
+                        }
+                        const channels = Array.from(new Set(cachedImages
+                            .filter(ci => !cloudImageName || ci.name === cloudImageName)
+                            .map(ci => ci.channel))).sort();
+                        const selected = cloudImageName && cloudImageChannel
+                            ? groups.get(`${cloudImageName}|${cloudImageChannel}`) ?? null
+                            : null;
+                        const allZonesForSelection = selected
+                            ? cachedImages.filter(ci => ci.name === selected.name && ci.channel === selected.channel)
+                            : [];
+                        return (
+                            <div className="space-y-3">
+                                {cachedImages.length === 0 ? (
+                                    <p className="text-xs text-black/40 dark:text-white/40">
+                                        No cloud-optimised images are currently published.
+                                    </p>
+                                ) : (
+                                    <>
+                                        <div>
+                                            <label className="block text-xs font-medium text-black/60 dark:text-white/60 mb-1">Image</label>
+                                            <select
+                                                value={cloudImageName}
+                                                onChange={(e) => setCloudImageName(e.target.value)}
+                                                className="w-full px-3 py-2.5 rounded-lg border border-black/10 dark:border-white/10 bg-transparent text-sm focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/20"
+                                                autoFocus
+                                            >
+                                                <option value="">Select an image...</option>
+                                                {Array.from(new Set(cachedImages.map(ci => ci.name))).sort().map(n => (
+                                                    <option key={n} value={n}>{n}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        {cloudImageName && (
+                                            <div>
+                                                <label className="block text-xs font-medium text-black/60 dark:text-white/60 mb-1">Channel</label>
+                                                <div className="flex gap-2">
+                                                    {channels.map(ch => (
+                                                        <button
+                                                            key={ch}
+                                                            type="button"
+                                                            onClick={() => setCloudImageChannel(ch)}
+                                                            className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
+                                                                cloudImageChannel === ch
+                                                                    ? 'border-black dark:border-white bg-black text-white dark:bg-white dark:text-black'
+                                                                    : 'border-black/10 dark:border-white/10 hover:border-black/30 dark:hover:border-white/30'
+                                                            }`}
+                                                        >
+                                                            {ch}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                        {selected && (
+                                            <div className="p-3 rounded-lg bg-black/3 dark:bg-white/5 text-sm space-y-2">
+                                                <div className="flex items-start gap-2">
+                                                    <span className="text-black/50 dark:text-white/50 shrink-0">Source:</span>
+                                                    <code className="font-mono text-xs break-all">{selected.source_ref || '(unknown)'}</code>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-black/50 dark:text-white/50">Digest:</span>
+                                                    <code className="font-mono text-xs">{selected.digest}</code>
+                                                </div>
+                                                <div className="flex items-start gap-2">
+                                                    <span className="text-black/50 dark:text-white/50 shrink-0">Available in:</span>
+                                                    <span className="text-xs">{allZonesForSelection.map(ci => ci.zone).sort().join(', ')}</span>
+                                                </div>
+                                            </div>
+                                        )}
+                                        <p className="text-xs text-black/40 dark:text-white/40">
+                                            Cloud-optimised images are pre-published per cloud and skip the network
+                                            pull. The enclave manager mounts the labeled disk and verifies its OCI
+                                            layout against the source digest.
+                                        </p>
+                                    </>
+                                )}
+                            </div>
+                        );
+                    })()}
 
                     {sourceMode === 'upload' && (
                         <div>
@@ -615,7 +731,7 @@ export default function NewApplicationPage() {
                     step={4} label="Configuration" active={currentStep === 4} done={false} last
                 >
                     <div className="space-y-4">
-                        {(appType === 'container' || sourceMode === 'package') && (
+                        {(appType === 'container' || sourceMode === 'package' || sourceMode === 'cloud_image') && (
                             <div>
                                 <label className="block text-xs font-medium text-black/60 dark:text-white/60 mb-1">Container port</label>
                                 <input
@@ -630,7 +746,7 @@ export default function NewApplicationPage() {
                             </div>
                         )}
 
-                        {appType === 'container' || sourceMode === 'package' ? (
+                        {appType === 'container' || sourceMode === 'package' || sourceMode === 'cloud_image' ? (
                             <EnvVarsEditor envVars={envVars} setEnvVars={setEnvVars} disabled={submitting} />
                         ) : (
                             <p className="text-xs text-black/40 dark:text-white/40">
@@ -658,7 +774,9 @@ export default function NewApplicationPage() {
                         ? `Creating application from ${parsed.owner}/${parsed.repo}...`
                         : sourceMode === 'package'
                             ? 'Creating application from package...'
-                            : 'Creating application...'}
+                            : sourceMode === 'cloud_image'
+                                ? `Creating application from cloud image ${cloudImageName}/${cloudImageChannel}...`
+                                : 'Creating application...'}
                 </div>
             )}
         </div>

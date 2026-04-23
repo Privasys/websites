@@ -1,4 +1,4 @@
-import type { App, CreateAppRequest, ReviewRequest, DeploymentLog, BuildJob, Enclave, CreateEnclaveRequest, AppVersion, AppDeployment, AttestationResult, TeeType } from './types';
+import type { App, CreateAppRequest, ReviewRequest, DeploymentLog, BuildJob, Enclave, CreateEnclaveRequest, AppVersion, AppDeployment, AttestationResult, TeeType, CachedImage } from './types';
 import { getApiBaseUrl } from './api-base-url';
 
 const API_URL = getApiBaseUrl();
@@ -42,6 +42,14 @@ export function listApps(token: string): Promise<App[]> {
 
 export function listEnclaves(token: string): Promise<Enclave[]> {
     return request<Enclave[]>('/api/v1/enclaves', token);
+}
+
+export function listCachedImages(token: string): Promise<CachedImage[]> {
+    return request<CachedImage[]>('/api/v1/cached-images', token);
+}
+
+export function listCompatibleEnclaves(token: string, appId: string): Promise<Enclave[]> {
+    return request<Enclave[]>(`/api/v1/apps/${encodeURIComponent(appId)}/compatible-enclaves`, token);
 }
 
 export function getApp(token: string, id: string): Promise<App> {

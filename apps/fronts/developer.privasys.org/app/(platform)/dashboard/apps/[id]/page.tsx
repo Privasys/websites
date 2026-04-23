@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { useAuth } from '~/lib/privasys-auth';
 import { useEffect, useState, useCallback } from 'react';
-import { getApp, listBuilds, listVersions, listDeployments, listEnclaves, deleteApp, deployVersion, stopDeployment, attestApp, verifyQuote, getAppSchema, rpcCall, updateStoreListing, getAppMcp, updateContainerMcp, retryBuild } from '~/lib/api';
+import { getApp, listBuilds, listVersions, listDeployments, listCompatibleEnclaves, deleteApp, deployVersion, stopDeployment, attestApp, verifyQuote, getAppSchema, rpcCall, updateStoreListing, getAppMcp, updateContainerMcp, retryBuild } from '~/lib/api';
 import type { AppSchema, FunctionSchema, WitType, QuoteVerifyResult, McpManifest } from '~/lib/api';
 import { useSSE } from '~/lib/use-sse';
 import { getApiBaseUrl } from '~/lib/api-base-url';
@@ -57,7 +57,9 @@ export default function AppDetailPage() {
                 listBuilds(session.accessToken, id),
                 listVersions(session.accessToken, id),
                 listDeployments(session.accessToken, id),
-                listEnclaves(session.accessToken)
+                // For cloud_image apps, only enclaves with a matching cached
+                // disk in their zone can serve the deploy; the backend filters.
+                listCompatibleEnclaves(session.accessToken, id)
             ]);
             setApp(appData);
             setBuilds(buildsData);
@@ -191,7 +193,7 @@ export default function AppDetailPage() {
                 <div>
                     <h1 className="text-2xl font-semibold">{app.display_name || app.name}</h1>
                     <p className="mt-1 text-sm text-black/50 dark:text-white/50">
-                        {app.name} &middot; {app.source_type === 'github' ? 'GitHub' : 'Upload'}
+                        {app.name} &middot; {app.source_type === 'github' ? 'GitHub' : app.source_type === 'package' ? 'Package' : app.source_type === 'cloud_image' ? 'Cloud image' : 'Upload'}
                     </p>
                 </div>
                 <div className="flex items-center gap-2">

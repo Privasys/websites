@@ -204,7 +204,7 @@ export default function DashboardPage() {
                                     <div className="text-xs text-black/40 dark:text-white/40">{app.name}</div>
                                 </td>
                                 <td className="px-4 py-3 text-black/60 dark:text-white/60">
-                                    {app.source_type === 'upload' ? 'Upload' : 'GitHub'}
+                                    {app.source_type === 'upload' ? 'Upload' : app.source_type === 'package' ? 'Package' : app.source_type === 'cloud_image' ? 'Cloud image' : 'GitHub'}
                                 </td>
                                 <td className="px-4 py-3">
                                     <StatusBadge status={app.status} />
