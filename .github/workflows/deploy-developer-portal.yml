@@ -53,16 +53,13 @@ jobs:
         with:
           node-version: 24.x
           cache: yarn
-          cache-dependency-path: websites/yarn.lock
 
       - name: Install dependencies
-        working-directory: websites
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: yarn install --network-timeout 1000000 --immutable
 
       - name: Build portal
-        working-directory: websites
         run: |
           set -euo pipefail
           echo "NEXT_PUBLIC_API_URL=${{ steps.target.outputs.api_url }}" > apps/fronts/developer.privasys.org/.env.local
@@ -70,7 +67,6 @@ jobs:
           npx nx build developer.privasys.org --skip-nx-cache
 
       - name: Assemble build context
-        working-directory: websites
         run: |
           set -euo pipefail
           DIST=dist/apps/fronts/developer.privasys.org/.next
