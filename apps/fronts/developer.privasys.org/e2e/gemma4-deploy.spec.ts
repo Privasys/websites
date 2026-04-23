@@ -21,7 +21,9 @@ const APP_NAME = 'e2e-gemma4-pkg';
 const CONTAINER_IMAGE = 'ghcr.io/privasys/confidential-ai:latest';
 const CONTAINER_PORT = 8080;
 // Model directory name under /models (bind-mounted from /mnt on the host).
-const MODEL_NAME = 'model-gemma4-31b';
+// Host disk-mounter strips the 'model-' prefix from GCE device names
+// (model-gemma4-31b -> /mnt/gemma4-31b -> /models/gemma4-31b in container).
+const MODEL_NAME = 'gemma4-31b';
 
 let token: string;
 let appId: string;
@@ -215,12 +217,15 @@ test.describe('Gemma 4 Package Deploy', () => {
     });
 
     test('verify deployment active', async ({ page }) => {
-        test.setTimeout(180_000);
+        // Cold pull of the confidential-ai image (~5.9 GiB) over the public
+        // ghcr.io path can take 15-20 min on a fresh /data/containerd. Once
+        // we cut over to disk:// resolution this can drop back to ~30s.
+        test.setTimeout(25 * 60_000);
         token = await getToken(page);
 
         // Poll deployments until one is active (deploy may still be propagating)
         let active: { id: string; status: string; hostname: string; enclave_host: string } | undefined;
-        for (let i = 0; i < 30; i++) {
+        for (let i = 0; i < 240; i++) {
             const resp = await page.request.get(`${API}/api/v1/apps/${appId}/deployments`, {
                 headers: { Authorization: `Bearer ${token}` },
             });
@@ -233,7 +238,7 @@ test.describe('Gemma 4 Package Deploy', () => {
                 console.log('Deployment failed:', JSON.stringify(failed));
                 break;
             }
-            console.log(`Poll ${i + 1}/30: no active deployment yet, statuses: ${deps.map(d => d.status)}`);
+            console.log(`Poll ${i + 1}/240: no active deployment yet, statuses: ${deps.map(d => d.status)}`);
             await page.waitForTimeout(5_000);
         }
         expect(active, 'no active deployment').toBeTruthy();
