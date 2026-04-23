@@ -54,7 +54,7 @@ export interface CreateAppRequest {
     name: string;
     display_name?: string;
     description?: string;
-    source_type: 'upload' | 'github' | 'package';
+    source_type: 'upload' | 'github' | 'package' | 'cloud_image';
     app_type?: AppType;
     commit_url?: string;
     enclave_id?: string;
@@ -64,6 +64,20 @@ export interface CreateAppRequest {
     container_storage?: boolean;
     container_storage_key?: string;
     container_mcp?: Record<string, unknown>;
+    cloud_image_name?: string;
+    cloud_image_channel?: string;
+}
+
+export interface CachedImage {
+    name: string;
+    channel: string;
+    cloud: string;
+    zone: string;
+    region: string;
+    digest: string;
+    disk_name: string;
+    source_ref: string;
+    created_at: string;
 }
 
 export interface ReviewRequest {

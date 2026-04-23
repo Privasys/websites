@@ -86,6 +86,11 @@ function decodeJwtPayload(jwt: string): Record<string, unknown> {
     }
 }
 
+/** Cheap structural check that a string looks like a signed JWT (3 dot-separated segments). */
+function isJwt(token: string): boolean {
+    return typeof token === 'string' && token.split('.').length === 3;
+}
+
 function sessionFromToken(token: string, rpId: string, authenticatedAt?: number): AuthSession {
     const claims = decodeJwtPayload(token);
     return {
@@ -145,10 +150,20 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
     // Check for existing session on mount (cross-site SSO).
     useEffect(() => {
         const frame = getFrame();
-        // The SDK filters expired tokens — if the stored token is JWT-expired,
+        // The SDK filters expired tokens - if the stored token is JWT-expired,
         // getSession() returns null and fires onSessionExpired automatically.
         frame.getSession().then((s) => {
             if (s) {
+                // Management-service strictly requires a JWT bearer token. Stale
+                // pre-OIDC opaque session tokens (no dots) cause every API and
+                // SSE request to fail with "invalid number of segments". Clear
+                // them so the next interaction triggers a fresh OIDC sign-in.
+                if (!isJwt(s.token)) {
+                    frame.clearSession().catch(() => undefined);
+                    clearSessionCookie();
+                    setLoading(false);
+                    return;
+                }
                 setSession(sessionFromToken(s.token, s.rpId, s.authenticatedAt));
                 setSessionCookie(s.token);
             }
@@ -161,6 +176,9 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
     const signIn = useCallback(async () => {
         const frame = getFrame();
         const result = await frame.signIn();
+        // Prefer the OIDC JWT access_token. Fall back to the opaque sessionToken
+        // only if no JWT is available (the management-service will reject the
+        // opaque variant - this is purely defensive).
         const token = result.accessToken ?? result.sessionToken;
         setSession(sessionFromToken(token, config.rpId ?? config.appName));
         setSessionCookie(token);
