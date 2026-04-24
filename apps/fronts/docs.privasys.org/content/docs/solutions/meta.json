@@ -5,6 +5,7 @@
         "enclave-os",
         "enclave-vaults",
         "enclave-agent",
+        "ai",
         "platform",
         "wallet"
     ]

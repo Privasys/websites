@@ -1,0 +1,67 @@
+---
+title: Architecture
+description: The confidential AI runtime, model disk, attestation surface, and management plane.
+---
+
+A confidential AI deployment is a single Intel TDX guest with one or more NVIDIA GPUs in confidential-compute mode. Inside the guest, three Privasys components cooperate.
+
+## Inside the enclave
+
+```
++----------------------------------------------------------+
+|                  Intel TDX trust domain                  |
+|                                                          |
+|   manager  --(spawn)-->  vLLM (OpenAI server, GPU)       |
+|      |                    ^                              |
+|      |                    |                              |
+|      v                    |                              |
+|   confidential-ai  ---/v1/chat/completions----> client   |
+|      ^                                                   |
+|      |  /v1/models/load (fleet token)                    |
+|      |                                                   |
+|   management plane  (cannot read prompts or responses)   |
++----------------------------------------------------------+
+```
+
+### `manager`
+
+The init-style supervisor for the enclave. It mounts the dm-verity model disk, starts vLLM, runs the confidential-ai proxy, performs the OIDC bootstrap, and pushes a runtime-status snapshot (GPU memory, temperature, power, loaded model, proxy state) to the management plane on a configurable interval.
+
+### `confidential-ai`
+
+A small Go proxy that:
+
+- Accepts OpenAI-compatible HTTP requests over RA-TLS.
+- Forwards `/v1/chat/completions` to the local vLLM server.
+- Owns model lifecycle (`/v1/models/load`, `/v1/models/unload`, `/v1/models/status`), gated behind a fleet `LOAD_TOKEN` when configured.
+- Computes the workload-attestation extension set, including the dm-verity root hash of the loaded model.
+
+### vLLM
+
+The actual inference engine. It only ever listens on `localhost`; clients never reach it directly. Prompt and response data lives in GPU and host RAM that is not accessible to the host OS or hypervisor.
+
+## Outside the enclave
+
+### Model disk publisher
+
+A signed, reproducible script (`publish-model-disk.sh`) builds two artifacts per model:
+
+- `model-<name>` - a sealed ext4 image containing the model files.
+- `model-<name>-verity` - a hash-tree disk prefixed with a 4 KiB Privasys header (`PRIVASYS-VERITY-V1\nROOTHASH=<hex>\n...`). The veritysetup hash tree starts at offset 4096.
+
+The publisher signs the root hash and uploads both disks to whichever object store the fleet uses.
+
+### Management plane
+
+The fleet manager:
+
+- Issues the bootstrap OIDC client/secret.
+- Issues the per-enclave token used for runtime-status pushes.
+- Optionally distributes the `LOAD_TOKEN` so only the manager - not arbitrary tenants - can swap models.
+- Stores attestation evidence and exposes it to end-user dashboards.
+
+The management plane can never read prompts, responses, or the model weights at rest. Its trust scope is restricted to lifecycle and policy.
+
+## RA-TLS and the certificate chain
+
+Each enclave generates an ephemeral keypair, requests a TDX quote whose `report_data` is bound to that public key plus a per-session challenge nonce, and embeds the quote (and supporting collateral) into x.509 extensions on a self-signed leaf certificate. Clients verifying the certificate verify the quote, confirm the report-data binding, and inspect the custom extensions to learn what model is loaded and which workloads are running.

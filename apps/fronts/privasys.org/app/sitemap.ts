@@ -14,6 +14,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
         { url: `${BASE}/solutions/enclave-os/`, changeFrequency: 'monthly', priority: 0.9 },
         { url: `${BASE}/solutions/enclave-vaults/`, changeFrequency: 'monthly', priority: 0.9 },
         { url: `${BASE}/solutions/enclave-agent/`, changeFrequency: 'monthly', priority: 0.9 },
+        { url: `${BASE}/solutions/ai/`, changeFrequency: 'monthly', priority: 0.9 },
         { url: `${BASE}/solutions/platform/`, changeFrequency: 'monthly', priority: 0.9 },
         { url: `${BASE}/blog/`, changeFrequency: 'weekly', priority: 0.8 },
         { url: `${BASE}/legal/`, changeFrequency: 'yearly', priority: 0.3 },

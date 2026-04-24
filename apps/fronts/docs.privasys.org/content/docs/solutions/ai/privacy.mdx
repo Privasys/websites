@@ -1,0 +1,35 @@
+---
+title: Privacy guarantees
+description: What the operator, the host, and the management plane can and cannot observe.
+---
+
+Confidential AI is built on the assumption that the operator is curious and the host is hostile. Hardware isolation plus attestation give end users a small, auditable trust base.
+
+## What is protected
+
+- **Prompts.** Decrypted only inside the TDX trust domain. Never written to disk in cleartext, never logged. The host kernel, the hypervisor, and the management plane cannot read them.
+- **Responses.** Same protection class as prompts, including streamed deltas.
+- **KV-cache and intermediate activations.** Live in GPU memory protected by NVIDIA confidential-compute mode and in TDX-private guest memory.
+- **Model weights at rest.** Carried on a dm-verity disk; tampering causes a read error rather than a silent substitution. Mounted read-only.
+- **Session keys.** RA-TLS uses ephemeral keys generated inside the enclave; private halves never leave it.
+
+## What is observable
+
+- **Network metadata.** The host can see that the enclave received a TLS connection of a certain size, lasting a certain time. It cannot decrypt the contents.
+- **Resource counters.** GPU memory, temperature, power; aggregate request count. The manager pushes these to the management plane so operators can monitor capacity. They do not reveal prompt or response content beyond what side-channel analysis of size and timing can leak.
+- **Loaded model identity.** The `MODEL_DIGEST` extension and `/v1/models/status` endpoint deliberately publish which weights are loaded. This is the property end users want to verify.
+
+## What requires operator cooperation
+
+- **Reproducible images.** The operator must publish the build inputs (kernel config, mkosi spec, manager binary, confidential-ai binary, vLLM container) so an auditor can rebuild and confirm the MRTD and RTMR values.
+- **Signed model disks.** The operator must sign the dm-verity root hash so users can pin a trusted weight set.
+- **Attestation server set.** The operator chooses which Intel PCS / TDX collateral provider the client uses to verify the quote. Untrusted operators could publish a malicious server set, but the platform extension `Attestation Servers Hash` makes that choice itself attestable.
+
+## Threat model boundaries
+
+Confidential AI does not protect against:
+
+- **Side-channel attacks** on the GPU or CPU at the level of cache timing, power analysis, or memory-bus probing. NVIDIA confidential-compute mode and Intel TDX both raise the bar substantially but neither claims complete coverage.
+- **Bugs in the loaded model.** Confidential inference does not make a model truthful, safe, or aligned. It only proves which model produced an output.
+- **Compromise of the operator's release-signing key.** If an attacker can sign a malicious model disk or initrd, the chain of trust is broken at that root. Use HSMs and air-gapped signing.
+- **Abuse by the user themselves.** Confidentiality is two-way; the operator cannot see prompts, but neither can a downstream auditor unless the user shares the session.

@@ -1,0 +1,7 @@
+{
+    "name": "@privasys/attestation-view",
+    "$schema": "../../node_modules/nx/schemas/project-schema.json",
+    "sourceRoot": "libs/attestation-view/src",
+    "projectType": "library",
+    "tags": ["scope:shared"]
+}

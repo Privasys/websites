@@ -1,0 +1,61 @@
+---
+title: API
+description: OpenAI-compatible chat and model-management endpoints exposed by the confidential-ai proxy.
+---
+
+The confidential-ai proxy exposes an OpenAI-compatible HTTP surface on top of vLLM. All endpoints are served over RA-TLS; clients should pin the certificate against a freshly verified TDX quote (see [Attestation](attestation)).
+
+## Chat completions
+
+```
+POST /v1/chat/completions
+Content-Type: application/json
+```
+
+Request and response bodies are byte-compatible with the OpenAI Chat Completions API, including streaming via `stream: true` and SSE. Tool/function calling, JSON mode, and stop sequences are supported to the extent vLLM supports them for the loaded model.
+
+There is no API key required at the chat layer by default; access control happens at the network layer (clients prove they reached the right enclave via attestation, the enclave proves the client is allowed via your auth integration). When you want per-tenant isolation, run one enclave per tenant rather than sharing.
+
+## Model status
+
+```
+GET /v1/models/status
+```
+
+Returns:
+
+```json
+{
+  "loaded_model": "Qwen2.5-7B-Instruct",
+  "loaded_model_digest": "<dm-verity-roothash-or-index-hash>",
+  "proxy_status": "ready",
+  "proxy_message": "vLLM accepting requests",
+  "proxy_progress": 1.0
+}
+```
+
+`proxy_status` cycles through `idle`, `loading`, `ready`, `unloading`, and `error`. `proxy_progress` is `0.0..1.0` while a load is in flight.
+
+The same fields are pushed to the management plane every `--push-interval` (default 30s) by the manager's runtime-status sender.
+
+## Model lifecycle (fleet only)
+
+```
+POST /v1/models/load     {"model": "Qwen2.5-7B-Instruct"}
+POST /v1/models/unload   {"model": "Qwen2.5-7B-Instruct"}
+```
+
+When the proxy is started with `--load-token <secret>` (or `LOAD_TOKEN` env), both endpoints require `Authorization: Bearer <secret>`. Without that flag the endpoints are open, which is fine for development but should not be used in production.
+
+A successful `load` will:
+
+1. Verify the model directory exists under `--models-dir`.
+2. Spawn vLLM bound to `--vllm-port`.
+3. Wait for vLLM's health endpoint.
+4. Look up the dm-verity root hash for the model from `--roothash-dir` and surface it via the `MODEL_DIGEST` extension.
+
+`unload` stops vLLM and clears the loaded-model state.
+
+## Attestation endpoint
+
+The RA-TLS leaf certificate already carries the full attestation evidence, so most clients do not need a separate attestation endpoint. The developer portal exposes `/api/v1/apps/<id>/attest` as a convenience that performs the handshake server-side and returns a structured `AttestationResult` for browser consumption.

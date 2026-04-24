@@ -4,13 +4,14 @@ import Link from 'next/link';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { useAuth } from '~/lib/privasys-auth';
 import { useEffect, useState, useCallback } from 'react';
-import { getApp, listBuilds, listVersions, listDeployments, listCompatibleEnclaves, deleteApp, deployVersion, stopDeployment, attestApp, verifyQuote, getAppSchema, rpcCall, updateStoreListing, getAppMcp, updateContainerMcp, retryBuild } from '~/lib/api';
-import type { AppSchema, FunctionSchema, WitType, QuoteVerifyResult, McpManifest } from '~/lib/api';
+import { getApp, listBuilds, listVersions, listDeployments, listCompatibleEnclaves, deleteApp, deployVersion, stopDeployment, getAppSchema, rpcCall, updateStoreListing, getAppMcp, updateContainerMcp, retryBuild } from '~/lib/api';
+import type { AppSchema, FunctionSchema, WitType, McpManifest } from '~/lib/api';
 import { useSSE } from '~/lib/use-sse';
 import { getApiBaseUrl } from '~/lib/api-base-url';
-import type { App, BuildJob, AppVersion, AppDeployment, Enclave, AttestationResult } from '~/lib/types';
+import type { App, BuildJob, AppVersion, AppDeployment, Enclave } from '~/lib/types';
 import { STATUS_LABELS, STATUS_COLORS, DEPLOYMENT_STATUS_LABELS, DEPLOYMENT_STATUS_COLORS } from '~/lib/types';
 import { RtmrVerifier } from '~/components/rtmr-verifier';
+import { AttestationConnect, AttestationResultView, useAttestation } from '@privasys/attestation-view';
 
 function StatusBadge({ status, labels, colors }: { status: string; labels: Record<string, string>; colors: Record<string, string> }) {
     return (
@@ -563,165 +564,38 @@ function AttestationTab({ appId, token, deployments, versions }: { appId: string
     const selectedDeployment = deployments.find(d => d.id === selectedDeploymentId);
     const selectedVersion = selectedDeployment ? versionMap[selectedDeployment.version_id] : undefined;
 
-    const [result, setResult] = useState<AttestationResult | null>(null);
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-    const [copied, setCopied] = useState<string | null>(null);
-    const [challenge, setChallenge] = useState<string>(() => {
-        if (typeof window === 'undefined') return '';
-        const bytes = new Uint8Array(32);
-        crypto.getRandomValues(bytes);
-        return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+    // Drives the attestation handshake against the developer-portal API,
+    // which proxies to the enclave RA-TLS endpoint.
+    const apiBase = getApiBaseUrl();
+    const [state, actions] = useAttestation({
+        attestUrl: `${apiBase}/api/v1/apps/${encodeURIComponent(appId)}/attest`,
+        verifyQuoteUrl: `${apiBase}/api/v1/verify-quote`,
+        token,
     });
 
-    async function inspect() {
-        setLoading(true);
-        setError(null);
-        setVerifyResult(null);
-        setQuoteVerifyResult(null);
-        setQuoteVerifyError(null);
-        try {
-            const trimmed = challenge.trim();
-            if (trimmed && !/^[0-9a-fA-F]{32,128}$/.test(trimmed)) {
-                throw new Error('Challenge must be 32-128 hex characters (16-64 bytes)');
-            }
-            const data = await attestApp(token, appId, trimmed || undefined);
-            setResult(data);
-        } catch (e) {
-            setError(e instanceof Error ? e.message : 'Attestation failed');
-        } finally {
-            setLoading(false);
-        }
-    }
-
-    function regenerateChallenge() {
-        const bytes = new Uint8Array(32);
-        crypto.getRandomValues(bytes);
-        setChallenge(Array.from(bytes, b => b.toString(16).padStart(2, '0')).join(''));
-    }
-
-    function copyToClipboard(text: string, label: string) {
-        navigator.clipboard.writeText(text);
-        setCopied(label);
-        setTimeout(() => setCopied(null), 2000);
-    }
-
-    const [verifyResult, setVerifyResult] = useState<string | null>(null);
-    const [verifying, setVerifying] = useState(false);
-    const [verifyDebug, setVerifyDebug] = useState<{ computed: string; actual: string } | null>(null);
-
-    // Quote verification via attestation server
-    const [quoteVerifyResult, setQuoteVerifyResult] = useState<QuoteVerifyResult | null>(null);
-    const [quoteVerifying, setQuoteVerifying] = useState(false);
-    const [quoteVerifyError, setQuoteVerifyError] = useState<string | null>(null);
-
-    async function verifyQuoteSignature() {
-        const raw = result?.quote?.raw_base64;
-        if (!raw) return;
-        setQuoteVerifying(true);
-        setQuoteVerifyError(null);
-        try {
-            const res = await verifyQuote(token, raw);
-            setQuoteVerifyResult(res);
-        } catch (e) {
-            setQuoteVerifyError(e instanceof Error ? e.message : 'Quote verification failed');
-        } finally {
-            setQuoteVerifying(false);
-        }
-    }
-
-    function downloadPem() {
-        if (!result?.pem) return;
-        const blob = new Blob([result.pem], { type: 'application/x-pem-file' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'enclave-certificate.pem';
-        a.click();
-        URL.revokeObjectURL(url);
-    }
-
-    /** Decode hex string to UTF-8 text. Returns null if not valid UTF-8. */
-    function hexToText(hex: string): string | null {
-        try {
-            const bytes = new Uint8Array(hex.match(/.{1,2}/g)!.map(b => parseInt(b, 16)));
-            const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-            // Only show as text if all chars are printable ASCII/UTF-8
-            if (/^[\x20-\x7e]+$/.test(text)) return text;
-            return null;
-        } catch { return null; }
-    }
-
-    /** OIDs whose values are UTF-8 strings, not hashes */
-    const TEXT_OIDS = new Set(['1.3.6.1.4.1.65230.3.3', '1.3.6.1.4.1.65230.3.4']);
-
-    /** Verify ReportData using SubtleCrypto */
-    async function verifyReportData() {
-        if (!result?.quote?.report_data || !result.certificate?.public_key_sha256 || !result.challenge) return;
-        setVerifying(true);
-        setVerifyResult(null);
-        setVerifyDebug(null);
-        try {
-            const pubKeySha256 = new Uint8Array(result.certificate.public_key_sha256.match(/.{1,2}/g)!.map(b => parseInt(b, 16)));
-            const nonce = new Uint8Array(result.challenge.match(/.{1,2}/g)!.map(b => parseInt(b, 16)));
-            const concat = new Uint8Array(pubKeySha256.length + nonce.length);
-            concat.set(pubKeySha256);
-            concat.set(nonce, pubKeySha256.length);
-            const hash = await crypto.subtle.digest('SHA-512', concat);
-            const computed = Array.from(new Uint8Array(hash), b => b.toString(16).padStart(2, '0')).join('');
-            const actual = result.quote.report_data.toLowerCase();
-            setVerifyDebug({ computed, actual });
-            if (computed === actual) {
-                setVerifyResult('match');
-            } else {
-                setVerifyResult('mismatch');
-            }
-        } catch (_e) {
-            setVerifyResult('error');
-        } finally {
-            setVerifying(false);
-        }
-    }
-
-    // Auto-verify ReportData when results arrive in challenge mode
+    // Reset state when the user switches between deployments of the same app.
     useEffect(() => {
-        if (result?.challenge_mode && result?.quote?.report_data && result?.certificate?.public_key_sha256 && result?.challenge) {
-            verifyReportData();
-        }
+        actions.reset();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedDeploymentId]);
 
-    }, [result]);
-
-    // Auto-verify quote signature via attestation server
+    // Auto-trigger quote-signature verification once a result arrives,
+    // matching the previous inline implementation.
     useEffect(() => {
-        if (result?.quote?.raw_base64 && !result.quote.is_mock) {
-            verifyQuoteSignature();
+        if (state.result?.quote?.raw_base64 && !state.result.quote.is_mock) {
+            void actions.verifyQuoteSignature();
         }
-
-    }, [result]);
-
-    const OID_DESCRIPTIONS: Record<string, string> = {
-        'Config Merkle Root': 'Hash of the enclave configuration tree. Changes if any config parameter is modified.',
-        'Egress CA Hash': 'Hash of the CA certificate used for egress TLS connections from the enclave.',
-        'Runtime Version Hash': 'Hash identifying the exact runtime version running inside the enclave.',
-        'Combined Workloads Hash': 'Aggregate hash of all loaded WASM workloads. Proves which code is running.',
-        'DEK Origin': 'Data Encryption Key origin — indicates how the enclave\'s encryption key was derived.',
-        'Attestation Servers Hash': 'Hash of the attestation server list the enclave trusts for quote verification.',
-        'Workload Config Merkle Root': 'Merkle root of this specific workload\'s configuration.',
-        'Workload Code Hash': 'SHA-256 hash of the compiled WASM bytecode for this workload.',
-        'Workload Image Ref': 'Container image reference from which the workload was loaded.',
-        'Workload Key Source': 'Indicates how the workload\'s encryption keys are sourced and managed.',
-        'Workload Permissions Hash': 'Hash of the security permissions granted to this workload (network access, storage, etc.).'
-    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [state.result]);
 
     return (
         <div className="space-y-6">
-            {/* Deployment / version selector */}
             {deployments.length > 1 && (
                 <section className="flex items-center gap-3">
                     <label className="text-xs font-medium text-black/50 dark:text-white/50 shrink-0">Target deployment</label>
                     <select
                         value={selectedDeploymentId}
-                        onChange={(e) => { setSelectedDeploymentId(e.target.value); setResult(null); }}
+                        onChange={(e) => setSelectedDeploymentId(e.target.value)}
                         className="flex-1 px-3 py-2 text-sm rounded-lg border border-black/10 dark:border-white/10 bg-transparent focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/20"
                     >
                         {deployments.map(d => {
@@ -744,596 +618,42 @@ function AttestationTab({ appId, token, deployments, versions }: { appId: string
                 </div>
             )}
 
-            {/* Challenge input + Inspect button */}
-            {!result && (
-                <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">
-                    <div className="text-center mb-5">
-                        <svg className="w-10 h-10 mx-auto text-black/20 dark:text-white/20 mb-3" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
-                            <path d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
-                        </svg>
-                        <h2 className="text-lg font-semibold mb-1">Remote Attestation</h2>
-                        <p className="text-sm text-black/50 dark:text-white/50 max-w-lg mx-auto">
-                            Connect to the enclave via RA-TLS and inspect the x.509 certificate, attestation quote, and all custom attestation extensions.
-                        </p>
-                    </div>
-
-                    {/* Challenge nonce */}
-                    <div className="max-w-lg mx-auto mb-5">
-                        <div className="flex items-center justify-between mb-1.5">
-                            <label className="text-xs font-medium">Challenge Nonce</label>
-                            <button
-                                onClick={regenerateChallenge}
-                                className="text-[11px] text-black/40 dark:text-white/40 hover:text-black/70 dark:hover:text-white/70"
-                            >
-                                Regenerate
-                            </button>
-                        </div>
-                        <input
-                            type="text"
-                            value={challenge}
-                            onChange={e => setChallenge(e.target.value.replace(/[^0-9a-fA-F]/g, ''))}
-                            placeholder="32-128 hex characters (leave empty for deterministic mode)"
-                            className="w-full px-3 py-2 text-xs font-mono rounded-lg border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 focus:outline-none focus:ring-1 focus:ring-black/20 dark:focus:ring-white/20"
-                            maxLength={128}
-                        />
-                        <p className="text-[11px] text-black/35 dark:text-white/35 mt-1.5">
-                            Provide a random nonce to prove the certificate was generated <em>just now</em> for your request. Leave empty for deterministic mode.
-                        </p>
-                    </div>
-
-                    <div className="text-center">
-                        <button
-                            onClick={inspect}
-                            disabled={loading}
-                            className="px-5 py-2.5 text-sm font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-80 disabled:opacity-40 transition-opacity"
-                        >
-                            {loading ? 'Connecting…' : 'Inspect Certificate'}
-                        </button>
-                    </div>
-                </section>
-            )}
-
-            {error && (
-                <div className="p-3 rounded-lg bg-red-50 dark:bg-red-900/20 text-sm text-red-700 dark:text-red-300">
-                    {error}
-                </div>
-            )}
-
-            {result && (
-                <>
-                    {/* Challenge mode banner */}
-                    {result.challenge_mode && result.challenge && (
-                        <section className={`p-4 rounded-xl border ${
-                            verifyResult === 'match'
-                                ? 'border-emerald-200/50 dark:border-emerald-500/20 bg-emerald-50/40 dark:bg-emerald-900/10'
-                                : verifyResult === 'mismatch' || verifyResult === 'error'
-                                    ? 'border-red-200/50 dark:border-red-500/20 bg-red-50/40 dark:bg-red-900/10'
-                                    : 'border-amber-200/50 dark:border-amber-500/20 bg-amber-50/40 dark:bg-amber-900/10'
-                        }`}>
-                            <div className="flex items-start gap-3">
-                                <span className={`mt-0.5 ${verifyResult === 'match' ? 'text-emerald-600 dark:text-emerald-400' : verifyResult === 'mismatch' || verifyResult === 'error' ? 'text-red-600 dark:text-red-400' : 'text-amber-600 dark:text-amber-400'}`}>🔐</span>
-                                <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2 mb-1">
-                                        <h3 className={`text-xs font-semibold ${verifyResult === 'match' ? 'text-emerald-800 dark:text-emerald-300' : verifyResult === 'mismatch' || verifyResult === 'error' ? 'text-red-800 dark:text-red-300' : 'text-amber-800 dark:text-amber-300'}`}>Challenge Mode Active</h3>
-                                        {verifying && (
-                                            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-medium rounded-full bg-black/5 dark:bg-white/5 text-black/50 dark:text-white/50">
-                                                <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/></svg>
-                                                Verifying…
-                                            </span>
-                                        )}
-                                        {verifyResult === 'match' && (
-                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400">
-                                                ✓ Match — freshness verified
-                                            </span>
-                                        )}
-                                        {verifyResult === 'mismatch' && (
-                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded-full bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400">
-                                                ✗ Mismatch
-                                            </span>
-                                        )}
-                                        {verifyResult === 'error' && (
-                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded-full bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400">
-                                                ✗ Verification error
-                                            </span>
-                                        )}
-                                    </div>
-                                    <p className={`text-[11px] mb-2 ${verifyResult === 'match' ? 'text-emerald-700/70 dark:text-emerald-300/60' : verifyResult === 'mismatch' || verifyResult === 'error' ? 'text-red-700/70 dark:text-red-300/60' : 'text-amber-700/70 dark:text-amber-300/60'}`}>
-                                        This certificate was freshly generated in response to your challenge nonce. The enclave bound your nonce into the quote&apos;s ReportData field.
-                                    </p>
-                                    <div className={`text-[11px] mb-1 ${verifyResult === 'match' ? 'text-emerald-700/70 dark:text-emerald-300/60' : verifyResult === 'mismatch' || verifyResult === 'error' ? 'text-red-700/70 dark:text-red-300/60' : 'text-amber-700/70 dark:text-amber-300/60'}`}>Challenge sent:</div>
-                                    <code className={`text-[11px] px-2 py-1 rounded block font-mono break-all ${verifyResult === 'match' ? 'bg-emerald-100/50 dark:bg-emerald-900/20' : verifyResult === 'mismatch' || verifyResult === 'error' ? 'bg-red-100/50 dark:bg-red-900/20' : 'bg-amber-100/50 dark:bg-amber-900/20'}`}>
-                                        {result.challenge}
-                                    </code>
-                                </div>
-                            </div>
-                        </section>
-                    )}
-                    {result.challenge_mode === false && (
-                        <section className="p-3 rounded-xl border border-black/5 dark:border-white/5 bg-black/[0.02] dark:bg-white/[0.02]">
-                            <p className="text-[11px] text-black/40 dark:text-white/40 text-center">
-                                <strong>Deterministic mode</strong> — certificate may be reused across connections (timestamp-based binding). Use challenge mode for proof of freshness.
-                            </p>
-                        </section>
-                    )}
-
-                    {/* Actions bar */}
-                    <div className="flex items-center gap-3">
-                        <button
-                            onClick={inspect}
-                            disabled={loading}
-                            className="px-4 py-2 text-sm font-medium rounded-lg border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-40 transition-colors"
-                        >
-                            {loading ? 'Refreshing…' : 'Refresh'}
-                        </button>
-                        <button
-                            onClick={downloadPem}
-                            className="px-4 py-2 text-sm font-medium rounded-lg border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
-                        >
-                            Download PEM
-                        </button>
-                        <button
-                            onClick={() => { setResult(null); regenerateChallenge(); }}
-                            className="px-4 py-2 text-sm font-medium rounded-lg border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 transition-colors ml-auto"
-                        >
-                            New Challenge
-                        </button>
-                    </div>
-
-                    {/* TLS Connection */}
-                    <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">
-                        <h2 className="text-sm font-semibold mb-3">TLS Connection</h2>
-                        <div className="grid grid-cols-2 gap-3 text-sm">
-                            <div>
-                                <div className="text-xs text-black/50 dark:text-white/50">Protocol</div>
-                                <div className="mt-0.5 font-mono text-xs">{result.tls.version}</div>
-                            </div>
-                            <div>
-                                <div className="text-xs text-black/50 dark:text-white/50">Cipher Suite</div>
-                                <div className="mt-0.5 font-mono text-xs">{result.tls.cipher_suite}</div>
-                            </div>
-                        </div>
-                    </section>
-
-                    {/* Certificate */}
-                    <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">
-                        <h2 className="text-sm font-semibold mb-3">x.509 Certificate</h2>
-                        <div className="space-y-3">
-                            {[
-                                { label: 'Subject', value: result.certificate.subject, desc: 'The entity this certificate identifies.' },
-                                { label: 'Issuer', value: result.certificate.issuer, desc: 'Certificate authority that issued the cert. Self-signed for enclaves.' },
-                                { label: 'Serial Number', value: result.certificate.serial_number, desc: 'Unique identifier assigned by the issuer.' },
-                                { label: 'Valid From', value: result.certificate.not_before, desc: 'Certificate validity start date.' },
-                                { label: 'Valid Until', value: result.certificate.not_after, desc: 'Certificate expiration date.' },
-                                { label: 'Signature Algorithm', value: result.certificate.signature_algorithm, desc: 'Cryptographic algorithm used to sign the certificate.' },
-                                { label: 'Public Key SHA-256', value: result.certificate.public_key_sha256, desc: 'SHA-256 fingerprint of the subject\'s public key.' }
-                            ].map((field) => (
-                                <div key={field.label}>
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-xs text-black/50 dark:text-white/50">{field.label}</span>
-                                        <button
-                                            onClick={() => copyToClipboard(field.value, field.label)}
-                                            className="text-[10px] text-black/30 dark:text-white/30 hover:text-black/60 dark:hover:text-white/60"
-                                            title="Copy"
-                                        >
-                                            {copied === field.label ? '✓' : '⧉'}
-                                        </button>
-                                    </div>
-                                    <code className="text-xs bg-black/5 dark:bg-white/5 px-2 py-1 rounded block mt-1 font-mono break-all">
-                                        {field.value}
-                                    </code>
-                                    <p className="text-[11px] text-black/35 dark:text-white/35 mt-0.5">{field.desc}</p>
-                                </div>
-                            ))}
-                        </div>
-                    </section>
-
-                    {/* SGX Quote */}
-                    {result.quote && (
-                        <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">
-                            <div className="flex items-center gap-2 mb-3">
-                                <h2 className="text-sm font-semibold">{result.quote.type || 'Attestation Quote'}</h2>
-                                {result.quote.is_mock && (
-                                    <span className="px-2 py-0.5 text-[10px] font-medium rounded-full bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300">
-                                        Mock
-                                    </span>
-                                )}
-                                {quoteVerifying && (
-                                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-medium rounded-full bg-black/5 dark:bg-white/5 text-black/50 dark:text-white/50">
-                                        <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/></svg>
-                                        Verifying…
-                                    </span>
-                                )}
-                                {quoteVerifyResult?.success && (
-                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400">
-                                        ✓ Verified — {quoteVerifyResult.message || `${quoteVerifyResult.teeType?.toUpperCase()} signature valid`}
-                                    </span>
-                                )}
-                                {quoteVerifyResult && !quoteVerifyResult.success && (
-                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded-full bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400">
-                                        ✗ {quoteVerifyResult.error || 'Verification failed'}
-                                    </span>
-                                )}
-                                {quoteVerifyError && (
-                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
-                                        ⚠ {quoteVerifyError}
-                                    </span>
-                                )}
-                            </div>
-                            <div className="space-y-3">
-                                {[
-                                    { label: 'Quote Type', value: result.quote.type, desc: 'The attestation quote format embedded in the certificate.' },
-                                    ...(result.quote.format ? [{ label: 'Format', value: result.quote.format, desc: 'Detected binary format of the SGX report.' }] : []),
-                                    ...(result.quote.version != null ? [{ label: 'Version', value: String(result.quote.version), desc: 'Quote structure version number.' }] : []),
-                                    ...(result.quote.mr_enclave ? [{ label: 'MRENCLAVE', value: result.quote.mr_enclave, desc: 'Hash of the enclave code and initial data. Uniquely identifies the enclave build.' }] : []),
-                                    ...(result.quote.mr_signer ? [{ label: 'MRSIGNER', value: result.quote.mr_signer, desc: 'Hash of the enclave signer\'s public key. Identifies who built the enclave.' }] : []),
-                                    ...(result.quote.mr_td ? [{ label: 'MR_TD', value: result.quote.mr_td, desc: 'Measurement of the Trust Domain (TD). Uniquely identifies the TDX virtual machine image and configuration.' }] : []),
-                                    ...(result.quote.rtmr0 ? [{ label: 'RTMR[0]', value: result.quote.rtmr0, desc: 'Runtime Measurement Register 0 — measures the TD firmware (TDVF) and its configuration.' }] : []),
-                                    ...(result.quote.rtmr1 ? [{ label: 'RTMR[1]', value: result.quote.rtmr1, desc: 'Runtime Measurement Register 1 (CC MR 2) — measures the EFI boot path: shim and GRUB binaries.' }] : []),
-                                    ...(result.quote.rtmr2 ? [{ label: 'RTMR[2]', value: result.quote.rtmr2, desc: 'Runtime Measurement Register 2 (CC MR 3) — measures OS boot: kernel, initrd, and kernel command line (including the dm-verity root hash).' }] : []),
-                                    ...(result.quote.rtmr3 ? [{ label: 'RTMR[3]', value: result.quote.rtmr3, desc: 'Runtime Measurement Register 3 — available for application-defined measurements.' }] : []),
-                                    ...(result.quote.report_data ? [{ label: 'Report Data', value: result.quote.report_data, desc: result.challenge_mode
-                                        ? 'SHA-512( SHA-256(public_key_DER) ‖ challenge_nonce ). A match proves the certificate was generated for your specific request.'
-                                        : 'SHA-512( SHA-256(public_key_DER) ‖ timestamp ). Deterministic binding — the certificate\'s NotBefore timestamp is the nonce.' }] : []),
-                                    { label: 'OID', value: result.quote.oid, desc: 'Object Identifier of the x.509 extension containing the quote.' }
-                                ].map((field) => (
-                                    <div key={field.label}>
-                                        <div className="flex items-center gap-2">
-                                            <span className="text-xs text-black/50 dark:text-white/50">{field.label}</span>
-                                            {/^RTMR\[\d\]$/.test(field.label) && quoteVerifyResult?.success && (
-                                                <span className="inline-flex items-center gap-0.5 px-1.5 py-0 text-[9px] font-medium rounded-full bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400">
-                                                    ✓ Verified
-                                                </span>
-                                            )}
-                                            <button
-                                                onClick={() => copyToClipboard(field.value, field.label)}
-                                                className="text-[10px] text-black/30 dark:text-white/30 hover:text-black/60 dark:hover:text-white/60"
-                                                title="Copy"
-                                            >
-                                                {copied === field.label ? '✓' : '⧉'}
-                                            </button>
-                                        </div>
-                                        <code className="text-xs bg-black/5 dark:bg-white/5 px-2 py-1 rounded block mt-1 font-mono break-all">
-                                            {field.value}
-                                        </code>
-                                        <p className="text-[11px] text-black/35 dark:text-white/35 mt-0.5">{field.desc}</p>
-                                        {field.label === 'Report Data' && result.challenge_mode && result.challenge && (
-                                            <div className="mt-1.5 flex items-center gap-2">
-                                                {verifying && (
-                                                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 text-[11px] font-medium rounded-full bg-black/5 dark:bg-white/5 text-black/50 dark:text-white/50">
-                                                        <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/></svg>
-                                                        Verifying…
-                                                    </span>
-                                                )}
-                                                {verifyResult === 'match' && (
-                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium rounded-full bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400">
-                                                        ✓ Verified
-                                                    </span>
-                                                )}
-                                                {verifyResult === 'mismatch' && (
-                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium rounded-full bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400">
-                                                        ✗ Mismatch
-                                                    </span>
-                                                )}
-                                                {verifyResult === 'error' && (
-                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium rounded-full bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400">
-                                                        ✗ Error
-                                                    </span>
-                                                )}
-                                            </div>
-                                        )}
-                                        {field.label === 'Report Data' && verifyDebug && verifyResult === 'mismatch' && (
-                                            <div className="mt-2 p-3 rounded-lg bg-red-50/50 dark:bg-red-900/10 border border-red-200/50 dark:border-red-800/30 space-y-1.5">
-                                                <div className="text-[11px] font-medium text-red-700 dark:text-red-400">Debug — hash comparison</div>
-                                                <div>
-                                                    <span className="text-[10px] text-red-600/60 dark:text-red-400/60">Computed: SHA-512(pubkey_sha256 ‖ challenge)</span>
-                                                    <code className="text-[10px] bg-red-100/50 dark:bg-red-900/20 px-1.5 py-0.5 rounded block mt-0.5 font-mono break-all text-red-800 dark:text-red-300">{verifyDebug.computed}</code>
-                                                </div>
-                                                <div>
-                                                    <span className="text-[10px] text-red-600/60 dark:text-red-400/60">Actual: quote.report_data</span>
-                                                    <code className="text-[10px] bg-red-100/50 dark:bg-red-900/20 px-1.5 py-0.5 rounded block mt-0.5 font-mono break-all text-red-800 dark:text-red-300">{verifyDebug.actual}</code>
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                ))}
-                            </div>
-                        </section>
-                    )}
-
-                    {/* RTMR Event Log Verification */}
-                    {result.event_log_events && result.quote && (result.quote.rtmr0 || result.quote.rtmr1 || result.quote.rtmr2 || result.quote.rtmr3) && (
-                        <RtmrVerifier
-                            events={result.event_log_events}
-                            eventLogSource={result.event_log_source || 'tpm0'}
-                            quoteRtmrs={{
-                                rtmr0: result.quote.rtmr0,
-                                rtmr1: result.quote.rtmr1,
-                                rtmr2: result.quote.rtmr2,
-                                rtmr3: result.quote.rtmr3
-                            }}
-                            appEvents={result.app_events}
-                        />
-                    )}
-
-                    {/* Custom OID Extensions */}
-                    {result.extensions.length > 0 && (
-                        <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">
-                            <h2 className="text-sm font-semibold mb-3">Platform Attestation Extensions</h2>
-                            <p className="text-xs text-black/40 dark:text-white/40 mb-4">
-                                Platform-level x.509 extensions (OIDs 1.x/2.x) from the enclave certificate. These bind the enclave configuration and runtime to the attestation.
-                            </p>
-                            <div className="space-y-4">
-                                {result.extensions.map((ext) => (
-                                    <div key={ext.oid} className="border-b border-black/5 dark:border-white/5 pb-3 last:border-0 last:pb-0">
-                                        <div className="flex items-center gap-2">
-                                            <span className="text-xs font-medium">{ext.label}</span>
-                                            <button
-                                                onClick={() => copyToClipboard(ext.value_hex, ext.oid)}
-                                                className="text-[10px] text-black/30 dark:text-white/30 hover:text-black/60 dark:hover:text-white/60"
-                                                title="Copy"
-                                            >
-                                                {copied === ext.oid ? '✓' : '⧉'}
-                                            </button>
-                                        </div>
-                                        <code className="text-[11px] bg-black/5 dark:bg-white/5 px-2 py-1 rounded block mt-1 font-mono break-all">
-                                            {TEXT_OIDS.has(ext.oid) && hexToText(ext.value_hex)
-                                                ? <><span className="text-black/70 dark:text-white/70">{hexToText(ext.value_hex)}</span> <span className="text-black/25 dark:text-white/25">({ext.value_hex})</span></>
-                                                : ext.value_hex}
-                                        </code>
-                                        <div className="flex items-center gap-2 mt-1">
-                                            <span className="text-[10px] text-black/30 dark:text-white/30 font-mono">{ext.oid}</span>
-                                        </div>
-                                        {OID_DESCRIPTIONS[ext.label] && (
-                                            <p className="text-[11px] text-black/35 dark:text-white/35 mt-0.5">{OID_DESCRIPTIONS[ext.label]}</p>
-                                        )}
-                                    </div>
-                                ))}
-                            </div>
-                        </section>
-                    )}
-
-                    {/* Per-Workload OID Extensions (from SNI connection) */}
-                    {result.app_extensions && result.app_extensions.length > 0 && (
-                        <section className="p-5 rounded-xl border border-emerald-200/50 dark:border-emerald-500/20 bg-emerald-50/30 dark:bg-emerald-900/10">
-                            <h2 className="text-sm font-semibold mb-3">Workload Attestation Extensions</h2>
-                            <p className="text-xs text-black/40 dark:text-white/40 mb-4">
-                                Per-workload x.509 extensions (OIDs 3.x) from the workload-specific certificate. Retrieved via SNI routing — these bind the specific WASM application code and permissions to a dedicated attestation.
-                            </p>
-                            <div className="space-y-4">
-                                {result.app_extensions.map((ext) => (
-                                    <div key={ext.oid} className="border-b border-emerald-200/30 dark:border-emerald-500/10 pb-3 last:border-0 last:pb-0">
-                                        <div className="flex items-center gap-2">
-                                            <span className="text-xs font-medium">{ext.label}</span>
-                                            <button
-                                                onClick={() => copyToClipboard(ext.value_hex, 'app-' + ext.oid)}
-                                                className="text-[10px] text-black/30 dark:text-white/30 hover:text-black/60 dark:hover:text-white/60"
-                                                title="Copy"
-                                            >
-                                                {copied === 'app-' + ext.oid ? '✓' : '⧉'}
-                                            </button>
-                                        </div>
-                                        <code className="text-[11px] bg-black/5 dark:bg-white/5 px-2 py-1 rounded block mt-1 font-mono break-all">
-                                            {TEXT_OIDS.has(ext.oid) && hexToText(ext.value_hex)
-                                                ? <><span className="text-black/70 dark:text-white/70">{hexToText(ext.value_hex)}</span> <span className="text-black/25 dark:text-white/25">({ext.value_hex})</span></>
-                                                : ext.value_hex}
-                                        </code>
-                                        <div className="flex items-center gap-2 mt-1">
-                                            <span className="text-[10px] text-black/30 dark:text-white/30 font-mono">{ext.oid}</span>
-                                        </div>
-                                        {OID_DESCRIPTIONS[ext.label] && (
-                                            <p className="text-[11px] text-black/35 dark:text-white/35 mt-0.5">{OID_DESCRIPTIONS[ext.label]}</p>
-                                        )}
-                                        {ext.oid === '1.3.6.1.4.1.65230.3.2' && result.cwasm_hash && (
-                                            <div className="mt-1.5 flex items-center gap-2">
-                                                {ext.value_hex.toLowerCase() === result.cwasm_hash.toLowerCase() ? (
-                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400">
-                                                        ✓ Verified — matches uploaded CWASM hash
-                                                    </span>
-                                                ) : (
-                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded-full bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400">
-                                                        ✗ Mismatch — does not match uploaded CWASM hash
-                                                    </span>
-                                                )}
-                                            </div>
-                                        )}
-                                    </div>
-                                ))}
-                            </div>
-                        </section>
-                    )}
-
-                    {/* PEM Certificate */}
-                    {result.pem && (
-                        <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">
-                            <div className="flex items-center justify-between mb-3">
-                                <h2 className="text-sm font-semibold">Platform PEM Certificate</h2>
-                                <button
-                                    onClick={() => copyToClipboard(result.pem, 'pem')}
-                                    className="text-xs text-black/40 dark:text-white/40 hover:text-black/70 dark:hover:text-white/70"
-                                >
-                                    {copied === 'pem' ? 'Copied!' : 'Copy'}
-                                </button>
-                            </div>
-                            <pre className="text-[11px] bg-black/5 dark:bg-white/5 p-3 rounded-lg font-mono break-all whitespace-pre-wrap max-h-48 overflow-y-auto">
-                                {result.pem}
-                            </pre>
-                        </section>
-                    )}
-
-                    {/* Per-Workload PEM Certificate */}
-                    {result.app_pem && (
-                        <section className="p-5 rounded-xl border border-emerald-200/50 dark:border-emerald-500/20 bg-emerald-50/30 dark:bg-emerald-900/10">
-                            <div className="flex items-center justify-between mb-3">
-                                <h2 className="text-sm font-semibold">Workload PEM Certificate</h2>
-                                <div className="flex gap-2">
-                                    <button
-                                        onClick={() => {
-                                            const blob = new Blob([result.app_pem!], { type: 'application/x-pem-file' });
-                                            const url = URL.createObjectURL(blob);
-                                            const a = document.createElement('a');
-                                            a.href = url;
-                                            a.download = 'workload-certificate.pem';
-                                            a.click();
-                                            URL.revokeObjectURL(url);
-                                        }}
-                                        className="text-xs text-black/40 dark:text-white/40 hover:text-black/70 dark:hover:text-white/70"
-                                    >
-                                        Download
-                                    </button>
-                                    <button
-                                        onClick={() => copyToClipboard(result.app_pem!, 'app-pem')}
-                                        className="text-xs text-black/40 dark:text-white/40 hover:text-black/70 dark:hover:text-white/70"
-                                    >
-                                        {copied === 'app-pem' ? 'Copied!' : 'Copy'}
-                                    </button>
-                                </div>
-                            </div>
-                            <pre className="text-[11px] bg-black/5 dark:bg-white/5 p-3 rounded-lg font-mono break-all whitespace-pre-wrap max-h-48 overflow-y-auto">
-                                {result.app_pem}
-                            </pre>
-                        </section>
-                    )}
-
-                    {/* Console Verification Snippet */}
-                    {result.challenge_mode && result.challenge && result.certificate?.public_key_sha256 && (
-                        <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">
-                            <div className="flex items-center justify-between mb-3">
-                                <h2 className="text-sm font-semibold">Verification Code</h2>
-                                <button
-                                    onClick={() => {
-                                        const snippet = `// Report Data verification — paste in browser console
-const pubkeySha256 = "${result.certificate.public_key_sha256}";
-const challenge   = "${result.challenge}";
-const reportData  = "${result.quote?.report_data ?? ''}";
-
-const hex2buf = h => new Uint8Array(h.match(/.{2}/g).map(b => parseInt(b, 16)));
-const buf2hex = b => [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join('');
-
-(async () => {
-  const input = new Uint8Array([...hex2buf(pubkeySha256), ...hex2buf(challenge)]);
-  const hash  = await crypto.subtle.digest('SHA-512', input);
-  const computed = buf2hex(hash);
-  const actual   = reportData.toLowerCase();
-  console.log("pubkey_sha256:", pubkeySha256);
-  console.log("challenge:    ", challenge);
-  console.log("computed:     ", computed);
-  console.log("report_data:  ", actual);
-  if (computed === actual)
-    console.log('%c✓%c MATCH', 'color: green', 'color: normal');
-  else {
-    console.log('%c✗%c MISMATCH', 'color: red', 'color: normal');
-    for (let i = 0; i < Math.max(computed.length, actual.length); i += 2) {
-      if (computed.slice(i, i+2) !== actual.slice(i, i+2)) {
-        console.log(\`First diff at byte \${i/2}: computed=\${computed.slice(i, i+2)} actual=\${actual.slice(i, i+2)}\`);
-        break;
-      }
-    }
-  }
-})();`;
-                                        navigator.clipboard.writeText(snippet);
-                                        setCopied('console-snippet');
-                                        setTimeout(() => setCopied(null), 2000);
-                                    }}
-                                    className="text-xs text-black/40 dark:text-white/40 hover:text-black/70 dark:hover:text-white/70"
-                                >
-                                    {copied === 'console-snippet' ? 'Copied!' : 'Copy'}
-                                </button>
-                            </div>
-                            <p className="text-xs text-black/40 dark:text-white/40 mb-3">
-                                Copy this snippet and paste it in your browser&apos;s developer console to independently verify that <code className="text-[11px]">SHA-512(pubkey_sha256 ‖ challenge) == report_data</code>.
-                            </p>
-                            <pre className="text-[11px] bg-black/5 dark:bg-white/5 p-3 rounded-lg font-mono break-all whitespace-pre-wrap max-h-56 overflow-y-auto">
-                                {[
-                                    `const pubkeySha256 = "${result.certificate.public_key_sha256}";`,
-                                    `const challenge   = "${result.challenge}";`,
-                                    `const reportData  = "${result.quote?.report_data ?? ''}";`,
-                                    '',
-                                    'const hex2buf = h => new Uint8Array(h.match(/.{2}/g).map(b => parseInt(b, 16)));',
-                                    'const buf2hex = b => [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, \'0\')).join(\'\');',
-                                    '',
-                                    '(async () => {',
-                                    '  const input = new Uint8Array([...hex2buf(pubkeySha256), ...hex2buf(challenge)]);',
-                                    '  const hash  = await crypto.subtle.digest(\'SHA-512\', input);',
-                                    '  const computed = buf2hex(hash);',
-                                    '  const actual   = reportData.toLowerCase();',
-                                    '  console.log("pubkey_sha256:", pubkeySha256);',
-                                    '  console.log("challenge:    ", challenge);',
-                                    '  console.log("computed:     ", computed);',
-                                    '  console.log("report_data:  ", actual);',
-                                    '  console.log(computed === actual ? "✓ MATCH" : "✗ MISMATCH");',
-                                    '})();'
-                                ].join('\n')}
-                            </pre>
-                        </section>
-                    )}
-
-                    {/* Quote Verification Console Snippet */}
-                    {result.quote?.raw_base64 && !result.quote.is_mock && (
-                        <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">
-                            <div className="flex items-center justify-between mb-3">
-                                <h2 className="text-sm font-semibold">Quote Verification Code</h2>
-                                <button
-                                    onClick={() => {
-                                        const snippet = `// SGX/TDX Quote signature verification — paste in browser console
-// This sends the raw quote to the Privasys Attestation Server for cryptographic verification.
-const ATTESTATION_SERVER = "${typeof window !== 'undefined' ? window.location.origin : ''}/api/v1/verify-quote";
-const TOKEN = "YOUR_ACCESS_TOKEN"; // Replace with your bearer token
-
-const quoteBase64 = "${result.quote!.raw_base64}";
-
-(async () => {
-  console.log("Verifying quote with attestation server...");
-  console.log("Quote (first 80 chars):", quoteBase64.substring(0, 80) + "...");
-  const resp = await fetch(ATTESTATION_SERVER, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "Authorization": "Bearer " + TOKEN },
-    body: JSON.stringify({ quote: quoteBase64 })
-  });
-  const result = await resp.json();
-  if (result.success) {
-    console.log("%c✓ QUOTE VERIFIED", "color: green; font-weight: bold");
-    console.log("TEE type:   ", result.teeType);
-    if (result.mrenclave) console.log("MRENCLAVE:  ", result.mrenclave);
-    if (result.mrsigner)  console.log("MRSIGNER:   ", result.mrsigner);
-    if (result.mrtd)      console.log("MRTD:       ", result.mrtd);
-    console.log("Status:     ", result.status);
-    if (result.message)   console.log("Message:    ", result.message);
-  } else {
-    console.log("%c✗ VERIFICATION FAILED", "color: red; font-weight: bold");
-    console.log("Status:", result.status);
-    console.log("Error: ", result.error);
-  }
-})();`;
-                                        navigator.clipboard.writeText(snippet);
-                                        setCopied('quote-verify-snippet');
-                                        setTimeout(() => setCopied(null), 2000);
-                                    }}
-                                    className="text-xs text-black/40 dark:text-white/40 hover:text-black/70 dark:hover:text-white/70"
-                                >
-                                    {copied === 'quote-verify-snippet' ? 'Copied!' : 'Copy'}
-                                </button>
-                            </div>
-                            <p className="text-xs text-black/40 dark:text-white/40 mb-3">
-                                Copy this snippet and paste it in your browser&apos;s developer console to independently verify the SGX/TDX quote signature and certificate chain via the Privasys Attestation Server.
-                            </p>
-                            <pre className="text-[11px] bg-black/5 dark:bg-white/5 p-3 rounded-lg font-mono break-all whitespace-pre-wrap max-h-56 overflow-y-auto">
-                                {[
-                                    `const ATTESTATION_SERVER = "${typeof window !== 'undefined' ? window.location.origin : ''}/api/v1/verify-quote";`,
-                                    'const TOKEN = "YOUR_ACCESS_TOKEN";',
-                                    `const quoteBase64 = "${result.quote!.raw_base64!.substring(0, 40)}...";`,
-                                    '',
-                                    'const resp = await fetch(ATTESTATION_SERVER, {',
-                                    '  method: "POST",',
-                                    '  headers: { "Content-Type": "application/json", "Authorization": "Bearer " + TOKEN },',
-                                    '  body: JSON.stringify({ quote: quoteBase64 })',
-                                    '});',
-                                    'const result = await resp.json();',
-                                    'console.log(result.success ? "✓ VERIFIED" : "✗ FAILED", result);'
-                                ].join('\n')}
-                            </pre>
-                        </section>
-                    )}
-                </>
+            {!state.result ? (
+                <AttestationConnect
+                    state={state}
+                    actions={actions}
+                    title="Remote Attestation"
+                    description="Connect to the enclave via RA-TLS and inspect the x.509 certificate, attestation quote, and all custom attestation extensions."
+                />
+            ) : (
+                <AttestationResultView
+                    result={state.result}
+                    quoteVerify={state.quoteVerify}
+                    onRefresh={() => void actions.inspect()}
+                    onReset={() => {
+                        actions.reset();
+                        actions.regenerateChallenge();
+                    }}
+                    extra={(() => {
+                        const r = state.result;
+                        if (!r.event_log_events || !r.quote) return null;
+                        const q = r.quote;
+                        if (!q.rtmr0 && !q.rtmr1 && !q.rtmr2 && !q.rtmr3) return null;
+                        return (
+                            <RtmrVerifier
+                                events={r.event_log_events}
+                                eventLogSource={r.event_log_source || 'tpm0'}
+                                quoteRtmrs={{
+                                    rtmr0: q.rtmr0,
+                                    rtmr1: q.rtmr1,
+                                    rtmr2: q.rtmr2,
+                                    rtmr3: q.rtmr3,
+                                }}
+                                appEvents={r.app_events}
+                            />
+                        );
+                    })()}
+                />
             )}
         </div>
     );

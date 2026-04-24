@@ -1,0 +1,31 @@
+{
+    "extends": "../../../tsconfig.base.json",
+    "compilerOptions": {
+        "jsx": "preserve",
+        "allowJs": true,
+        "esModuleInterop": true,
+        "allowSyntheticDefaultImports": true,
+        "noEmit": true,
+        "resolveJsonModule": true,
+        "isolatedModules": true,
+        "incremental": true,
+        "baseUrl": ".",
+        "types": ["node"],
+        "paths": {
+            "~/*": ["./*"],
+            "@privasys/ui": ["../../../libs/ui/src/index.ts"],
+            "@privasys/ui/*": ["../../../libs/ui/src/*"],
+            "@privasys/attestation-view": ["../../../libs/attestation-view/src/index.ts"],
+            "@privasys/attestation-view/*": ["../../../libs/attestation-view/src/*"]
+        },
+        "plugins": [{ "name": "next" }]
+    },
+    "include": [
+        "**/*.ts",
+        "**/*.tsx",
+        ".next/types/**/*.ts",
+        "next-env.d.ts",
+        "../../../dist/apps/fronts/chat.privasys.org/.next/types/**/*.ts"
+    ],
+    "exclude": ["node_modules", ".next", "dist"]
+}

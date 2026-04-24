@@ -1,0 +1,62 @@
+---
+title: Model disks
+description: dm-verity protected model storage and the publisher contract.
+---
+
+Model weights are large, mutable on disk, and a high-value tampering target. Confidential AI stores them on a dedicated dm-verity disk so the running enclave can prove which exact bytes were served.
+
+## Disk layout
+
+The publisher emits two files per model:
+
+- `model-<name>` - a sealed ext4 image holding the actual model files (config, tokenizer, safetensors, etc.). Mounted read-only inside the enclave.
+- `model-<name>-verity` - the dm-verity hash tree, prefixed with a 4 KiB Privasys header.
+
+The header is plain ASCII so it is easy to inspect:
+
+```
+PRIVASYS-VERITY-V1
+ROOTHASH=<lowercase-hex>
+DATA_BLOCKS=<n>
+DATA_BLOCK_SIZE=4096
+HASH_BLOCK_SIZE=4096
+ALGORITHM=sha256
+SALT=<lowercase-hex>
+```
+
+The veritysetup hash tree starts at byte offset 4096.
+
+## How the enclave mounts a model
+
+The disk-mounter, run by `manager` early in boot:
+
+1. Discovers each `model-<name>` + `model-<name>-verity` pair.
+2. Parses the verity disk header and validates the root hash is lowercase hex of length 40-128.
+3. Runs:
+
+   ```
+   veritysetup open \
+       --hash-offset=4096 \
+       <data-disk> model-<name> <verity-disk> <roothash>
+   ```
+
+4. Mounts the resulting `/dev/mapper/model-<name>` read-only at `/mnt/<name>`.
+5. Writes the validated root hash to `/var/lib/enclave-os/model-roothashes/<name>.roothash` so the confidential-ai proxy can surface it via OID `1.3.6.1.4.1.65230.3.5`.
+
+Any tampering with the model bytes - even a single bit flip - is caught when dm-verity reads the affected block, the read fails, and inference produces an attestable error rather than a silent substitution.
+
+## Publishing a model
+
+`publish-model-disk.sh` builds and signs both artifacts. At a high level:
+
+1. Build the ext4 data image from a directory of model files.
+2. Run `veritysetup format` over the data image to produce the hash tree and root hash.
+3. Prepend the 4 KiB Privasys header to the hash tree.
+4. Sign the (header + hash tree) with the operator's release key.
+5. Upload both disks to the storage backend the fleet uses.
+
+The signed root hash is what an auditor or end user pins. They can then verify that the value reported via the `MODEL_DIGEST` extension matches the hash a trusted release signer claimed.
+
+## Loading and unloading at runtime
+
+The confidential-ai proxy exposes `/v1/models/load` and `/v1/models/unload`. When the fleet sets a `LOAD_TOKEN`, both endpoints require `Authorization: Bearer <token>`, so only the management plane (or a delegated operator) can swap models. End users hitting `/v1/chat/completions` cannot influence which weights are loaded.

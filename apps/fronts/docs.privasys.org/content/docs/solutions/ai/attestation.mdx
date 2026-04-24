@@ -1,0 +1,44 @@
+---
+title: Attestation
+description: How a client proves the AI response came from the binary and weights it expected.
+---
+
+Every confidential AI session starts with an RA-TLS handshake. The leaf certificate the client receives is self-signed by the enclave, and carries the full TDX evidence plus a small set of Privasys-defined x.509 extensions.
+
+## TDX quote bindings
+
+The TDX quote in the certificate's quote extension binds:
+
+- **MRTD** - the launch measurement of the trust domain (firmware + initial guest memory).
+- **RTMR0..RTMR3** - extended runtime measurements covering the kernel command line, initrd, root filesystem dm-verity hash, and any application events the manager injects.
+- **`report_data`** - `SHA-512( SHA-256(pubkey) || nonce )`, where `pubkey` is the leaf certificate's public key and `nonce` is the challenge the client supplied (or a generated value when challenge mode is off).
+
+The `report_data` binding is what tells the client this exact certificate was issued from inside the enclave for this specific session, not replayed from an older quote.
+
+## Custom extensions
+
+Privasys-defined OIDs sit under `1.3.6.1.4.1.65230`. The ones most relevant to confidential AI:
+
+| OID | Name | Meaning |
+| --- | --- | --- |
+| `1.3.6.1.4.1.65230.1.x` | Platform extensions | Bind the enclave configuration: attestation server set, DEK origin, combined workloads hash, etc. |
+| `1.3.6.1.4.1.65230.3.5` | `MODEL_DIGEST` | The dm-verity root hash of the model disk currently mounted, or - if no verity disk is in use - a deterministic SHA-256 over the model's index file. |
+| `1.3.6.1.4.1.65230.3.x` | Workload extensions | Per-workload bindings: code hash, image reference, permissions hash, key source. |
+
+The `MODEL_DIGEST` value is published by `publish-model-disk.sh` (see [Models](models)) and recorded in the dm-verity disk header. The manager mounts the disk with `veritysetup open --hash-offset=4096` and writes the root hash to `/var/lib/enclave-os/model-roothashes/<name>.roothash`. The confidential-ai proxy reads that file at attestation time, so a client can compare the OID value against a previously audited or signed roothash without having to trust the operator.
+
+## RTMR event-log replay
+
+The enclave also exports a TPM-style event log that lists every measurement extended into RTMR0..3. A client (the developer portal does this for you) can:
+
+1. Fetch the event log alongside the quote.
+2. Replay each event into a software-only RTMR.
+3. Confirm the resulting digests match the RTMR values inside the quote.
+
+If they match, the client knows the event log has not been tampered with and can read off exactly what booted: kernel hash, initrd hash, dm-verity roothash for `/`, dm-verity roothash for the model disk, and so on.
+
+## Challenge protocol
+
+Clients should generate a fresh 32-byte nonce per session and pass it to the attestation endpoint as `?challenge=<hex>`. The proxy threads the nonce through to the TDX quote so the resulting `report_data` is bound to that exact challenge, defeating replay of a stale quote captured by an MITM.
+
+The Privasys `useAttestation` hook in `@privasys/attestation-view` does this automatically.

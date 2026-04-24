@@ -1,0 +1,31 @@
+---
+title: Overview
+description: Confidential GPU inference with end-to-end attestation, running open-source LLMs inside Intel TDX + NVIDIA confidential-compute enclaves.
+---
+
+Confidential AI runs open-source language models inside an Intel TDX trust domain with NVIDIA H100/H200 confidential-compute mode enabled. Prompts and responses are decrypted only inside the enclave, the model weights are loaded from a dm-verity protected disk, and every chat session can prove with a fresh remote-attestation handshake which exact code and which exact weights produced its answers.
+
+## Why this matters
+
+Today's hosted LLMs require unconditional trust in the operator: the provider can read every prompt, log every response, fine-tune on user data, or substitute a quietly modified model. There is no cryptographic mechanism a user can run to verify what was on the other end of the API call.
+
+Confidential AI removes that trust. The same hardware-rooted attestation chain that protects Privasys' confidential workloads also protects the model serving runtime:
+
+- The TDX quote pins MRTD + RTMR0..3, proving exactly which kernel, initrd, and userspace booted.
+- A custom x.509 extension on the enclave certificate (OID `1.3.6.1.4.1.65230.3.5`) carries the dm-verity root hash of the model disk.
+- The same RA-TLS handshake exposes the loaded model name, the proxy status, and any per-request challenge nonce, so a client can prove the response it received came from the attested binary.
+
+## What you get
+
+- A drop-in OpenAI-compatible `/v1/chat/completions` endpoint that streams responses through the enclave.
+- Cryptographic proof of the model weights, the inference server binary, the GPU firmware, and the host platform, returned alongside every session.
+- A reproducible, signed image pipeline that lets you (or an auditor) rebuild the enclave bit-for-bit and confirm the measurements.
+- Operator transparency: the management plane can lock model load/unload behind a fleet token but cannot read prompts, responses, or KV-cache contents.
+
+## Where to go next
+
+- [Architecture](architecture) - the components inside and around the enclave.
+- [Attestation](attestation) - the certificate extensions, RTMR replay, and challenge protocol.
+- [Models](models) - dm-verity model disks and how they get published.
+- [API](api) - the OpenAI-compatible endpoints exposed by the proxy.
+- [Privacy guarantees](privacy) - what the operator can and cannot see.
