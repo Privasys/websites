@@ -1,0 +1,157 @@
+name: Deploy Chat to OVH
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        type: choice
+        default: test
+        options:
+          - test
+          - prod
+
+concurrency:
+  group: deploy-chat-${{ github.event.inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy (${{ github.event.inputs.environment }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    env:
+      NEXT_TELEMETRY_DISABLED: 1
+      AWS_ACCESS_KEY_ID: ${{ secrets.NX_CACHE_AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.NX_CACHE_AWS_SECRET_ACCESS_KEY }}
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Resolve target config
+        id: target
+        run: |
+          set -euo pipefail
+          ENV='${{ github.event.inputs.environment }}'
+          if [[ "$ENV" == 'prod' ]]; then
+            echo "container=chat-prod"                          >> "$GITHUB_OUTPUT"
+            echo "host_port=3010"                               >> "$GITHUB_OUTPUT"
+            echo "env_file=~/chat.env"                          >> "$GITHUB_OUTPUT"
+            echo "api_url=https://api.developer.privasys.org"   >> "$GITHUB_OUTPUT"
+            echo "default_instance=demo"                        >> "$GITHUB_OUTPUT"
+          else
+            echo "container=chat"                                  >> "$GITHUB_OUTPUT"
+            echo "host_port=3011"                                  >> "$GITHUB_OUTPUT"
+            echo "env_file=~/chat-test.env"                        >> "$GITHUB_OUTPUT"
+            echo "api_url=https://api-test.developer.privasys.org" >> "$GITHUB_OUTPUT"
+            echo "default_instance=demo"                           >> "$GITHUB_OUTPUT"
+          fi
+          echo "tag=$(date -u +%Y%m%d-%H%M%S)-${ENV}-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.x
+          cache: yarn
+
+      - name: Install dependencies
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: yarn install --network-timeout 1000000 --immutable
+
+      - name: Build chat
+        run: |
+          set -euo pipefail
+          {
+            echo "NEXT_PUBLIC_API_BASE_URL=${{ steps.target.outputs.api_url }}"
+            echo "NEXT_PUBLIC_DEFAULT_INSTANCE=${{ steps.target.outputs.default_instance }}"
+          } > apps/fronts/chat.privasys.org/.env.local
+          npx nx reset
+          npx nx build chat.privasys.org --skip-nx-cache
+
+      - name: Assemble build context
+        run: |
+          set -euo pipefail
+          DIST=dist/apps/fronts/chat.privasys.org/.next
+          APP=apps/fronts/chat.privasys.org
+          rm -rf /tmp/chat-build
+          mkdir -p /tmp/chat-build
+          cp -r "$DIST/standalone" /tmp/chat-build/standalone
+          cp -r "$DIST/static"     /tmp/chat-build/static
+          cp -r "$APP/public"      /tmp/chat-build/public
+          cp    "$APP/Dockerfile"  /tmp/chat-build/Dockerfile
+
+      - name: Configure SSH
+        env:
+          OVH_SSH_KEY: ${{ secrets.OVH_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$OVH_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "${{ secrets.OVH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Stream build context to OVH and build image
+        env:
+          OVH_HOST: ${{ secrets.OVH_HOST }}
+          OVH_USER: ${{ secrets.OVH_USER }}
+          OVH_SSH_PORT: ${{ secrets.OVH_SSH_PORT }}
+          TAG: ${{ steps.target.outputs.tag }}
+        run: |
+          set -euo pipefail
+          PORT="${OVH_SSH_PORT:-22}"
+          cd /tmp/chat-build
+          tar -cf - standalone static public Dockerfile | \
+            ssh -p "$PORT" -i ~/.ssh/id_ed25519 "${OVH_USER}@${OVH_HOST}" \
+              "set -euo pipefail; mkdir -p ~/chat-builds/${TAG} && cd ~/chat-builds/${TAG} && tar -xf - && sudo docker build -t chat:${TAG} ."
+
+      - name: Swap container
+        env:
+          OVH_HOST: ${{ secrets.OVH_HOST }}
+          OVH_USER: ${{ secrets.OVH_USER }}
+          OVH_SSH_PORT: ${{ secrets.OVH_SSH_PORT }}
+          TAG: ${{ steps.target.outputs.tag }}
+          CONTAINER: ${{ steps.target.outputs.container }}
+          HOST_PORT: ${{ steps.target.outputs.host_port }}
+          ENV_FILE: ${{ steps.target.outputs.env_file }}
+        run: |
+          set -euo pipefail
+          PORT="${OVH_SSH_PORT:-22}"
+          ssh -p "$PORT" -i ~/.ssh/id_ed25519 "${OVH_USER}@${OVH_HOST}" "set -euo pipefail; \
+            sudo docker stop ${CONTAINER} 2>/dev/null || true; \
+            sudo docker rm   ${CONTAINER} 2>/dev/null || true; \
+            sudo docker run -d --name ${CONTAINER} --restart unless-stopped \
+              -p ${HOST_PORT}:3000 \
+              --env-file ${ENV_FILE} \
+              chat:${TAG}"
+
+      - name: Smoke test (root + instance redirect)
+        env:
+          OVH_HOST: ${{ secrets.OVH_HOST }}
+          OVH_USER: ${{ secrets.OVH_USER }}
+          OVH_SSH_PORT: ${{ secrets.OVH_SSH_PORT }}
+          CONTAINER: ${{ steps.target.outputs.container }}
+          HOST_PORT: ${{ steps.target.outputs.host_port }}
+        run: |
+          set -euo pipefail
+          PORT="${OVH_SSH_PORT:-22}"
+          ssh -p "$PORT" -i ~/.ssh/id_ed25519 "${OVH_USER}@${OVH_HOST}" "set -euo pipefail; \
+            ROOT=\$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:${HOST_PORT}/); \
+            echo root=\$ROOT; \
+            test \"\$ROOT\" = '307' -o \"\$ROOT\" = '308' -o \"\$ROOT\" = '200' || { echo 'root failed'; sudo docker logs ${CONTAINER} --tail 50; exit 1; }"
+
+      - name: Prune old build directories on OVH (keep last 5)
+        if: always()
+        env:
+          OVH_HOST: ${{ secrets.OVH_HOST }}
+          OVH_USER: ${{ secrets.OVH_USER }}
+          OVH_SSH_PORT: ${{ secrets.OVH_SSH_PORT }}
+        run: |
+          set -euo pipefail
+          PORT="${OVH_SSH_PORT:-22}"
+          ssh -p "$PORT" -i ~/.ssh/id_ed25519 "${OVH_USER}@${OVH_HOST}" \
+            "ls -1t ~/chat-builds 2>/dev/null | tail -n +6 | xargs -r -I{} rm -rf ~/chat-builds/{}" || true

@@ -1,0 +1,57 @@
+{
+    "name": "chat.privasys.org",
+    "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+    "sourceRoot": "apps/fronts/chat.privasys.org",
+    "projectType": "application",
+    "tags": [],
+    "targets": {
+        "copy-logo": {
+            "executor": "nx:run-commands",
+            "inputs": ["{workspaceRoot}/assets/logo/**"],
+            "outputs": ["{projectRoot}/public/favicon"],
+            "options": {
+                "command": "node -e \"require('fs').cpSync('assets/logo','apps/fronts/chat.privasys.org/public/favicon',{recursive:true,force:true})\""
+            }
+        },
+        "copy-fonts": {
+            "executor": "nx:run-commands",
+            "inputs": ["{workspaceRoot}/assets/fonts/**"],
+            "outputs": ["{projectRoot}/public/fonts"],
+            "options": {
+                "command": "node -e \"require('fs').cpSync('assets/fonts','apps/fronts/chat.privasys.org/public/fonts',{recursive:true,force:true})\""
+            }
+        },
+        "build": {
+            "dependsOn": ["copy-logo", "copy-fonts"],
+            "executor": "@nx/next:build",
+            "inputs": [
+                "production",
+                "^production",
+                { "runtime": "git rev-parse --short HEAD" }
+            ],
+            "outputs": ["{options.outputPath}"],
+            "defaultConfiguration": "production",
+            "options": {
+                "outputPath": "dist/apps/fronts/chat.privasys.org"
+            },
+            "configurations": {
+                "development": {
+                    "outputPath": "apps/fronts/chat.privasys.org"
+                },
+                "production": {}
+            }
+        },
+        "serve": {
+            "dependsOn": ["copy-logo", "copy-fonts"],
+            "executor": "nx:run-commands",
+            "options": {
+                "command": "npx next dev -p 4220",
+                "cwd": "apps/fronts/chat.privasys.org"
+            }
+        },
+        "lint": {
+            "executor": "@nx/eslint:lint",
+            "outputs": ["{options.outputFile}"]
+        }
+    }
+}

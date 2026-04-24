@@ -1,0 +1,37 @@
+@import 'tailwindcss';
+@import '@privasys/ui/styles.css';
+
+@font-face {
+	font-family: 'InterVariable';
+	font-style: normal;
+	font-weight: 100 900;
+	font-display: swap;
+	src: url("../public/fonts/inter/InterVariable.woff2") format("woff2");
+}
+
+@font-face {
+	font-family: 'InterVariable';
+	font-style: italic;
+	font-weight: 100 900;
+	font-display: swap;
+	src: url("../public/fonts/inter/InterVariable-Italic.woff2") format("woff2");
+}
+
+* {
+    box-sizing: border-box;
+}
+
+html, body {
+    height: 100%;
+    margin: 0;
+}
+
+html {
+    font-family: "InterVariable", "Inter", "Helvetica Neue", "Helvetica", "Arial", sans-serif;
+    font-optical-sizing: auto;
+    font-style: normal;
+    font-weight: 400;
+    font-size: 16px;
+    color: #f5f5f7;
+    background-color: #0b0b0d;
+}

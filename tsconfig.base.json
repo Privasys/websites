@@ -20,7 +20,9 @@
         "baseUrl": ".",
         "paths": {
             "@privasys/ui": ["libs/ui/src/index.ts"],
-            "@privasys/ui/*": ["libs/ui/src/*"]
+            "@privasys/ui/*": ["libs/ui/src/*"],
+            "@privasys/attestation-view": ["libs/attestation-view/src/index.ts"],
+            "@privasys/attestation-view/*": ["libs/attestation-view/src/*"]
         },
         "strict": true,
         "verbatimModuleSyntax": null,
