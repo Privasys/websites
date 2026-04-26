@@ -97,9 +97,16 @@ export function ChatPanel({
             <div ref={scrollRef} className='flex-1 overflow-y-auto px-4 py-6'>
                 <div className='mx-auto flex max-w-3xl flex-col gap-6'>
                     {messages.length === 0 && (
-                        <p className='text-center text-sm text-zinc-500'>
-                            Start a conversation. Every reply is signed by the hardware.
-                        </p>
+                        <div className='mx-auto max-w-md text-center'>
+                            <div
+                                className='mx-auto h-1 w-16 rounded-full opacity-80'
+                                style={{ background: 'var(--brand-gradient)' }}
+                            />
+                            <p className='mt-6 text-sm text-[var(--color-text-secondary)]'>
+                                Start a conversation. Every reply is signed by the
+                                hardware running the model.
+                            </p>
+                        </div>
                     )}
                     {messages.map((m) => (
                         <Message key={m.id} message={m} />
@@ -107,7 +114,7 @@ export function ChatPanel({
                 </div>
             </div>
 
-            <div className='border-t border-zinc-800 px-4 py-3'>
+            <div className='border-t border-[var(--color-border-dark)] bg-[var(--color-surface-1)]/60 px-4 py-3 backdrop-blur'>
                 <div className='mx-auto flex max-w-3xl items-end gap-2'>
                     <textarea
                         value={input}
@@ -121,13 +128,13 @@ export function ChatPanel({
                         placeholder={model ? `Message ${model.name}...` : 'No model loaded.'}
                         disabled={!model || streaming}
                         rows={2}
-                        className='flex-1 resize-none rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-zinc-500 focus:outline-none disabled:opacity-50'
+                        className='flex-1 resize-none rounded-lg border border-[var(--color-border-dark)] bg-[var(--color-surface-2)]/60 px-3 py-2 text-sm text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] focus:border-[var(--color-primary-blue)] focus:outline-none focus:ring-1 focus:ring-[var(--color-primary-blue)]/40 disabled:opacity-50'
                     />
                     {streaming ? (
                         <button
                             type='button'
                             onClick={stop}
-                            className='rounded-md border border-zinc-700 px-4 py-2 text-sm text-zinc-200 hover:bg-zinc-800'
+                            className='rounded-lg border border-[var(--color-border-dark)] bg-[var(--color-surface-2)]/40 px-4 py-2 text-sm text-[var(--color-text-primary)] hover:border-red-400/60 hover:text-red-300'
                         >
                             Stop
                         </button>
@@ -136,7 +143,8 @@ export function ChatPanel({
                             type='button'
                             onClick={() => void send()}
                             disabled={!model || !input.trim()}
-                            className='rounded-md bg-zinc-100 px-4 py-2 text-sm font-semibold text-zinc-900 disabled:opacity-50'
+                            className='rounded-lg px-4 py-2 text-sm font-semibold text-[var(--color-navy)] shadow-md shadow-[#34E89E]/10 transition-transform hover:scale-[1.02] disabled:opacity-40 disabled:hover:scale-100'
+                            style={{ background: 'var(--brand-gradient)' }}
                         >
                             Send
                         </button>
@@ -152,8 +160,10 @@ function Message({ message }: { message: DisplayMessage }) {
     return (
         <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
             <div
-                className={`max-w-[80%] rounded-lg px-4 py-2 text-sm whitespace-pre-wrap ${
-                    isUser ? 'bg-zinc-100 text-zinc-900' : 'bg-zinc-900 text-zinc-100'
+                className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm whitespace-pre-wrap shadow-sm ${
+                    isUser
+                        ? 'rounded-br-sm bg-[var(--color-surface-2)] text-[var(--color-text-primary)] border border-[var(--color-primary-blue)]/30'
+                        : 'rounded-bl-sm bg-[var(--color-surface-1)] text-[var(--color-text-primary)] border border-[var(--color-border-dark)]'
                 }`}
             >
                 {message.content || (message.streaming ? <StreamCursor /> : null)}
