@@ -1,6 +1,7 @@
 import '~/styles/globals.css';
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
+import { AuthProvider } from '~/lib/auth-provider';
 
 const APP_NAME = 'Privasys Chat';
 const SITE_URL = 'https://chat.privasys.org';
@@ -32,7 +33,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
                 <script defer data-domain="chat.privasys.org" src="https://plausible.privasys.org/js/script.js" />
             </head>
             <body className="antialiased text-foreground leading-relaxed flex flex-col min-h-screen">
-                {children}
+                <AuthProvider>{children}</AuthProvider>
             </body>
         </html>
     );

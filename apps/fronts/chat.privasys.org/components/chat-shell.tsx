@@ -20,12 +20,21 @@ export function ChatShell({
 
     return (
         <div className="flex flex-1 flex-col">
-            <header className="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
-                <div>
-                    <h1 className="text-sm font-semibold text-zinc-100">
-                        {instance.alias ?? instance.id}
-                    </h1>
-                    <p className="text-xs text-zinc-500">{instance.endpoint}</p>
+            <header className="flex items-center justify-between border-b border-[var(--color-border-dark)] bg-[var(--color-surface-1)]/80 px-4 py-3 backdrop-blur">
+                <div className="flex items-center gap-3">
+                    <img
+                        src="/favicon/privasys-logo.mini.svg"
+                        alt="Privasys"
+                        className="h-7 w-7"
+                    />
+                    <div>
+                        <h1 className="text-sm font-semibold text-[var(--color-text-primary)]">
+                            {instance.alias ?? instance.id}
+                        </h1>
+                        <p className="text-xs text-[var(--color-text-muted)]">
+                            {instance.endpoint}
+                        </p>
+                    </div>
                 </div>
                 <div className="flex items-center gap-3">
                     <ModelPicker
@@ -36,7 +45,7 @@ export function ChatShell({
                     <button
                         type="button"
                         onClick={() => setDrawerOpen(true)}
-                        className="rounded-md border border-zinc-700 px-3 py-1.5 text-xs text-zinc-200 hover:bg-zinc-800"
+                        className="rounded-md border border-[var(--color-border-dark)] bg-[var(--color-surface-2)]/40 px-3 py-1.5 text-xs font-medium text-[var(--color-text-primary)] transition-colors hover:border-[var(--color-primary-blue)]/60 hover:text-[var(--color-primary-blue)]"
                     >
                         View attestation
                     </button>
@@ -53,3 +62,4 @@ export function ChatShell({
         </div>
     );
 }
+
