@@ -4263,6 +4263,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@privasys/attestation-view@workspace:libs/attestation-view":
+  version: 0.0.0-use.local
+  resolution: "@privasys/attestation-view@workspace:libs/attestation-view"
+  peerDependencies:
+    react: ">=19"
+    react-dom: ">=19"
+  languageName: unknown
+  linkType: soft
+
 "@privasys/auth@npm:^0.1.1":
   version: 0.1.1
   resolution: "@privasys/auth@npm:0.1.1::__archiveUrl=https%3A%2F%2Fnpm.pkg.github.com%2Fdownload%2F%40privasys%2Fauth%2F0.1.1%2Fa59efd769dc24fb7d088b7b8de1973ab29ca1084"
@@ -8431,6 +8440,12 @@ __metadata:
   checksum: 10c0/2ae0dec770cd8659d7e8b0ce24392d83b4c2f0eb4a3395c955dce5528edd4cc030a794cfa06600fcdd700b3f2de2f9b8e40e309c0011c4180e3be64a0b42e6a1
   languageName: node
   linkType: hard
+
+"chat.privasys.org@workspace:apps/fronts/chat.privasys.org":
+  version: 0.0.0-use.local
+  resolution: "chat.privasys.org@workspace:apps/fronts/chat.privasys.org"
+  languageName: unknown
+  linkType: soft
 
 "chokidar@npm:^3.5.3, chokidar@npm:^3.6.0":
   version: 3.6.0
