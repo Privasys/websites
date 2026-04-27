@@ -19,30 +19,55 @@
 
 /* ------------------------------------------------------------------ */
 /*  Privasys brand tokens — see .operations/brand-identity.md         */
+/*                                                                    */
+/*  Light is the default theme. Dark is opt-in via                    */
+/*  `<html data-theme="dark">` (set by `theme-toggle.tsx`, persisted  */
+/*  in localStorage and applied pre-paint by `app/layout.tsx`).       */
 /* ------------------------------------------------------------------ */
 
 :root {
+    /* Brand */
     --color-primary-blue: #00BCF2;
     --color-primary-green: #34E89E;
     --color-navy: #0F172A;
     --color-slate: #64748B;
-    --color-border: #E2E8F0;
 
-    /* Dark-mode surface scale (derived from Deep Navy). */
-    --color-surface-0: #0B1120;       /* page background */
-    --color-surface-1: #0F172A;       /* cards / header  */
-    --color-surface-2: #1E293B;       /* inputs / hover  */
-    --color-border-dark: #1E293B;     /* dark-mode dividers */
+    /* --- Light theme (default) --- */
+    --color-surface-0: #FFFFFF;       /* page background           */
+    --color-surface-1: #F8FAFC;       /* sidebar / header surface  */
+    --color-surface-2: #F1F5F9;       /* inputs / hover            */
+    --color-border-dark: #E2E8F0;     /* divider (kept name for
+                                         backwards compat with
+                                         existing component classes) */
 
-    --color-text-primary: #F8FAFC;
-    --color-text-secondary: #94A3B8;
-    --color-text-muted: #64748B;
+    --color-text-primary: #0F172A;
+    --color-text-secondary: #475569;
+    --color-text-muted: #94A3B8;
 
     --bg-dev: #F0F9FF;
     --bg-preview: #F0FFF4;
     --bg-prod: #FFFFFF;
 
     --brand-gradient: linear-gradient(135deg, var(--color-primary-green) 0%, var(--color-primary-blue) 100%);
+
+    /* Brand glow alpha (lighter in light mode). */
+    --brand-glow-green: rgba(52, 232, 158, 0.08);
+    --brand-glow-blue: rgba(0, 188, 242, 0.08);
+}
+
+/* --- Dark theme (opt-in via <html data-theme="dark">) --- */
+[data-theme="dark"] {
+    --color-surface-0: #0B1120;
+    --color-surface-1: #0F172A;
+    --color-surface-2: #1E293B;
+    --color-border-dark: #1E293B;
+
+    --color-text-primary: #F8FAFC;
+    --color-text-secondary: #94A3B8;
+    --color-text-muted: #64748B;
+
+    --brand-glow-green: rgba(52, 232, 158, 0.10);
+    --brand-glow-blue: rgba(0, 188, 242, 0.10);
 }
 
 * {
@@ -67,8 +92,8 @@ html {
 /* Subtle radial brand glow behind the app shell. */
 body {
     background-image:
-        radial-gradient(1200px circle at 0% -10%, rgba(52, 232, 158, 0.08), transparent 60%),
-        radial-gradient(1000px circle at 100% 0%, rgba(0, 188, 242, 0.08), transparent 55%);
+        radial-gradient(1200px circle at 0% -10%, var(--brand-glow-green), transparent 60%),
+        radial-gradient(1000px circle at 100% 0%, var(--brand-glow-blue), transparent 55%);
     background-attachment: fixed;
 }
 
