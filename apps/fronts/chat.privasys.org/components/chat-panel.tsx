@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AvailableModel, Instance } from '~/lib/types';
 import { streamChatCompletion, type ChatMessage } from '~/lib/chat-stream';
+import { Composer } from './composer';
 
 interface DisplayMessage extends ChatMessage {
     id: string;
@@ -13,17 +14,26 @@ interface DisplayMessage extends ChatMessage {
 let nextId = 0;
 const newId = () => `m${++nextId}`;
 
-// Streaming chat panel. Uses fetch + SSE against the
-// fleet endpoint. Auth token (when fleet requires it) is wired
-// through but the privasys-auth integration is a follow-up.
+// Streaming chat panel.
+//
+// Two visual states:
+//   - Empty: a centered "Where should we start?" greeting + the Composer
+//     pinned in the middle of the viewport (Gemini new-chat layout).
+//   - Active: scrollable message list + Composer docked at the bottom.
 export function ChatPanel({
     instance,
     model,
+    onModelChange,
     token,
+    disabledReason,
+    userGreeting,
 }: {
     instance: Instance;
     model: AvailableModel | null;
+    onModelChange: (m: AvailableModel) => void;
     token?: string;
+    disabledReason?: string;
+    userGreeting?: string;
 }) {
     const [messages, setMessages] = useState<DisplayMessage[]>([]);
     const [input, setInput] = useState('');
@@ -92,64 +102,70 @@ export function ChatPanel({
 
     const stop = useCallback(() => abortRef.current?.abort(), []);
 
-    return (
-        <div className='flex flex-1 flex-col'>
-            <div ref={scrollRef} className='flex-1 overflow-y-auto px-4 py-6'>
-                <div className='mx-auto flex max-w-3xl flex-col gap-6'>
-                    {messages.length === 0 && (
-                        <div className='mx-auto max-w-md text-center'>
-                            <div
-                                className='mx-auto h-1 w-16 rounded-full opacity-80'
-                                style={{ background: 'var(--brand-gradient)' }}
-                            />
-                            <p className='mt-6 text-sm text-[var(--color-text-secondary)]'>
-                                Start a conversation. Every reply is signed by the
-                                hardware running the model.
+    const composer = (
+        <Composer
+            value={input}
+            onChange={setInput}
+            onSend={() => void send()}
+            onStop={stop}
+            streaming={streaming}
+            instance={instance}
+            model={model}
+            onModelChange={onModelChange}
+            placeholder={
+                model ? `Message ${model.name}…` : 'No model loaded for this instance.'
+            }
+            autoFocus
+            disabledReason={disabledReason}
+        />
+    );
+
+    // Empty / new-chat state — Gemini-style centered hero.
+    if (messages.length === 0) {
+        return (
+            <div className="flex flex-1 flex-col items-center justify-center px-4">
+                <div className="w-full max-w-2xl">
+                    <div className="mb-8 text-center">
+                        {userGreeting && (
+                            <p className="text-2xl font-medium text-[var(--color-text-secondary)]">
+                                {userGreeting}
                             </p>
-                        </div>
-                    )}
+                        )}
+                        <h2
+                            className="mt-1 text-3xl font-semibold sm:text-4xl"
+                            style={{
+                                background: 'var(--brand-gradient)',
+                                WebkitBackgroundClip: 'text',
+                                WebkitTextFillColor: 'transparent',
+                                backgroundClip: 'text',
+                            }}
+                        >
+                            Where should we start?
+                        </h2>
+                    </div>
+                    {composer}
+                </div>
+            </div>
+        );
+    }
+
+    // Active chat state — scrollable transcript + docked composer.
+    return (
+        <div className="flex flex-1 flex-col">
+            <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-6">
+                <div className="mx-auto flex max-w-3xl flex-col gap-6">
                     {messages.map((m) => (
                         <Message key={m.id} message={m} />
                     ))}
                 </div>
             </div>
 
-            <div className='border-t border-[var(--color-border-dark)] bg-[var(--color-surface-1)]/60 px-4 py-3 backdrop-blur'>
-                <div className='mx-auto flex max-w-3xl items-end gap-2'>
-                    <textarea
-                        value={input}
-                        onChange={(e) => setInput(e.target.value)}
-                        onKeyDown={(e) => {
-                            if (e.key === 'Enter' && !e.shiftKey) {
-                                e.preventDefault();
-                                void send();
-                            }
-                        }}
-                        placeholder={model ? `Message ${model.name}...` : 'No model loaded.'}
-                        disabled={!model || streaming}
-                        rows={2}
-                        className='flex-1 resize-none rounded-lg border border-[var(--color-border-dark)] bg-[var(--color-surface-2)]/60 px-3 py-2 text-sm text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] focus:border-[var(--color-primary-blue)] focus:outline-none focus:ring-1 focus:ring-[var(--color-primary-blue)]/40 disabled:opacity-50'
-                    />
-                    {streaming ? (
-                        <button
-                            type='button'
-                            onClick={stop}
-                            className='rounded-lg border border-[var(--color-border-dark)] bg-[var(--color-surface-2)]/40 px-4 py-2 text-sm text-[var(--color-text-primary)] hover:border-red-400/60 hover:text-red-300'
-                        >
-                            Stop
-                        </button>
-                    ) : (
-                        <button
-                            type='button'
-                            onClick={() => void send()}
-                            disabled={!model || !input.trim()}
-                            className='rounded-lg px-4 py-2 text-sm font-semibold text-[var(--color-navy)] shadow-md shadow-[#34E89E]/10 transition-transform hover:scale-[1.02] disabled:opacity-40 disabled:hover:scale-100'
-                            style={{ background: 'var(--brand-gradient)' }}
-                        >
-                            Send
-                        </button>
-                    )}
-                </div>
+            <div className="px-4 pb-5">
+                <div className="mx-auto max-w-3xl">{composer}</div>
+                <p className="mx-auto mt-2 max-w-3xl text-center text-[11px] text-[var(--color-text-muted)]">
+                    Replies are signed by the hardware running the model. Verify any
+                    response from the “Your session is secure” panel.
+                </p>
             </div>
         </div>
     );
@@ -169,7 +185,7 @@ function Message({ message }: { message: DisplayMessage }) {
                 {message.content || (message.streaming ? <StreamCursor /> : null)}
                 {message.streaming && message.content ? <StreamCursor /> : null}
                 {message.error && (
-                    <p className='mt-2 text-xs text-red-400'>{message.error}</p>
+                    <p className="mt-2 text-xs text-red-400">{message.error}</p>
                 )}
             </div>
         </div>
@@ -177,5 +193,5 @@ function Message({ message }: { message: DisplayMessage }) {
 }
 
 function StreamCursor() {
-    return <span className='ml-0.5 inline-block h-3 w-1 animate-pulse bg-current align-middle' />;
+    return <span className="ml-0.5 inline-block h-3 w-1 animate-pulse bg-current align-middle" />;
 }

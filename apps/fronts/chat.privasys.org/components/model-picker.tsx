@@ -2,11 +2,8 @@
 
 import type { AvailableModel, Instance } from '~/lib/types';
 
-// Phase 7.2 model picker rules (per ai-plan.md):
-// - Single-model fleet (multi_model = false): show the loaded model as
-//   read-only label.
-// - Multi-model fleet (multi_model = true): show a select with all
-//   `available_models`. Disable entries where loadable = false.
+// Compact pill-style model picker that lives inside the composer
+// (Gemini bottom-right pattern). Single-model fleet → read-only label.
 export function ModelPicker({
     instance,
     selected,
@@ -16,29 +13,41 @@ export function ModelPicker({
     selected: AvailableModel | null;
     onSelect: (m: AvailableModel) => void;
 }) {
+    const baseClass =
+        'inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]';
+
     if (!instance.multi_model) {
-        return (
-            <span className="rounded-md border border-[var(--color-border-dark)] bg-[var(--color-surface-2)]/40 px-3 py-1.5 text-xs font-medium text-[var(--color-text-primary)]">
-                {selected?.name ?? 'no model'}
-            </span>
-        );
+        return <span className={baseClass}>{selected?.name ?? 'no model'}</span>;
     }
 
     return (
-        <select
-            value={selected?.name ?? ''}
-            onChange={(e) => {
-                const next = instance.available_models.find((m) => m.name === e.target.value);
-                if (next) onSelect(next);
-            }}
-            className="rounded-md border border-[var(--color-border-dark)] bg-[var(--color-surface-2)]/60 px-3 py-1.5 text-xs text-[var(--color-text-primary)] focus:border-[var(--color-primary-blue)] focus:outline-none"
-        >
-            {instance.available_models.map((m) => (
-                <option key={m.name} value={m.name} disabled={!m.loadable && !m.loaded}>
-                    {m.name}
-                    {m.loaded ? ' (loaded)' : !m.loadable ? ' (unavailable)' : ''}
-                </option>
-            ))}
-        </select>
+        <label className="relative">
+            <select
+                value={selected?.name ?? ''}
+                onChange={(e) => {
+                    const next = instance.available_models.find((m) => m.name === e.target.value);
+                    if (next) onSelect(next);
+                }}
+                className={`${baseClass} cursor-pointer appearance-none bg-transparent pr-5 outline-none focus:text-[var(--color-text-primary)]`}
+            >
+                {instance.available_models.map((m) => (
+                    <option key={m.name} value={m.name} disabled={!m.loadable && !m.loaded}>
+                        {m.name}
+                        {m.loaded ? ' (loaded)' : !m.loadable ? ' (unavailable)' : ''}
+                    </option>
+                ))}
+            </select>
+            <svg
+                className="pointer-events-none absolute top-1/2 right-1 h-3 w-3 -translate-y-1/2 text-[var(--color-text-muted)]"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+            >
+                <polyline points="6 9 12 15 18 9" />
+            </svg>
+        </label>
     );
 }
