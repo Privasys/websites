@@ -16,21 +16,6 @@ export function AttestationConnect({
     title?: string;
     description?: string;
 }) {
-    const onChange = (raw: string) => {
-        // Same input mask as the developer-portal AttestationTab.
-        const cleaned = raw.replace(/[^0-9a-fA-F]/g, '');
-        // Driving the controlled input back through actions.regenerateChallenge
-        // is awkward; we instead expose a setChallenge via state in a future
-        // pass. For now the user can hit Regenerate to roll a fresh one.
-        // (The hook seeds a challenge on mount.)
-        if (cleaned !== state.challenge) {
-            // No setter exposed - regenerate as a workaround when the user
-            // tries to type. Keeping the regenerate UX explicit avoids a
-            // second public setter for an uncommon flow (manual nonces).
-            void cleaned;
-        }
-    };
-
     return (
         <section className='rounded-xl border border-black/10 dark:border-white/10 p-5'>
             <div className='mb-5 text-center'>
@@ -57,14 +42,15 @@ export function AttestationConnect({
                     id='attestation-challenge'
                     type='text'
                     value={state.challenge}
-                    onChange={(e) => onChange(e.target.value)}
-                    readOnly
+                    onChange={(e) => actions.setChallenge(e.target.value)}
                     placeholder='32-128 hex characters'
                     maxLength={128}
+                    spellCheck={false}
+                    autoComplete='off'
                     className='w-full rounded-lg border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 px-3 py-2 font-mono text-xs focus:outline-none focus:ring-1 focus:ring-black/20 dark:focus:ring-white/20'
                 />
                 <p className='mt-1.5 text-[11px] text-black/35 dark:text-white/35'>
-                    A random nonce proves the certificate was generated <em>just now</em> for your request.
+                    A random nonce proves the certificate was generated <em>just now</em> for your request. Edit the field to replay a specific challenge.
                 </p>
             </div>
 

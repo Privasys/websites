@@ -42,6 +42,7 @@ export interface AttestationActions {
     inspect: () => Promise<void>;
     verifyQuoteSignature: () => Promise<void>;
     regenerateChallenge: () => void;
+    setChallenge: (next: string) => void;
     reset: () => void;
 }
 
@@ -125,6 +126,15 @@ export function useAttestation(target: AttestationTarget): [AttestationState, At
         setChallenge(generateChallenge());
     }, []);
 
+    // Manual challenge override. We accept any string, strip non-hex and
+    // lowercase it, but otherwise let the user paste / edit freely. The
+    // 32-128 hex validation runs at inspect() time so an in-progress edit
+    // is not flagged mid-typing.
+    const setChallengeAction = useCallback((next: string) => {
+        const cleaned = next.replace(/[^0-9a-fA-F]/g, '').toLowerCase();
+        setChallenge(cleaned.slice(0, 128));
+    }, []);
+
     const reset = useCallback(() => {
         setResult(null);
         setQuoteVerify(null);
@@ -136,7 +146,7 @@ export function useAttestation(target: AttestationTarget): [AttestationState, At
 
     return [
         { result, quoteVerify, challenge, loading, verifying, error, quoteVerifyError },
-        { inspect, verifyQuoteSignature, regenerateChallenge, reset },
+        { inspect, verifyQuoteSignature, regenerateChallenge, setChallenge: setChallengeAction, reset },
     ];
 }
 
