@@ -36,7 +36,17 @@ interface AuthContextValue {
     session: AuthSession | null;
     loading: boolean;
     expired: boolean;
+    /** Open the auth ceremony in a full-screen overlay (default). */
     signIn: () => Promise<void>;
+    /**
+     * Mount the auth iframe inline inside `container` (instead of a
+     * full-screen overlay). Used by the in-panel sign-in view so the
+     * surrounding chat shell stays visible. The provider builds a
+     * one-shot `AuthFrame` per call; once the ceremony resolves, the
+     * persistent renewal frame picks up the session via cross-origin
+     * SSO and starts the silent-renewal timer.
+     */
+    signInInto: (container: HTMLElement) => Promise<void>;
     signOut: () => Promise<void>;
 }
 
@@ -45,6 +55,7 @@ const AuthContext = createContext<AuthContextValue>({
     loading: true,
     expired: false,
     signIn: async () => {},
+    signInInto: async () => {},
     signOut: async () => {},
 });
 
@@ -120,15 +131,36 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
             .catch(() => setLoading(false));
     }, [getFrame]);
 
+    const acceptResultToken = useCallback(
+        (token: string) => {
+            setSession(sessionFromToken(token, config.rpId ?? config.appName));
+            setExpired(false);
+            // Bootstrap (or refresh) the silent-renewal iframe via the
+            // persistent frame; it reads the session out of the auth
+            // origin's localStorage.
+            getFrame().getSession();
+        },
+        [config, getFrame],
+    );
+
     const signIn = useCallback(async () => {
         const frame = getFrame();
         const result = await frame.signIn();
-        const token = result.accessToken ?? result.sessionToken;
-        setSession(sessionFromToken(token, config.rpId ?? config.appName));
-        setExpired(false);
-        // Bootstrap the silent-renewal iframe.
-        frame.getSession();
-    }, [getFrame, config]);
+        acceptResultToken(result.accessToken ?? result.sessionToken);
+    }, [getFrame, acceptResultToken]);
+
+    const signInInto = useCallback(
+        async (container: HTMLElement) => {
+            // One-shot inline frame. We don't reuse `frameRef` because
+            // `container` is a constructor-only option in @privasys/auth
+            // and the persistent frame must keep its renewal iframe
+            // attached to <body>.
+            const inline = new AuthFrame({ ...config, container });
+            const result = await inline.signIn();
+            acceptResultToken(result.accessToken ?? result.sessionToken);
+        },
+        [config, acceptResultToken],
+    );
 
     const signOut = useCallback(async () => {
         const frame = getFrame();
@@ -137,7 +169,9 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
     }, [getFrame]);
 
     return (
-        <AuthContext.Provider value={{ session, loading, expired, signIn, signOut }}>
+        <AuthContext.Provider
+            value={{ session, loading, expired, signIn, signInInto, signOut }}
+        >
             {children}
         </AuthContext.Provider>
     );
