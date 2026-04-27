@@ -34,5 +34,5 @@ export interface Instance {
      * resolves it against `NEXT_PUBLIC_API_BASE_URL`. Empty when no app
      * is currently deployed on the fleet.
      */
-    attest_url: string;
+    attest_url?: string;
 }
