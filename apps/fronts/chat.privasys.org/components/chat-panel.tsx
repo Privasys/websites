@@ -162,7 +162,7 @@ export function ChatPanel({
             onSamplingChange={setSampling}
             placeholder={
                 model
-                    ? `Message ${modelLabel(model.name)}\u2026`
+                    ? `Message ${modelLabel(model)}\u2026`
                     : 'No model loaded for this instance.'
             }
             autoFocus
