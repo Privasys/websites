@@ -1,8 +1,10 @@
 'use client';
 
-import { useEffect, useRef, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import type { AvailableModel, Instance } from '~/lib/types';
+import type { SamplingParams } from '~/lib/sampling';
 import { ModelPicker } from './model-picker';
+import { SamplingEditor } from './sampling-editor';
 
 // Unified composer used both in the empty-state (centered) and in the
 // docked footer once a conversation has started. Layout mirrors Gemini:
@@ -20,6 +22,8 @@ export function Composer({
     instance,
     model,
     onModelChange,
+    sampling,
+    onSamplingChange,
     placeholder,
     autoFocus,
     disabledReason,
@@ -32,6 +36,11 @@ export function Composer({
     instance: Instance;
     model: AvailableModel | null;
     onModelChange: (m: AvailableModel) => void;
+    /** Current sampling parameters (seed, temp, ...). When provided
+     *  alongside onSamplingChange, the composer renders an Advanced
+     *  toggle that opens an inline editor. */
+    sampling?: SamplingParams;
+    onSamplingChange?: (next: SamplingParams) => void;
     placeholder?: string;
     autoFocus?: boolean;
     /**
@@ -41,7 +50,9 @@ export function Composer({
     disabledReason?: string;
 }) {
     const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const [showAdvanced, setShowAdvanced] = useState(false);
     const disabled = !!disabledReason;
+    const advancedAvailable = !!sampling && !!onSamplingChange;
 
     // Auto-resize textarea up to ~10 lines.
     useEffect(() => {
@@ -94,6 +105,19 @@ export function Composer({
                         />
                     </div>
 
+                    {advancedAvailable && (
+                        <button
+                            type="button"
+                            onClick={() => setShowAdvanced((s) => !s)}
+                            aria-expanded={showAdvanced}
+                            title="Sampling parameters"
+                            className={`ml-1 inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ${showAdvanced ? 'text-[var(--color-text-primary)]' : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]'}`}
+                        >
+                            <SlidersIcon />
+                            <span className="hidden sm:inline">Advanced</span>
+                        </button>
+                    )}
+
                     <div className="ml-auto">
                         {streaming ? (
                             <button
@@ -118,6 +142,10 @@ export function Composer({
                         )}
                     </div>
                 </div>
+
+                {advancedAvailable && showAdvanced && (
+                    <SamplingEditor value={sampling!} onChange={onSamplingChange!} />
+                )}
             </div>
 
             {disabledReason && (
@@ -149,6 +177,31 @@ function StopIcon() {
     return (
         <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
             <rect x="6" y="6" width="12" height="12" rx="2" />
+        </svg>
+    );
+}
+
+function SlidersIcon() {
+    return (
+        <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+        >
+            <line x1="4" y1="21" x2="4" y2="14" />
+            <line x1="4" y1="10" x2="4" y2="3" />
+            <line x1="12" y1="21" x2="12" y2="12" />
+            <line x1="12" y1="8" x2="12" y2="3" />
+            <line x1="20" y1="21" x2="20" y2="16" />
+            <line x1="20" y1="12" x2="20" y2="3" />
+            <line x1="1" y1="14" x2="7" y2="14" />
+            <line x1="9" y1="8" x2="15" y2="8" />
+            <line x1="17" y1="16" x2="23" y2="16" />
         </svg>
     );
 }
