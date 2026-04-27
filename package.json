@@ -43,6 +43,7 @@
         "next-view-transitions": "^0.3.4",
         "react": "^19.2.3",
         "react-dom": "^19.2.3",
+        "react-markdown": "^9",
         "react-wrap-balancer": "^1.1.1",
         "rehype-katex": "^7.0.1",
         "rehype-stringify": "^10.0.1",

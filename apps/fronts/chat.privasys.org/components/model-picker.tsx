@@ -1,9 +1,13 @@
 'use client';
 
 import type { AvailableModel, Instance } from '~/lib/types';
+import { modelLabel } from '~/lib/model-label';
 
 // Compact pill-style model picker that lives inside the composer
 // (Gemini bottom-right pattern). Single-model fleet → read-only label.
+//
+// The wire `name` is the on-disk vLLM id (e.g. "/models/gemma4-31b");
+// rendered via modelLabel() so users see "Gemma 4 31B".
 export function ModelPicker({
     instance,
     selected,
@@ -17,7 +21,11 @@ export function ModelPicker({
         'inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]';
 
     if (!instance.multi_model) {
-        return <span className={baseClass}>{selected?.name ?? 'no model'}</span>;
+        return (
+            <span className={baseClass}>
+                {selected ? modelLabel(selected.name) : 'no model'}
+            </span>
+        );
     }
 
     return (
@@ -32,8 +40,8 @@ export function ModelPicker({
             >
                 {instance.available_models.map((m) => (
                     <option key={m.name} value={m.name} disabled={!m.loadable && !m.loaded}>
-                        {m.name}
-                        {m.loaded ? ' (loaded)' : !m.loadable ? ' (unavailable)' : ''}
+                        {modelLabel(m.name)}
+                        {m.loaded ? ' • loaded' : !m.loadable ? ' • unavailable' : ''}
                     </option>
                 ))}
             </select>
