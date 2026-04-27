@@ -6,6 +6,7 @@ export type Modality = 'text' | 'text+image' | 'text+image+audio' | string;
 
 export interface AvailableModel {
     name: string;
+    label?: string;
     digest: string;
     modality: Modality;
     loaded: boolean;
