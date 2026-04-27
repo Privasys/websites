@@ -28,4 +28,11 @@ export interface Instance {
     available_models: AvailableModel[];
     auth: InstanceAuth;
     attestation_server: string;
+    /**
+     * Path on the management-service that returns this instance's RA-TLS
+     * attestation result (e.g. `/api/v1/apps/<id>/attest`). The chat UI
+     * resolves it against `NEXT_PUBLIC_API_BASE_URL`. Empty when no app
+     * is currently deployed on the fleet.
+     */
+    attest_url: string;
 }

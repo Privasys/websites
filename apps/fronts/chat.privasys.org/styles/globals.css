@@ -1,6 +1,15 @@
 @import 'tailwindcss';
 @import '@privasys/ui/styles.css';
 
+/*
+ * Tailwind v4 auto-discovers utility classes by scanning files relative
+ * to the project root. Workspace libraries that ship Tailwind classes
+ * have to be opted in explicitly so the generated stylesheet contains
+ * those utilities (otherwise the rendered components are unstyled).
+ */
+@source '../../../../libs/attestation-view/src';
+@source '../../../../libs/ui/src';
+
 @font-face {
 	font-family: 'InterVariable';
 	font-style: normal;
