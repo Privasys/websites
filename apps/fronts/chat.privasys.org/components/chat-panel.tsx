@@ -27,6 +27,7 @@ export function ChatPanel({
     token,
     disabledReason,
     userGreeting,
+    onConnect,
 }: {
     instance: Instance;
     model: AvailableModel | null;
@@ -34,6 +35,9 @@ export function ChatPanel({
     token?: string;
     disabledReason?: string;
     userGreeting?: string;
+    /** When set, the empty-state shows a prominent Connect button
+     *  instead of a disabled composer (used in the unauth flow). */
+    onConnect?: () => void;
 }) {
     const [messages, setMessages] = useState<DisplayMessage[]>([]);
     const [input, setInput] = useState('');
@@ -143,7 +147,25 @@ export function ChatPanel({
                             Where should we start?
                         </h2>
                     </div>
-                    {composer}
+                    {onConnect ? (
+                        <div className="flex flex-col items-center gap-3">
+                            <button
+                                type="button"
+                                onClick={onConnect}
+                                className="rounded-full px-6 py-2.5 text-sm font-semibold text-[var(--color-navy)] shadow-sm transition-opacity hover:opacity-90"
+                                style={{ background: 'var(--brand-gradient)' }}
+                            >
+                                Connect to start chatting
+                            </button>
+                            {disabledReason && (
+                                <p className="text-xs text-[var(--color-text-secondary)]">
+                                    {disabledReason}
+                                </p>
+                            )}
+                        </div>
+                    ) : (
+                        composer
+                    )}
                 </div>
             </div>
         );

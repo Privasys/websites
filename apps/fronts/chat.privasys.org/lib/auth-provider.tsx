@@ -20,7 +20,7 @@ const SDK_CONFIG = {
     brokerUrl:
         process.env.NEXT_PUBLIC_BROKER_URL ?? 'wss://relay.privasys.org/relay',
     clientId: process.env.NEXT_PUBLIC_AUTH_CLIENT_ID ?? 'privasys-platform',
-    scope: ['openid', 'email', 'profile', 'offline_access'] as const,
+    scope: ['openid', 'email', 'profile', 'offline_access'] as const
 };
 
 export function AuthProvider({ children }: { children: ReactNode }) {
