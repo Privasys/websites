@@ -2,63 +2,60 @@
 
 import { useState } from 'react';
 import type { AvailableModel, Instance } from '~/lib/types';
-import { ModelPicker } from './model-picker';
-import { AttestationDrawer } from './attestation-drawer';
+import { AppSidebar } from './app-sidebar';
 import { ChatPanel } from './chat-panel';
 
-// Chat shell. Wires the model picker, attestation
-// drawer trigger and the streaming chat panel.
+// Gemini-style two-pane shell: persistent left sidebar + main column.
+// Header lives inside the main column and is intentionally minimal —
+// the conversation title sits at the top, and the secure-session pill
+// + sign-in live in the sidebar.
 export function ChatShell({
     instance,
     initialModel,
+    disabledReason,
+    userGreeting,
 }: {
     instance: Instance;
     initialModel: AvailableModel | null;
+    /**
+     * If set, the composer is read-only and shows this hint. Used for the
+     * unauthenticated empty-state where we still want users to see the layout.
+     */
+    disabledReason?: string;
+    /** Greeting line on the empty state, e.g. "Hi Bertrand". */
+    userGreeting?: string;
 }) {
     const [model, setModel] = useState<AvailableModel | null>(initialModel);
-    const [drawerOpen, setDrawerOpen] = useState(false);
+    // Bumping `chatKey` resets ChatPanel state (used by "New chat").
+    const [chatKey, setChatKey] = useState(0);
 
     return (
-        <div className="flex flex-1 flex-col">
-            <header className="flex items-center justify-between border-b border-[var(--color-border-dark)] bg-[var(--color-surface-1)]/80 px-4 py-3 backdrop-blur">
-                <div className="flex items-center gap-3">
-                    <img
-                        src="/favicon/privasys-logo.mini.svg"
-                        alt="Privasys"
-                        className="h-7 w-7"
-                    />
-                    <div>
-                        <h1 className="text-sm font-semibold text-[var(--color-text-primary)]">
-                            {instance.alias ?? instance.id}
-                        </h1>
-                        <p className="text-xs text-[var(--color-text-muted)]">
-                            {instance.endpoint}
-                        </p>
-                    </div>
-                </div>
-                <div className="flex items-center gap-3">
-                    <ModelPicker
-                        instance={instance}
-                        selected={model}
-                        onSelect={setModel}
-                    />
-                    <button
-                        type="button"
-                        onClick={() => setDrawerOpen(true)}
-                        className="rounded-md border border-[var(--color-border-dark)] bg-[var(--color-surface-2)]/40 px-3 py-1.5 text-xs font-medium text-[var(--color-text-primary)] transition-colors hover:border-[var(--color-primary-blue)]/60 hover:text-[var(--color-primary-blue)]"
-                    >
-                        View attestation
-                    </button>
-                </div>
-            </header>
-
-            <ChatPanel instance={instance} model={model} />
-
-            <AttestationDrawer
-                open={drawerOpen}
-                onClose={() => setDrawerOpen(false)}
+        <div className="flex flex-1">
+            <AppSidebar
                 instance={instance}
+                onNewChat={() => setChatKey((n) => n + 1)}
             />
+            <div className="flex min-w-0 flex-1 flex-col">
+                <header className="flex items-center gap-2 border-b border-[var(--color-border-dark)]/60 px-5 py-3">
+                    <h1 className="truncate text-sm font-medium text-[var(--color-text-primary)]">
+                        {instance.alias ?? instance.id}
+                    </h1>
+                    {instance.endpoint && (
+                        <span className="truncate text-xs text-[var(--color-text-muted)]">
+                            · {instance.endpoint}
+                        </span>
+                    )}
+                </header>
+
+                <ChatPanel
+                    key={chatKey}
+                    instance={instance}
+                    model={model}
+                    onModelChange={setModel}
+                    disabledReason={disabledReason}
+                    userGreeting={userGreeting}
+                />
+            </div>
         </div>
     );
 }
