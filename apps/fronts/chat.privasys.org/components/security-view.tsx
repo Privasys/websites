@@ -32,21 +32,19 @@ export function SecurityView({ instance }: { instance: Instance }) {
                     </p>
                 </header>
 
-                <div className="rounded-2xl border border-[var(--color-border-dark)] bg-[var(--color-surface-1)]/60 p-5">
-                    {!state.result ? (
-                        <AttestationConnect state={state} actions={actions} />
-                    ) : (
-                        <AttestationResultView
-                            result={state.result}
-                            quoteVerify={state.quoteVerify}
-                            onRefresh={() => void actions.inspect()}
-                            onReset={() => {
-                                actions.reset();
-                                actions.regenerateChallenge();
-                            }}
-                        />
-                    )}
-                </div>
+                {!state.result ? (
+                    <AttestationConnect state={state} actions={actions} />
+                ) : (
+                    <AttestationResultView
+                        result={state.result}
+                        quoteVerify={state.quoteVerify}
+                        onRefresh={() => void actions.inspect()}
+                        onReset={() => {
+                            actions.reset();
+                            actions.regenerateChallenge();
+                        }}
+                    />
+                )}
             </div>
         </div>
     );

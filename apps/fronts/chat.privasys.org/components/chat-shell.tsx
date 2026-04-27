@@ -84,6 +84,7 @@ export function ChatShell({
                         token={session?.accessToken}
                         disabledReason={disabledReason}
                         userGreeting={userGreeting}
+                        onConnect={!session ? () => setView('signin') : undefined}
                     />
                 )}
             </div>

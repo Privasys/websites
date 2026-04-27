@@ -28,35 +28,16 @@ export function SignInView({ onCancel, onSuccess }: { onCancel: () => void; onSu
     }, [signInInto, onSuccess]);
 
     return (
-        <div className="flex flex-1 flex-col overflow-y-auto">
-            <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col px-4 py-6">
-                <header className="mb-4 flex items-center justify-between">
-                    <div>
-                        <h1 className="text-xl font-semibold text-[var(--color-text-primary)]">
-                            Connect to Privasys
-                        </h1>
-                        <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-                            Authenticate with your Privasys wallet to start a confidential conversation.
-                        </p>
-                    </div>
-                    <button
-                        type="button"
-                        onClick={onCancel}
-                        className="rounded-md border border-[var(--color-border-dark)] bg-[var(--color-surface-2)]/50 px-3 py-1 text-xs text-[var(--color-text-secondary)] hover:border-[var(--color-primary-blue)]/60 hover:text-[var(--color-primary-blue)]"
-                    >
-                        Cancel
-                    </button>
-                </header>
-
+        <div className="flex flex-1 flex-col overflow-hidden">
+            <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-4 pt-4 pb-4">
                 {error && (
                     <div className="mb-3 rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
                         {error}
                     </div>
                 )}
-
                 <div
                     ref={containerRef}
-                    className="min-h-[560px] flex-1 overflow-hidden rounded-2xl border border-[var(--color-border-dark)] bg-white shadow-sm"
+                    className="flex-1 min-h-0 overflow-hidden rounded-2xl border border-[var(--color-border-dark)] bg-white shadow-sm"
                 />
             </div>
         </div>
