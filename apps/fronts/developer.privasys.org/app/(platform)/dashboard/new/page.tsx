@@ -396,22 +396,22 @@ export default function NewApplicationPage() {
 
         try {
             const filteredEnv = envVars.filter(e => e.key.trim());
-                            const app = await createApp(session.accessToken, {
-                                name: appName,
-                                source_type: sourceMode === 'github' ? 'github'
-                                    : sourceMode === 'package' ? 'package'
-                                        : sourceMode === 'cloud_image' ? 'cloud_image'
-                                            : 'upload',
-                                commit_url: sourceMode === 'github' ? commitUrl.trim() : undefined,
-                                app_type: (sourceMode === 'package' || sourceMode === 'cloud_image') ? 'container' : appType,
-                                container_image: sourceMode === 'package' ? containerImage.trim() : undefined,
-                                container_port: (sourceMode === 'package' || sourceMode === 'cloud_image' || appType === 'container') && containerPort ? parseInt(containerPort, 10) : undefined,
-                                container_env: filteredEnv.length > 0
-                                    ? Object.fromEntries(filteredEnv.map(e => [e.key.trim(), e.value]))
-                                    : undefined,
-                                cloud_image_name: sourceMode === 'cloud_image' ? cloudImageName : undefined,
-                                cloud_image_channel: sourceMode === 'cloud_image' ? cloudImageChannel : undefined
-                            });
+            const app = await createApp(session.accessToken, {
+                name: appName,
+                source_type: sourceMode === 'github' ? 'github'
+                    : sourceMode === 'package' ? 'package'
+                        : sourceMode === 'cloud_image' ? 'cloud_image'
+                            : 'upload',
+                commit_url: sourceMode === 'github' ? commitUrl.trim() : undefined,
+                app_type: (sourceMode === 'package' || sourceMode === 'cloud_image') ? 'container' : appType,
+                container_image: sourceMode === 'package' ? containerImage.trim() : undefined,
+                container_port: (sourceMode === 'package' || sourceMode === 'cloud_image' || appType === 'container') && containerPort ? parseInt(containerPort, 10) : undefined,
+                container_env: filteredEnv.length > 0
+                    ? Object.fromEntries(filteredEnv.map(e => [e.key.trim(), e.value]))
+                    : undefined,
+                cloud_image_name: sourceMode === 'cloud_image' ? cloudImageName : undefined,
+                cloud_image_channel: sourceMode === 'cloud_image' ? cloudImageChannel : undefined
+            });
 
             if (sourceMode === 'upload' && file) {
                 await uploadCwasm(session.accessToken, app.id, file);
