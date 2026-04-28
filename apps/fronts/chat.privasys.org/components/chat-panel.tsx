@@ -214,6 +214,31 @@ export function ChatPanel({
         } finally {
             setStreaming(false);
             abortRef.current = null;
+            // Any tool invocations that were still in flight when the
+            // stream ended (cancellation, network error, etc.) get
+            // flipped to an error state so the cards stop spinning and
+            // the persisted history reflects what actually happened.
+            setMessages((prev) => {
+                let changed = false;
+                const next = prev.map((m) => {
+                    if (m.id !== assistantId || !m.toolInvocations) return m;
+                    const list = m.toolInvocations.map((inv) => {
+                        if (inv.status !== 'running') return inv;
+                        changed = true;
+                        const finishedAt = Date.now();
+                        return {
+                            ...inv,
+                            status: 'error' as const,
+                            error: 'cancelled',
+                            finishedAt,
+                            durationMs: finishedAt - inv.startedAt
+                        };
+                    });
+                    return { ...m, toolInvocations: list };
+                });
+                if (changed) persist(next);
+                return next;
+            });
         }
     }, [input, streaming, model, instance.endpoint, messages, token, sampling, persist]);
 
