@@ -51,6 +51,14 @@ export interface ToolCallEvent {
     name: string;       // "<server>__<tool>"
     args: unknown;      // raw JSON the model produced
     started_at: number; // ms since epoch (set client-side on receipt)
+    /**
+     * True when the upstream MCP server (or its server-config) marks
+     * this tool as a privileged write action that needs explicit
+     * user attention. The server still dispatches the call; the
+     * front-end uses this to render an inline notice and -- in a
+     * future iteration -- the deny-and-cancel button.
+     */
+    requires_confirmation?: boolean;
 }
 
 // Live tool_result event (end). Status "ok" carries the JSON result;

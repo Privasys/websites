@@ -31,7 +31,9 @@ export function ToolCallCard({ invocation }: { invocation: ToolInvocation }) {
             className={`my-2 rounded-md border px-3 py-2 text-xs ${
                 status === 'error'
                     ? 'border-red-500/30 bg-red-500/5'
-                    : 'border-[var(--color-surface-3)] bg-[var(--color-surface-2)]/40'
+                    : invocation.requiresConfirmation
+                        ? 'border-amber-500/40 bg-amber-500/5'
+                        : 'border-[var(--color-surface-3)] bg-[var(--color-surface-2)]/40'
             }`}
         >
             <button
@@ -45,12 +47,28 @@ export function ToolCallCard({ invocation }: { invocation: ToolInvocation }) {
                         {server}
                     </span>
                     <span className='font-mono text-[var(--color-text-primary)]'>{tool}</span>
+                    {invocation.requiresConfirmation && (
+                        <span
+                            className='rounded-sm border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-amber-300'
+                            title='This tool can change state outside the enclave (write action). Review the arguments below.'
+                        >
+                            write
+                        </span>
+                    )}
                 </span>
                 <span className='ml-auto text-[var(--color-text-muted)]'>{dur}</span>
                 <span className='text-[var(--color-text-muted)]'>{expanded ? '▾' : '▸'}</span>
             </button>
             {expanded && (
                 <div className='mt-2 grid gap-2'>
+                    {invocation.requiresConfirmation && (
+                        <p className='rounded border border-amber-500/30 bg-amber-500/5 px-2 py-1.5 text-[11px] text-amber-200'>
+                            The agent invoked a write-capable tool. The
+                            arguments below were sent verbatim to the
+                            owning MCP server. If this looks wrong, hit
+                            Stop and rephrase your prompt.
+                        </p>
+                    )}
                     <Pre label='args'>{stringify(invocation.args)}</Pre>
                     {status === 'error' ? (
                         <Pre label='error' tone='error'>

@@ -40,6 +40,9 @@ export interface ToolInvocation {
     startedAt: number;
     finishedAt?: number;
     durationMs?: number;
+    /** Server-side flag: this tool was tagged as a write/privileged
+     *  action and the UI should make that obvious. */
+    requiresConfirmation?: boolean;
 }
 
 export interface PersistedMessage extends ChatMessage {

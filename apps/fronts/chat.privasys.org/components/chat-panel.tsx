@@ -153,7 +153,8 @@ export function ChatPanel({
                         name: ev.name,
                         args: ev.args,
                         status: 'running',
-                        startedAt: ev.started_at
+                        startedAt: ev.started_at,
+                        requiresConfirmation: ev.requires_confirmation
                     };
                     setMessages((prev) =>
                         prev.map((m) =>
