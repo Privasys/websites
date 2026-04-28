@@ -5,7 +5,7 @@ import type { AvailableModel, Instance } from '~/lib/types';
 import {
     streamChatCompletion,
     type ChatMessage,
-    type Reproducibility,
+    type Reproducibility
 } from '~/lib/chat-stream';
 import { DEFAULT_SAMPLING, type SamplingParams } from '~/lib/sampling';
 import { modelLabel } from '~/lib/model-label';
@@ -43,7 +43,7 @@ export function ChatPanel({
     token,
     disabledReason,
     userGreeting,
-    onConnect,
+    onConnect
 }: {
     instance: Instance;
     model: AvailableModel | null;
@@ -66,7 +66,7 @@ export function ChatPanel({
     useEffect(() => {
         scrollRef.current?.scrollTo({
             top: scrollRef.current.scrollHeight,
-            behavior: 'smooth',
+            behavior: 'smooth'
         });
     }, [messages]);
 
@@ -90,8 +90,8 @@ export function ChatPanel({
                 content: '',
                 streaming: true,
                 sampling: samplingSnapshot,
-                startedAt,
-            },
+                startedAt
+            }
         ]);
         setInput('');
         setStreaming(true);
@@ -112,8 +112,8 @@ export function ChatPanel({
                         prev.map((m) =>
                             m.id === assistantId
                                 ? { ...m, content: m.content + delta }
-                                : m,
-                        ),
+                                : m
+                        )
                     );
                 },
                 onDone: (_full, meta) => {
@@ -121,13 +121,13 @@ export function ChatPanel({
                         prev.map((m) =>
                             m.id === assistantId
                                 ? {
-                                      ...m,
-                                      streaming: false,
-                                      meta,
-                                      finishedAt: Date.now(),
-                                  }
-                                : m,
-                        ),
+                                    ...m,
+                                    streaming: false,
+                                    meta,
+                                    finishedAt: Date.now()
+                                }
+                                : m
+                        )
                     );
                 },
                 onError: (err) => {
@@ -135,10 +135,10 @@ export function ChatPanel({
                         prev.map((m) =>
                             m.id === assistantId
                                 ? { ...m, streaming: false, error: err.message }
-                                : m,
-                        ),
+                                : m
+                        )
                     );
-                },
+                }
             });
         } finally {
             setStreaming(false);
@@ -187,7 +187,7 @@ export function ChatPanel({
                                 background: 'var(--brand-gradient)',
                                 WebkitBackgroundClip: 'text',
                                 WebkitTextFillColor: 'transparent',
-                                backgroundClip: 'text',
+                                backgroundClip: 'text'
                             }}
                         >
                             Where should we start?
@@ -259,7 +259,7 @@ export function ChatPanel({
 
 function Message({
     message,
-    onShowMeta,
+    onShowMeta
 }: {
     message: DisplayMessage;
     onShowMeta: () => void;
@@ -300,7 +300,7 @@ function Message({
 
 function MessageActions({
     message,
-    onShowMeta,
+    onShowMeta
 }: {
     message: DisplayMessage;
     onShowMeta: () => void;

@@ -15,7 +15,7 @@ export function MetadataDialog({
     sampling,
     reproducibility,
     elapsedMs,
-    onClose,
+    onClose
 }: {
     sampling?: SamplingParams;
     reproducibility?: Reproducibility;
@@ -86,7 +86,7 @@ export function MetadataDialog({
                         {JSON.stringify(
                             { sampling: samp, reproducibility: meta },
                             null,
-                            2,
+                            2
                         )}
                     </pre>
                 </details>
@@ -109,7 +109,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 function Row({
     k,
     v,
-    mono,
+    mono
 }: {
     k: string;
     v: string | number | undefined;

@@ -7,7 +7,7 @@ import {
     useEffect,
     useRef,
     useState,
-    type ReactNode,
+    type ReactNode
 } from 'react';
 import { AuthFrame, type AuthFrameConfig } from '@privasys/auth';
 
@@ -56,7 +56,7 @@ const AuthContext = createContext<AuthContextValue>({
     expired: false,
     signIn: async () => {},
     signInInto: async () => {},
-    signOut: async () => {},
+    signOut: async () => {}
 });
 
 export function useAuth(): AuthContextValue {
@@ -70,12 +70,12 @@ function isJwt(token: string): boolean {
 function sessionFromToken(
     token: string,
     rpId: string,
-    authenticatedAt?: number,
+    authenticatedAt?: number
 ): AuthSession {
     return {
         accessToken: token,
         rpId,
-        authenticatedAt: authenticatedAt ?? Date.now(),
+        authenticatedAt: authenticatedAt ?? Date.now()
     };
 }
 
@@ -122,7 +122,7 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
                         frame.clearSession().catch(() => undefined);
                     } else {
                         setSession(
-                            sessionFromToken(s.token, s.rpId, s.authenticatedAt),
+                            sessionFromToken(s.token, s.rpId, s.authenticatedAt)
                         );
                     }
                 }
@@ -140,7 +140,7 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
             // origin's localStorage.
             getFrame().getSession();
         },
-        [config, getFrame],
+        [config, getFrame]
     );
 
     const signIn = useCallback(async () => {
@@ -159,7 +159,7 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
             const result = await inline.signIn();
             acceptResultToken(result.accessToken ?? result.sessionToken);
         },
-        [config, acceptResultToken],
+        [config, acceptResultToken]
     );
 
     const signOut = useCallback(async () => {

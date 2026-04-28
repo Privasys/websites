@@ -70,7 +70,7 @@ export default function InstancePage({ params }: { params: Promise<{ instance: s
             loaded_model: null,
             available_models: [],
             auth: { required: true, issuer: '' },
-            attestation_server: '',
+            attestation_server: ''
         };
         return (
             <ChatShell
@@ -111,7 +111,7 @@ function decodeGreeting(token: string | undefined): string | undefined {
     if (parts.length !== 3) return undefined;
     try {
         const payload = JSON.parse(
-            atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')),
+            atob(parts[1].replace(/-/g, '+').replace(/_/g, '/'))
         ) as { name?: string; given_name?: string; preferred_username?: string; email?: string };
         const first =
             payload.given_name ||

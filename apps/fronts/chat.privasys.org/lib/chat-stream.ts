@@ -67,14 +67,14 @@ export async function streamChatCompletion(args: StreamChatArgs): Promise<void> 
     const url = `${args.endpoint.replace(/\/$/, '')}/v1/chat/completions`;
     const headers: Record<string, string> = {
         'Content-Type': 'application/json',
-        Accept: 'text/event-stream',
+        'Accept': 'text/event-stream'
     };
     if (args.token) headers.Authorization = `Bearer ${args.token}`;
 
     const body: Record<string, unknown> = {
         model: args.model,
         messages: args.messages,
-        stream: true,
+        stream: true
     };
     if (args.sampling) {
         for (const [k, v] of Object.entries(args.sampling)) {
@@ -88,7 +88,7 @@ export async function streamChatCompletion(args: StreamChatArgs): Promise<void> 
             method: 'POST',
             headers,
             signal: args.signal,
-            body: JSON.stringify(body),
+            body: JSON.stringify(body)
         });
     } catch (e) {
         const err = e instanceof Error ? e : new Error('fetch failed');
@@ -99,7 +99,7 @@ export async function streamChatCompletion(args: StreamChatArgs): Promise<void> 
     if (!res.ok || !res.body) {
         const text = await res.text().catch(() => '');
         const err = new Error(
-            `chat request failed: ${res.status} ${res.statusText}${text ? ` - ${text.slice(0, 200)}` : ''}`,
+            `chat request failed: ${res.status} ${res.statusText}${text ? ` - ${text.slice(0, 200)}` : ''}`
         );
         args.onError?.(err);
         throw err;

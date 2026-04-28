@@ -10,7 +10,7 @@ import type { Instance } from '~/lib/types';
 export function AttestationDrawer({
     open,
     onClose,
-    instance,
+    instance
 }: {
     open: boolean;
     onClose: () => void;
@@ -20,7 +20,7 @@ export function AttestationDrawer({
         attestUrl: `${instance.endpoint.replace(/\/$/, '')}/attest`,
         verifyQuoteUrl: instance.attestation_server
             ? `${instance.attestation_server.replace(/\/$/, '')}/verify-quote`
-            : undefined,
+            : undefined
     });
 
     if (!open) return null;

@@ -118,3 +118,25 @@ export const TEXT_OIDS: ReadonlySet<string> = new Set([
     PRIVASYS_OID.EVENT_LOG,
     PRIVASYS_OID.APP_EVENTS,
 ]);
+
+// Optional expected values that the consumer can supply so the
+// attestation view can render a green/red verification badge next
+// to the matching workload extension. All values are lowercase hex
+// strings; comparisons are case-insensitive.
+export interface AttestationExpectations {
+    /** Expected APP_CODE_HASH (OID 3.2). For container apps this is the
+     *  registry image digest (sha256 hex without the algorithm prefix).
+     *  For WASM apps this is the CWASM module SHA-256. */
+    workloadImageDigest?: string;
+    /** Expected MODEL_DIGEST (OID 3.5) - SHA-256 of the active AI model. */
+    modelDigest?: string;
+    /** Expected MULTIMODAL_DIGEST (OID 3.6). */
+    multimodalDigest?: string;
+    /** Optional friendly labels shown in the verification badge.
+     *  Defaults to a generic "Matches expected value". */
+    labels?: {
+        workloadImageDigest?: string;
+        modelDigest?: string;
+        multimodalDigest?: string;
+    };
+}

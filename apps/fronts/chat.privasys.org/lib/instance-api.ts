@@ -19,7 +19,7 @@ export async function fetchInstance(idOrAlias: string, signal?: AbortSignal): Pr
     const url = `${API_BASE_URL}/api/v1/ai/instances/${encodeURIComponent(idOrAlias)}`;
     const res = await fetch(url, {
         signal,
-        headers: { Accept: 'application/json' },
+        headers: { Accept: 'application/json' }
     });
     if (!res.ok) {
         if (res.status === 404) {

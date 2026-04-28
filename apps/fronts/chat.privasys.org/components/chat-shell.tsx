@@ -20,7 +20,7 @@ export function ChatShell({
     instance,
     initialModel,
     disabledReason,
-    userGreeting,
+    userGreeting
 }: {
     instance: Instance;
     initialModel: AvailableModel | null;
