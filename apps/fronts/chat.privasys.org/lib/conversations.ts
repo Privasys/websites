@@ -3,9 +3,8 @@
 // Client-side conversation store.
 //
 // This is a TRANSITIONAL store: long-term, conversations live in
-// the per-fleet `private-rag` enclave (Phase 7.3 Task 3). Until that
-// backend is up, we persist them in localStorage so the user at
-// least gets:
+// the per-fleet `private-rag` enclave. Until that backend is up,
+// we persist them in localStorage so the user at least gets:
 //
 //   - a left-rail list of past chats,
 //   - resume across browser tabs / refreshes,

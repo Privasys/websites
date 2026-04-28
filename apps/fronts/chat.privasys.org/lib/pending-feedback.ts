@@ -3,8 +3,8 @@
 // Pending-feedback queue.
 //
 // User ratings (good / bad / comment) on assistant messages
-// belong in the per-fleet `private-rag` enclave (Phase 7.3 Task 3),
-// where the developer portal can aggregate them per fleet.
+// belong in the per-fleet `private-rag` enclave, where the
+// developer portal can aggregate them per fleet.
 //
 // Until the REST API exists, we queue ratings in localStorage so:
 //
