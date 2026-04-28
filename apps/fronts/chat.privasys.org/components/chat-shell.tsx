@@ -1,8 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { AvailableModel, Instance } from '~/lib/types';
 import { useAuth } from '~/lib/privasys-auth';
+import { jwtSub } from '~/lib/jwt';
+import { modelLabel } from '~/lib/model-label';
+import { useConversations } from '~/lib/use-conversations';
 import { AppSidebar } from './app-sidebar';
 import { ChatPanel } from './chat-panel';
 import { SecurityView } from './security-view';
@@ -16,6 +19,11 @@ type ShellView = 'chat' | 'security' | 'signin';
 //   - chat     (default) — composer + transcript
 //   - security          — full-pane attestation result
 //   - signin            — inline auth iframe
+//
+// Conversation state (history list, currently selected id, message
+// persistence) is owned here so the sidebar list and the chat
+// transcript stay in sync. Storage details live in
+// `lib/use-conversations.ts`.
 export function ChatShell({
     instance,
     initialModel,
@@ -30,8 +38,13 @@ export function ChatShell({
     const { session } = useAuth();
     const [model, setModel] = useState<AvailableModel | null>(initialModel);
     const [view, setView] = useState<ShellView>('chat');
-    // Bumping `chatKey` resets ChatPanel state (used by "New chat").
-    const [chatKey, setChatKey] = useState(0);
+
+    const sub = useMemo(() => jwtSub(session?.accessToken), [session?.accessToken]);
+    const conv = useConversations({
+        instanceId: instance.id,
+        sub,
+        modelLabel: model ? modelLabel(model) : undefined
+    });
 
     const goChat = () => setView('chat');
 
@@ -39,17 +52,25 @@ export function ChatShell({
         <div className="flex flex-1">
             <AppSidebar
                 instance={instance}
+                conversations={conv.conversations}
+                activeConversationId={conv.currentId}
                 onNewChat={() => {
-                    setChatKey((n) => n + 1);
+                    conv.startNew();
                     goChat();
                 }}
+                onSelectConversation={(id) => {
+                    conv.select(id);
+                    goChat();
+                }}
+                onDeleteConversation={conv.remove}
+                onRenameConversation={conv.rename}
                 onShowSecurity={() => setView('security')}
                 onShowSignIn={() => setView('signin')}
             />
             <div className="flex min-w-0 flex-1 flex-col">
                 <header className="flex items-center gap-2 border-b border-[var(--color-border-dark)]/60 px-5 py-3">
                     <h1 className="truncate text-sm font-medium text-[var(--color-text-primary)]">
-                        {viewTitle(view, instance.alias ?? instance.id)}
+                        {viewTitle(view, conv.current?.title ?? (instance.alias ?? instance.id))}
                     </h1>
                     {view === 'chat' && instance.endpoint && (
                         <span className="truncate text-xs text-[var(--color-text-muted)]">
@@ -77,7 +98,9 @@ export function ChatShell({
 
                 {view === 'chat' && (
                     <ChatPanel
-                        key={chatKey}
+                        // Remount whenever the active conversation changes
+                        // so internal state (input, streaming) clears.
+                        key={conv.currentId ?? 'new'}
                         instance={instance}
                         model={model}
                         onModelChange={setModel}
@@ -85,6 +108,9 @@ export function ChatShell({
                         disabledReason={disabledReason}
                         userGreeting={userGreeting}
                         onConnect={!session ? () => setView('signin') : undefined}
+                        initialMessages={conv.current?.messages ?? []}
+                        conversationId={conv.currentId}
+                        onMessagesChange={conv.setCurrentMessages}
                     />
                 )}
             </div>

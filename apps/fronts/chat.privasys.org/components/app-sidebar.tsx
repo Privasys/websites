@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '~/lib/privasys-auth';
 import { fetchUserProfile, type UserProfile } from '~/lib/me-api';
 import type { Instance } from '~/lib/types';
+import type { Conversation } from '~/lib/conversations';
 import { ThemeToggle } from './theme-toggle';
 
 // Gemini-style left sidebar.
@@ -19,12 +20,22 @@ import { ThemeToggle } from './theme-toggle';
 //       · Theme toggle (light is the default; dark is opt-in)
 export function AppSidebar({
     instance,
+    conversations,
+    activeConversationId,
     onNewChat,
+    onSelectConversation,
+    onDeleteConversation,
+    onRenameConversation,
     onShowSecurity,
     onShowSignIn
 }: {
     instance: Instance | null;
+    conversations: Conversation[];
+    activeConversationId: string | null;
     onNewChat: () => void;
+    onSelectConversation: (id: string) => void;
+    onDeleteConversation: (id: string) => void;
+    onRenameConversation: (id: string, title: string) => void;
     onShowSecurity: () => void;
     onShowSignIn: () => void;
 }) {
@@ -78,10 +89,25 @@ export function AppSidebar({
                 <p className="px-2 pb-2 text-[11px] font-medium tracking-wider text-[var(--color-text-muted)] uppercase">
                     Chats
                 </p>
-                <p className="px-2 text-xs text-[var(--color-text-muted)]">
-                    Conversations are not stored. Each session starts fresh and lives
-                    only in this browser tab.
-                </p>
+                {conversations.length === 0 ? (
+                    <p className="px-2 text-xs text-[var(--color-text-muted)]">
+                        No conversations yet. Start a new chat to see it here.
+                        History is stored only on this device.
+                    </p>
+                ) : (
+                    <ul className="flex flex-col gap-0.5">
+                        {conversations.map((c) => (
+                            <ConversationRow
+                                key={c.id}
+                                conversation={c}
+                                active={c.id === activeConversationId}
+                                onSelect={() => onSelectConversation(c.id)}
+                                onDelete={() => onDeleteConversation(c.id)}
+                                onRename={(t) => onRenameConversation(c.id, t)}
+                            />
+                        ))}
+                    </ul>
+                )}
             </div>
 
             <div className="border-t border-[var(--color-border-dark)] px-3 py-3">
@@ -190,6 +216,113 @@ function UserBadge({ label }: { label: string }) {
         >
             {label}
         </span>
+    );
+}
+
+function ConversationRow({
+    conversation,
+    active,
+    onSelect,
+    onDelete,
+    onRename
+}: {
+    conversation: Conversation;
+    active: boolean;
+    onSelect: () => void;
+    onDelete: () => void;
+    onRename: (title: string) => void;
+}) {
+    const [editing, setEditing] = useState(false);
+    const [draft, setDraft] = useState(conversation.title);
+
+    useEffect(() => {
+        setDraft(conversation.title);
+    }, [conversation.title]);
+
+    const commit = () => {
+        const next = draft.trim();
+        if (next && next !== conversation.title) onRename(next);
+        setEditing(false);
+    };
+
+    return (
+        <li
+            className={`group relative flex items-center gap-1 rounded-md px-2 py-1.5 text-sm ${
+                active
+                    ? 'bg-[var(--color-surface-2)]/70 text-[var(--color-text-primary)]'
+                    : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-2)]/40'
+            }`}
+        >
+            {editing ? (
+                <input
+                    autoFocus
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value)}
+                    onBlur={commit}
+                    onKeyDown={(e) => {
+                        if (e.key === 'Enter') commit();
+                        if (e.key === 'Escape') {
+                            setDraft(conversation.title);
+                            setEditing(false);
+                        }
+                    }}
+                    className="flex-1 truncate rounded-sm border border-[var(--color-primary-blue)]/40 bg-transparent px-1 text-sm outline-none"
+                />
+            ) : (
+                <button
+                    type="button"
+                    onClick={onSelect}
+                    onDoubleClick={() => setEditing(true)}
+                    title={conversation.title}
+                    className="flex-1 truncate text-left"
+                >
+                    {conversation.title || 'Untitled chat'}
+                </button>
+            )}
+            {!editing && (
+                <span className="ml-1 hidden shrink-0 items-center gap-0.5 group-hover:inline-flex">
+                    <button
+                        type="button"
+                        onClick={() => setEditing(true)}
+                        title="Rename"
+                        className="rounded p-1 text-[var(--color-text-muted)] hover:text-[var(--color-primary-blue)]"
+                    >
+                        <PencilIcon />
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => {
+                            if (confirm(`Delete "${conversation.title}"? This cannot be undone.`)) {
+                                onDelete();
+                            }
+                        }}
+                        title="Delete"
+                        className="rounded p-1 text-[var(--color-text-muted)] hover:text-red-400"
+                    >
+                        <TrashIcon />
+                    </button>
+                </span>
+            )}
+        </li>
+    );
+}
+
+function PencilIcon() {
+    return (
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 20h9" />
+            <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z" />
+        </svg>
+    );
+}
+
+function TrashIcon() {
+    return (
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 6h18" />
+            <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+            <path d="M19 6 17.5 20a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2L5 6" />
+        </svg>
     );
 }
 

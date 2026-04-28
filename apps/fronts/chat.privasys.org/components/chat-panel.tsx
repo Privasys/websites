@@ -3,28 +3,23 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AvailableModel, Instance } from '~/lib/types';
 import {
-    streamChatCompletion,
-    type ChatMessage,
-    type Reproducibility
+    streamChatCompletion
 } from '~/lib/chat-stream';
 import { DEFAULT_SAMPLING, type SamplingParams } from '~/lib/sampling';
 import { modelLabel } from '~/lib/model-label';
+import type { PersistedMessage, Rating } from '~/lib/conversations';
+import { clearFeedback, recordFeedback } from '~/lib/pending-feedback';
 import { Composer } from './composer';
 import { Markdown } from './markdown';
 import { MetadataDialog } from './metadata-dialog';
 
-interface DisplayMessage extends ChatMessage {
-    id: string;
+interface DisplayMessage extends PersistedMessage {
+    /** True while tokens are still streaming in for this message. */
     streaming?: boolean;
-    error?: string;
-    meta?: Reproducibility;
-    sampling?: SamplingParams;
-    startedAt?: number;
-    finishedAt?: number;
 }
 
 let nextId = 0;
-const newId = () => `m${++nextId}`;
+const newId = () => `m${Date.now().toString(36)}-${++nextId}`;
 
 // Streaming chat panel.
 //
@@ -43,7 +38,10 @@ export function ChatPanel({
     token,
     disabledReason,
     userGreeting,
-    onConnect
+    onConnect,
+    initialMessages,
+    conversationId,
+    onMessagesChange
 }: {
     instance: Instance;
     model: AvailableModel | null;
@@ -54,14 +52,41 @@ export function ChatPanel({
     /** When set, the empty-state shows a prominent Connect button
      *  instead of a disabled composer (used in the unauth flow). */
     onConnect?: () => void;
+    /** Persisted messages to hydrate from. */
+    initialMessages: PersistedMessage[];
+    /** Id of the conversation we are editing, or null when about to
+     *  create a new one. */
+    conversationId: string | null;
+    /** Persist a new message list. Returns the conversation id the
+     *  messages were written to (creates one when called with no
+     *  active conversation). */
+    onMessagesChange: (messages: PersistedMessage[]) => string | null;
 }) {
-    const [messages, setMessages] = useState<DisplayMessage[]>([]);
+    const [messages, setMessages] = useState<DisplayMessage[]>(
+        () => initialMessages.map((m) => ({ ...m }))
+    );
     const [input, setInput] = useState('');
     const [streaming, setStreaming] = useState(false);
     const [sampling, setSampling] = useState<SamplingParams>({ ...DEFAULT_SAMPLING });
     const [metaFor, setMetaFor] = useState<DisplayMessage | null>(null);
     const abortRef = useRef<AbortController | null>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
+    // Track which conversation id our current messages belong to.
+    // When the parent rotates `conversationId`, ChatShell remounts us
+    // (via key=conversationId), so this is mainly used after a brand
+    // new conversation gets persisted (id flips from null -> string).
+    const localConvIdRef = useRef<string | null>(conversationId);
+
+    // Persist a snapshot of the message list. Strips transient state
+    // (`streaming`) so the on-disk shape matches PersistedMessage.
+    const persist = useCallback(
+        (next: DisplayMessage[]) => {
+            const sanitized: PersistedMessage[] = next.map(({ streaming, ...rest }) => rest);
+            const id = onMessagesChange(sanitized);
+            if (id) localConvIdRef.current = id;
+        },
+        [onMessagesChange]
+    );
 
     useEffect(() => {
         scrollRef.current?.scrollTo({
@@ -82,7 +107,7 @@ export function ChatPanel({
         const startedAt = Date.now();
         const samplingSnapshot: SamplingParams = { ...sampling };
 
-        setMessages([
+        const initial: DisplayMessage[] = [
             ...history,
             {
                 id: assistantId,
@@ -92,7 +117,12 @@ export function ChatPanel({
                 sampling: samplingSnapshot,
                 startedAt
             }
-        ]);
+        ];
+        setMessages(initial);
+        // Persist the user turn + placeholder eagerly so a refresh
+        // mid-stream still surfaces the in-flight question. The
+        // assistant body will be overwritten when streaming ends.
+        persist(initial);
         setInput('');
         setStreaming(true);
 
@@ -117,8 +147,8 @@ export function ChatPanel({
                     );
                 },
                 onDone: (_full, meta) => {
-                    setMessages((prev) =>
-                        prev.map((m) =>
+                    setMessages((prev) => {
+                        const next = prev.map((m) =>
                             m.id === assistantId
                                 ? {
                                     ...m,
@@ -127,26 +157,60 @@ export function ChatPanel({
                                     finishedAt: Date.now()
                                 }
                                 : m
-                        )
-                    );
+                        );
+                        persist(next);
+                        return next;
+                    });
                 },
                 onError: (err) => {
-                    setMessages((prev) =>
-                        prev.map((m) =>
+                    setMessages((prev) => {
+                        const next = prev.map((m) =>
                             m.id === assistantId
                                 ? { ...m, streaming: false, error: err.message }
                                 : m
-                        )
-                    );
+                        );
+                        persist(next);
+                        return next;
+                    });
                 }
             });
         } finally {
             setStreaming(false);
             abortRef.current = null;
         }
-    }, [input, streaming, model, instance.endpoint, messages, token, sampling]);
+    }, [input, streaming, model, instance.endpoint, messages, token, sampling, persist]);
 
     const stop = useCallback(() => abortRef.current?.abort(), []);
+
+    const rateMessage = useCallback(
+        (id: string, rating: Rating | null, comment?: string) => {
+            setMessages((prev) => {
+                const next = prev.map((m) =>
+                    m.id === id
+                        ? rating === null
+                            ? { ...m, rating: undefined, ratingComment: undefined }
+                            : { ...m, rating, ratingComment: comment }
+                        : m
+                );
+                persist(next);
+                return next;
+            });
+            const convId = localConvIdRef.current;
+            if (rating === null) {
+                clearFeedback(id);
+            } else if (convId) {
+                recordFeedback({
+                    messageId: id,
+                    conversationId: convId,
+                    instanceId: instance.id,
+                    rating,
+                    comment,
+                    createdAt: Date.now()
+                });
+            }
+        },
+        [persist, instance.id]
+    );
 
     const composer = (
         <Composer
@@ -227,6 +291,7 @@ export function ChatPanel({
                             key={m.id}
                             message={m}
                             onShowMeta={() => setMetaFor(m)}
+                            onRate={(rating, comment) => rateMessage(m.id, rating, comment)}
                         />
                     ))}
                 </div>
@@ -259,10 +324,12 @@ export function ChatPanel({
 
 function Message({
     message,
-    onShowMeta
+    onShowMeta,
+    onRate
 }: {
     message: DisplayMessage;
     onShowMeta: () => void;
+    onRate: (rating: Rating | null, comment?: string) => void;
 }) {
     if (message.role === 'user') {
         return (
@@ -292,7 +359,7 @@ function Message({
                 <p className='text-xs text-red-400'>{message.error}</p>
             )}
             {!message.streaming && message.content && (
-                <MessageActions message={message} onShowMeta={onShowMeta} />
+                <MessageActions message={message} onShowMeta={onShowMeta} onRate={onRate} />
             )}
         </div>
     );
@@ -300,12 +367,16 @@ function Message({
 
 function MessageActions({
     message,
-    onShowMeta
+    onShowMeta,
+    onRate
 }: {
     message: DisplayMessage;
     onShowMeta: () => void;
+    onRate: (rating: Rating | null, comment?: string) => void;
 }) {
     const [copied, setCopied] = useState(false);
+    const [showCommentBox, setShowCommentBox] = useState(false);
+    const [commentDraft, setCommentDraft] = useState(message.ratingComment ?? '');
     const copy = async () => {
         try {
             await navigator.clipboard.writeText(message.content);
@@ -324,30 +395,116 @@ function MessageActions({
     const tps =
         elapsed && tokens > 0 ? (tokens / parseFloat(elapsed)).toFixed(1) : null;
 
+    const toggleRating = (next: Rating) => {
+        if (message.rating === next) {
+            // Un-rate.
+            onRate(null);
+            setShowCommentBox(false);
+            return;
+        }
+        onRate(next, message.ratingComment);
+        if (next === 'down') setShowCommentBox(true);
+    };
+
     return (
-        <div className='flex items-center gap-3 text-xs text-[var(--color-text-muted)]'>
-            <button
-                type='button'
-                onClick={() => void copy()}
-                className='inline-flex items-center gap-1 hover:text-[var(--color-text-primary)]'
-                title='Copy reply'
-            >
-                {copied ? '\u2713 Copied' : 'Copy'}
-            </button>
-            <button
-                type='button'
-                onClick={onShowMeta}
-                className='inline-flex items-center gap-1 hover:text-[var(--color-text-primary)]'
-                title='View reproducibility metadata'
-            >
-                Metadata
-            </button>
-            {elapsed && (
-                <span>
-                    {elapsed}s{tps && ` \u00B7 ~${tps} tok/s`}
-                </span>
+        <div className='flex flex-col gap-2'>
+            <div className='flex items-center gap-3 text-xs text-[var(--color-text-muted)]'>
+                <button
+                    type='button'
+                    onClick={() => void copy()}
+                    className='inline-flex items-center gap-1 hover:text-[var(--color-text-primary)]'
+                    title='Copy reply'
+                >
+                    {copied ? '\u2713 Copied' : 'Copy'}
+                </button>
+                <button
+                    type='button'
+                    onClick={onShowMeta}
+                    className='inline-flex items-center gap-1 hover:text-[var(--color-text-primary)]'
+                    title='View reproducibility metadata'
+                >
+                    Metadata
+                </button>
+                <button
+                    type='button'
+                    onClick={() => toggleRating('up')}
+                    className={`inline-flex items-center gap-1 ${
+                        message.rating === 'up'
+                            ? 'text-[var(--color-primary-green)]'
+                            : 'hover:text-[var(--color-text-primary)]'
+                    }`}
+                    title='Helpful'
+                    aria-pressed={message.rating === 'up'}
+                >
+                    <ThumbUpIcon /> {message.rating === 'up' ? 'Rated' : 'Good'}
+                </button>
+                <button
+                    type='button'
+                    onClick={() => toggleRating('down')}
+                    className={`inline-flex items-center gap-1 ${
+                        message.rating === 'down'
+                            ? 'text-red-400'
+                            : 'hover:text-[var(--color-text-primary)]'
+                    }`}
+                    title='Not helpful'
+                    aria-pressed={message.rating === 'down'}
+                >
+                    <ThumbDownIcon /> {message.rating === 'down' ? 'Rated' : 'Bad'}
+                </button>
+                {elapsed && (
+                    <span>
+                        {elapsed}s{tps && ` \u00B7 ~${tps} tok/s`}
+                    </span>
+                )}
+            </div>
+            {showCommentBox && message.rating === 'down' && (
+                <div className='flex flex-col gap-1.5 rounded-md border border-[var(--color-border-dark)] bg-[var(--color-surface-2)]/40 p-2'>
+                    <textarea
+                        value={commentDraft}
+                        onChange={(e) => setCommentDraft(e.target.value)}
+                        placeholder='Optional: what was wrong with this reply? Stays on this device until you leave.'
+                        className='min-h-[60px] w-full resize-y rounded-sm border border-[var(--color-border-dark)] bg-transparent p-1.5 text-xs text-[var(--color-text-primary)] outline-none focus:border-[var(--color-primary-blue)]/60'
+                    />
+                    <div className='flex justify-end gap-2'>
+                        <button
+                            type='button'
+                            onClick={() => setShowCommentBox(false)}
+                            className='text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]'
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type='button'
+                            onClick={() => {
+                                onRate('down', commentDraft.trim() || undefined);
+                                setShowCommentBox(false);
+                            }}
+                            className='text-xs font-medium text-[var(--color-primary-blue)] hover:opacity-80'
+                        >
+                            Save feedback
+                        </button>
+                    </div>
+                </div>
             )}
         </div>
+    );
+}
+
+function ThumbUpIcon() {
+    return (
+        <svg width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2' strokeLinecap='round' strokeLinejoin='round'>
+            <path d='M7 10v12' />
+            <path d='M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H7V10l4-8a2 2 0 0 1 4 1.88Z' />
+        </svg>
+    );
+}
+
+function ThumbDownIcon() {
+    return (
+        <svg width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2' strokeLinecap='round' strokeLinejoin='round'>
+            <path d='M17 14V2' />
+            <path d='M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H17v12l-4 8a2 2 0 0 1-4-1.88Z' />
+        </svg>
     );
 }
 
