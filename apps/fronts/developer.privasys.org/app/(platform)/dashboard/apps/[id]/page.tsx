@@ -1651,6 +1651,7 @@ function DeploymentsTab({ app, deployments, versions, enclaves, token, onRefresh
     const [selectedEnclave, setSelectedEnclave] = useState('');
     const [deploying, setDeploying] = useState(false);
     const [stopping, setStopping] = useState<string | null>(null);
+    const [stopErrors, setStopErrors] = useState<Record<string, string>>({});
     const [error, setError] = useState<string | null>(null);
     const [runtimeEnvVars, setRuntimeEnvVars] = useState<{ key: string; value: string; secret: boolean }[]>([]);
     const [showRuntimeEnv, setShowRuntimeEnv] = useState(false);
@@ -1675,14 +1676,20 @@ function DeploymentsTab({ app, deployments, versions, enclaves, token, onRefresh
         }
     }
 
-    async function handleStop(depId: string) {
+    async function handleStop(depId: string, force = false) {
         setStopping(depId);
         setError(null);
         try {
-            await stopDeployment(token, app.id, depId);
+            await stopDeployment(token, app.id, depId, force);
+            setStopErrors(prev => {
+                const next = { ...prev };
+                delete next[depId];
+                return next;
+            });
             onRefresh();
         } catch (e) {
-            setError(e instanceof Error ? e.message : 'Failed to stop deployment');
+            const msg = e instanceof Error ? e.message : 'Failed to stop deployment';
+            setStopErrors(prev => ({ ...prev, [depId]: msg }));
         } finally {
             setStopping(null);
         }
@@ -1883,8 +1890,23 @@ function DeploymentsTab({ app, deployments, versions, enclaves, token, onRefresh
                                                 {stopping === dep.id ? 'Stopping…' : 'Stop'}
                                             </button>
                                         )}
+                                        {isActive && stopErrors[dep.id] && (
+                                            <button
+                                                onClick={() => handleStop(dep.id, true)}
+                                                disabled={stopping === dep.id}
+                                                title="Mark this deployment stopped without contacting the enclave. Use when the enclave is gone or unreachable."
+                                                className="px-3 py-1 text-xs font-medium rounded-lg border border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-900/20 disabled:opacity-40 transition-colors"
+                                            >
+                                                Force remove
+                                            </button>
+                                        )}
                                     </div>
                                 </div>
+                                {isActive && stopErrors[dep.id] && (
+                                    <div className="mt-2 mb-3 p-2 rounded-lg bg-amber-50 dark:bg-amber-900/20 text-xs text-amber-800 dark:text-amber-200">
+                                        Stop failed: {stopErrors[dep.id]}. The enclave may already be gone; use <strong>Force remove</strong> to clear the stale row.
+                                    </div>
+                                )}
                                 {/* Pull progress bar */}
                                 {(() => {
                                     const progress = deployProgress?.[dep.id];

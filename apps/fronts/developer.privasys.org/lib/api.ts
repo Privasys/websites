@@ -448,8 +448,9 @@ export function deployVersion(token: string, appId: string, versionId: string, e
     });
 }
 
-export function stopDeployment(token: string, appId: string, deploymentId: string): Promise<AppDeployment> {
-    return request<AppDeployment>(`/api/v1/apps/${encodeURIComponent(appId)}/deployments/${encodeURIComponent(deploymentId)}/stop`, token, {
+export function stopDeployment(token: string, appId: string, deploymentId: string, force = false): Promise<AppDeployment> {
+    const qs = force ? '?force=true' : '';
+    return request<AppDeployment>(`/api/v1/apps/${encodeURIComponent(appId)}/deployments/${encodeURIComponent(deploymentId)}/stop${qs}`, token, {
         method: 'POST',
         body: JSON.stringify({})
     });
