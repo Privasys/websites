@@ -13,7 +13,7 @@ import { modelLabel } from '~/lib/model-label';
 export function ModelPicker({
     instance,
     selected,
-    onSelect,
+    onSelect
 }: {
     instance: Instance;
     selected: AvailableModel | null;

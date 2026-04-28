@@ -9,7 +9,7 @@ import { DEFAULT_SAMPLING } from '~/lib/sampling';
 // replies on the same hardware.
 export function SamplingEditor({
     value,
-    onChange,
+    onChange
 }: {
     value: SamplingParams;
     onChange: (next: SamplingParams) => void;
@@ -80,7 +80,7 @@ function Field({
     value,
     onChange,
     step,
-    placeholder,
+    placeholder
 }: {
     label: string;
     value: number | undefined;

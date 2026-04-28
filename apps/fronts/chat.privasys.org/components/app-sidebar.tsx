@@ -21,7 +21,7 @@ export function AppSidebar({
     instance,
     onNewChat,
     onShowSecurity,
-    onShowSignIn,
+    onShowSignIn
 }: {
     instance: Instance | null;
     onNewChat: () => void;
@@ -158,7 +158,7 @@ function pickDisplay(profile: UserProfile | null, token: string | undefined): Di
     if (parts.length !== 3) return { primary: 'Privasys user', initial: 'P' };
     try {
         const payload = JSON.parse(
-            atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')),
+            atob(parts[1].replace(/-/g, '+').replace(/_/g, '/'))
         ) as {
             email?: string;
             name?: string;

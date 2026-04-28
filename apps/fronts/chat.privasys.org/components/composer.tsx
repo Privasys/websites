@@ -26,7 +26,7 @@ export function Composer({
     onSamplingChange,
     placeholder,
     autoFocus,
-    disabledReason,
+    disabledReason
 }: {
     value: string;
     onChange: (next: string) => void;

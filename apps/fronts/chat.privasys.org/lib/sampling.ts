@@ -15,5 +15,5 @@ export interface SamplingParams {
 export const DEFAULT_SAMPLING: SamplingParams = {
     seed: 0,
     temperature: 1.0,
-    top_p: 1.0,
+    top_p: 1.0
 };

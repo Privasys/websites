@@ -84,7 +84,7 @@ export function Markdown({ children }: { children: string }) {
                             {children}
                         </td>
                     ),
-                    hr: () => <hr className='my-3 border-[var(--color-border-dark)]' />,
+                    hr: () => <hr className='my-3 border-[var(--color-border-dark)]' />
                 }}
             >
                 {children}

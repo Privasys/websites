@@ -18,18 +18,18 @@ export const metadata: Metadata = {
         url: SITE_URL,
         siteName: APP_NAME,
         title: APP_NAME,
-        description: DESCRIPTION,
+        description: DESCRIPTION
     },
     icons: [
         { rel: 'icon', type: 'image/svg+xml', url: '/favicon/favicon.svg' },
-        { rel: 'shortcut icon', url: '/favicon/favicon.svg' },
-    ],
+        { rel: 'shortcut icon', url: '/favicon/favicon.svg' }
+    ]
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
     // Inline script applies the persisted theme before first paint to
     // avoid a flash of dark content on a light-default app.
-    const themeBootstrap = `(()=>{try{var t=localStorage.getItem('privasys-chat-theme');if(t==='dark')document.documentElement.setAttribute('data-theme','dark');}catch(e){}})();`;
+    const themeBootstrap = '(()=>{try{var t=localStorage.getItem(\'privasys-chat-theme\');if(t===\'dark\')document.documentElement.setAttribute(\'data-theme\',\'dark\');}catch(e){}})();';
     return (
         <html lang="en" suppressHydrationWarning>
             <head>

@@ -20,14 +20,14 @@ export interface UserProfile {
 
 export async function fetchUserProfile(
     token: string,
-    signal?: AbortSignal,
+    signal?: AbortSignal
 ): Promise<UserProfile> {
     const res = await fetch(`${API_BASE_URL}/api/v1/me`, {
         signal,
         headers: {
             Accept: 'application/json',
-            Authorization: `Bearer ${token}`,
-        },
+            Authorization: `Bearer ${token}`
+        }
     });
     if (!res.ok) {
         throw new Error(`/me failed: ${res.status} ${res.statusText}`);

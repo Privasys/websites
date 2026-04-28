@@ -9,7 +9,7 @@
 
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AttestationResult, QuoteVerifyResult } from './types';
 
 /** Generate a 32-byte hex challenge using the Web Crypto API. */
@@ -26,6 +26,13 @@ export interface AttestationTarget {
     verifyQuoteUrl?: string;
     /** Bearer token for both endpoints. Omit for public endpoints. */
     token?: string;
+    /** When true, automatically call inspect() once on mount (and again
+     *  whenever attestUrl changes). The chat UI uses this to skip the
+     *  pre-connect screen and go straight to the result view. */
+    autoInspect?: boolean;
+    /** When true, automatically call verifyQuoteSignature() once a result
+     *  with a raw quote arrives. Mirrors the developer-portal pattern. */
+    autoVerifyQuote?: boolean;
 }
 
 export interface AttestationState {
@@ -143,6 +150,28 @@ export function useAttestation(target: AttestationTarget): [AttestationState, At
         setLoading(false);
         setVerifying(false);
     }, []);
+
+    // Auto-inspect on mount / whenever the attest URL changes. We track
+    // the last URL we fired against so a re-render with the same URL
+    // doesn't loop. Consumers that toggle autoInspect on/off should also
+    // change attestUrl to re-trigger.
+    const lastAutoUrlRef = useRef<string | null>(null);
+    useEffect(() => {
+        if (!target.autoInspect || !target.attestUrl) return;
+        if (lastAutoUrlRef.current === target.attestUrl) return;
+        lastAutoUrlRef.current = target.attestUrl;
+        void inspect();
+    }, [target.autoInspect, target.attestUrl, inspect]);
+
+    // Auto-verify the quote signature once a fresh result with a real
+    // quote arrives (mock quotes are skipped, matching the previous
+    // inline implementation in the developer portal).
+    useEffect(() => {
+        if (!target.autoVerifyQuote) return;
+        if (!result?.quote?.raw_base64 || result.quote.is_mock) return;
+        if (!target.verifyQuoteUrl) return;
+        void verifyQuoteSignature();
+    }, [target.autoVerifyQuote, target.verifyQuoteUrl, result, verifyQuoteSignature]);
 
     return [
         { result, quoteVerify, challenge, loading, verifying, error, quoteVerifyError },
