@@ -23,6 +23,25 @@ import type { SamplingParams } from './sampling';
 
 export type Rating = 'up' | 'down';
 
+/**
+ * One tool invocation surfaced inline in an assistant turn. Mirrors the
+ * Copilot Chat ChatToolInvocationPart: a small expandable card showing
+ * what the agent called, with what arguments, what came back, and how
+ * long it took. Persisted alongside the message so a reload reproduces
+ * the same view.
+ */
+export interface ToolInvocation {
+    id: string;
+    name: string;        // "<server>__<tool>"
+    args: unknown;
+    status: 'running' | 'ok' | 'error';
+    result?: unknown;
+    error?: string;
+    startedAt: number;
+    finishedAt?: number;
+    durationMs?: number;
+}
+
 export interface PersistedMessage extends ChatMessage {
     id: string;
     /** Wall-clock when the assistant turn started (ms since epoch). */
@@ -38,6 +57,8 @@ export interface PersistedMessage extends ChatMessage {
     /** Optional user feedback on assistant turns. */
     rating?: Rating;
     ratingComment?: string;
+    /** MCP tool calls the agent made on this turn (live updated, then frozen). */
+    toolInvocations?: ToolInvocation[];
 }
 
 export interface Conversation {

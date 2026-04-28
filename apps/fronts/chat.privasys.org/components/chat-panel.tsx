@@ -7,11 +7,12 @@ import {
 } from '~/lib/chat-stream';
 import { DEFAULT_SAMPLING, type SamplingParams } from '~/lib/sampling';
 import { modelLabel } from '~/lib/model-label';
-import type { PersistedMessage, Rating } from '~/lib/conversations';
+import type { PersistedMessage, Rating, ToolInvocation } from '~/lib/conversations';
 import { clearFeedback, recordFeedback } from '~/lib/pending-feedback';
 import { Composer } from './composer';
 import { Markdown } from './markdown';
 import { MetadataDialog } from './metadata-dialog';
+import { ToolCallCard } from './tool-call-card';
 
 interface DisplayMessage extends PersistedMessage {
     /** True while tokens are still streaming in for this message. */
@@ -144,6 +145,42 @@ export function ChatPanel({
                                 ? { ...m, content: m.content + delta }
                                 : m
                         )
+                    );
+                },
+                onToolCall: (ev) => {
+                    const inv: ToolInvocation = {
+                        id: ev.id,
+                        name: ev.name,
+                        args: ev.args,
+                        status: 'running',
+                        startedAt: ev.started_at
+                    };
+                    setMessages((prev) =>
+                        prev.map((m) =>
+                            m.id === assistantId
+                                ? { ...m, toolInvocations: [...(m.toolInvocations ?? []), inv] }
+                                : m
+                        )
+                    );
+                },
+                onToolResult: (ev) => {
+                    setMessages((prev) =>
+                        prev.map((m) => {
+                            if (m.id !== assistantId) return m;
+                            const list = (m.toolInvocations ?? []).map((inv) =>
+                                inv.id === ev.id
+                                    ? {
+                                        ...inv,
+                                        status: ev.status,
+                                        result: ev.result,
+                                        error: ev.error,
+                                        finishedAt: ev.finished_at,
+                                        durationMs: ev.duration_ms
+                                    }
+                                    : inv
+                            );
+                            return { ...m, toolInvocations: list };
+                        })
                     );
                 },
                 onDone: (_full, meta) => {
@@ -343,6 +380,13 @@ function Message({
 
     return (
         <div className='flex flex-col gap-2'>
+            {message.toolInvocations && message.toolInvocations.length > 0 && (
+                <div className='flex flex-col gap-1'>
+                    {message.toolInvocations.map((inv) => (
+                        <ToolCallCard key={inv.id} invocation={inv} />
+                    ))}
+                </div>
+            )}
             {message.content ? (
                 <Markdown>{message.content}</Markdown>
             ) : message.streaming ? (

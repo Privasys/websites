@@ -32,7 +32,37 @@ export interface Reproducibility {
     gpu_type?: string;
     image_digest?: string;
     tee_type?: string;
+    /** Per-tool summary populated by the agentic loop. */
+    tool_calls?: ToolCallSummary[];
     [key: string]: unknown;
+}
+
+export interface ToolCallSummary {
+    name: string;
+    status: 'ok' | 'error';
+    duration_ms: number;
+    error?: string;
+}
+
+// Live tool_call event (start). Emitted by confidential-ai before
+// dispatching the call to the owning MCP server.
+export interface ToolCallEvent {
+    id: string;
+    name: string;       // "<server>__<tool>"
+    args: unknown;      // raw JSON the model produced
+    started_at: number; // ms since epoch (set client-side on receipt)
+}
+
+// Live tool_result event (end). Status "ok" carries the JSON result;
+// "error" carries the error message.
+export interface ToolResultEvent {
+    id: string;
+    name: string;
+    status: 'ok' | 'error';
+    result?: unknown;
+    error?: string;
+    duration_ms: number;
+    finished_at: number;
 }
 
 export interface StreamChatArgs {
@@ -48,6 +78,10 @@ export interface StreamChatArgs {
     onDone?: (final: string, meta?: Reproducibility) => void;
     /** Called on stream error. */
     onError?: (err: Error) => void;
+    /** Called when the agent starts a tool call. */
+    onToolCall?: (ev: ToolCallEvent) => void;
+    /** Called when a tool call completes (ok or error). */
+    onToolResult?: (ev: ToolResultEvent) => void;
 }
 
 interface SSEChunk {
@@ -122,28 +156,60 @@ export async function streamChatCompletion(args: StreamChatArgs): Promise<void> 
                 const event = buffer.slice(0, sep);
                 buffer = buffer.slice(sep + 2);
 
+                // SSE event block: optional `event:` header sets the
+                // event type; we treat unset (or `message`) as the
+                // OpenAI-compatible stream and route `tool_call` /
+                // `tool_result` to the agentic callbacks.
+                let eventName = 'message';
+                let dataPayload = '';
                 for (const line of event.split('\n')) {
-                    if (!line.startsWith('data:')) continue;
-                    const data = line.slice(5).trim();
-                    if (!data) continue;
-                    if (data === '[DONE]') {
-                        args.onDone?.(full, meta);
-                        return;
+                    if (line.startsWith('event:')) {
+                        eventName = line.slice(6).trim();
+                    } else if (line.startsWith('data:')) {
+                        // SSE allows multi-line `data:`; concatenate.
+                        dataPayload += (dataPayload ? '\n' : '') + line.slice(5).trim();
                     }
-                    try {
-                        const chunk = JSON.parse(data) as SSEChunk;
-                        if (chunk.reproducibility) {
-                            meta = chunk.reproducibility;
-                        }
-                        const delta = chunk.choices?.[0]?.delta?.content;
-                        if (delta) {
-                            full += delta;
-                            args.onDelta(delta);
-                        }
-                    } catch {
-                        // Ignore malformed chunks; vLLM occasionally emits
-                        // keep-alives that aren't strict JSON.
+                }
+                if (!dataPayload) continue;
+                if (dataPayload === '[DONE]') {
+                    args.onDone?.(full, meta);
+                    return;
+                }
+                try {
+                    const parsed = JSON.parse(dataPayload);
+                    if (eventName === 'tool_call') {
+                        args.onToolCall?.({
+                            ...(parsed as Omit<ToolCallEvent, 'started_at'>),
+                            started_at: Date.now()
+                        });
+                        continue;
                     }
+                    if (eventName === 'tool_result') {
+                        args.onToolResult?.({
+                            ...(parsed as Omit<ToolResultEvent, 'finished_at'>),
+                            finished_at: Date.now()
+                        });
+                        continue;
+                    }
+                    if (eventName === 'error') {
+                        const msg = (parsed as { message?: string })?.message ?? 'agent error';
+                        args.onError?.(new Error(msg));
+                        continue;
+                    }
+                    // Default `message` event: OpenAI-compatible chunk
+                    // or our reproducibility wrapper.
+                    const chunk = parsed as SSEChunk;
+                    if (chunk.reproducibility) {
+                        meta = chunk.reproducibility;
+                    }
+                    const delta = chunk.choices?.[0]?.delta?.content;
+                    if (delta) {
+                        full += delta;
+                        args.onDelta(delta);
+                    }
+                } catch {
+                    // Ignore malformed chunks; vLLM occasionally emits
+                    // keep-alives that aren't strict JSON.
                 }
             }
         }
