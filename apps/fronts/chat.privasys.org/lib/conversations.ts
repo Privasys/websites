@@ -43,6 +43,10 @@ export interface ToolInvocation {
     /** Server-side flag: this tool was tagged as a write/privileged
      *  action and the UI should make that obvious. */
     requiresConfirmation?: boolean;
+    /** Tracks the user's response to the consent prompt for write
+     *  tools. Unset until they click; once set, the card hides the
+     *  Allow/Deny buttons and shows the chosen state. */
+    consent?: 'allowed' | 'denied';
 }
 
 export interface PersistedMessage extends ChatMessage {

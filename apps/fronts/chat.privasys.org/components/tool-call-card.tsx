@@ -14,8 +14,22 @@ import type { ToolInvocation } from '~/lib/conversations';
 // portion of the qualified tool name (`<server>__<tool>`) is shown as a
 // small badge so the user sees WHICH enclave served the call. A future
 // iteration will pin the MRTD here.
-export function ToolCallCard({ invocation }: { invocation: ToolInvocation }) {
-    const [expanded, setExpanded] = useState(false);
+export function ToolCallCard({
+    invocation,
+    onAllow,
+    onDeny
+}: {
+    invocation: ToolInvocation;
+    onAllow?: () => void;
+    onDeny?: () => void;
+}) {
+    // Auto-expand when consent is needed so the user immediately
+    // sees the args + the allow/deny buttons.
+    const needsConsent =
+        invocation.requiresConfirmation &&
+        invocation.status === 'running' &&
+        !invocation.consent;
+    const [expanded, setExpanded] = useState(needsConsent);
     const [server, tool] = splitName(invocation.name);
 
     const status = invocation.status;
@@ -70,6 +84,44 @@ export function ToolCallCard({ invocation }: { invocation: ToolInvocation }) {
                         </p>
                     )}
                     <Pre label='args'>{stringify(invocation.args)}</Pre>
+                    {needsConsent && (onAllow || onDeny) && (
+                        <div className='flex items-center gap-2'>
+                            {onAllow && (
+                                <button
+                                    type='button'
+                                    onClick={onAllow}
+                                    className='rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-1 text-[11px] font-medium text-amber-100 hover:bg-amber-500/20'
+                                >
+                                    Allow this call
+                                </button>
+                            )}
+                            {onDeny && (
+                                <button
+                                    type='button'
+                                    onClick={onDeny}
+                                    className='rounded-md border border-[var(--color-border-dark)] bg-[var(--color-surface-2)]/50 px-3 py-1 text-[11px] font-medium text-[var(--color-text-secondary)] hover:border-red-500/40 hover:text-red-300'
+                                >
+                                    Deny
+                                </button>
+                            )}
+                            <span className='text-[10px] text-[var(--color-text-muted)]'>
+                                The agent loop is paused waiting for your
+                                decision.
+                            </span>
+                        </div>
+                    )}
+                    {invocation.consent === 'allowed' &&
+                        invocation.status === 'running' && (
+                        <p className='text-[11px] text-[var(--color-text-muted)]'>
+                            Allowed. Waiting for the tool result…
+                        </p>
+                    )}
+                    {invocation.consent === 'denied' && (
+                        <p className='text-[11px] text-red-300'>
+                            Denied. The agent will receive an error and try
+                            something else.
+                        </p>
+                    )}
                     {status === 'error' ? (
                         <Pre label='error' tone='error'>
                             {invocation.error ?? 'unknown error'}

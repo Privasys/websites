@@ -111,6 +111,10 @@ export function ChatShell({
                         initialMessages={conv.current?.messages ?? []}
                         conversationId={conv.currentId}
                         onMessagesChange={conv.setCurrentMessages}
+                        onBranchFromMessage={(messageId) => {
+                            conv.branchFromMessage(messageId);
+                            goChat();
+                        }}
                     />
                 )}
             </div>

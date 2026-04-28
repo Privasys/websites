@@ -144,6 +144,55 @@ export function useConversations(args: {
         [conversations, currentId, instanceId, modelLabel, persist]
     );
 
+    /** Fork the conversation that contains `messageId` into a new
+     *  conversation rooted at and including that message. The new
+     *  conversation is selected and persisted; the source is left
+     *  untouched. Returns the new conversation id, or null when the
+     *  message could not be located.
+     *
+     *  This mirrors the server-side `POST /api/v1/messages/<id>/branch`
+     *  endpoint exposed by `private-rag`. While the chat front-end is
+     *  still localStorage-backed we run the same operation on the
+     *  client; the moment the front-end starts persisting through
+     *  `private-rag` this hook will swap to a network call without
+     *  changing its public shape.
+     */
+    const branchFromMessage = useCallback(
+        (messageId: string, title?: string): string | null => {
+            const src = conversations.find((c) =>
+                c.messages.some((m) => m.id === messageId)
+            );
+            if (!src) return null;
+            const cut = src.messages.findIndex((m) => m.id === messageId);
+            if (cut < 0) return null;
+            const now = Date.now();
+            const id = newConversationId();
+            const branched: Conversation = {
+                id,
+                instanceId: src.instanceId,
+                title:
+                    (title ?? '').trim() ||
+                    `${src.title || 'Untitled chat'} (branch)`,
+                createdAt: now,
+                updatedAt: now,
+                modelLabel: src.modelLabel ?? modelLabel,
+                // Copy messages with fresh ids so feedback / tool
+                // invocations attached to the originals are not
+                // accidentally aliased between the two conversations.
+                messages: src.messages.slice(0, cut + 1).map((m) => ({
+                    ...m,
+                    id: newConversationId(),
+                    rating: undefined,
+                    ratingComment: undefined
+                }))
+            };
+            persist([branched, ...conversations]);
+            setCurrentId(id);
+            return id;
+        },
+        [conversations, modelLabel, persist]
+    );
+
     return {
         hydrated,
         conversations,
@@ -153,6 +202,7 @@ export function useConversations(args: {
         select,
         remove,
         rename,
-        setCurrentMessages
+        setCurrentMessages,
+        branchFromMessage
     };
 }

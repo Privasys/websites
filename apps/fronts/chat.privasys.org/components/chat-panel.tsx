@@ -42,7 +42,8 @@ export function ChatPanel({
     onConnect,
     initialMessages,
     conversationId,
-    onMessagesChange
+    onMessagesChange,
+    onBranchFromMessage
 }: {
     instance: Instance;
     model: AvailableModel | null;
@@ -62,6 +63,10 @@ export function ChatPanel({
      *  messages were written to (creates one when called with no
      *  active conversation). */
     onMessagesChange: (messages: PersistedMessage[]) => string | null;
+    /** Fork the current conversation at the given assistant message,
+     *  selecting the new conversation. The shell handles persistence
+     *  + view routing; we just expose the action to MessageActions. */
+    onBranchFromMessage?: (messageId: string) => void;
 }) {
     const [messages, setMessages] = useState<DisplayMessage[]>(
         () => initialMessages.map((m) => ({ ...m }))
@@ -353,8 +358,37 @@ export function ChatPanel({
                         <Message
                             key={m.id}
                             message={m}
+                            instanceEndpoint={instance.endpoint}
+                            token={token}
                             onShowMeta={() => setMetaFor(m)}
                             onRate={(rating, comment) => rateMessage(m.id, rating, comment)}
+                            onBranch={
+                                onBranchFromMessage
+                                    ? () => onBranchFromMessage(m.id)
+                                    : undefined
+                            }
+                            onConsentDecision={(callId, allowed) => {
+                                // Optimistically reflect the decision in
+                                // the local card immediately; the SSE
+                                // tool_result will fill in real timing
+                                // when the server side completes.
+                                setMessages((prev) =>
+                                    prev.map((mm) => {
+                                        if (mm.id !== m.id || !mm.toolInvocations) return mm;
+                                        return {
+                                            ...mm,
+                                            toolInvocations: mm.toolInvocations.map((inv) =>
+                                                inv.id === callId
+                                                    ? {
+                                                        ...inv,
+                                                        consent: allowed ? 'allowed' : 'denied'
+                                                    }
+                                                    : inv
+                                            )
+                                        };
+                                    })
+                                );
+                            }}
                         />
                     ))}
                 </div>
@@ -387,12 +421,20 @@ export function ChatPanel({
 
 function Message({
     message,
+    instanceEndpoint,
+    token,
     onShowMeta,
-    onRate
+    onRate,
+    onBranch,
+    onConsentDecision
 }: {
     message: DisplayMessage;
+    instanceEndpoint: string;
+    token?: string;
     onShowMeta: () => void;
     onRate: (rating: Rating | null, comment?: string) => void;
+    onBranch?: () => void;
+    onConsentDecision: (callId: string, allowed: boolean) => void;
 }) {
     if (message.role === 'user') {
         return (
@@ -409,7 +451,18 @@ function Message({
             {message.toolInvocations && message.toolInvocations.length > 0 && (
                 <div className='flex flex-col gap-1'>
                     {message.toolInvocations.map((inv) => (
-                        <ToolCallCard key={inv.id} invocation={inv} />
+                        <ToolCallCard
+                            key={inv.id}
+                            invocation={inv}
+                            onAllow={() => {
+                                void postConsent(instanceEndpoint, inv.id, true, token);
+                                onConsentDecision(inv.id, true);
+                            }}
+                            onDeny={() => {
+                                void postConsent(instanceEndpoint, inv.id, false, token);
+                                onConsentDecision(inv.id, false);
+                            }}
+                        />
                     ))}
                 </div>
             )}
@@ -429,7 +482,12 @@ function Message({
                 <p className='text-xs text-red-400'>{message.error}</p>
             )}
             {!message.streaming && message.content && (
-                <MessageActions message={message} onShowMeta={onShowMeta} onRate={onRate} />
+                <MessageActions
+                    message={message}
+                    onShowMeta={onShowMeta}
+                    onRate={onRate}
+                    onBranch={onBranch}
+                />
             )}
         </div>
     );
@@ -438,11 +496,13 @@ function Message({
 function MessageActions({
     message,
     onShowMeta,
-    onRate
+    onRate,
+    onBranch
 }: {
     message: DisplayMessage;
     onShowMeta: () => void;
     onRate: (rating: Rating | null, comment?: string) => void;
+    onBranch?: () => void;
 }) {
     const [copied, setCopied] = useState(false);
     const [showCommentBox, setShowCommentBox] = useState(false);
@@ -495,6 +555,16 @@ function MessageActions({
                 >
                     Metadata
                 </button>
+                {onBranch && (
+                    <button
+                        type='button'
+                        onClick={onBranch}
+                        className='inline-flex items-center gap-1 hover:text-[var(--color-text-primary)]'
+                        title='Fork this chat from here into a new conversation'
+                    >
+                        Branch
+                    </button>
+                )}
                 <button
                     type='button'
                     onClick={() => toggleRating('up')}
@@ -591,4 +661,31 @@ function StreamCursor() {
 function approxTokens(text: string): number {
     if (!text) return 0;
     return Math.max(1, Math.round(text.length / 4));
+}
+
+// POST the user's allow/deny decision back to the inference proxy's
+// /v1/agent/confirm/{id} endpoint so the blocked agent loop can
+// proceed (or short-circuit with a synthetic 'user_denied' tool
+// result). Failures are intentionally swallowed: the loop has its
+// own per-call timeout and will surface the error through the
+// regular tool_result SSE event.
+async function postConsent(
+    endpoint: string,
+    callId: string,
+    allowed: boolean,
+    token?: string
+): Promise<void> {
+    if (!endpoint || !callId) return;
+    const url = `${endpoint.replace(/\/$/, '')}/v1/agent/confirm/${encodeURIComponent(callId)}`;
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) headers.Authorization = `Bearer ${token}`;
+    try {
+        await fetch(url, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ allowed })
+        });
+    } catch {
+        /* network errors are surfaced via the tool_result stream */
+    }
 }
