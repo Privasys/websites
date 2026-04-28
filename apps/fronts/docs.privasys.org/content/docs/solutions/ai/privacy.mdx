@@ -33,3 +33,38 @@ Confidential AI does not protect against:
 - **Bugs in the loaded model.** Confidential inference does not make a model truthful, safe, or aligned. It only proves which model produced an output.
 - **Compromise of the operator's release-signing key.** If an attacker can sign a malicious model disk or initrd, the chain of trust is broken at that root. Use HSMs and air-gapped signing.
 - **Abuse by the user themselves.** Confidentiality is two-way; the operator cannot see prompts, but neither can a downstream auditor unless the user shares the session.
+
+## Per-fleet isolation: conversations, RAG, and feedback
+
+Conversation history, document chunks, embeddings, and per-message feedback all live in `private-rag`, a Postgres + pgvector enclave that runs **once per fleet**. The public fleet has its own shared `private-rag`; a dedicated fleet has its own isolated one. There is no cross-fleet shared state.
+
+### What lives where
+
+| Data | Storage | Why this boundary |
+| --- | --- | --- |
+| Original uploaded documents (PDF, image, audio) | `enclave-cloud` (per-user vault) | Long-term storage, deduplicated, encrypted at rest with a per-user key. |
+| Chunked text + embeddings | `private-rag` pgvector | Fast similarity search, scoped to the fleet. |
+| Reference rows (chunk -> blob) | `private-rag` pgvector | Lets the agent recover surrounding context via `enclave-cloud.fetch_range`. |
+| Conversations and messages | `private-rag` Postgres | Resumable across devices for the same `sub`. |
+| Per-message feedback (good / bad / comment) | `private-rag` Postgres, append-only | Operators can correlate bad ratings with model and sampling on the developer portal without the raw text leaving the fleet. |
+
+### Ownership model
+
+The Privasys ID JWT carries `sub` (a per-app derived subject) and the active fleet's role. `private-rag` enforces:
+
+- The calling `sub` must own every `conversation_id` it touches.
+- Search results are filtered to documents the `sub` can read, using the `enclave-cloud` vault membership snapshot. Top-k is applied **after** the access filter, so a curious user cannot infer the existence of forbidden documents from result counts.
+- Cross-`sub` sharing is out of scope for v1. Per-fleet shared knowledge bases are a follow-up that requires a fleet-level vault.
+
+### Mutual attestation between components
+
+Cross-component traffic uses RA-TLS with mutual attestation by MRTD:
+
+- The chat orchestrator (`ai-gpu`) pins `private-rag` by MRTD before sending any conversation or RAG tool call.
+- `private-rag` pins `enclave-cloud` by MRTD before fetching blob ranges or registering uploads.
+
+A new image rollout therefore requires either pre-publishing the new MRTD in the manager or accepting a brief refusal window while peers reload their pin lists. Tampering with any component breaks the pin and the call fails closed; it does not silently fall through.
+
+### Feedback never leaves the fleet
+
+The chat front-end's per-message Good / Bad rating buttons (with optional free-text comment) end up in the per-fleet `private-rag` as `feedback(message_id, rating, comment, sub, created_at)`. The developer portal renders aggregate rates per fleet so operators can correlate bad ratings with the model, sampling, or RAG tool usage that produced them. The raw comment text never leaves the TDX trust domain; the portal only sees aggregates.
