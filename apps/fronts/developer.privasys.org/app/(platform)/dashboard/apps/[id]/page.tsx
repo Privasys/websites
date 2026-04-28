@@ -570,13 +570,13 @@ function AttestationTab({ appId, token, deployments, versions }: { appId: string
     const [state, actions] = useAttestation({
         attestUrl: `${apiBase}/api/v1/apps/${encodeURIComponent(appId)}/attest`,
         verifyQuoteUrl: `${apiBase}/api/v1/verify-quote`,
-        token,
+        token
     });
 
     // Reset state when the user switches between deployments of the same app.
     useEffect(() => {
         actions.reset();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
     }, [selectedDeploymentId]);
 
     // Auto-trigger quote-signature verification once a result arrives,
@@ -585,7 +585,7 @@ function AttestationTab({ appId, token, deployments, versions }: { appId: string
         if (state.result?.quote?.raw_base64 && !state.result.quote.is_mock) {
             void actions.verifyQuoteSignature();
         }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
     }, [state.result]);
 
     return (
@@ -647,7 +647,7 @@ function AttestationTab({ appId, token, deployments, versions }: { appId: string
                                     rtmr0: q.rtmr0,
                                     rtmr1: q.rtmr1,
                                     rtmr2: q.rtmr2,
-                                    rtmr3: q.rtmr3,
+                                    rtmr3: q.rtmr3
                                 }}
                                 appEvents={r.app_events}
                             />

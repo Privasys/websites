@@ -429,7 +429,7 @@ export function adminListUsers(token: string): Promise<AdminUser[]> {
 
 export function adminDeleteUser(token: string, sub: string): Promise<void> {
     return request<void>(`/api/v1/admin/users/${encodeURIComponent(sub)}`, token, {
-        method: 'DELETE',
+        method: 'DELETE'
     });
 }
 
