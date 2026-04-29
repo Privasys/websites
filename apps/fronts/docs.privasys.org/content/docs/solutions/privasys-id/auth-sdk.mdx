@@ -1,0 +1,88 @@
+---
+title: Auth SDK
+description: The browser SDK that adds Privasys ID sign-in and sealed transport to any web app.
+---
+
+`@privasys/auth` is the browser SDK that any web app can drop in to get Privasys ID sign-in. It is hosted as an iframe under `privasys.id/auth/`, and the parent page interacts with it via a small `postMessage`-based RPC. There is no server-side dependency on the embedder's domain.
+
+## What the SDK does
+
+- Renders a QR code (or sends a push to a paired wallet) that initiates a FIDO2 ceremony.
+- Coordinates the wallet ↔ IdP handshake through the broker (an opaque WebSocket relay).
+- Caches the resulting OIDC tokens in iframe storage on `privasys.id` for cross-site SSO.
+- Surfaces an attribute-consent screen when the relying party requests profile data.
+- Falls back to federated sign-in (Google, Apple) when the user does not yet have a wallet.
+- For session-relay flows, exposes a `PrivasysSession` class for sealed end-to-end transport to attested enclaves.
+
+## Embedding
+
+```html
+<script src="https://privasys.id/auth/iife.js" defer></script>
+
+<script>
+  PrivasysAuth.init({
+    appId: "my-app.example.com",
+    relayUrl: "wss://relay.privasys.org/relay",
+  }).then((auth) => {
+    document.getElementById("sign-in").addEventListener("click", () => auth.signIn());
+  });
+</script>
+```
+
+`PrivasysAuth.init({...})` returns an `Auth` handle whose `signIn()`, `signOut()`, `currentUser()`, and `session()` methods are all asynchronous. Sign-in resolves when the user has completed the wallet ceremony and the iframe holds a valid OIDC session.
+
+For React / Next.js apps the typical pattern is to call `init({...})` once in a top-level effect and store the handle in a context.
+
+## SSO across Privasys-ecosystem sites
+
+Every site that loads the SDK from `privasys.id/auth/` shares the same iframe origin, so the iframe's IndexedDB session is visible to all of them. Signing in once on `chat.privasys.org` automatically signs the user in on `developer.privasys.org`, the [docs site](https://docs.privasys.org), and any third-party adopter using the same SDK build. Sign-out propagates the same way.
+
+This is true cross-site SSO with no server coordination — the broker is opaque, the IdP is stateless about who is signed in where, and the only shared state lives in the iframe's local storage on `privasys.id`.
+
+## Attribute consent
+
+When the relying party declares a list of attributes it wants (e.g. `["email", "name"]`), the iframe surfaces a consent screen during the sign-in flow. The user can pick which to provide. Granted attributes flow into the JWT for that sign-in only; refreshing the token does **not** re-include them (transient by design — see the [IdP page](/solutions/privasys-id/idp#refresh-tokens)).
+
+## `PrivasysSession` — sealed transport for browser-only consumers
+
+For apps whose backend runs in an attested enclave that the browser cannot RA-TLS-verify directly, the SDK additionally exports a `PrivasysSession` class. The class:
+
+1. Generates an ephemeral P-256 keypair in the iframe (WebCrypto, non-extractable private key).
+2. Receives the IdP-issued JWT carrying `session.enc_pub` and `att_quote_hash`.
+3. Derives `K = HKDF(ECDH(sdk_priv, enc_pub), salt = session_id, info = "privasys-session/v1")`.
+4. Validates `att_quote_hash` and `att_oids` against an app-supplied `attestationPolicy`.
+5. Exposes `request(method, path, body)` and `json(method, path, body)` methods that AES-256-GCM-seal request bodies and unseal responses, transparently to the parent.
+
+```js
+const session = await auth.session({
+  endpoint: "https://my-confidential-app.apps.privasys.org",
+  attestationPolicy: {
+    quoteHash: "abc123...",   // pinned at build time
+    oids: { "3.2": "def456..." },
+  },
+});
+
+const result = await session.json("POST", "/v1/messages", { text: "hello" });
+```
+
+The bytes that leave the browser are AES-GCM ciphertext in `application/privasys-sealed+cbor`. The platform gateway terminates the public TLS in front of the enclave — but the request body is sealed end-to-end; the gateway sees only ciphertext.
+
+See the [Session Relay page](/solutions/privasys-id/session-relay) for the full protocol and trust argument.
+
+## Failure modes
+
+| Failure | SDK behaviour |
+| --- | --- |
+| JWT `aud` / `iss` / `exp` invalid | Sign-out, surface "auth failed" |
+| `sdk_pub_bind` mismatch | Sign-out (treated as JWT-replay attempt) |
+| `att_quote_hash` mismatch with `attestationPolicy` | Reject session creation; surface "enclave not approved" |
+| Counter rewind from server (sealed transport) | Destroy session, force re-auth |
+| AEAD failure | Destroy session, force re-auth |
+
+## Trust scope of the iframe
+
+The iframe lives on `privasys.id`. The parent page cannot read its IndexedDB, its WebCrypto keys, or its session table — same-origin policy applies. The parent talks to the iframe only via `postMessage`, with a small typed RPC. For session-relay specifically, this means `K` and `sdk_priv` never cross the iframe boundary; the parent submits *plaintext* via `postMessage` and receives plaintext responses.
+
+## Source
+
+`@privasys/auth` is part of [github.com/Privasys/identity-platform](https://github.com/Privasys/identity-platform), in `sdk/`. Published as an npm package and as an IIFE bundle hosted at `https://privasys.id/auth/iife.js`. AGPL-3.0.

@@ -1,0 +1,11 @@
+{
+    "title": "Privasys ID",
+    "defaultOpen": false,
+    "pages": [
+        "overview",
+        "wallet",
+        "idp",
+        "auth-sdk",
+        "session-relay"
+    ]
+}
