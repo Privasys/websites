@@ -1,30 +1,49 @@
 ---
 title: Overview
-description: Hardware-isolated secrets management inside Intel SGX enclaves.
+description: A distributed virtual HSM (vHSM) built on a constellation of attested SGX enclaves.
 ---
 
-Enclave Vaults provides hardware-isolated key storage and cryptographic operations inside Intel SGX enclaves. It is an alternative to traditional HSMs and cloud KMS services that keeps keys inside a hardware trust boundary while remaining software-defined and attestation-verified.
+Enclave Vaults is a **distributed virtual HSM** (vHSM). Each vault instance is a small key-management service that runs inside an Intel SGX enclave: it holds typed key objects, executes cryptographic operations on them inside the enclave, and refuses to act outside the policy attached to each key. A constellation of independent vault instances forms a single logical key-management surface, with redundancy across machines and an information-theoretic distribution path for the secrets that warrant it.
 
-## Why Enclave Vaults
+This page is a one-screen orientation. The [Architecture](/solutions/enclave-vaults/architecture) page describes the runtime in detail, and the [Access Control](/solutions/enclave-vaults/access-control) page covers policies, principals, and approvals.
 
-Traditional secrets management presents a trade-off:
+## Where Enclave Vaults sits
 
-- **Hardware Security Modules (HSMs)**: Offer strong hardware isolation but cost tens of thousands per unit, require physical key ceremonies, and do not scale elastically.
-- **Cloud KMS services**: Scale easily but require trusting the cloud provider with your key material, a non-starter for regulated workloads or multi-cloud architectures.
-- **Software vaults**: Convenient but keys exist in process memory without hardware protection.
+| Approach | Trust anchor | Where the master key lives | Cost |
+|---|---|---|---|
+| Hardware Security Module | Tamper-resistant silicon, FIPS-certified | One device, or a small replicated cluster | €30k to €100k per appliance |
+| Cloud KMS | The cloud provider | Provider-operated HSMs | Low, but you trust the provider |
+| Software vault | Operating system | Process memory after unsealing | Low, no hardware boundary |
+| **Enclave Vaults** | **Independent SGX enclaves, with Shamir Secret Sharing for the secrets that need it** | **Inside per-vault sealed storage; sensitive shared secrets are split across the constellation** | **Open source, runs on commodity SGX servers** |
 
-Enclave Vaults occupies the space between these approaches: hardware-grade isolation at software cost, with cryptographic proof that the system behaves as expected.
+Enclave Vaults is the right fit when you want HSM-style key custody without putting the trust of the system in any one device, provider, or operator.
 
-## How it works
+## Three properties to remember
 
-1. **Keys never leave the enclave.** All cryptographic material is generated and used inside an SGX enclave. The host operating system, hypervisor, and cloud provider cannot access key material.
+1. **Keys live inside attested enclaves.** Typed key objects (signing keys, AES data keys, HMAC keys, derivation seeds, opaque shared secrets) sit in the enclave's sealed state. Callers ask the vault to `Sign`, `Wrap`, `Mac`, `Derive`, and so on. By default, raw key material does not cross the enclave boundary.
+2. **Distributed trust where it matters.** Highly sensitive secrets that the owner wants to keep recoverable across the constellation can be stored as `RawShare` keys: the secret is split with Shamir Secret Sharing, one share per vault, and reconstructed by the owner from any quorum. A single compromised vault leaks one share, which reveals nothing about the secret.
+3. **Every operation is gated by a policy that the enclave enforces.** A `KeyPolicy` describes which OIDC identities, which calling enclaves, and which fresh approvals are required for each operation. The enclave refuses anything that does not match. There is no admin override.
 
-2. **Attestation-verified access.** Every client connection verifies the enclave's identity through RA-TLS. The hardware attests the code measurement, signer identity, and runtime configuration before any key operation is performed.
+## What is new in v0.19
 
-3. **OIDC-based permissions.** Access policies are expressed as standard OIDC token claims. A CI/CD pipeline, microservice, or human operator presents a JWT; the enclave validates the token and enforces the policy within the trust boundary.
+The current release reorganises the vault around typed keys and in-enclave operations. Previous versions were already a meaningful step (information-theoretic distribution of opaque secrets across attested enclaves), and that path is still here as the `RawShare` key type. v0.19 adds:
 
-4. **Sealed storage.** Keys are persisted using SGX sealing, which encrypts data to the enclave's identity. Only the same enclave on the same platform can unseal the data.
+- **Typed key objects with in-enclave operations.** `Aes256GcmKey`, `Ed25519SigningKey`, `P256SigningKey`, `HmacKey`, `Bip32MasterSeed`, `WrappedBlob`. By default these keys are non-exportable: the operation runs inside the enclave, only the result leaves.
+- **A richer `KeyPolicy`.** Per-operation rules with composable conditions (`AttestationMatches`, `ManagerApproval`, `TimeWindow`, `CallerHoldsRole`), a separate `Mutability` surface, and explicit `principals` for owner, managers, auditors, plus optional TEE / FIDO2 / mTLS principals.
+- **A controlled lifecycle for caller-enclave version changes.** When the customer application that consumes a key is rebuilt and its MRENCLAVE changes from `v(N)` to `v(N+1)`, the new measurement is held in a **pending** slot until the key owner (and managers, if configured) explicitly approves promoting it into the key's `attestation_profiles`. The platform never auto-grants a new measurement access to existing key material; this is a protocol invariant.
 
-## What it is not
+## Components
 
-Enclave Vaults is not FIPS 140-3 certified. If your compliance framework mandates FIPS-certified key storage, you should use a certified HSM. Enclave Vaults is designed for teams that need strong hardware isolation without the operational overhead of traditional HSMs.
+| Component | Repository | Role |
+|---|---|---|
+| Vault enclave | [`Privasys/enclave-vaults`](https://github.com/Privasys/enclave-vaults) | Runs inside Intel SGX. Holds keys, runs in-enclave operations, enforces `KeyPolicy`. |
+| Attested Registry | [`Privasys/enclave-vaults`](https://github.com/Privasys/enclave-vaults) (sub-tree) | Phonebook for the constellation. Returns `(endpoint, measurement)` tuples for clients to dial and verify. Treated as untrusted by every other component. |
+| Client SDK (Rust + Go) | [`Privasys/enclave-vaults-client`](https://github.com/Privasys/enclave-vaults-client) | Three layers: `RegistryClient` (discover), `Client` (single-vault session), `Constellation` (fan-out, approvals, pending-profile lifecycle). |
+| Privasys Wallet | [`Privasys/auth`](https://github.com/Privasys/auth) | Default surface for the live FIDO2 approvals required by sensitive policies. |
+| Underlying enclave OS | [`Privasys/enclave-os-mini`](https://github.com/Privasys/enclave-os-mini) | Provides attestation, RA-TLS, sealed storage, OIDC, and the module system the vault is built on. |
+
+## Honest boundaries
+
+Enclave Vaults is a **vHSM, not a FIPS 140-3 certified HSM**. It does not have tamper-evident enclosures or environmental sensors. The security model rests on Intel SGX isolation, on attested identity for every connection, and (for `RawShare` keys) on the unlinkability of Shamir shares across independent enclaves. For most threat models this is a strict improvement over a single appliance taken on faith. Where a specific FIPS certification is a hard legal requirement, dedicated certified HSMs remain the right choice.
+
+The architectural rationale is in the original blog post on [rethinking secrets management](https://privasys.org/blog/enclave-vaults-rethinking-secrets-management-for-the-age-of-confidential-computing). The motivation for the v0.19 redesign is in [the v0.19 release post](https://privasys.org/blog/enclave-vaults-v0-19-typed-keys-and-policy-driven-operations).

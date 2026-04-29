@@ -1,91 +1,114 @@
 ---
 title: Access Control
-description: Per-secret access policies, OIDC roles, and dual-path authentication for Enclave Vaults.
+description: KeyPolicy, principals, OIDC roles, attestation profiles, and live human approvals for Enclave Vaults.
 ---
 
-Every secret in Enclave Vaults carries a `SecretPolicy` that controls who can retrieve it. There are two retrieval paths, each with its own authentication mechanism.
+Every key in Enclave Vaults carries a `KeyPolicy` that controls **who** can do **what**, **under which attestation conditions**, and **with which approvals**. The policy is part of the sealed state of the vault and is enforced inside the enclave on every call. There is no admin override.
 
-## GetSecret Dual-Path Auth
+## Principals
 
-### Path 1: OIDC Owner
+The vault recognises three kinds of principal.
 
-The secret owner retrieves their own secrets using their OIDC token. No mutual RA-TLS required. The vault checks that the token's `sub` claim matches the secret's `owner_sub`.
+| Principal | Authentication | Typical role |
+|---|---|---|
+| **OIDC subject** | Bearer JWT validated against the configured issuer and audience via JWKS | Owner, manager, auditor (humans or service accounts). |
+| **Attested enclave** | Mutual RA-TLS; the caller's SGX or TDX quote, MRENCLAVE, and config Merkle root are extracted from the peer X.509 certificate | A CI runner, a confidential VM, another enclave. |
+| **FIDO2 wallet credential** | Signed `IssueApprovalToken` request from a registered Privasys Wallet | Live human approval for sensitive operations. |
 
-### Path 2: Mutual RA-TLS TEE
+A single call may need to satisfy several principals at once (for example, a calling enclave with the right MRENCLAVE, a manager OIDC token, and a fresh wallet approval).
 
-A remote TEE retrieves secrets via [mutual RA-TLS](/solutions/enclave-os/attestation/mutual-ra-tls). The vault:
+## OIDC roles
 
-1. Requires a TLS client certificate (mutual RA-TLS).
-2. Extracts the attestation quote from the peer certificate.
-3. Verifies the quote via the configured attestation server(s).
-4. Checks the measurement against the policy whitelist.
-5. Verifies bidirectional challenge-response binding (if a nonce is present).
-6. Checks the optional bearer token from the secret manager.
-7. Checks required [OID claims](/solutions/enclave-os/attestation/oids).
+The default OIDC roles checked by the vault. Custom roles can be added per deployment.
 
-## Secret Policy
+| Role | Operations |
+|---|---|
+| `vault:owner` | Create and delete keys, update `KeyPolicy`, list keys, run any operation on owned keys, drive the pending-profile lifecycle (`StagePendingProfile`, `PromotePendingProfile`). |
+| `vault:manager` | Issue `ApprovalToken`s for operations that require live approval. Cannot read, create, or modify keys. |
+| `vault:auditor` | Read the audit log. Cannot perform any operation on keys. |
 
-Each secret carries a policy that is evaluated on every `GetSecret` request via the RA-TLS path. The OIDC owner path bypasses policy evaluation.
+The split between owner and manager is intentional. It keeps a defence-in-depth boundary even if the owner identity is compromised, because sensitive operations still require a separate manager approval.
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `allowed_mrenclave` | `Vec<String>` | SGX MRENCLAVE values (hex) allowed to retrieve the secret. |
-| `allowed_mrtd` | `Vec<String>` | TDX MRTD values (hex) allowed to retrieve the secret. |
-| `manager_sub` | `Option<String>` | OIDC `sub` of the secret manager. When set, `GetSecret` via RA-TLS requires a bearer token whose `sub` matches and who holds the `secret-manager` role. |
-| `required_oids` | `Vec<OidRequirement>` | OID/value pairs the caller's RA-TLS certificate must contain. |
-| `ttl_seconds` | `u64` | Time-to-live in seconds. Capped at 90 days, defaults to 30 days. |
+## KeyPolicy
 
-## OIDC Roles
+The policy attached to each key is organised into three independent surfaces.
 
-| Role | Claim value | Operations |
-|------|------------|------------|
-| `secret-owner` | `enclave-vault:secret-owner` | Store, Delete, Update, List, Get (own secrets) |
-| `secret-manager` | `enclave-vault:secret-manager` | Issue bearer tokens for RA-TLS `GetSecret` |
+### `principals`
 
-### Token Delivery
+Who is recognised at all for this key: the owner, optional managers, optional auditors, plus optional TEE, FIDO2, and mTLS principals. A principal that is not listed here cannot influence the key in any way.
 
-Since Enclave OS Mini uses a frame protocol (not HTTP), the OIDC bearer token is passed inside the JSON envelope as an `"auth"` field:
+### `operations`
 
-```json
-{
-  "auth": "eyJhbGciOiJSUzI1NiIs...",
-  "StoreSecret": {
-    "name": "customer-123-dek",
-    "secret": "base64url-encoded-bytes",
-    "policy": {
-      "allowed_mrenclave": ["abcd1234..."],
-      "ttl_seconds": 604800
-    }
-  }
+Per-operation rules of the form "operation X is allowed for principal P when condition C holds". Conditions are composable:
+
+| Condition | Meaning |
+|---|---|
+| `AttestationMatches(profile)` | The caller presented an RA-TLS certificate whose quote matches `profile`. |
+| `ManagerApproval { manager, fresh_for }` | A `ManagerApproval` token from `manager`, signed within `fresh_for`, accompanies the request. |
+| `TimeWindow { from, until }` | The current time is inside the window. |
+| `CallerHoldsRole(role)` | The caller's OIDC token includes `role`. |
+| `All(...)`, `Any(...)`, `Not(...)` | Boolean combinators. |
+
+The same operation can have several rules, and all matching rules must succeed for the operation to be allowed.
+
+### `mutability`
+
+Which fields of the policy can change, and under what conditions. The schema separates fields the **owner** can edit unilaterally, fields the owner can edit only with a quorum of **manager** approvals, and fields that are **immutable** for the life of the key. For example, on a `platform-managed` key, the platform's manager identity is allowed to add a new MRENCLAVE to the attestation profile but cannot change the owner or change `auto_migrate_to_next_attestation_profile`.
+
+## Attestation profiles
+
+An attestation profile describes what a calling enclave must look like.
+
+| Field | Purpose |
+|---|---|
+| `mrenclave` | Required SGX MRENCLAVE (hex). |
+| `mrsigner` | Optional SGX MRSIGNER (hex). Useful for accepting any release signed by a known build pipeline. |
+| `mrtd` | TDX measurement, for confidential VM callers. |
+| `config_merkle_root` | Optional commitment to the caller's runtime configuration. Lets the policy require not just the right code, but the right configuration of that code. |
+| `required_oids` | List of `(oid, expected_value)` claims that must appear in the caller's RA-TLS certificate. |
+
+A `KeyPolicy` typically lists more than one profile (for example, "the production CI enclave plus the on-call recovery enclave") so that operations can continue across deploys without policy churn.
+
+## Approval tokens
+
+For operations that require a live human approval, the manager issues an `ApprovalToken` against a specific key handle and operation:
+
+```
+IssueApprovalToken {
+  key_handle: "k-7f3...",
+  operation:  "Sign",
+  not_before: 2026-04-29T10:00:00Z,
+  not_after:  2026-04-29T10:05:00Z,
+  nonce:      <random>,
+  signed_by:  <wallet FIDO2 credential>
 }
 ```
 
-The auth layer strips `"auth"`, verifies it via JWKS, and populates `OidcClaims` in the request context. The vault reads `sub` for ownership checks and `roles` for role verification.
+The token is signed by the manager's FIDO2 credential through the Privasys Wallet and carries a short TTL. The wallet performs a fresh user-presence ceremony for each token. The vault verifies the signature, the nonce, the TTL, the key handle, and the operation name before counting the token towards the policy's `ManagerApproval` requirement.
 
-### Owner Identity
+A manager compromised on its own cannot use a stolen token outside its TTL. A calling enclave compromised on its own cannot mint a token. Both must cooperate, and the audit log records every issued and consumed token.
 
-The OIDC `sub` claim uniquely identifies the secret owner. The OIDC subject is the vault namespace. KV keys use the format `secret:{owner_sub}:{name}` for namespace isolation between owners.
+## How a typical call is evaluated
 
-## Secret Manager (Defence-in-Depth)
+For a sensitive `Sign` call by a CI enclave:
 
-The secret manager is a separate actor whose role is to issue a bearer token at `GetSecret` time. This is optional: if a secret's policy has no `manager_sub`, no bearer token is required.
+1. The CI enclave opens a mutual RA-TLS channel to a vault. The vault verifies that the CI enclave's MRENCLAVE matches at least one `attestation_profile` on the key.
+2. The CI enclave's request envelope carries an OIDC bearer token. The vault verifies the token via JWKS and reads `sub` and `roles`. The owner check passes.
+3. The request includes one or more `ApprovalToken`s from the manager. The vault verifies each (signature, TTL, key handle, operation, nonce). The count must reach the policy's manager-approval threshold.
+4. The vault performs the `Sign` operation inside the enclave. The signature is returned to the caller. The raw key never leaves the enclave.
+5. Every step is appended to the audit log.
 
-Remote attestation proves what code is running, but if the attestation infrastructure were compromised (e.g. a firmware bug allowing forged quotes), an attacker could present a fake measurement. Requiring a fresh bearer token from the secret manager means the attacker needs **two independent things** to retrieve a secret: a valid quote **and** a token from the manager.
+If any check fails, the operation is refused and the failure is logged.
 
-```
-Threat model:
+## Auditability
 
-  RA compromised alone            -> blocked (no manager token)
-  Manager compromised alone       -> blocked (no valid quote)
-  Both compromised                -> secret exposed (defence-in-depth breached)
-```
+Read access to the audit log requires the `vault:auditor` role and a mutual RA-TLS channel. Each entry is hash-chained to the previous one, so an auditor can detect tampering with the log itself. Streaming export of the log to an external append-only store is on the roadmap; today the log is pulled on demand.
 
-## Security Properties
+## Why this is more than RBAC plus attestation
 
-| Property | Guarantee |
-|----------|----------|
-| **Hardware isolation** | All secret operations execute inside the SGX enclave. The host, hypervisor, and cloud provider cannot access secret material. |
-| **MRENCLAVE-bound sealing** | Sealed data can only be unsealed by the exact same enclave binary on the same platform. |
-| **Per-secret policies** | Each secret has its own measurement whitelist, OID requirements, manager binding, and TTL. |
-| **Namespace isolation** | Secrets are keyed by the owner's OIDC subject. No owner can access another owner's secrets. |
-| **No trusted intermediary** | RA-TLS verification happens directly between the vault enclave and the requesting TEE. |
+Classical RBAC says "this user can do this thing". The vault adds two orthogonal axes:
+
+- **The calling code's identity must match.** Not just the user, but the exact enclave binary that is acting on the user's behalf. This is what eliminates "secret leaked from a CI runner" as a threat.
+- **A fresh act of human consent can be required.** Not a long-lived token, but a per-operation FIDO2 ceremony on a phone. This is what eliminates "compromised long-lived credential" as a threat for the operations you care most about.
+
+Combined with the per-vault sealed storage and (for `RawShare` keys) the Shamir distribution that prevents any single vault from leaking a secret on its own, these properties produce a system where the cost of misuse is high enough to actually deter it, even against a determined insider.

@@ -1,111 +1,191 @@
 ---
 title: Architecture
-description: How Enclave Vaults stores and distributes secrets across SGX enclaves using Shamir Secret Sharing.
+description: How the Enclave Vaults distributed vHSM is built — typed key objects, in-enclave operations, RawShare distribution, per-key policy, and a controlled lifecycle for caller-enclave version changes.
 ---
 
-Enclave Vaults is built on top of [Enclave OS Mini](/solutions/enclave-os/mini/overview), inheriting its attestation stack, sealed storage, and module system. The vault runs as the `enclave-os-vault` module inside an SGX enclave.
+Enclave Vaults runs as the `enclave-os-vault` module inside an Intel SGX enclave on top of [Enclave OS Mini](/solutions/enclave-os/mini/overview). It inherits the OS's attestation stack, sealed storage, RA-TLS ingress, and OIDC token verification.
 
-## Actors
-
-There are three actors in the vault model.
-
-### Secret Owner
-
-The owner is the entity that creates, deletes, manages, and lists secrets.
-
-- Authenticates via **OIDC bearer token** (any OIDC provider).
-- Must hold the **`enclave-vault:secret-owner`** role.
-- The owner's OIDC `sub` (subject) claim is stored in each secret record, so only the original creator can delete, update, or list their secrets.
-- Operations: `StoreSecret`, `DeleteSecret`, `UpdateSecretPolicy`, `ListSecrets`.
-- Can always retrieve their own secrets via the OIDC path (no RA-TLS required).
-
-In production the secret owner is typically a TEE application (SGX enclave, TDX VM, or SEV-SNP VM). When it needs to let **other TEEs** retrieve the secret, those TEEs use the RA-TLS path.
-
-### Remote TEE
-
-A remote TEE that needs to retrieve a secret authenticates via [mutual RA-TLS](/solutions/enclave-os/attestation/mutual-ra-tls):
-
-- Presents its own RA-TLS certificate during the mTLS handshake.
-- The vault extracts the SGX/TDX quote and [OID claims](/solutions/enclave-os/attestation/oids) directly from the peer certificate's X.509 extensions.
-- The vault parses the quote, extracts the measurement (MRENCLAVE or MRTD), and checks it against the secret's policy whitelist.
-- OID claims are checked against the policy's `required_oids`.
-- Operation: `GetSecret` (RA-TLS path).
-
-### Secret Manager
-
-The secret manager is a **separate actor** whose sole role is to issue bearer tokens at `GetSecret` time as defence-in-depth.
-
-- Authenticates via **OIDC bearer token**.
-- Must hold the **`enclave-vault:secret-manager`** role.
-- **Cannot** read, write, or delete secrets, and **cannot** update policies.
-- **Only** provides a bearer token that the remote TEE presents alongside its attestation evidence.
-
-This role is optional: if a secret's policy has no `manager_sub`, no bearer token is required. See [Access Control](/solutions/enclave-vaults/access-control) for details on why this exists.
-
-## Multi-Instance Deployment
-
-In production the vault is deployed as **multiple instances** (typically 3 or 5). The secret owner uses the vault client library to:
-
-1. Split the secret into M shares using **Shamir Secret Sharing** (threshold N).
-2. Store one share in each vault instance.
-
-To reconstruct the secret, any N-of-M vault instances must return their share. No single vault ever holds the complete secret.
+A production deployment is a **constellation** of vault enclaves on independent machines. The vaults do not coordinate with each other; coordination is driven by the client SDK on behalf of the key owner.
 
 ```
-┌──────────────┐       RA-TLS         ┌─────────────┐
-│              │──── share 1 ────────>│  Vault #1   │
-│  VaultClient │──── share 2 ────────>│  Vault #2   │
-│  (Shamir)    │──── share 3 ────────>│  Vault #3   │
-│              │       ...            │    ...      │
-│              │──── share M ────────>│  Vault #M   │
-└──────────────┘                      └─────────────┘
+               ┌──────────────────────────────────────────────────┐
+               │              Attested Registry                   │
+               │       (returns endpoints + MRENCLAVE)            │
+               └──────────────────────────────────────────────────┘
+                                         ▲
+                                         │ discover (untrusted phonebook)
+                                         │
+        ┌──────────────────────────┐     │
+        │    Client SDK            │─────┘
+        │  RegistryClient          │
+        │  Client                  │
+        │  Constellation           │──── mutual RA-TLS (one channel per vault) ────┐
+        └──────────────────────────┘                                               │
+                                                                                   ▼
+        ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐
+        │   Vault #1      │   │   Vault #2      │   │   Vault #3      │   │   Vault #4      │
+        │   (SGX)         │   │   (SGX)         │   │   (SGX)         │   │   (SGX)         │
+        │                 │   │                 │   │                 │   │                 │
+        │  KeyObjects     │   │  KeyObjects     │   │  KeyObjects     │   │  KeyObjects     │
+        │  + KeyPolicy    │   │  + KeyPolicy    │   │  + KeyPolicy    │   │  + KeyPolicy    │
+        │  + audit log    │   │  + audit log    │   │  + audit log    │   │  + audit log    │
+        │  + sealed KV    │   │  + sealed KV    │   │  + sealed KV    │   │  + sealed KV    │
+        └─────────────────┘   └─────────────────┘   └─────────────────┘   └─────────────────┘
 
-Reconstruction: any N-of-M shares -> original secret
+      Each vault is independently authoritative for the key objects it holds.
+      The client SDK fans out across the constellation; vaults never talk to each other.
 ```
 
-## Sealed Storage
+## Trust boundary
 
-Secrets are persisted using `enclave-os-kvstore`, which seals data with an **MRENCLAVE-bound key** (AES-256-GCM). The KV store uses HMAC-SHA256 for key encryption, so keys are opaque on the host.
+The trust boundary is the enclave. The host operating system, the cloud provider, the on-call operator, and other tenants of the same machine sit **outside** the boundary. They can take a vault down but they cannot read its sealed state, see its plaintext key material, or perform an operation against the policy.
 
-Because sealing uses MRENCLAVE policy, only the exact same enclave binary on the same physical platform can unseal the data. The host OS, hypervisor, and cloud provider cannot read sealed data. An enclave upgrade (new MRENCLAVE) requires the owner to re-store secrets.
+Each vault publishes its identity through an RA-TLS certificate whose X.509 extensions carry the SGX quote, the MRENCLAVE measurement, and a Merkle root committing to the vault's runtime configuration (OIDC issuer, audience, attestation servers, registered modules). Clients verify all of this before sending any request.
 
-### KV Key Layout
+## Typed key objects
+
+A vault holds **typed key objects**. Each `KeyObject` has a stable handle, a `KeyType`, an explicit set of `KeyUsage` flags, a `KeyPolicy`, and sealed key material whose representation depends on the type.
+
+| Type | Material | Default operations | Exportable by default |
+|---|---|---|---|
+| `RawShare` | One Shamir share of an external secret | `Reconstruct` (the share itself is fetched by an authorised client) | yes |
+| `Aes256GcmKey` | Symmetric key, sealed inside the enclave | `Wrap`, `Unwrap` | no |
+| `P256SigningKey` / `Ed25519SigningKey` | Asymmetric key pair, sealed inside the enclave | `Sign`, `Verify` | no |
+| `HmacKey` | MAC key, sealed inside the enclave | `Mac`, `MacVerify` | no |
+| `Bip32MasterSeed` | Hierarchical seed, sealed inside the enclave | `Derive(path)` returns a child key handle | no |
+| `WrappedBlob` | Caller ciphertext under a vault KEK | `Unwrap` only | no |
+
+`Export` is a `KeyUsage` flag that is off by default for everything except `RawShare`. A signing key whose policy never grants `Export` cannot be exfiltrated, even by its owner: every signature happens inside the enclave.
+
+Every key object carries a [`KeyPolicy`](/solutions/enclave-vaults/access-control). The policy is part of the sealed state, and any change to it is recorded in the audit log.
+
+## How the constellation distributes trust
+
+There are two complementary patterns, chosen per key.
+
+### Pattern A — distributed shares (`RawShare`)
+
+For secrets the owner wants to keep recoverable across the constellation, **and** wants to keep distributed even at rest, the secret is split with Shamir Secret Sharing on the client side. Each vault stores one share as a `RawShare` key object. To use the secret, an authorised client fetches a quorum of shares over mutual RA-TLS and reconstructs the secret inside its own trusted environment.
+
+```
+    ┌─────────────────────┐
+    │  Owner / authorised │
+    │  client (in a TEE)  │
+    └──────────┬──────────┘
+               │   1. mutual RA-TLS to N-of-M vaults
+               │   2. fetch one share from each
+               │   3. reconstruct secret locally
+               ▼
+      ┌───────────────────┐
+      │  Reconstructed    │
+      │  secret in client │
+      │  enclave memory   │
+      └───────────────────┘
+
+    Vaults do not coordinate. Each independently checks the caller's
+    attestation against the share's KeyPolicy before releasing it.
+```
+
+A single compromised vault leaks one share. By the information-theoretic guarantee of Shamir's scheme, any N-1 shares reveal nothing about the original secret. There is no threshold cryptography or multi-party computation involved; reconstruction is a polynomial interpolation done by the client.
+
+`RawShare` is the right pattern for things like LUKS volume keys for confidential VMs, master KEKs that are reconstructed on a controlled schedule, and any secret whose value the owner ultimately needs in cleartext somewhere.
+
+### Pattern B — in-enclave operations on a typed key
+
+For signing keys, AES data keys, HMAC keys, and derivation seeds, the value the owner needs is not the key itself but the result of an operation on it. Each vault that holds the key holds the **full** key material, sealed to its own MRENCLAVE, and refuses to export it. The constellation provides redundancy and geographic distribution; clients dial a vault, present their authentication and any required approvals, and receive the operation's result.
+
+```
+    ┌──────────────────────┐
+    │  Authorised caller   │
+    │  (TEE, OIDC subject) │
+    └──────────┬───────────┘
+               │   mutual RA-TLS to one (or several) vaults
+               │   Sign(handle, msg)
+               ▼
+    ┌──────────────────────┐
+    │  Vault enclave       │
+    │  - verify policy     │
+    │  - run op on key     │  -- raw key never leaves --
+    │  - return signature  │
+    └──────────────────────┘
+```
+
+This pattern matches classical HSM semantics: the key never leaves the hardware, and the policy is what governs whether an operation is allowed. The constellation here is for availability and to give the owner a choice of attestation profile per region; it is not threshold cryptography.
+
+The two patterns share the same `KeyPolicy` schema and the same lifecycle, so the developer experience is uniform.
+
+## Per-vault sealed storage
+
+Each vault has its own KV store sealed with an MRENCLAVE-bound AES-256-GCM key, provided by `enclave-os-kvstore`. Only the same enclave binary on the same physical host can unseal it. The KV store holds:
 
 | Key | Value | Purpose |
-|-----|-------|---------|
-| `secret:{owner_sub}:{name}` | JSON `SecretRecord` | The actual secret data |
-| `lookup:{name}` | `owner_sub` (UTF-8) | Reverse index for RA-TLS `GetSecret` (name to owner) |
-| `index:{owner_sub}` | JSON `Vec<String>` | Owner index for `ListSecrets` (owner to names) |
+|---|---|---|
+| `key:{handle}` | JSON `KeyRecord` | Type, usage, algorithm, policy, sealed material. |
+| `audit:{seq}` | JSON `AuditEntry` | Append-only log of every state change and every operation. |
+| `pending-profile:{handle}` | JSON `PendingProfile` | A caller-enclave attestation profile staged for future inclusion in `policy.attestation_profiles`. |
+| `config:bootstrap` | JSON `BootstrapConfig` | OIDC issuer, audience, attestation servers, registered modules. Sealed on first boot. |
 
-The reverse lookup index enables the RA-TLS `GetSecret` path where the caller knows the secret name but not the owner's OIDC subject. The owner index enables `ListSecrets` without scanning all keys. Both indexes are maintained atomically with secret creation and deletion.
+The host OS, hypervisor, and cloud provider see only encrypted bytes.
 
-## Protocol
+## Mutual RA-TLS ingress
 
-All requests arrive as JSON inside the Enclave OS length-delimited framing (4-byte big-endian length prefix followed by payload). OIDC tokens are passed in the JSON `"auth"` field, stripped by the auth layer before reaching the vault.
+The vault's RA-TLS server requires mutual TLS for every interesting operation. The client presents either:
 
-### Requests
+- **A bearer OIDC token** in the request envelope. The vault verifies the token via JWKS against the configured issuer and audience, and reads the `sub` and `roles` claims to evaluate the policy.
+- **A peer RA-TLS certificate** when the caller is itself a TEE. The vault parses the SGX or TDX quote out of the X.509 extensions, verifies it through the configured attestation server, and matches the measurement against the key's policy.
+- **Both.** Sensitive policies typically require a calling enclave with the right MRENCLAVE, a manager OIDC token, and a fresh wallet approval, all together.
 
-| Request | Auth | Role | Description |
-|---------|------|------|-------------|
-| `StoreSecret` | OIDC | secret-owner | Store a secret (base64url-encoded). |
-| `GetSecret` | OIDC owner **or** mutual RA-TLS | -- | Retrieve a secret. |
-| `DeleteSecret` | OIDC | secret-owner | Delete a secret (owner only). |
-| `UpdateSecretPolicy` | OIDC | secret-owner | Update a secret's policy (owner only). |
-| `ListSecrets` | OIDC | secret-owner | List all secrets owned by the caller (metadata only). |
+## Audit log
 
-### Responses
+Every state-changing call (create key, update policy, stage profile, promote profile, issue approval token) and every operation (sign, encrypt, wrap, derive) appends an entry to the per-vault audit log. Each entry records the principal, the operation, the policy that was evaluated, the outcome, and the time. The log is sealed with the rest of the KV store and can be exported through an authenticated audit RPC.
 
-| Response | Description |
-|----------|-------------|
-| `SecretStored` | Secret stored successfully (includes name and expiry). |
-| `SecretValue` | Secret data returned (typically a Shamir share). |
-| `SecretDeleted` | Secret removed. |
-| `PolicyUpdated` | Policy replaced. |
-| `SecretList` | List of name/expiry entries for the caller's secrets. |
-| `Error` | Human-readable error message. |
+## Caller-enclave version changes (the pending-profile flow)
 
-## Server Configuration
+This is one of the most important properties of the v0.19 design, and it deserves a careful framing.
 
-The RA-TLS server is configured with a **permissive client certificate verifier**: it offers client auth to every connection but does not require it. This allows browsers and non-TEE clients to connect without presenting a certificate.
+The **caller** of a vault is typically a customer application running in its own enclave (for example, a WASM enclave or a TDX VM running on the Privasys platform). Its key policy refers to a specific MRENCLAVE (or to an attestation profile that includes that MRENCLAVE). When the developer ships a new version of the application, the new build has a new MRENCLAVE. By default, that new MRENCLAVE has **no permission** to use the keys the previous version was using.
 
-The vault module itself enforces the requirement per-path: the OIDC owner path needs a valid OIDC token, the RA-TLS path needs a peer certificate.
+This is by design. The platform team chooses when to ship a new build of the customer's application; the platform team must not therefore be in a position to silently grant a freshly-built measurement access to the customer's key material. Adding the new MRENCLAVE to a key's policy is an act that belongs to the **key owner** (the customer), not to the platform.
+
+The `pending-profile` lifecycle implements that invariant.
+
+```
+   1. The platform builds v(N+1) of the customer app and records
+      its MRENCLAVE in management-service.
+
+   2. The owner uses the SDK (or a portal that drives the SDK)
+      to call StagePendingProfile(handle, profile_v_n_plus_1).
+
+      Each vault in the constellation stores the profile in its
+      pending-profile slot. The key's `attestation_profiles`
+      is unchanged. v(N+1) cannot yet read the key.
+
+   3. The owner reviews the diff (commit range, build inputs,
+      MRENCLAVE) and signals approval. If the policy lists managers,
+      each manager produces a fresh approval token via the wallet
+      (FIDO2). The owner collects the tokens.
+
+   4. The owner calls PromotePendingProfile(handle, profile_id, approvals).
+
+      Each vault verifies the approvals against the key's policy
+      and atomically merges the pending profile into
+      `policy.attestation_profiles`. v(N+1) is now authorised.
+
+   5. The platform schedules v(N+1), v(N) is retired on its own
+      schedule. Both versions can coexist until the owner removes
+      v(N) from the policy.
+```
+
+The fan-out is driven by the client SDK on the **owner's** side. The vaults do not coordinate behind the operator's back; the registry never sees policies, profiles, or approvals. A single compromised vault still cannot promote a profile on its own, because the policy requires the configured number of approvals from authentic principals.
+
+A separate `Lifecycle.auto_migrate_to_next_attestation_profile` flag exists for adopters who explicitly opt in to hands-off rollout (sandbox tenants, low-stakes workloads). It is off by default, and the SDK forces a one-time confirmation when a key is first created with the flag set.
+
+## Vault enclave version changes
+
+The pending-profile flow is about the *caller's* MRENCLAVE in a key's policy. Upgrading the **vault's own enclave** to a new MRENCLAVE is a separate concern and is handled by the deployment model, not by the per-key lifecycle.
+
+In production, every vault registration in the Attested Registry has a **30-day TTL**. Clients refresh their constellation view at least that often, which gives every vault instance an explicit expiry. To roll a new vault enclave version forward we run the new MRENCLAVE in parallel with the old one, register both in the registry, let owners stage the new vault profile on their keys at their own pace, and let the old vault expire out of the registry once nothing dials it. The key owner is in control of when their secret material reaches the new vault enclave, in exactly the same way as for caller-enclave version changes.
+
+## Bootstrap and configuration
+
+On first boot, each vault accepts a bootstrap configuration over an authenticated channel: OIDC issuer, audience, attestation server URL(s), registered modules, intermediate CA cert and key for RA-TLS issuance. The vault seals this configuration and refuses to use a different one on subsequent boots without a recorded reconfiguration event. The configuration is committed into the Merkle root attested by the vault's RA-TLS certificate, so clients can detect any drift.

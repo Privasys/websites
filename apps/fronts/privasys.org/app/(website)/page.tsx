@@ -40,8 +40,9 @@ export default function Home() {
                             </h3>
                             <p>
                                 <Balancer>
-                                    Your secrets and cryptographic keys are protected by hardware, not just passwords.
-                                    Hardware-grade isolation without the cost of dedicated security modules, with access controlled by verifiable identity.
+                                    A distributed virtual HSM rebuilt for the age of confidential computing.
+                                    Your keys live and operate inside attested enclaves spread across independent machines, never as a single blob in a single place.
+                                    Programmable policies are enforced by silicon, with optional live human approvals from your phone.
                                 </Balancer>
                             </p>
                         </div>

@@ -32,7 +32,13 @@ export function getAllPosts(): BlogPost[] {
     const files = fs.readdirSync(BLOG_DIR).filter(f => f.endsWith('.md'));
 
     const posts = files.map((filename) => {
-        const slug = filename.replace(/\.md$/, '');
+        // Filenames may be optionally prefixed with the publication date
+        // (`YYYY-MM-DD-`) for chronological ordering on disk. The slug
+        // (and therefore the public URL) strips that prefix so that
+        // renaming a file with a date does not break inbound links.
+        const slug = filename
+            .replace(/\.md$/, '')
+            .replace(/^\d{4}-\d{2}-\d{2}-/, '');
         const filePath = path.join(BLOG_DIR, filename);
         const fileContent = fs.readFileSync(filePath, 'utf-8');
         const { data, content } = matter(fileContent);
