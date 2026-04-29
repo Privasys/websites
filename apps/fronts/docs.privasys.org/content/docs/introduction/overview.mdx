@@ -76,11 +76,11 @@ The deployment infrastructure that ties everything together: a [developer platfo
 
 [Platform documentation](/solutions/platform/overview)
 
-### Privasys Wallet
+### Privasys ID
 
-A mobile FIDO2 authenticator for iOS and Android with built-in RA-TLS verification. The wallet verifies that a server is running inside a genuine hardware enclave before your private key is used. Authentication keys are stored in the device's secure hardware (Secure Enclave on iOS, StrongBox on Android) and never leave the device. Push notifications from enclaves are end-to-end encrypted.
+The identity and authentication layer of the platform. Privasys ID groups the mobile [Wallet](/solutions/privasys-id/wallet) (FIDO2 authenticator with built-in RA-TLS verification, hardware-bound keys in Secure Enclave / StrongBox), the [IdP](/solutions/privasys-id/idp) at `privasys.id` (OIDC issuer with attestation-bound claims), the browser [Auth SDK](/solutions/privasys-id/auth-sdk) (`@privasys/auth`, iframe SSO across the ecosystem), and the [Session Relay](/solutions/privasys-id/session-relay) protocol that brings attestation-verified end-to-end-confidential transport to clients that cannot speak RA-TLS themselves — starting with browsers.
 
-[Wallet documentation](/solutions/wallet/overview)
+[Privasys ID documentation](/solutions/privasys-id/overview)
 
 ## Honest by Design
 
@@ -111,7 +111,7 @@ Traditional cloud requires you to *trust* the provider. Privasys replaces trust 
   <Card title="Platform" href="/solutions/platform/overview">
     Developer platform, verification libraries, and attestation server.
   </Card>
-  <Card title="Privasys Wallet" href="/solutions/wallet/overview">
-    Mobile FIDO2 authenticator with RA-TLS verification for hardware-attested enclaves.
+  <Card title="Privasys ID" href="/solutions/privasys-id/overview">
+    Wallet, IdP, browser SDK, and session-relay transport — the identity and authentication layer.
   </Card>
 </Cards>

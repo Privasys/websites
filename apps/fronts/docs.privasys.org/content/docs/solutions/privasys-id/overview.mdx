@@ -1,0 +1,77 @@
+---
+title: Overview
+description: The identity and authentication layer for Privasys — wallet, identity provider, browser SDK, and session-relay transport for non-RA-TLS-capable clients.
+---
+
+**Privasys ID** is the identity and authentication layer for the Privasys platform. It is the umbrella over four components that together let users sign in to attested workloads, approve sensitive operations on [Enclave Vaults](/solutions/enclave-vaults/overview), and reach enclave applications end-to-end-confidentially from clients that cannot perform attestation themselves (browsers, embedded SDKs).
+
+If you only read one thing in this section, read this page. Each subsection below has its own deep-dive page.
+
+## The four moving parts
+
+### [Privasys Wallet](/solutions/privasys-id/wallet)
+
+A mobile FIDO2 authenticator for iOS and Android. The wallet performs the **only** attestation verification in the system: it RA-TLS-handshakes the enclave, parses the attestation OIDs, shows them in the UI, and only then prompts for a biometric. Authentication keys live in the device's Secure Enclave (iOS) or StrongBox / TEE (Android) and never leave the hardware. The wallet is also the approval surface for Enclave Vaults manager ceremonies and the trust anchor for browser session-relay.
+
+### [Privasys IdP](/solutions/privasys-id/idp)
+
+The identity provider at `https://privasys.id`. Standard OIDC issuer with a JWKS endpoint. The IdP runs FIDO2/WebAuthn ceremonies on behalf of relying-party apps, mints identity tokens, and — for session-relay flows — enforces the cryptographic binding that turns "the wallet talked to the IdP" into "the wallet verified attestation OIDs `X` for enclave `Y` and bound session `Z` to that result". Self-hosting is supported via BYO IdP at the application level.
+
+### [Auth SDK](/solutions/privasys-id/auth-sdk)
+
+The browser SDK published as `@privasys/auth`, hosted as an iframe under `privasys.id/auth/`. Embedding apps drop in a small script and get FIDO2 sign-in via a QR or push-to-wallet flow, cross-site SSO via iframe storage on `privasys.id`, attribute consent, and a fallback federated sign-in. The SDK also exports `PrivasysSession`, the sealed-transport client used in session-relay mode.
+
+### [Session Relay](/solutions/privasys-id/session-relay)
+
+The protocol that brings attestation-verified, end-to-end-confidential transport to clients that cannot speak RA-TLS — primarily browsers and WebViews. The user's wallet does the verification once over RA-TLS, the IdP signs a JWT bound to that verification, and the browser inherits the result through a session key derived in the iframe. The platform gateway terminates a public Let's Encrypt certificate so users see a green padlock, but never sees plaintext bodies — those are AES-256-GCM-sealed end-to-end between the iframe and the enclave.
+
+## Design principles
+
+These four components are different surfaces of the same trust argument:
+
+1. **Hardware-bound keys end-to-end.** FIDO2 private keys live in Secure Enclave / StrongBox; ephemeral session keys live in the iframe scope; enclave-side keys live in attested SGX/TDX memory. No private key material ever touches a server's disk.
+2. **The wallet is the only verifier.** Every other component — the IdP, the SDK, the gateway, the browser — *inherits* the wallet's attestation result via signed claims and key bindings. They do not perform attestation themselves and they do not trust each other beyond what the wallet's verification covers.
+3. **Minimal server-side data.** The IdP's `users` table exists only to map FIDO2 credentials to user handles. Profile attributes (email, name) flow transiently from the wallet through the auth code into the JWT and are then garbage-collected. There is no central profile store.
+4. **One auth flow everywhere.** Every site in the Privasys ecosystem — including the developer portal — uses the same `@privasys/auth` SDK. Third-party adopters get the same flow without writing it themselves.
+5. **Standards-aligned.** Standard OIDC, standard WebAuthn, standard OAuth 2.0 JWT-bearer for service accounts. The novel parts (RA-TLS, session-relay binding) are *additions* on top of standards, not replacements.
+
+## How the pieces fit together
+
+A typical browser sign-in to a confidential workload:
+
+1. The embedding app loads the Auth SDK iframe.
+2. The user clicks "Sign in"; the iframe shows a QR code (or sends a push notification to a previously-paired wallet).
+3. The wallet scans the QR, opens an RA-TLS connection to the target enclave, verifies the attestation OIDs, shows the user what they are authenticating against, and prompts for biometric.
+4. Behind the biometric ceremony, the wallet calls a session-bootstrap on the enclave to establish a sealed session key, and binds the FIDO2 challenge to the attestation result + session.
+5. The IdP receives the assertion, recomputes the binding, mints a JWT carrying both the user identity and the attestation/session claims.
+6. The SDK receives the JWT, derives the session key from its own ephemeral keypair + the enclave's public key in the JWT, and exposes a sealed-transport `request()` API to the parent page.
+7. The parent page makes ordinary-looking HTTP calls; bodies are sealed in the iframe and unsealed in the enclave. The gateway terminates public TLS in between but sees only ciphertext.
+
+For Enclave Vaults manager approvals, the same wallet ceremony produces a short-lived `ApprovalToken` instead of an OIDC session — same hardware-bound key, same biometric, different output shape.
+
+## Repository layout
+
+All of Privasys ID is open source under AGPL-3.0 in [github.com/Privasys/identity-platform](https://github.com/Privasys/identity-platform):
+
+| Path | Component |
+| --- | --- |
+| `wallet/` | Privasys Wallet (Expo / React Native) |
+| `idp/` | Privasys IdP (Go) |
+| `sdk/` | `@privasys/auth` SDK (TypeScript, iframe + parent-page entry points) |
+| `broker/` | The opaque WebSocket relay used to rendezvous wallet ↔ SDK during QR flows |
+| `keys/` | Pairwise-sub seed management |
+
+The session-relay middleware lives outside this repo, in the enclave runtimes:
+
+| Path | Component |
+| --- | --- |
+| `enclave-os/enclave-os-virtual/internal/sessionrelay` | Go middleware for TDX VMs |
+| `enclave-os/enclave-os-mini/enclave/src/sessionrelay.rs` | Rust middleware for SGX enclaves |
+| `platform/gateway/internal/{terminate,certloader}` | Per-SNI termination + LE wildcard reload |
+
+## Where to go next
+
+- **You're a developer adding sign-in to your app.** Start at the [Auth SDK page](/solutions/privasys-id/auth-sdk).
+- **You're integrating with Enclave Vaults manager approvals.** Read the [Wallet page](/solutions/privasys-id/wallet) and [vault access control](/solutions/enclave-vaults/access-control).
+- **You're shipping a browser-based UI on top of a confidential workload.** Read the [Session Relay page](/solutions/privasys-id/session-relay).
+- **You want to self-host the IdP or wire BYO OIDC.** Read the [IdP page](/solutions/privasys-id/idp).

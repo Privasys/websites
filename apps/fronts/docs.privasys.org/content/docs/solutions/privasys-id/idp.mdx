@@ -1,0 +1,96 @@
+---
+title: Identity Provider (IdP)
+description: The Privasys ID identity provider — OIDC issuer, FIDO2 ceremony coordinator, attestation-claims signer.
+---
+
+The Privasys IdP runs at `https://privasys.id`. It is a standard OpenID Connect issuer with a JWKS endpoint, a discovery document, an authorization endpoint, and a token endpoint. The unusual parts are how the FIDO2 ceremonies are coordinated and what claims the issued tokens carry.
+
+## OIDC surface
+
+| Endpoint | Purpose |
+| --- | --- |
+| `https://privasys.id/.well-known/openid-configuration` | Discovery document |
+| `https://privasys.id/jwks` | JWKS, ES256 signing keys |
+| `https://privasys.id/oidc/authorize` | Authorization endpoint |
+| `https://privasys.id/oidc/token` | Token endpoint (authorization-code, refresh-token, JWT-bearer for service accounts) |
+
+Audience: relying-party apps register a client and pick their own `aud`. The platform's first-party audience is `privasys-platform`.
+
+Tokens are signed with **ES256** (P-256). Keys rotate on a fixed schedule with overlap; clients should always honour the JWKS rather than caching keys by ID.
+
+## FIDO2 / WebAuthn ceremonies
+
+Standard WebAuthn flow with one twist: the IdP coordinates the ceremony but the **assertion is performed by the wallet on behalf of the browser**, mediated by the broker (a small WebSocket relay) and by a QR-code or push-notification rendezvous.
+
+```text
+relying-party app → SDK iframe → IdP /fido2/begin → broker → wallet
+                                                                ↓
+                                                          biometric + RA-TLS
+                                                                ↓
+                                IdP /fido2/complete ←───── assertion
+```
+
+Two endpoints:
+
+- `POST /fido2/{register,authenticate}/begin` — returns the WebAuthn challenge and pairing material. Accepts an optional `binding_challenge` query parameter (used by session-relay; see below).
+- `POST /fido2/{register,authenticate}/complete` — receives the assertion, validates it, mints the OIDC code or session.
+
+## Standard claims
+
+Every token carries the standard OIDC set: `sub`, `aud`, `iss`, `iat`, `exp`, `nonce`, `nbf`. Plus:
+
+- `roles` — array of strings; the IdP is the source of truth for role assignments. Apps validate offline against the JWKS; no role-lookup round trip.
+- `email`, `name` — present **only on freshly issued tokens** from a flow that captured them (wallet-supplied or social-IdP-federated). Refresh tokens do **not** carry them — they were transient. Apps that need the user's email after refresh should persist it themselves on first auth.
+
+## Session-relay claims
+
+For flows initiated with `mode: "session-relay"` in the QR payload, the IdP additionally embeds:
+
+| Claim | Meaning |
+| --- | --- |
+| `att_verified: true` | The wallet ran an RA-TLS handshake and presented the result. |
+| `att_quote_hash` | SHA-256 of the verified enclave RA-TLS leaf certificate. |
+| `att_oids` | The attestation OIDs the wallet snapshotted (Merkle root, runtime-version-hash, workload-code-hash, etc.). Pass-through; the IdP does not re-verify. |
+| `session.id` | The opaque session identifier the enclave allocated. |
+| `session.enc_pub` | The enclave's ephemeral P-256 public key (SEC1, base64url). |
+| `session.sdk_pub_bind` | SHA-256 of the SDK's ephemeral public key — prevents JWT replay against a different SDK instance. |
+| `session.expires_at` | Unix timestamp at which the enclave's in-memory session entry will be evicted. |
+
+These claims are what makes the JWT a *signed proof of attestation verification*, not just "the wallet talked to the IdP". The signing key being compromised does not let an attacker derive the session key (forward secrecy from the SDK's ephemeral keypair), but it would let them forge attestation-verified claims — so the JWKS rotation policy is conservative and the SDK pins `att_quote_hash` against its own configured policy.
+
+## The binding-challenge check
+
+The single load-bearing security check in session-relay mode happens on `/fido2/authenticate/complete`. The IdP recomputes:
+
+```
+expected = SHA-256(
+    "privasys-session-relay/v1" ||
+    nonce || sdk_pub || quote_hash || enc_pub || session_id)
+```
+
+…from the `binding_challenge` it stored at `/begin` and from the query-string inputs at `/complete`. It then `subtle.ConstantTimeCompare`s `expected` against the value the wallet stored *and* against `clientDataJSON.challenge`. Any mismatch returns 400 with no side effect — no row written, no JWT minted.
+
+Without this check, the JWT would not constitute proof of attestation verification — see the [Session Relay page](/solutions/privasys-id/session-relay) for the full trust argument.
+
+## Service-account authentication
+
+For server-to-server calls (e.g. the management service requesting from the IdP), the IdP supports the OAuth 2.0 **JWT-bearer grant** (`urn:ietf:params:oauth:grant-type:jwt-bearer`). Service accounts hold an RS256 / ES256 keypair, sign a short-lived assertion with their `client_id` as `iss` and `sub`, and exchange it for a normal access token. No static API keys.
+
+## Refresh tokens
+
+Standard OIDC `refresh_token` grant. The IdP issues opaque refresh tokens with the same TTL discipline as the original session and rotates them on each use. Refresh **does not** re-include transient profile attributes — see [auth.md](https://github.com/Privasys/identity-platform/blob/main/.operations/identity-platform/auth.md) for the rationale.
+
+## BYO IdP
+
+The Privasys platform allows individual apps to point at a different OIDC issuer (set on the app's `oidc_issuer_url`). Tokens are then validated against that issuer's JWKS, and the wallet flow falls back to a federated sign-in for that app. The session-relay extensions are Privasys-IdP-specific — apps using a BYO IdP cannot opt into session-relay mode without the BYO IdP also implementing the binding-challenge check.
+
+## Self-hosting
+
+The IdP image is published from [github.com/Privasys/identity-platform](https://github.com/Privasys/identity-platform) under AGPL-3.0. Self-hosted deployments need:
+
+- A PostgreSQL instance (the `users` table for credential ↔ user-handle mapping).
+- An ES256 signing keypair (generated at first boot, persisted in sealed storage if running inside `enclave-os-virtual`).
+- A reachable broker for FIDO2 rendezvous, or a custom rendezvous transport.
+- Public DNS + HTTPS (for the JWKS to be reachable by relying parties).
+
+For the OVH-hosted reference deployment, see the [identity-platform operational notes](https://github.com/Privasys/identity-platform/tree/main/.operations/identity-platform).

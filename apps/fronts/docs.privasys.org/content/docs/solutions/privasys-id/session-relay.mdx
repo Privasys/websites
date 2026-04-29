@@ -1,0 +1,71 @@
+---
+title: Session Relay
+description: Bringing attested, end-to-end-confidential transport to non-RA-TLS-capable clients (browsers, embedded SDKs).
+---
+
+Session relay is the protocol that lets a client which **cannot speak RA-TLS** — a browser, a mobile WebView, a third-party SDK with no domain of its own — reach an attested enclave application end-to-end-confidentially. The user's wallet does the attestation verification once over RA-TLS; the browser inherits the result through a signed JWT and a session key that only the iframe and the enclave hold.
+
+We wrote a long-form post about why this matters: [Bringing attestation to the browser — the session-relay pattern](https://privasys.org/blog/bringing-attestation-to-the-browser-the-session-relay-pattern).
+
+## The problem in one paragraph
+
+A browser cannot parse SGX/TDX quotes. It will not let JavaScript inspect the TLS leaf chain. It will refuse a self-signed RA-TLS certificate with `ERR_CERT_AUTHORITY_INVALID`. And yet a huge fraction of what people want to build on confidential computing — chat clients, dashboards, document editors, custom UIs over private models — runs in a browser. Server-side proxies that "verify on behalf of the browser" defeat the entire point of attestation. We needed a way for the browser to inherit a verification it cannot perform itself, without introducing any third-party verifier.
+
+## The shape of the answer
+
+Three additions to the existing [wallet sign-in flow](/solutions/privasys-id/wallet):
+
+1. **Ephemeral SDK keypair in the QR.** The [Auth SDK](/solutions/privasys-id/auth-sdk) iframe generates `(sdk_priv, sdk_pub)` (P-256, SEC1 uncompressed) and adds `mode: "session-relay"` + `sdk_pub` to the QR.
+2. **Enclave session bootstrap.** The wallet, after RA-TLS-verifying the enclave, calls `POST /__privasys/session-bootstrap { sdk_pub, ... }` on the enclave and captures `{ session_id, enc_pub, expires_at }`. The enclave derives `K = HKDF(ECDH(enc_priv, sdk_pub), salt = session_id, info = "privasys-session/v1")` and stores `K` in its in-memory session table.
+3. **WebAuthn challenge binding.** The wallet uses `SHA-256("privasys-session-relay/v1" || nonce || sdk_pub || quote_hash || enc_pub || session_id)` as the WebAuthn challenge. The IdP recomputes it on `/complete` with constant-time compare and rejects mismatches. **This is the single load-bearing security check.**
+
+The IdP-issued JWT then carries `att_verified`, `att_quote_hash`, `att_oids`, and `session.{id, enc_pub, expires_at, sdk_pub_bind}`. The SDK pins `att_quote_hash` and `att_oids` against an app-supplied `attestationPolicy`, derives the same `K`, and starts sealing.
+
+## Wire-level summary
+
+| Layer | What happens |
+| --- | --- |
+| QR payload | `{ "v": 2, "mode": "session-relay", "sdk_pub": "<base64url(65)>", "nonce": "<base64url(32)>", ... }` |
+| Bootstrap request | `POST /__privasys/session-bootstrap` with `{ sdk_pub, user_handle, ttl_hint }` over RA-TLS |
+| Bootstrap response | `{ session_id, enc_pub, expires_at }` |
+| Key derivation | `K = HKDF-SHA256(ikm = ECDH_P256(...), salt = session_id, info = "privasys-session/v1", L = 32)` |
+| Binding challenge | `SHA-256("privasys-session-relay/v1" \|\| nonce \|\| sdk_pub \|\| quote_hash \|\| enc_pub \|\| session_id)` |
+| Sealed transport | `Content-Type: application/privasys-sealed+cbor`, `Authorization: PrivasysSession <id>`, body `CBOR{v, ctr, ct}` with AES-256-GCM, AD = `method:path:session_id`, monotonic per-direction counters |
+
+The full byte-level spec lives in the [identity-platform crypto contract](https://github.com/Privasys/identity-platform/blob/main/.operations/identity-platform/session-relay/crypto-contract.md).
+
+## Why the binding-challenge check carries the whole protocol
+
+Every other property of the protocol depends on it. Without challenge binding, the JWT is just "a wallet talked to the IdP". With it, the JWT is "the wallet — the one holding the FIDO2 private key for this account — verified attestation OIDs `X` for an enclave whose RA-TLS leaf hashes to `Y`, and bound a session whose key was derived from `sdk_pub`/`enc_pub` to that result". Every property the SDK gets to assume — that the JWT belongs to *this* SDK instance, that the enclave whose attestation is in the claims is the same enclave the session key is shared with, that the wallet really did the verification — flows from that one comparison.
+
+It is the smallest possible amount of code, it has known-answer test vectors that the wallet (TypeScript) and the IdP (Go) reproduce byte-for-byte, and it is the only check that will never be relaxed for backward compatibility.
+
+## What the gateway sees, and does not see
+
+The platform gateway terminates a Let's Encrypt wildcard certificate for `*.apps.privasys.org` so the browser sees a green padlock. For session-relay-mode SNIs the gateway switches from L4 splice to **terminate** mode: it handles the TLS itself, opens an internal RA-TLS connection to the enclave, and forwards the (still-sealed) HTTP body across.
+
+| Component | Sees | Cannot do |
+| --- | --- | --- |
+| Browser parent frame | Plaintext request/response (its own data) | Hold `K` or `sdk_priv` (those live in the iframe scope) |
+| `privasys.id` auth iframe | `K`, `sdk_priv`, plaintext bodies for that tab | Exfiltrate — same-origin / postMessage-gated |
+| Broker | Encrypted WS frames between wallet ↔ SDK, IdP-signed JWT in transit | Derive `K`, forge JWT |
+| Platform gateway | TLS metadata, AEAD ciphertext bodies, IdP JWT bearer | Read sealed bodies; bypass enclave RA-TLS (it is itself an RA-TLS client and aborts on policy mismatch) |
+| IdP | Wallet-supplied `quote_hash`, `att_oids`, `sdk_pub`, `enc_pub`, `session_id` | Verify the quote itself — pass-through and signed; mismatch with policy is rejected by the SDK |
+| Wallet | RA-TLS leaf cert + attestation OIDs of the enclave; `enc_pub` from bootstrap | Derive `K` (no `sdk_priv` here either — only the SDK iframe has it) |
+| Enclave | `sdk_pub` from the QR, plaintext bodies after unwrapping | Learn the user's biometric, the FIDO2 private key, or any other tab's `K` |
+
+## Generalising beyond browsers
+
+Browsers are not the only structurally-incapable client out there. A native mobile app embedded into a host with no crypto-extension API, a third-party JavaScript SDK distributed under someone else's domain, a smart-card terminal that can do TLS but not RA-TLS, a custom hardware client whose firmware update cycle is incompatible with quote-format changes — they all face the same fundamental problem: they cannot perform attestation themselves, but they want to talk to attested workloads end-to-end. Pair the incapable client with a *capable* device the user already trusts (in our case, the [Privasys Wallet](/solutions/privasys-id/wallet)), have the capable device do the verification once, and let the incapable client inherit the result through a JWT it cannot forge and a session key it cannot derive without holding the right ephemeral keypair.
+
+You are not extending the trust model. You are extending the *reach* of the existing trust model.
+
+## Source
+
+- Wallet handling: `auth/wallet/src/services/fido2.ts` (binding compute) and `auth/wallet/src/stores/sessions.ts` (live session display).
+- IdP enforcement: `auth/idp/internal/fido2/sessionrelay.go`, with KAT vectors in `sessionrelay_test.go`.
+- SDK class: `auth/sdk/src/index.ts` exports `PrivasysSession`.
+- Enclave middleware: `enclave-os/enclave-os-virtual/internal/sessionrelay` (Go) and `enclave-os/enclave-os-mini/enclave/src/sessionrelay.rs` (Rust).
+- Gateway termination: `platform/gateway/internal/{terminate,certloader}`.
+
+All AGPL-3.0 in [github.com/Privasys/identity-platform](https://github.com/Privasys/identity-platform) and [github.com/Privasys/enclave-os-mini](https://github.com/Privasys/enclave-os-mini).
