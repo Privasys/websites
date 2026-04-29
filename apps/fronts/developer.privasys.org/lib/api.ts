@@ -483,9 +483,16 @@ export function updateContainerMcp(token: string, appId: string, mcp: Record<str
     });
 }
 
-export function adminStopDeployment(token: string, appId: string, deploymentId: string): Promise<AppDeployment> {
-    return request<AppDeployment>(`/api/v1/admin/apps/${encodeURIComponent(appId)}/deployments/${encodeURIComponent(deploymentId)}/stop`, token, {
+export function adminStopDeployment(token: string, appId: string, deploymentId: string, force = false): Promise<AppDeployment> {
+    const qs = force ? '?force=true' : '';
+    return request<AppDeployment>(`/api/v1/admin/apps/${encodeURIComponent(appId)}/deployments/${encodeURIComponent(deploymentId)}/stop${qs}`, token, {
         method: 'POST',
         body: JSON.stringify({})
+    });
+}
+
+export function adminDeleteApp(token: string, id: string): Promise<void> {
+    return request<void>(`/api/v1/admin/apps/${encodeURIComponent(id)}`, token, {
+        method: 'DELETE'
     });
 }

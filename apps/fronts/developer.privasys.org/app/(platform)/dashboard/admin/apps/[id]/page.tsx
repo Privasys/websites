@@ -14,6 +14,7 @@ import {
     adminBuildVersion,
     adminDeployVersion,
     adminStopDeployment,
+    adminDeleteApp,
 } from '~/lib/api';
 import { useSSE } from '~/lib/use-sse';
 import type { App, BuildJob, AppVersion, AppDeployment, Enclave } from '~/lib/types';
@@ -163,15 +164,32 @@ export default function AdminAppDetailPage() {
         finally { setActionLoading(null); }
     }
 
-    async function handleStopDeployment(deploymentId: string) {
+    async function handleStopDeployment(deploymentId: string, force = false) {
         if (!session?.accessToken || !id) return;
+        const label = force ? 'Force-remove this deployment? This contacts the enclave even if the deployment is recorded as stopped or failed.' : null;
+        if (force && !window.confirm(label!)) return;
         setActionLoading(`stop-${deploymentId}`);
         setError(null);
         try {
-            await adminStopDeployment(session.accessToken, id, deploymentId);
+            await adminStopDeployment(session.accessToken, id, deploymentId, force);
             await load();
         } catch (e) { setError(e instanceof Error ? e.message : 'Stop failed'); }
         finally { setActionLoading(null); }
+    }
+
+    async function handleDeleteApp() {
+        if (!session?.accessToken || !id || !app) return;
+        const msg = `Delete app "${app.name}" permanently?\n\nThis undeploys any active deployments and removes all rows (versions, builds, deployments). Cannot be undone.`;
+        if (!window.confirm(msg)) return;
+        setActionLoading('delete-app');
+        setError(null);
+        try {
+            await adminDeleteApp(session.accessToken, id);
+            router.push('/dashboard/admin');
+        } catch (e) {
+            setError(e instanceof Error ? e.message : 'Delete failed');
+            setActionLoading(null);
+        }
     }
 
     if (loading) {
@@ -211,7 +229,17 @@ export default function AdminAppDetailPage() {
                         {app.app_type !== 'container' && <span className="ml-2 inline-block px-2 py-0.5 text-xs font-medium rounded-full bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300">WASM</span>}
                     </p>
                 </div>
-                <StatusBadge status={app.status} labels={STATUS_LABELS} colors={STATUS_COLORS} />
+                <div className="flex items-center gap-3">
+                    <StatusBadge status={app.status} labels={STATUS_LABELS} colors={STATUS_COLORS} />
+                    <button
+                        onClick={handleDeleteApp}
+                        disabled={actionLoading !== null}
+                        title="Permanently delete this app and undeploy any active deployments"
+                        className="px-3 py-1.5 text-xs font-medium rounded-lg border border-red-300 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-40 transition-colors"
+                    >
+                        {actionLoading === 'delete-app' ? 'Deleting…' : 'Delete app'}
+                    </button>
+                </div>
             </div>
 
             {error && (
@@ -505,7 +533,7 @@ function VersionsTab({ app, versions, builds, enclaves, actionLoading, onReview,
 // ------- Deployments Tab -------
 function DeploymentsTab({ deployments, versions, actionLoading, onStop }: {
     deployments: AppDeployment[]; versions: AppVersion[];
-    actionLoading: string | null; onStop: (id: string) => void;
+    actionLoading: string | null; onStop: (id: string, force?: boolean) => void;
 }) {
     const versionMap = Object.fromEntries(versions.map(v => [v.id, v]));
 
@@ -518,6 +546,7 @@ function DeploymentsTab({ deployments, versions, actionLoading, onStop }: {
             {deployments.map((dep) => {
                 const version = versionMap[dep.version_id];
                 const canStop = dep.status === 'active' || dep.status === 'deploying';
+                const canForce = dep.status !== 'stopped';
                 return (
                     <section key={dep.id} className="p-5 rounded-xl border border-black/10 dark:border-white/10">
                         <div className="flex items-center justify-between mb-3">
@@ -537,6 +566,13 @@ function DeploymentsTab({ deployments, versions, actionLoading, onStop }: {
                                     <button onClick={() => onStop(dep.id)} disabled={actionLoading !== null}
                                         className="px-3 py-1.5 text-xs font-medium rounded-lg border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-40 transition-colors">
                                         {actionLoading === `stop-${dep.id}` ? 'Stopping…' : 'Stop'}
+                                    </button>
+                                )}
+                                {!canStop && canForce && (
+                                    <button onClick={() => onStop(dep.id, true)} disabled={actionLoading !== null}
+                                        title="Contact the enclave to remove this route, then mark the deployment stopped. Use when a deployment is stuck or recorded as failed but the route still exists."
+                                        className="px-3 py-1.5 text-xs font-medium rounded-lg border border-amber-300 dark:border-amber-800 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 disabled:opacity-40 transition-colors">
+                                        {actionLoading === `stop-${dep.id}` ? 'Removing…' : 'Force remove'}
                                     </button>
                                 )}
                             </div>
