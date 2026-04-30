@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { useAuth } from '~/lib/privasys-auth';
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { getApp, listBuilds, listVersions, listDeployments, listCompatibleEnclaves, deleteApp, deployVersion, stopDeployment, getAppSchema, rpcCall, updateStoreListing, getAppMcp, updateContainerMcp, retryBuild } from '~/lib/api';
 import type { AppSchema, FunctionSchema, WitType, McpManifest } from '~/lib/api';
 import { useSSE } from '~/lib/use-sse';
@@ -339,7 +339,26 @@ function OverviewTab({ app, versions, builds, deployments, deleting, onDelete, r
                     )}
                     {app.app_type === 'container' ? (
                         <>
-                            {app.container_image && (
+                            {app.source_type === 'cloud_image' ? (
+                                <>
+                                    {app.cloud_image_name && (
+                                        <div>
+                                            <div className="text-xs text-black/50 dark:text-white/50">Cloud image</div>
+                                            <code className="text-xs bg-black/5 dark:bg-white/5 px-2 py-1 rounded break-all block mt-1 font-mono">{app.cloud_image_name}</code>
+                                        </div>
+                                    )}
+                                    {app.cloud_image_channel && (
+                                        <div>
+                                            <div className="text-xs text-black/50 dark:text-white/50">Channel</div>
+                                            <div className="mt-0.5">
+                                                <span className="inline-block px-2 py-0.5 text-xs font-medium rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
+                                                    {app.cloud_image_channel}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    )}
+                                </>
+                            ) : app.container_image && (
                                 <div className="col-span-2">
                                     <div className="text-xs text-black/50 dark:text-white/50">Container image</div>
                                     <code className="text-xs bg-black/5 dark:bg-white/5 px-2 py-1 rounded break-all block mt-1 font-mono">{app.container_image}</code>
@@ -1653,21 +1672,100 @@ function DeploymentsTab({ app, deployments, versions, enclaves, token, onRefresh
     const [stopping, setStopping] = useState<string | null>(null);
     const [stopErrors, setStopErrors] = useState<Record<string, string>>({});
     const [error, setError] = useState<string | null>(null);
-    const [runtimeEnvVars, setRuntimeEnvVars] = useState<{ key: string; value: string; secret: boolean }[]>([]);
-    const [showRuntimeEnv, setShowRuntimeEnv] = useState(false);
+    type RuntimeEnvVar = { key: string; value: string; secret: boolean; oid?: string };
+    const [runtimeEnvVars, setRuntimeEnvVars] = useState<RuntimeEnvVar[]>([{ key: '', value: '', secret: true }]);
+    const [showOidIdx, setShowOidIdx] = useState<Record<number, boolean>>({});
+    const [jsonImportError, setJsonImportError] = useState<string | null>(null);
+    const [isDraggingJson, setIsDraggingJson] = useState(false);
+    const jsonFileInputRef = useRef<HTMLInputElement | null>(null);
+
+    function ingestJsonText(text: string) {
+        setJsonImportError(null);
+        let parsed: unknown;
+        try {
+            parsed = JSON.parse(text);
+        } catch {
+            setJsonImportError('Invalid JSON file');
+            return;
+        }
+        const next: RuntimeEnvVar[] = [];
+        const sanitizeKey = (k: string) => k.toUpperCase().replace(/[^A-Z0-9_]/g, '');
+        if (Array.isArray(parsed)) {
+            for (const item of parsed) {
+                if (item && typeof item === 'object' && 'key' in item) {
+                    const r = item as Record<string, unknown>;
+                    next.push({
+                        key: sanitizeKey(String(r.key ?? '')),
+                        value: String(r.value ?? ''),
+                        secret: r.secret === undefined ? true : Boolean(r.secret),
+                        oid: r.oid ? String(r.oid) : undefined,
+                    });
+                }
+            }
+        } else if (parsed && typeof parsed === 'object') {
+            for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+                if (v && typeof v === 'object' && !Array.isArray(v)) {
+                    const r = v as Record<string, unknown>;
+                    next.push({
+                        key: sanitizeKey(k),
+                        value: String(r.value ?? ''),
+                        secret: r.secret === undefined ? true : Boolean(r.secret),
+                        oid: r.oid ? String(r.oid) : undefined,
+                    });
+                } else {
+                    next.push({ key: sanitizeKey(k), value: String(v ?? ''), secret: true });
+                }
+            }
+        } else {
+            setJsonImportError('JSON must be an object or array');
+            return;
+        }
+        if (next.length === 0) {
+            setJsonImportError('No environment variables found in JSON');
+            return;
+        }
+        // Merge with existing non-empty rows (existing keys are overwritten by JSON)
+        const existingByKey = new Map<string, RuntimeEnvVar>();
+        for (const v of runtimeEnvVars) {
+            if (v.key.trim()) existingByKey.set(v.key.trim(), v);
+        }
+        for (const v of next) {
+            if (v.key) existingByKey.set(v.key, v);
+        }
+        const merged = Array.from(existingByKey.values());
+        setRuntimeEnvVars(merged.length > 0 ? merged : [{ key: '', value: '', secret: true }]);
+        // Auto-reveal OID field for any imported var that has an OID
+        const oidShown: Record<number, boolean> = {};
+        merged.forEach((v, i) => { if (v.oid) oidShown[i] = true; });
+        setShowOidIdx(oidShown);
+    }
+
+    async function handleJsonFile(file: File) {
+        try {
+            const text = await file.text();
+            ingestJsonText(text);
+        } catch {
+            setJsonImportError('Failed to read file');
+        }
+    }
 
     async function handleDeploy() {
         if (!selectedVersion || !selectedEnclave) return;
         setDeploying(true);
         setError(null);
         try {
-            const envMap = runtimeEnvVars.length > 0
-                ? Object.fromEntries(runtimeEnvVars.filter(e => e.key.trim()).map(e => [e.key.trim(), e.value]))
+            const filled = runtimeEnvVars.filter(e => e.key.trim());
+            const envMap = filled.length > 0
+                ? Object.fromEntries(filled.map(e => [e.key.trim(), e.value]))
                 : undefined;
-            await deployVersion(token, app.id, selectedVersion, selectedEnclave, envMap);
+            const envMeta = filled.length > 0
+                ? Object.fromEntries(filled.map(e => [e.key.trim(), { secret: e.secret, oid: e.oid?.trim() || undefined }]))
+                : undefined;
+            await deployVersion(token, app.id, selectedVersion, selectedEnclave, envMap, envMeta);
             setSelectedVersion('');
             setSelectedEnclave('');
-            setRuntimeEnvVars([]);
+            setRuntimeEnvVars([{ key: '', value: '', secret: true }]);
+            setShowOidIdx({});
         } catch (e) {
             setError(e instanceof Error ? e.message : 'Deployment failed');
         } finally {
@@ -1705,14 +1803,29 @@ function DeploymentsTab({ app, deployments, versions, enclaves, token, onRefresh
 
             {/* Deploy new version */}
             <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">
-                <h2 className="text-sm font-semibold mb-1">Deploy a version</h2>
-                <p className="text-xs text-black/40 dark:text-white/40 mb-4">
+                <h2 className="text-sm font-semibold">Deploy a version</h2>
+                <p className="text-xs text-black/40 dark:text-white/40 mt-6 mb-2">
                     Select a built version and a location to deploy your application to an enclave.
                 </p>
 
                 {readyVersions.length === 0 ? (
                     <div className="text-xs text-black/40 dark:text-white/40 py-2">
                         No deployable versions yet. Submit a version and wait for the build to complete.
+                    </div>
+                ) : activeEnclaves.length === 0 ? (
+                    <div className="text-xs text-black/40 dark:text-white/40 py-2">
+                        {app.source_type === 'cloud_image' ? (
+                            <>
+                                No locations have a cached image for{' '}
+                                <code className="font-mono px-1 py-0.5 rounded bg-black/5 dark:bg-white/5">
+                                    {app.cloud_image_name}/{app.cloud_image_channel}
+                                </code>
+                                . Ask an administrator to publish the disk in a zone where a TDX
+                                enclave is registered, or attach a zone to an existing enclave.
+                            </>
+                        ) : (
+                            <>No active enclaves available for this application type.</>
+                        )}
                     </div>
                 ) : (
                     <div className="space-y-3">
@@ -1751,18 +1864,28 @@ function DeploymentsTab({ app, deployments, versions, enclaves, token, onRefresh
                             </div>
                         </div>
                         {app.app_type === 'container' && (
-                            <div>
-                                <button
-                                    type="button"
-                                    onClick={() => setShowRuntimeEnv(!showRuntimeEnv)}
-                                    className="text-xs text-black/50 dark:text-white/50 hover:text-black dark:hover:text-white transition-colors"
-                                >
-                                    {showRuntimeEnv ? '- Hide' : '+ Add'} runtime environment variables
-                                </button>
-                                {showRuntimeEnv && (
-                                    <div className="mt-2 space-y-2">
-                                        {runtimeEnvVars.map((env, i) => (
-                                            <div key={i} className="flex gap-2 items-start">
+                            <div
+                                className={`mb-6 rounded-lg transition-colors ${isDraggingJson ? 'ring-2 ring-violet-400/60 bg-violet-50/30 dark:bg-violet-900/10' : ''}`}
+                                onDragOver={(e) => { e.preventDefault(); setIsDraggingJson(true); }}
+                                onDragLeave={() => setIsDraggingJson(false)}
+                                onDrop={async (e) => {
+                                    e.preventDefault();
+                                    setIsDraggingJson(false);
+                                    const file = e.dataTransfer.files?.[0];
+                                    if (file && (file.type === 'application/json' || file.name.endsWith('.json'))) {
+                                        await handleJsonFile(file);
+                                    } else {
+                                        setJsonImportError('Drop a .json file');
+                                    }
+                                }}
+                            >
+                                <p className="text-xs text-black/40 dark:text-white/40 mt-6 mb-2">
+                                    Set environment variables that will be measured into the attestation Merkle tree.
+                                </p>
+                                <div className="space-y-2">
+                                    {runtimeEnvVars.map((env, i) => (
+                                        <div key={i} className="space-y-1">
+                                            <div className="flex gap-2 items-start">
                                                 <input
                                                     type="text"
                                                     placeholder="KEY"
@@ -1772,7 +1895,7 @@ function DeploymentsTab({ app, deployments, versions, enclaves, token, onRefresh
                                                         next[i] = { ...next[i], key: e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, '') };
                                                         setRuntimeEnvVars(next);
                                                     }}
-                                                    className="w-[120px] px-2 py-1.5 rounded-md border border-black/10 dark:border-white/10 bg-transparent text-xs font-mono focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/20 placeholder:text-black/25 dark:placeholder:text-white/25"
+                                                    className="w-[140px] px-2 py-1.5 rounded-md border border-black/10 dark:border-white/10 bg-transparent text-xs font-mono focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/20 placeholder:text-black/25 dark:placeholder:text-white/25"
                                                 />
                                                 <div className="flex-1 relative">
                                                     <input
@@ -1788,6 +1911,7 @@ function DeploymentsTab({ app, deployments, versions, enclaves, token, onRefresh
                                                     />
                                                     <button
                                                         type="button"
+                                                        title={env.secret ? 'Secret value (hidden, hashed in attestation)' : 'Public value'}
                                                         onClick={() => {
                                                             const next = [...runtimeEnvVars];
                                                             next[i] = { ...next[i], secret: !next[i].secret };
@@ -1804,24 +1928,82 @@ function DeploymentsTab({ app, deployments, versions, enclaves, token, onRefresh
                                                 </div>
                                                 <button
                                                     type="button"
-                                                    onClick={() => setRuntimeEnvVars(runtimeEnvVars.filter((_, j) => j !== i))}
+                                                    title={showOidIdx[i] ? 'Hide OID' : 'Set custom OID'}
+                                                    onClick={() => setShowOidIdx({ ...showOidIdx, [i]: !showOidIdx[i] })}
+                                                    className={`px-1.5 py-1.5 text-[10px] font-mono rounded-md border transition-colors ${showOidIdx[i] || env.oid ? 'border-violet-400/60 text-violet-600 dark:text-violet-400' : 'border-black/10 dark:border-white/10 text-black/40 dark:text-white/40 hover:text-black dark:hover:text-white'}`}
+                                                >
+                                                    OID
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        const filtered = runtimeEnvVars.filter((_, j) => j !== i);
+                                                        setRuntimeEnvVars(filtered.length > 0 ? filtered : [{ key: '', value: '', secret: true }]);
+                                                        const nextOid: Record<number, boolean> = {};
+                                                        Object.entries(showOidIdx).forEach(([k, v]) => {
+                                                            const idx = Number(k);
+                                                            if (idx < i && v) nextOid[idx] = true;
+                                                            else if (idx > i && v) nextOid[idx - 1] = true;
+                                                        });
+                                                        setShowOidIdx(nextOid);
+                                                    }}
                                                     className="px-1 py-1.5 text-black/30 dark:text-white/30 hover:text-red-500 transition-colors"
+                                                    title="Remove variable"
                                                 >
                                                     <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" /></svg>
                                                 </button>
                                             </div>
-                                        ))}
-                                        <button
-                                            type="button"
-                                            onClick={() => setRuntimeEnvVars([...runtimeEnvVars, { key: '', value: '', secret: true }])}
-                                            className="text-xs text-black/40 dark:text-white/40 hover:text-black dark:hover:text-white"
-                                        >
-                                            + Add variable
-                                        </button>
-                                        <p className="text-xs text-black/35 dark:text-white/35">
-                                            These are merged with app-level env vars and measured into the attestation Merkle tree.
-                                        </p>
-                                    </div>
+                                            {showOidIdx[i] && (
+                                                <div className="flex gap-2 items-center pl-[148px]">
+                                                    <span className="text-[10px] font-mono text-black/40 dark:text-white/40 whitespace-nowrap">1.3.6.1.4.1.65230.3.5.</span>
+                                                    <input
+                                                        type="text"
+                                                        placeholder="sub-OID (e.g. 7 or 7.1)"
+                                                        value={env.oid?.replace(/^1\.3\.6\.1\.4\.1\.65230\.3\.5\.?/, '') ?? ''}
+                                                        onChange={(e) => {
+                                                            const next = [...runtimeEnvVars];
+                                                            const sub = e.target.value.replace(/[^0-9.]/g, '');
+                                                            next[i] = { ...next[i], oid: sub ? `1.3.6.1.4.1.65230.3.5.${sub}` : undefined };
+                                                            setRuntimeEnvVars(next);
+                                                        }}
+                                                        className="flex-1 px-2 py-1 rounded-md border border-black/10 dark:border-white/10 bg-transparent text-[11px] font-mono focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/20 placeholder:text-black/25 dark:placeholder:text-white/25"
+                                                    />
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                                <div className="flex items-center gap-3 mt-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setRuntimeEnvVars([...runtimeEnvVars, { key: '', value: '', secret: true }])}
+                                        className="text-xs text-black/40 dark:text-white/40 hover:text-black dark:hover:text-white"
+                                    >
+                                        + Add variable
+                                    </button>
+                                    <span className="text-black/20 dark:text-white/20 text-xs">·</span>
+                                    <button
+                                        type="button"
+                                        onClick={() => jsonFileInputRef.current?.click()}
+                                        className="text-xs text-black/40 dark:text-white/40 hover:text-black dark:hover:text-white"
+                                    >
+                                        Import JSON…
+                                    </button>
+                                    <span className="text-[10px] text-black/30 dark:text-white/30">or drop a .json file anywhere in this box</span>
+                                    <input
+                                        ref={jsonFileInputRef}
+                                        type="file"
+                                        accept="application/json,.json"
+                                        className="hidden"
+                                        onChange={async (e) => {
+                                            const file = e.target.files?.[0];
+                                            if (file) await handleJsonFile(file);
+                                            e.target.value = '';
+                                        }}
+                                    />
+                                </div>
+                                {jsonImportError && (
+                                    <p className="text-xs text-red-500 mt-1">{jsonImportError}</p>
                                 )}
                             </div>
                         )}

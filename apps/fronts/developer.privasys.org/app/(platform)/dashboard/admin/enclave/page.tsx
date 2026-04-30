@@ -8,7 +8,7 @@ import { COUNTRIES, regionForCountry, countryName } from '~/lib/countries';
 import type { Enclave, CreateEnclaveRequest, TeeType } from '~/lib/types';
 
 const EMPTY_FORM: CreateEnclaveRequest = {
-    name: '', host: '', port: 8445, gateway_host: '', tee_type: 'sgx', mr_enclave: '', country: '', region: '', provider: '', owner: '', max_apps: 0,
+    name: '', host: '', port: 8445, gateway_host: '', tee_type: 'sgx', mr_enclave: '', country: '', region: '', zone: '', provider: '', owner: '', max_apps: 0,
 };
 
 const ENC_STATUS_COLORS: Record<string, string> = {
@@ -111,7 +111,7 @@ export default function AdminEnclavePage() {
     function openEdit(enc: Enclave) {
         setForm({
             name: enc.name, host: enc.host, port: enc.port, gateway_host: enc.gateway_host ?? '', tee_type: enc.tee_type || 'sgx', mr_enclave: enc.mr_enclave,
-            country: enc.country, region: enc.region, gps_lat: enc.gps_lat, gps_lon: enc.gps_lon,
+            country: enc.country, region: enc.region, zone: enc.zone ?? '', gps_lat: enc.gps_lat, gps_lon: enc.gps_lon,
             provider: enc.provider, owner: enc.owner, max_apps: enc.max_apps,
         });
         setEditingId(enc.id);
@@ -142,7 +142,7 @@ export default function AdminEnclavePage() {
         setSaving(true);
         setError(null);
         try {
-            const payload = { ...form, region: regionForCountry(form.country ?? ''), gateway_host: form.gateway_host || undefined };
+            const payload = { ...form, region: regionForCountry(form.country ?? ''), zone: form.zone?.trim() || undefined, gateway_host: form.gateway_host || undefined };
             if (editingId) {
                 await adminUpdateEnclave(session.accessToken, editingId, payload);
             } else {
@@ -270,6 +270,16 @@ export default function AdminEnclavePage() {
                             <label className="block text-xs font-medium mb-1">Region (inferred)</label>
                             <input readOnly value={form.country ? regionForCountry(form.country) : ''}
                                 className={`${INPUT_CLS} bg-black/[0.02] dark:bg-white/[0.02] cursor-not-allowed`} />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-medium mb-1">Cloud zone (optional)</label>
+                            <input value={form.zone ?? ''} onChange={e => setForm(f => ({ ...f, zone: e.target.value }))}
+                                placeholder="e.g. europe-west4-c"
+                                className={INPUT_CLS} />
+                            <p className="mt-1 text-xs text-black/40 dark:text-white/40">
+                                GCE zone where the enclave VM runs. Required for cloud-image
+                                deployments because GCE disks are zonal.
+                            </p>
                         </div>
                         <div className="grid grid-cols-2 gap-4">
                             <div>
