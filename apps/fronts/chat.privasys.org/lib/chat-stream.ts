@@ -137,7 +137,7 @@ export async function streamChatCompletion(args: StreamChatArgs): Promise<void> 
     if (args.sealedSession) {
         try {
             const sealed = await args.sealedSession.stream('POST', '/v1/chat/completions', body, {
-                signal: args.signal,
+                signal: args.signal
             });
             if (sealed.status >= 400) {
                 const drained: Uint8Array[] = [];
@@ -149,7 +149,7 @@ export async function streamChatCompletion(args: StreamChatArgs): Promise<void> 
                 }
                 const text = drained.length ? new TextDecoder().decode(concatU8(drained)) : '';
                 const err = new Error(
-                    `chat request failed: ${sealed.status}${text ? ` - ${text.slice(0, 200)}` : ''}`,
+                    `chat request failed: ${sealed.status}${text ? ` - ${text.slice(0, 200)}` : ''}`
                 );
                 args.onError?.(err);
                 throw err;

@@ -10,7 +10,7 @@ import type { Instance } from '~/lib/types';
 export function SignInView({
     instance,
     onCancel,
-    onSuccess,
+    onSuccess
 }: {
     instance: Instance;
     onCancel: () => void;

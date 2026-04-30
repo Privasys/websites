@@ -162,7 +162,7 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
             if (opts?.sessionRelayHost) {
                 const oneShot = new AuthFrame({
                     ...config,
-                    sessionRelay: { appHost: opts.sessionRelayHost },
+                    sessionRelay: { appHost: opts.sessionRelayHost }
                 });
                 const result = await oneShot.signIn();
                 acceptResultToken(result.accessToken ?? result.sessionToken);
@@ -180,7 +180,7 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
             const result = await frame.signIn();
             acceptResultToken(result.accessToken ?? result.sessionToken);
         },
-        [config, getFrame, acceptResultToken],
+        [config, getFrame, acceptResultToken]
     );
 
     const signInInto = useCallback(
@@ -194,7 +194,7 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
                 container,
                 ...(opts?.sessionRelayHost
                     ? { sessionRelay: { appHost: opts.sessionRelayHost } }
-                    : {}),
+                    : {})
             });
             const result = await inline.signIn();
             acceptResultToken(result.accessToken ?? result.sessionToken);
@@ -207,7 +207,7 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
                 }
             }
         },
-        [config, acceptResultToken],
+        [config, acceptResultToken]
     );
 
     const signOut = useCallback(async () => {
