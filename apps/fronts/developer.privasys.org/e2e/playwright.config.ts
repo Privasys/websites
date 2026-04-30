@@ -70,6 +70,14 @@ export default defineConfig({
             }
         },
         {
+            name: 'cloud-image',
+            testMatch: 'cloud-image-deploy.spec.ts',
+            dependencies: ['auth-setup'],
+            use: {
+                storageState: AUTH_FILE
+            }
+        },
+        {
             name: 'register-enclave',
             testMatch: 'register-enclave.spec.ts',
             dependencies: ['auth-setup'],
