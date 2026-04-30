@@ -18,6 +18,18 @@ export interface InstanceAuth {
     issuer: string;
 }
 
+/**
+ * Sealed-transport (session-relay) descriptor returned by
+ * `GET /api/v1/ai/instances/{idOrAlias}`. Tells the chat UI whether the
+ * instance speaks the wallet-attested CBOR-AES-GCM protocol so the SDK
+ * can negotiate a sealed session against `app_host`.
+ */
+export interface InstanceSessionRelay {
+    enabled: boolean;
+    /** Hostname (no scheme) for `/__privasys/session-bootstrap`. */
+    app_host: string;
+}
+
 export interface Instance {
     id: string;
     alias: string | null;
@@ -35,4 +47,6 @@ export interface Instance {
      * is currently deployed on the fleet.
      */
     attest_url?: string;
+    /** Sealed-transport bootstrap descriptor. Absent when disabled. */
+    session_relay?: InstanceSessionRelay;
 }
