@@ -35,7 +35,7 @@ export function ChatShell({
     disabledReason?: string;
     userGreeting?: string;
 }) {
-    const { session } = useAuth();
+    const { session, sealedSession } = useAuth();
     const [model, setModel] = useState<AvailableModel | null>(initialModel);
     const [view, setView] = useState<ShellView>('chat');
 
@@ -105,6 +105,7 @@ export function ChatShell({
                         model={model}
                         onModelChange={setModel}
                         token={session?.accessToken}
+                        sealedSession={sealedSession ?? undefined}
                         disabledReason={disabledReason}
                         userGreeting={userGreeting}
                         onConnect={!session ? () => setView('signin') : undefined}

@@ -8,6 +8,7 @@
 // attestation, not from a secret bearer.
 
 import type { SamplingParams } from './sampling';
+import type { SealedSession } from '@privasys/auth';
 
 export interface ChatMessage {
     role: 'system' | 'user' | 'assistant';
@@ -90,6 +91,13 @@ export interface StreamChatArgs {
     onToolCall?: (ev: ToolCallEvent) => void;
     /** Called when a tool call completes (ok or error). */
     onToolResult?: (ev: ToolResultEvent) => void;
+    /**
+     * Optional sealed session-relay handle. When provided, the request
+     * is tunnelled through PrivasysSession.stream() so the chat traffic
+     * is encrypted end-to-end (browser ↔ enclave) and never visible to
+     * the gateway. Falls back to plain fetch when omitted.
+     */
+    sealedSession?: SealedSession;
 }
 
 interface SSEChunk {
@@ -124,30 +132,59 @@ export async function streamChatCompletion(args: StreamChatArgs): Promise<void> 
         }
     }
 
-    let res: Response;
-    try {
-        res = await fetch(url, {
-            method: 'POST',
-            headers,
-            signal: args.signal,
-            body: JSON.stringify(body)
-        });
-    } catch (e) {
-        const err = e instanceof Error ? e : new Error('fetch failed');
-        args.onError?.(err);
-        throw err;
-    }
+    let res: Response | null = null;
+    let reader: ReadableStreamDefaultReader<Uint8Array>;
+    if (args.sealedSession) {
+        try {
+            const sealed = await args.sealedSession.stream('POST', '/v1/chat/completions', body, {
+                signal: args.signal,
+            });
+            if (sealed.status >= 400) {
+                const drained: Uint8Array[] = [];
+                const r = sealed.body.getReader();
+                for (;;) {
+                    const { value, done } = await r.read();
+                    if (done) break;
+                    if (value) drained.push(value);
+                }
+                const text = drained.length ? new TextDecoder().decode(concatU8(drained)) : '';
+                const err = new Error(
+                    `chat request failed: ${sealed.status}${text ? ` - ${text.slice(0, 200)}` : ''}`,
+                );
+                args.onError?.(err);
+                throw err;
+            }
+            reader = sealed.body.getReader();
+        } catch (e) {
+            const err = e instanceof Error ? e : new Error('sealed stream failed');
+            args.onError?.(err);
+            throw err;
+        }
+    } else {
+        try {
+            res = await fetch(url, {
+                method: 'POST',
+                headers,
+                signal: args.signal,
+                body: JSON.stringify(body)
+            });
+        } catch (e) {
+            const err = e instanceof Error ? e : new Error('fetch failed');
+            args.onError?.(err);
+            throw err;
+        }
 
-    if (!res.ok || !res.body) {
-        const text = await res.text().catch(() => '');
-        const err = new Error(
-            `chat request failed: ${res.status} ${res.statusText}${text ? ` - ${text.slice(0, 200)}` : ''}`
-        );
-        args.onError?.(err);
-        throw err;
-    }
+        if (!res.ok || !res.body) {
+            const text = await res.text().catch(() => '');
+            const err = new Error(
+                `chat request failed: ${res.status} ${res.statusText}${text ? ` - ${text.slice(0, 200)}` : ''}`
+            );
+            args.onError?.(err);
+            throw err;
+        }
 
-    const reader = res.body.getReader();
+        reader = res.body.getReader();
+    }
     const decoder = new TextDecoder();
     let buffer = '';
     let full = '';
@@ -230,4 +267,16 @@ export async function streamChatCompletion(args: StreamChatArgs): Promise<void> 
     } finally {
         reader.releaseLock();
     }
+}
+
+function concatU8(parts: Uint8Array[]): Uint8Array {
+    let total = 0;
+    for (const p of parts) total += p.byteLength;
+    const out = new Uint8Array(total);
+    let off = 0;
+    for (const p of parts) {
+        out.set(p, off);
+        off += p.byteLength;
+    }
+    return out;
 }

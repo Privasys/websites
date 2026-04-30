@@ -8,6 +8,7 @@ import {
 import { DEFAULT_SAMPLING, type SamplingParams } from '~/lib/sampling';
 import { modelLabel } from '~/lib/model-label';
 import type { PersistedMessage, Rating, ToolInvocation } from '~/lib/conversations';
+import type { SealedSession } from '@privasys/auth';
 import { clearFeedback, recordFeedback } from '~/lib/pending-feedback';
 import { Composer } from './composer';
 import { Markdown } from './markdown';
@@ -37,6 +38,7 @@ export function ChatPanel({
     model,
     onModelChange,
     token,
+    sealedSession,
     disabledReason,
     userGreeting,
     onConnect,
@@ -49,6 +51,7 @@ export function ChatPanel({
     model: AvailableModel | null;
     onModelChange: (m: AvailableModel) => void;
     token?: string;
+    sealedSession?: SealedSession;
     disabledReason?: string;
     userGreeting?: string;
     /** When set, the empty-state shows a prominent Connect button
@@ -142,6 +145,7 @@ export function ChatPanel({
                 sampling: samplingSnapshot,
                 messages: history.map(({ role, content }) => ({ role, content })),
                 token,
+                sealedSession,
                 signal: ctrl.signal,
                 onDelta: (delta) => {
                     setMessages((prev) =>
