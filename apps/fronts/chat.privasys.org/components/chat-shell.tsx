@@ -93,7 +93,7 @@ export function ChatShell({
                 )}
 
                 {view === 'signin' && (
-                    <SignInView onCancel={goChat} onSuccess={goChat} />
+                    <SignInView instance={instance} onCancel={goChat} onSuccess={goChat} />
                 )}
 
                 {view === 'chat' && (

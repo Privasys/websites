@@ -9,7 +9,7 @@ import {
     useState,
     type ReactNode
 } from 'react';
-import { AuthFrame, type AuthFrameConfig } from '@privasys/auth';
+import { AuthFrame, type AuthFrameConfig, type SealedSession } from '@privasys/auth';
 
 // Auth context for the Privasys Chat front-end.
 //
@@ -36,8 +36,16 @@ interface AuthContextValue {
     session: AuthSession | null;
     loading: boolean;
     expired: boolean;
+    /**
+     * Sealed CBOR-AES-GCM session against the enclave that the wallet
+     * attested during sign-in. Only populated when the caller passed
+     * `sessionRelayHost` to `signIn`/`signInInto` — typically the
+     * `instance.session_relay.app_host` returned by the management
+     * service.
+     */
+    sealedSession: SealedSession | null;
     /** Open the auth ceremony in a full-screen overlay (default). */
-    signIn: () => Promise<void>;
+    signIn: (opts?: { sessionRelayHost?: string }) => Promise<void>;
     /**
      * Mount the auth iframe inline inside `container` (instead of a
      * full-screen overlay). Used by the in-panel sign-in view so the
@@ -46,7 +54,7 @@ interface AuthContextValue {
      * persistent renewal frame picks up the session via cross-origin
      * SSO and starts the silent-renewal timer.
      */
-    signInInto: (container: HTMLElement) => Promise<void>;
+    signInInto: (container: HTMLElement, opts?: { sessionRelayHost?: string }) => Promise<void>;
     signOut: () => Promise<void>;
 }
 
@@ -54,6 +62,7 @@ const AuthContext = createContext<AuthContextValue>({
     session: null,
     loading: true,
     expired: false,
+    sealedSession: null,
     signIn: async () => {},
     signInInto: async () => {},
     signOut: async () => {}
@@ -88,6 +97,7 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
     const [session, setSession] = useState<AuthSession | null>(null);
     const [loading, setLoading] = useState(true);
     const [expired, setExpired] = useState(false);
+    const [sealedSession, setSealedSession] = useState<SealedSession | null>(null);
     const frameRef = useRef<AuthFrame | null>(null);
 
     const getFrame = useCallback(() => {
@@ -143,34 +153,73 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
         [config, getFrame]
     );
 
-    const signIn = useCallback(async () => {
-        const frame = getFrame();
-        const result = await frame.signIn();
-        acceptResultToken(result.accessToken ?? result.sessionToken);
-    }, [getFrame, acceptResultToken]);
+    const signIn = useCallback(
+        async (opts?: { sessionRelayHost?: string }) => {
+            // For the sealed-transport flow we need a one-shot frame whose
+            // `sessionRelay.appHost` was set at construction time so the QR
+            // includes the SDK pubkey. The persistent frame (used for SSO
+            // check + silent renewal) doesn't need it.
+            if (opts?.sessionRelayHost) {
+                const oneShot = new AuthFrame({
+                    ...config,
+                    sessionRelay: { appHost: opts.sessionRelayHost },
+                });
+                const result = await oneShot.signIn();
+                acceptResultToken(result.accessToken ?? result.sessionToken);
+                if (result.sessionRelay) {
+                    try {
+                        const s = await oneShot.session();
+                        setSealedSession(s);
+                    } catch (err) {
+                        console.warn('[chat-auth] sealed session install failed:', err);
+                    }
+                }
+                return;
+            }
+            const frame = getFrame();
+            const result = await frame.signIn();
+            acceptResultToken(result.accessToken ?? result.sessionToken);
+        },
+        [config, getFrame, acceptResultToken],
+    );
 
     const signInInto = useCallback(
-        async (container: HTMLElement) => {
+        async (container: HTMLElement, opts?: { sessionRelayHost?: string }) => {
             // One-shot inline frame. We don't reuse `frameRef` because
             // `container` is a constructor-only option in @privasys/auth
             // and the persistent frame must keep its renewal iframe
             // attached to <body>.
-            const inline = new AuthFrame({ ...config, container });
+            const inline = new AuthFrame({
+                ...config,
+                container,
+                ...(opts?.sessionRelayHost
+                    ? { sessionRelay: { appHost: opts.sessionRelayHost } }
+                    : {}),
+            });
             const result = await inline.signIn();
             acceptResultToken(result.accessToken ?? result.sessionToken);
+            if (opts?.sessionRelayHost && result.sessionRelay) {
+                try {
+                    const s = await inline.session();
+                    setSealedSession(s);
+                } catch (err) {
+                    console.warn('[chat-auth] sealed session install failed:', err);
+                }
+            }
         },
-        [config, acceptResultToken]
+        [config, acceptResultToken],
     );
 
     const signOut = useCallback(async () => {
         const frame = getFrame();
         await frame.clearSession();
         setSession(null);
+        setSealedSession(null);
     }, [getFrame]);
 
     return (
         <AuthContext.Provider
-            value={{ session, loading, expired, signIn, signInInto, signOut }}
+            value={{ session, loading, expired, sealedSession, signIn, signInInto, signOut }}
         >
             {children}
         </AuthContext.Provider>

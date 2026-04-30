@@ -2,11 +2,20 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '~/lib/privasys-auth';
+import type { Instance } from '~/lib/types';
 
 // Inline sign-in view. Mounts the privasys.id auth iframe inside the
 // chat panel via the `signInInto(container)` SDK hook so the overall
 // shell (sidebar + header) remains visible during authentication.
-export function SignInView({ onCancel, onSuccess }: { onCancel: () => void; onSuccess: () => void }) {
+export function SignInView({
+    instance,
+    onCancel,
+    onSuccess,
+}: {
+    instance: Instance;
+    onCancel: () => void;
+    onSuccess: () => void;
+}) {
     const { signInInto } = useAuth();
     const containerRef = useRef<HTMLDivElement>(null);
     const startedRef = useRef(false);
@@ -17,7 +26,15 @@ export function SignInView({ onCancel, onSuccess }: { onCancel: () => void; onSu
         const el = containerRef.current;
         if (!el) return;
         startedRef.current = true;
-        void signInInto(el)
+        // Opt into the sealed session-relay flow when the management
+        // service tells us this instance has the bootstrap middleware.
+        // The wallet attests `app_host`'s quote and binds the issued JWT
+        // to a sealed CBOR-AES-GCM transport session that lives inside
+        // the privasys.id iframe.
+        const sessionRelayHost = instance.session_relay?.enabled
+            ? instance.session_relay.app_host
+            : undefined;
+        void signInInto(el, sessionRelayHost ? { sessionRelayHost } : undefined)
             .then(() => onSuccess())
             .catch((e: unknown) => {
                 const msg = e instanceof Error ? e.message : 'Sign-in failed.';
@@ -25,7 +42,7 @@ export function SignInView({ onCancel, onSuccess }: { onCancel: () => void; onSu
                     setError(msg);
                 }
             });
-    }, [signInInto, onSuccess]);
+    }, [instance, signInInto, onSuccess]);
 
     return (
         <div className="flex flex-1 flex-col overflow-hidden">
