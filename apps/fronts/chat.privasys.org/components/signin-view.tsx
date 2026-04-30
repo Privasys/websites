@@ -25,6 +25,12 @@ export function SignInView({
         if (startedRef.current) return;
         const el = containerRef.current;
         if (!el) return;
+        // Wait for the real instance metadata to load before kicking off the
+        // sign-in flow — without it we cannot know whether `session_relay`
+        // is enabled, and the SDK would generate a vanilla QR (no
+        // `mode: "session-relay"`) so the wallet would bind a normal passkey
+        // instead of bootstrapping a sealed session against the enclave.
+        if (!instance.endpoint) return;
         startedRef.current = true;
         // Opt into the sealed session-relay flow when the management
         // service tells us this instance has the bootstrap middleware.

@@ -18,9 +18,12 @@ export default function InstancePage({ params }: { params: Promise<{ instance: s
     const [instance, setInstance] = useState<Instance | null>(null);
     const [error, setError] = useState<string | null>(null);
 
-    // Fetch instance metadata once authenticated.
+    // Fetch instance metadata. We do this even when unauthenticated so the
+    // sign-in flow can read `instance.session_relay` and opt into the sealed
+    // CBOR transport from the very first ceremony — without this, the wallet
+    // gets a vanilla QR (no `mode: "session-relay"`) and binds a normal
+    // passkey instead of bootstrapping a sealed session against the enclave.
     useEffect(() => {
-        if (!session) return;
         const ctrl = new AbortController();
         fetchInstance(instanceId, ctrl.signal)
             .then(setInstance)
@@ -33,7 +36,7 @@ export default function InstancePage({ params }: { params: Promise<{ instance: s
                 }
             });
         return () => ctrl.abort();
-    }, [instanceId, session]);
+    }, [instanceId]);
 
     const greeting = useMemo(() => decodeGreeting(session?.accessToken), [session]);
 
@@ -58,8 +61,10 @@ export default function InstancePage({ params }: { params: Promise<{ instance: s
         );
     }
 
-    // Unauthenticated: render a placeholder instance so the shell + sidebar
-    // are visible. The composer is disabled with a sign-in hint.
+    // Unauthenticated: render the shell so the sidebar + sign-in flow are
+    // visible. Use the real instance metadata if it's already loaded so the
+    // sign-in iframe can opt into session-relay; otherwise fall back to a
+    // placeholder until `fetchInstance` resolves.
     if (!session) {
         const placeholder: Instance = {
             id: instanceId,
@@ -74,7 +79,7 @@ export default function InstancePage({ params }: { params: Promise<{ instance: s
         };
         return (
             <ChatShell
-                instance={placeholder}
+                instance={instance ?? placeholder}
                 initialModel={null}
                 disabledReason={
                     expired
