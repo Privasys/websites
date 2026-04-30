@@ -23,6 +23,8 @@ export interface App {
     container_storage?: boolean;
     container_storage_key?: string;
     container_mcp?: Record<string, unknown>;
+    cloud_image_name?: string;
+    cloud_image_channel?: string;
     status: string;
     review_note?: string;
     reviewer_sub?: string;
@@ -162,6 +164,7 @@ export interface Enclave {
     mr_enclave: string;
     country: string;
     region: string;
+    zone?: string;
     gps_lat?: number;
     gps_lon?: number;
     provider: string;
@@ -182,6 +185,7 @@ export interface CreateEnclaveRequest {
     mr_enclave?: string;
     country?: string;
     region?: string;
+    zone?: string;
     gps_lat?: number;
     gps_lon?: number;
     provider?: string;
