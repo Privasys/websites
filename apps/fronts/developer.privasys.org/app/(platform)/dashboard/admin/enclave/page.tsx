@@ -8,7 +8,7 @@ import { COUNTRIES, regionForCountry, countryName } from '~/lib/countries';
 import type { Enclave, CreateEnclaveRequest, TeeType } from '~/lib/types';
 
 const EMPTY_FORM: CreateEnclaveRequest = {
-    name: '', host: '', port: 8445, gateway_host: '', tee_type: 'sgx', mr_enclave: '', country: '', region: '', zone: '', provider: '', owner: '', max_apps: 10,
+    name: '', port: 8445, gateway_host: '', tee_type: 'sgx', mr_enclave: '', country: '', region: '', zone: '', provider: '', owner: '', max_apps: 10,
 };
 
 const ENC_STATUS_COLORS: Record<string, string> = {
@@ -67,7 +67,7 @@ export default function AdminEnclavePage() {
         if (!session?.accessToken) return;
         setEnclaveHealth(prev => ({ ...prev, [enc.id]: null })); // loading state
         try {
-            const h = await adminEnclaveHealth(session.accessToken, enc.gateway_host || enc.host, enc.port, enc.tee_type);
+            const h = await adminEnclaveHealth(session.accessToken, enc.gateway_host || '', enc.port, enc.tee_type);
             setEnclaveHealth(prev => ({ ...prev, [enc.id]: h }));
         } catch {
             setEnclaveHealth(prev => ({ ...prev, [enc.id]: { status: 'unreachable', error: 'Could not reach enclave' } }));
@@ -88,7 +88,7 @@ export default function AdminEnclavePage() {
             if (filterStatus && e.status !== filterStatus) return false;
             if (filterOwner && e.owner !== filterOwner) return false;
             if (filterTeeType && e.tee_type !== filterTeeType) return false;
-            if (q && !e.name.toLowerCase().includes(q) && !e.host.toLowerCase().includes(q)
+            if (q && !e.name.toLowerCase().includes(q) && !(e.gateway_host ?? '').toLowerCase().includes(q)
                 && !e.country.toLowerCase().includes(q) && !e.provider.toLowerCase().includes(q)
                 && !e.owner.toLowerCase().includes(q) && !e.mr_enclave.toLowerCase().includes(q)) return false;
             return true;
@@ -110,7 +110,7 @@ export default function AdminEnclavePage() {
 
     function openEdit(enc: Enclave) {
         setForm({
-            name: enc.name, host: enc.host, port: enc.port, gateway_host: enc.gateway_host ?? '', tee_type: enc.tee_type || 'sgx', mr_enclave: enc.mr_enclave,
+            name: enc.name, port: enc.port, gateway_host: enc.gateway_host ?? '', tee_type: enc.tee_type || 'sgx', mr_enclave: enc.mr_enclave,
             country: enc.country, region: enc.region, zone: enc.zone ?? '', gps_lat: enc.gps_lat, gps_lon: enc.gps_lon,
             provider: enc.provider, owner: enc.owner, max_apps: enc.max_apps,
         });
@@ -412,7 +412,7 @@ export default function AdminEnclavePage() {
                                                 </span>
                                             </td>
                                             <td className="px-4 py-3">
-                                                <code className="text-xs">{enc.gateway_host || enc.host}:{enc.port}</code>
+                                                <code className="text-xs">{enc.gateway_host || '—'}:{enc.port}</code>
                                             </td>
                                             <td className="px-4 py-3 text-black/60 dark:text-white/60">
                                                 {enc.country ? countryName(enc.country) : '—'}{enc.region ? ` · ${enc.region}` : ''}

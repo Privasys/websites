@@ -1662,7 +1662,10 @@ function DeploymentsTab({ app, deployments, versions, enclaves, token, onRefresh
     deployProgress?: Record<string, { stage: string; totalBytes?: number; downloadedBytes?: number }>;
 }) {
     const versionMap = Object.fromEntries(versions.map(v => [v.id, v]));
-    const enclaveMap = Object.fromEntries(enclaves.map(e => [`${e.host}:${e.port}`, e]));
+    // Map by `gateway_host` (the IP) since deployments are now keyed by IP;
+    // also fall back to enclave id for any rows whose enclave has been
+    // re-IPed since the deployment was recorded.
+    const enclaveMap = Object.fromEntries(enclaves.map(e => [`${e.gateway_host ?? ''}:${e.port}`, e]));
     const readyVersions = versions.filter(v => v.status === 'ready');
     const compatibleTeeType = app.app_type === 'container' ? 'tdx' : 'sgx';
     const activeEnclaves = enclaves.filter(e => e.status === 'active' && (!e.tee_type || e.tee_type === compatibleTeeType));
