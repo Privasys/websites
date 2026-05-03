@@ -221,6 +221,13 @@ export function ChatPanel({
                     });
                 }
             });
+        } catch (e) {
+            // streamChatCompletion rethrows after invoking onError so the
+            // assistant message is already flagged with .error. Swallow
+            // here (including AbortError on user cancel / unmount) so it
+            // doesn't surface as an unhandled promise rejection in the
+            // browser console.
+            void e;
         } finally {
             setStreaming(false);
             abortRef.current = null;
