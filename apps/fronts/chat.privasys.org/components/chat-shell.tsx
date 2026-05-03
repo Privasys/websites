@@ -46,28 +46,13 @@ export function ChatShell({
         modelLabel: model ? modelLabel(model) : undefined
     });
 
-    // Stable mount key for ChatPanel. We deliberately do NOT use
-    // `conv.currentId` here: that value transitions from null to a
-    // freshly-minted id the moment the user sends the first message
-    // in a new conversation, which would remount the panel mid-stream
-    // and abort the in-flight chat completion (the unmount cleanup
-    // calls AbortController.abort()). Instead we only re-key on
-    // explicit user actions: New chat, Select conversation, Branch.
-    const [panelKey, setPanelKey] = useState<string>(() => conv.currentId ?? 'new');
-    // Re-key once when hydration finishes and we land on an existing
-    // conversation we hadn't seen before (page reload).
-    const hydratedKeyRef = useMemo(
-        () => ({ current: conv.currentId ?? 'new' }),
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-        []
-    );
-    if (conv.currentId && hydratedKeyRef.current !== conv.currentId && panelKey === 'new') {
-        // First hydration after sub becomes available: adopt the id.
-        hydratedKeyRef.current = conv.currentId;
-        // Schedule a re-key so initialMessages reflect storage.
-        // Using setState in render is fine here because it's guarded.
-        setPanelKey(conv.currentId);
-    }
+    // ChatPanel is intentionally NOT remounted via a `key` when the
+    // conversation changes. Re-keying was aborting in-flight chat
+    // completion fetches via the unmount cleanup. The panel observes
+    // `conversationId` itself and resets local state when the parent
+    // switches to a different conversation while no stream is in
+    // flight; the null → minted-id transition (first message of a
+    // brand-new conversation) is intentionally a no-op.
 
     const goChat = () => setView('chat');
 
@@ -79,12 +64,10 @@ export function ChatShell({
                 activeConversationId={conv.currentId}
                 onNewChat={() => {
                     conv.startNew();
-                    setPanelKey('new-' + Date.now());
                     goChat();
                 }}
                 onSelectConversation={(id) => {
                     conv.select(id);
-                    setPanelKey(id);
                     goChat();
                 }}
                 onDeleteConversation={conv.remove}
@@ -123,12 +106,6 @@ export function ChatShell({
 
                 {view === 'chat' && (
                     <ChatPanel
-                        // Stable mount key — only changes on explicit user
-                        // navigation (new chat, select, branch). NOT on the
-                        // null→id transition that happens when persisting
-                        // the first message of a brand-new conversation,
-                        // which would otherwise abort the in-flight stream.
-                        key={panelKey}
                         instance={instance}
                         model={model}
                         onModelChange={setModel}
@@ -141,8 +118,7 @@ export function ChatShell({
                         conversationId={conv.currentId}
                         onMessagesChange={conv.setCurrentMessages}
                         onBranchFromMessage={(messageId) => {
-                            const newId = conv.branchFromMessage(messageId);
-                            if (newId) setPanelKey(newId);
+                            conv.branchFromMessage(messageId);
                             goChat();
                         }}
                     />

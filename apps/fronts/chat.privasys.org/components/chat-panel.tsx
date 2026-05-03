@@ -76,15 +76,35 @@ export function ChatPanel({
     );
     const [input, setInput] = useState('');
     const [streaming, setStreaming] = useState(false);
+    const streamingRef = useRef(false);
     const [sampling, setSampling] = useState<SamplingParams>({ ...DEFAULT_SAMPLING });
     const [metaFor, setMetaFor] = useState<DisplayMessage | null>(null);
     const abortRef = useRef<AbortController | null>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
     // Track which conversation id our current messages belong to.
-    // When the parent rotates `conversationId`, ChatShell remounts us
-    // (via key=conversationId), so this is mainly used after a brand
-    // new conversation gets persisted (id flips from null -> string).
+    // The shell does NOT remount us when the conversation id mints
+    // mid-stream (that would abort the in-flight chat completion).
+    // We instead reset our local state when the parent rotates
+    // `conversationId` to a *different* value AND we are not
+    // currently streaming.
     const localConvIdRef = useRef<string | null>(conversationId);
+
+    // Sync internal state when the parent switches conversation.
+    // - null → string (first message persisted): keep local state,
+    //   just record the new id. Critical: must NOT clobber `messages`
+    //   while a stream is in flight — onDelta is appending to it.
+    // - string → different string: parent picked another conversation;
+    //   reset our state to the new initialMessages. Skipped while a
+    //   stream is in flight so we don't lose the assistant turn.
+    useEffect(() => {
+        const prev = localConvIdRef.current;
+        localConvIdRef.current = conversationId;
+        if (prev === conversationId) return;
+        if (prev === null && conversationId !== null) return; // first-message mint
+        if (streamingRef.current) return;
+        setMessages(initialMessages.map((m) => ({ ...m })));
+        setInput('');
+    }, [conversationId, initialMessages]);
 
     // Persist a snapshot of the message list. Strips transient state
     // (`streaming`) so the on-disk shape matches PersistedMessage.
@@ -105,6 +125,11 @@ export function ChatPanel({
     }, [messages]);
 
     useEffect(() => () => abortRef.current?.abort(), []);
+
+    // Mirror `streaming` into a ref so the conversationId-change
+    // effect above can read the current value without re-running
+    // every time `streaming` flips.
+    useEffect(() => { streamingRef.current = streaming; }, [streaming]);
 
     const send = useCallback(async () => {
         const text = input.trim();
@@ -221,13 +246,6 @@ export function ChatPanel({
                     });
                 }
             });
-        } catch (e) {
-            // streamChatCompletion rethrows after invoking onError so the
-            // assistant message is already flagged with .error. Swallow
-            // here (including AbortError on user cancel / unmount) so it
-            // doesn't surface as an unhandled promise rejection in the
-            // browser console.
-            void e;
         } finally {
             setStreaming(false);
             abortRef.current = null;
