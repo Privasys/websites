@@ -8,7 +8,7 @@ import { COUNTRIES, regionForCountry, countryName } from '~/lib/countries';
 import type { Enclave, CreateEnclaveRequest, TeeType } from '~/lib/types';
 
 const EMPTY_FORM: CreateEnclaveRequest = {
-    name: '', host: '', port: 8445, gateway_host: '', tee_type: 'sgx', mr_enclave: '', country: '', region: '', zone: '', provider: '', owner: '', max_apps: 0,
+    name: '', host: '', port: 8445, gateway_host: '', tee_type: 'sgx', mr_enclave: '', country: '', region: '', zone: '', provider: '', owner: '', max_apps: 10,
 };
 
 const ENC_STATUS_COLORS: Record<string, string> = {
@@ -67,7 +67,7 @@ export default function AdminEnclavePage() {
         if (!session?.accessToken) return;
         setEnclaveHealth(prev => ({ ...prev, [enc.id]: null })); // loading state
         try {
-            const h = await adminEnclaveHealth(session.accessToken, enc.host, enc.port, enc.tee_type);
+            const h = await adminEnclaveHealth(session.accessToken, enc.gateway_host || enc.host, enc.port, enc.tee_type);
             setEnclaveHealth(prev => ({ ...prev, [enc.id]: h }));
         } catch {
             setEnclaveHealth(prev => ({ ...prev, [enc.id]: { status: 'unreachable', error: 'Could not reach enclave' } }));
@@ -119,11 +119,11 @@ export default function AdminEnclavePage() {
     }
 
     async function fetchMrEnclave() {
-        if (!session?.accessToken || !form.host || !form.tee_type) return;
+        if (!session?.accessToken || !form.gateway_host || !form.tee_type) return;
         setFetchingMr(true);
         setError(null);
         try {
-            const info = await adminInspectEnclave(session.accessToken, form.host, form.port || 8445, form.tee_type);
+            const info = await adminInspectEnclave(session.accessToken, form.gateway_host, form.port || 8445, form.tee_type);
             if (info.mr_enclave) {
                 setForm(f => ({ ...f, mr_enclave: info.mr_enclave! }));
             } else {
@@ -139,6 +139,16 @@ export default function AdminEnclavePage() {
     async function handleSubmit(e: React.FormEvent) {
         e.preventDefault();
         if (!session?.accessToken) return;
+        // Client-side validation: cloud-image deploys need a zone; the field used to
+        // be advertised as optional but the server rejects deploys without it.
+        if (form.tee_type === 'tdx' && !form.zone?.trim()) {
+            setError('Cloud zone is required for TDX enclaves (cloud-image deployments need a zonal disk reference).');
+            return;
+        }
+        if (!form.gateway_host?.trim()) {
+            setError('IP address is required — the management service connects to the enclave by IP, not by DNS name.');
+            return;
+        }
         setSaving(true);
         setError(null);
         try {
@@ -204,11 +214,6 @@ export default function AdminEnclavePage() {
                                 className={INPUT_CLS} />
                         </div>
                         <div>
-                            <label className="block text-xs font-medium mb-1">Host *</label>
-                            <input required value={form.host} onChange={e => setForm(f => ({ ...f, host: e.target.value }))}
-                                className={INPUT_CLS} />
-                        </div>
-                        <div>
                             <label className="block text-xs font-medium mb-1">TEE type</label>
                             <select value={form.tee_type ?? 'sgx'} onChange={e => setForm(f => ({ ...f, tee_type: e.target.value as TeeType }))}
                                 className={INPUT_CLS}>
@@ -221,11 +226,26 @@ export default function AdminEnclavePage() {
                             <input type="number" value={form.port} onChange={e => setForm(f => ({ ...f, port: parseInt(e.target.value) || 8445 }))}
                                 className={INPUT_CLS} />
                         </div>
-                        <div>
-                            <label className="block text-xs font-medium mb-1">Gateway host</label>
-                            <input value={form.gateway_host ?? ''} onChange={e => setForm(f => ({ ...f, gateway_host: e.target.value }))}
-                                placeholder="Public IP or hostname for gateway routing"
+                        <div className="col-span-2">
+                            <label className="block text-xs font-medium mb-1">IP address *</label>
+                            <input required value={form.gateway_host ?? ''} onChange={e => setForm(f => ({ ...f, gateway_host: e.target.value }))}
+                                placeholder="e.g. 34.32.151.96"
                                 className={INPUT_CLS} />
+                            <p className="mt-1 text-xs text-black/40 dark:text-white/40">
+                                The management service connects to this IP directly. For Spot VMs
+                                with rotating IPs, just edit this field and save — no restart needed.
+                            </p>
+                        </div>
+                        <div>
+                            <label className="block text-xs font-medium mb-1" title="Default 10. Higher for multi-tenant nodes. 0 = unlimited (use with care: a single 1-GPU box typically can't run more than ~3 model containers).">
+                                Max apps <span className="text-black/40 dark:text-white/40">(0 = unlimited)</span>
+                            </label>
+                            <input type="number" value={form.max_apps ?? 10} onChange={e => setForm(f => ({ ...f, max_apps: parseInt(e.target.value) || 0 }))}
+                                className={INPUT_CLS} />
+                            <p className="mt-1 text-xs text-black/40 dark:text-white/40">
+                                Default 10. A single-GPU node typically tops out at ~3 model
+                                containers; raise for multi-tenant nodes.
+                            </p>
                         </div>
                         <div>
                             <label className="block text-xs font-medium mb-1">Owner</label>
@@ -239,11 +259,6 @@ export default function AdminEnclavePage() {
                                 placeholder="e.g. OVH, Azure, AWS"
                                 className={INPUT_CLS} />
                         </div>
-                        <div>
-                            <label className="block text-xs font-medium mb-1">Max apps (0 = unlimited)</label>
-                            <input type="number" value={form.max_apps ?? 0} onChange={e => setForm(f => ({ ...f, max_apps: parseInt(e.target.value) || 0 }))}
-                                className={INPUT_CLS} />
-                        </div>
                         {form.tee_type !== 'tdx' && (
                             <div className="col-span-3">
                                 <label className="block text-xs font-medium mb-1">MR_ENCLAVE</label>
@@ -251,7 +266,7 @@ export default function AdminEnclavePage() {
                                     <input value={form.mr_enclave ?? ''} onChange={e => setForm(f => ({ ...f, mr_enclave: e.target.value }))}
                                         placeholder="Hex-encoded measurement hash"
                                         className={`${INPUT_CLS} font-mono text-xs flex-1`} />
-                                    <button type="button" onClick={fetchMrEnclave} disabled={fetchingMr || !form.host}
+                                    <button type="button" onClick={fetchMrEnclave} disabled={fetchingMr || !form.gateway_host}
                                         className="px-3 py-2 text-xs font-medium rounded-lg border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-40 transition-colors whitespace-nowrap">
                                         {fetchingMr ? 'Fetching…' : 'Fetch from enclave'}
                                     </button>
@@ -267,18 +282,21 @@ export default function AdminEnclavePage() {
                             </select>
                         </div>
                         <div>
-                            <label className="block text-xs font-medium mb-1">Region (inferred)</label>
-                            <input readOnly value={form.country ? regionForCountry(form.country) : ''}
-                                className={`${INPUT_CLS} bg-black/[0.02] dark:bg-white/[0.02] cursor-not-allowed`} />
+                            <div className="text-xs font-medium mb-1">Region</div>
+                            <div className="px-3 py-2 text-sm text-black/60 dark:text-white/60">
+                                {form.country ? regionForCountry(form.country) : <span className="text-black/30 dark:text-white/30">— (derived from country)</span>}
+                            </div>
                         </div>
                         <div>
-                            <label className="block text-xs font-medium mb-1">Cloud zone (optional)</label>
-                            <input value={form.zone ?? ''} onChange={e => setForm(f => ({ ...f, zone: e.target.value }))}
+                            <label className="block text-xs font-medium mb-1">
+                                Cloud zone {form.tee_type === 'tdx' ? '*' : '(optional for SGX)'}
+                            </label>
+                            <input required={form.tee_type === 'tdx'} value={form.zone ?? ''} onChange={e => setForm(f => ({ ...f, zone: e.target.value }))}
                                 placeholder="e.g. europe-west4-c"
                                 className={INPUT_CLS} />
                             <p className="mt-1 text-xs text-black/40 dark:text-white/40">
-                                GCE zone where the enclave VM runs. Required for cloud-image
-                                deployments because GCE disks are zonal.
+                                Required for TDX enclaves: cloud-image deployments use a zonal
+                                GCE disk and need this hint to find it.
                             </p>
                         </div>
                         <div className="grid grid-cols-2 gap-4">
@@ -368,7 +386,7 @@ export default function AdminEnclavePage() {
                                 <tr className="border-b border-black/5 dark:border-white/5 bg-black/[0.02] dark:bg-white/[0.02]">
                                     <th className="text-left px-4 py-3 font-medium">Name</th>
                                     <th className="text-left px-4 py-3 font-medium">TEE</th>
-                                    <th className="text-left px-4 py-3 font-medium">Host</th>
+                                    <th className="text-left px-4 py-3 font-medium">IP : Port</th>
                                     <th className="text-left px-4 py-3 font-medium">Location</th>
                                     <th className="text-left px-4 py-3 font-medium">Owner</th>
                                     <th className="text-left px-4 py-3 font-medium">Provider</th>
@@ -394,7 +412,7 @@ export default function AdminEnclavePage() {
                                                 </span>
                                             </td>
                                             <td className="px-4 py-3">
-                                                <code className="text-xs">{enc.host}:{enc.port}</code>
+                                                <code className="text-xs">{enc.gateway_host || enc.host}:{enc.port}</code>
                                             </td>
                                             <td className="px-4 py-3 text-black/60 dark:text-white/60">
                                                 {enc.country ? countryName(enc.country) : '—'}{enc.region ? ` · ${enc.region}` : ''}
@@ -455,7 +473,7 @@ export default function AdminEnclavePage() {
                                                         )}
                                                         {enc.gateway_host && (
                                                             <div className="col-span-3">
-                                                                <div className="text-xs text-black/50 dark:text-white/50">Gateway host</div>
+                                                                <div className="text-xs text-black/50 dark:text-white/50">IP address</div>
                                                                 <code className="text-xs mt-0.5">{enc.gateway_host}</code>
                                                             </div>
                                                         )}

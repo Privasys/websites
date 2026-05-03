@@ -178,7 +178,7 @@ export interface Enclave {
 
 export interface CreateEnclaveRequest {
     name: string;
-    host: string;
+    host?: string;
     port: number;
     gateway_host?: string;
     tee_type?: TeeType;

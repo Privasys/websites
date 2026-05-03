@@ -369,6 +369,34 @@ export function adminDeleteEnclave(token: string, id: string): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// Gateway admin (manager role required) — view of the L4 gateway route map
+// ---------------------------------------------------------------------------
+
+export interface GatewayRoute {
+    sni: string;
+    upstream: string;
+    attestation_policy?: unknown;
+}
+
+export interface GatewayPoller {
+    remote_addr: string;
+    user_agent: string;
+    last_seen_at: string;
+    last_version: string;
+    last_modified: boolean;
+    poll_count: number;
+}
+
+export interface GatewayRoutesResponse {
+    routes: GatewayRoute[];
+    pollers: GatewayPoller[];
+}
+
+export function adminGatewayRoutes(token: string): Promise<GatewayRoutesResponse> {
+    return request<GatewayRoutesResponse>('/api/v1/admin/gateways/routes', token);
+}
+
+// ---------------------------------------------------------------------------
 // Versions API
 // ---------------------------------------------------------------------------
 
