@@ -157,7 +157,6 @@ export type TeeType = 'sgx' | 'tdx';
 export interface Enclave {
     id: string;
     name: string;
-    host: string;
     port: number;
     gateway_host?: string;
     tee_type: TeeType;
@@ -178,7 +177,6 @@ export interface Enclave {
 
 export interface CreateEnclaveRequest {
     name: string;
-    host?: string;
     port: number;
     gateway_host?: string;
     tee_type?: TeeType;
