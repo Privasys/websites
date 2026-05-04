@@ -94,6 +94,13 @@ export default defineConfig({
                 launchOptions: { slowMo: 250 },
                 video: 'on'
             }
+        },
+        {
+            name: 'chat-diagnose',
+            testMatch: 'chat-diagnose.spec.ts',
+            use: {
+                video: 'retain-on-failure'
+            }
         }
     ]
 });
