@@ -133,7 +133,13 @@ export async function streamChatCompletion(args: StreamChatArgs): Promise<void> 
     const body: Record<string, unknown> = {
         model: args.model,
         messages: args.messages,
-        stream: true
+        stream: true,
+        // Ask vLLM to emit per-chunk usage metadata. The chat UI does
+        // not currently render it, but requesting `include_usage`
+        // keeps the cadence honest: vLLM finalises and flushes each
+        // delta event individually rather than batching tokens before
+        // the closing chunk.
+        stream_options: { include_usage: true }
     };
     if (args.sampling) {
         for (const [k, v] of Object.entries(args.sampling)) {
