@@ -1,7 +1,9 @@
 'use client';
 
+import { useState } from 'react';
 import type { Reproducibility } from '~/lib/chat-stream';
 import type { SamplingParams } from '~/lib/sampling';
+import { SYSTEM_PROMPT } from '~/lib/system-prompt';
 
 // Modal that surfaces what the enclave actually ran with for a given
 // assistant turn: sampling parameters sent in the request, plus the
@@ -25,6 +27,7 @@ export function MetadataDialog({
     const meta = reproducibility ?? {};
     const samp = sampling ?? {};
     const elapsed = elapsedMs ? (elapsedMs / 1000).toFixed(2) : null;
+    const [showPrompt, setShowPrompt] = useState(false);
 
     return (
         <div
@@ -76,6 +79,25 @@ export function MetadataDialog({
                     <Row k='image_digest' v={meta.image_digest} mono />
                     <Row k='tee_type' v={meta.tee_type} />
                     {elapsed && <Row k='wall_time_s' v={elapsed} />}
+                </Section>
+
+                <Section title='System prompt'>
+                    <Row k='system_prompt_version' v={meta.system_prompt_version} />
+                    <Row k='system_prompt_sha256' v={meta.system_prompt_sha256} mono />
+                    <div className='pt-2'>
+                        <button
+                            type='button'
+                            onClick={() => setShowPrompt((s) => !s)}
+                            className='text-xs text-[var(--color-text-muted)] underline hover:text-[var(--color-text-primary)]'
+                        >
+                            {showPrompt ? 'Hide prompt text' : 'View prompt text'}
+                        </button>
+                        {showPrompt && (
+                            <pre className='mt-2 max-h-64 overflow-auto rounded border border-[var(--color-border-dark)] bg-[var(--color-surface-2)] p-3 text-[12px] whitespace-pre-wrap'>
+                                {SYSTEM_PROMPT}
+                            </pre>
+                        )}
+                    </div>
                 </Section>
 
                 <details className='mt-3 text-xs'>

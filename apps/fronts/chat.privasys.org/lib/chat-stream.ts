@@ -35,6 +35,15 @@ export interface Reproducibility {
     tee_type?: string;
     /** Per-tool summary populated by the agentic loop. */
     tool_calls?: ToolCallSummary[];
+    /**
+     * SHA-256 (hex) of the client-side system prompt used for this turn.
+     * Stamped by the chat front-end at stream completion; not produced
+     * by the enclave. Lets a verifier confirm which prompt the model
+     * was conditioned on. Full text lives at lib/system-prompt.ts.
+     */
+    system_prompt_sha256?: string;
+    /** Human-readable version tag for the system prompt (e.g. "v1"). */
+    system_prompt_version?: string;
     [key: string]: unknown;
 }
 

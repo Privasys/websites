@@ -14,6 +14,11 @@ import { Composer } from './composer';
 import { Markdown } from './markdown';
 import { MetadataDialog } from './metadata-dialog';
 import { ToolCallCard } from './tool-call-card';
+import {
+    SYSTEM_PROMPT,
+    SYSTEM_PROMPT_SHA256,
+    SYSTEM_PROMPT_VERSION
+} from '~/lib/system-prompt';
 
 interface DisplayMessage extends PersistedMessage {
     /** True while tokens are still streaming in for this message. */
@@ -168,7 +173,10 @@ export function ChatPanel({
                 endpoint: instance.endpoint,
                 model: model.name,
                 sampling: samplingSnapshot,
-                messages: history.map(({ role, content }) => ({ role, content })),
+                messages: [
+                    { role: 'system' as const, content: SYSTEM_PROMPT },
+                    ...history.map(({ role, content }) => ({ role, content }))
+                ],
                 token,
                 sealedSession,
                 signal: ctrl.signal,
@@ -219,13 +227,23 @@ export function ChatPanel({
                     );
                 },
                 onDone: (_full, meta) => {
+                    // Stamp the system prompt identity into the per-message
+                    // reproducibility block so the MetadataDialog can show
+                    // (and the user can verify) which prompt produced this
+                    // answer. The full text lives in version control at
+                    // websites/apps/fronts/chat.privasys.org/lib/system-prompt.ts.
+                    const stampedMeta = {
+                        ...(meta ?? {}),
+                        system_prompt_sha256: SYSTEM_PROMPT_SHA256,
+                        system_prompt_version: SYSTEM_PROMPT_VERSION
+                    };
                     setMessages((prev) => {
                         const next = prev.map((m) =>
                             m.id === assistantId
                                 ? {
                                     ...m,
                                     streaming: false,
-                                    meta,
+                                    meta: stampedMeta,
                                     finishedAt: Date.now()
                                 }
                                 : m
