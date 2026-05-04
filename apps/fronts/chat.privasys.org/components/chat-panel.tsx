@@ -19,6 +19,7 @@ import {
     SYSTEM_PROMPT_SHA256,
     SYSTEM_PROMPT_VERSION
 } from '~/lib/system-prompt';
+import { createTextSmoother } from '~/lib/text-smoother';
 
 interface DisplayMessage extends PersistedMessage {
     /** True while tokens are still streaming in for this message. */
@@ -168,6 +169,25 @@ export function ChatPanel({
         const ctrl = new AbortController();
         abortRef.current = ctrl;
 
+        // Pace assistant text into the UI on requestAnimationFrame so
+        // bursty SSE arrivals (sealed-relay frame coalescing, vLLM
+        // detokeniser hiccups) render as a steady typewriter instead
+        // of a strobe. The smoother accumulates raw deltas and drains
+        // a fraction of its buffer per frame; when the stream ends,
+        // the trailing buffer is flushed promptly via finish().
+        const smoother = createTextSmoother({
+            onText: (chunk) => {
+                setMessages((prev) =>
+                    prev.map((m) =>
+                        m.id === assistantId
+                            ? { ...m, content: m.content + chunk }
+                            : m
+                    )
+                );
+            }
+        });
+        ctrl.signal.addEventListener('abort', () => smoother.cancel());
+
         try {
             await streamChatCompletion({
                 endpoint: instance.endpoint,
@@ -181,13 +201,7 @@ export function ChatPanel({
                 sealedSession,
                 signal: ctrl.signal,
                 onDelta: (delta) => {
-                    setMessages((prev) =>
-                        prev.map((m) =>
-                            m.id === assistantId
-                                ? { ...m, content: m.content + delta }
-                                : m
-                        )
-                    );
+                    smoother.push(delta);
                 },
                 onToolCall: (ev) => {
                     const inv: ToolInvocation = {
@@ -227,6 +241,13 @@ export function ChatPanel({
                     );
                 },
                 onDone: (_full, meta) => {
+                    // Drain any text still buffered by the smoother
+                    // before we flip `streaming` off. The smoother
+                    // calls back through onText (still running on
+                    // rAF), so the assistant content keeps catching
+                    // up for a few extra frames after the network
+                    // stream closes.
+                    smoother.finish();
                     // Stamp the system prompt identity into the per-message
                     // reproducibility block so the MetadataDialog can show
                     // (and the user can verify) which prompt produced this
@@ -253,6 +274,7 @@ export function ChatPanel({
                     });
                 },
                 onError: (err) => {
+                    smoother.cancel();
                     setMessages((prev) => {
                         const next = prev.map((m) =>
                             m.id === assistantId
