@@ -245,9 +245,45 @@ export interface AppDeployment {
     stopped_at?: string;
     created_at: string;
     updated_at: string;
+    // Runtime container state observed by the mgmt-service reconciler.
+    // Independent of `status` (the deployment-record state). Surfaces
+    // whether the actual container on the enclave is running, missing
+    // (auto-redeploying), unhealthy, etc.
+    container_state: ContainerState;
+    last_checked_at?: string;
+    reconcile_message?: string;
 }
 
 export type DeploymentStatus = 'pending' | 'deploying' | 'starting' | 'active' | 'failed' | 'stopped';
+
+export type ContainerState =
+    | 'unknown'
+    | 'running'
+    | 'unhealthy'
+    | 'pulling'
+    | 'missing'
+    | 'failed'
+    | 'unreachable';
+
+export const CONTAINER_STATE_LABELS: Record<ContainerState, string> = {
+    unknown: 'Not yet probed',
+    running: 'Running',
+    unhealthy: 'Unhealthy',
+    pulling: 'Pulling image',
+    missing: 'Missing — auto-redeploying',
+    failed: 'Failed',
+    unreachable: 'Enclave unreachable'
+};
+
+export const CONTAINER_STATE_COLORS: Record<ContainerState, string> = {
+    unknown: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
+    running: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300',
+    unhealthy: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300',
+    pulling: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300',
+    missing: 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300',
+    failed: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300',
+    unreachable: 'bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-300'
+};
 
 export const DEPLOYMENT_STATUS_LABELS: Record<DeploymentStatus, string> = {
     pending: 'Pending',

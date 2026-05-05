@@ -18,7 +18,7 @@ import {
 } from '~/lib/api';
 import { useSSE } from '~/lib/use-sse';
 import type { App, BuildJob, AppVersion, AppDeployment, Enclave } from '~/lib/types';
-import { STATUS_LABELS, STATUS_COLORS, VERSION_STATUS_LABELS, VERSION_STATUS_COLORS, DEPLOYMENT_STATUS_LABELS, DEPLOYMENT_STATUS_COLORS } from '~/lib/types';
+import { STATUS_LABELS, STATUS_COLORS, VERSION_STATUS_LABELS, VERSION_STATUS_COLORS, DEPLOYMENT_STATUS_LABELS, DEPLOYMENT_STATUS_COLORS, CONTAINER_STATE_LABELS, CONTAINER_STATE_COLORS } from '~/lib/types';
 
 function StatusBadge({ status, labels, colors }: { status: string; labels: Record<string, string>; colors: Record<string, string> }) {
     return (
@@ -562,6 +562,11 @@ function DeploymentsTab({ deployments, versions, actionLoading, onStop }: {
                             </div>
                             <div className="flex items-center gap-3">
                                 <StatusBadge status={dep.status} labels={DEPLOYMENT_STATUS_LABELS} colors={DEPLOYMENT_STATUS_COLORS} />
+                                <StatusBadge
+                                    status={dep.container_state || 'unknown'}
+                                    labels={CONTAINER_STATE_LABELS}
+                                    colors={CONTAINER_STATE_COLORS}
+                                />
                                 {canStop && (
                                     <button onClick={() => onStop(dep.id)} disabled={actionLoading !== null}
                                         className="px-3 py-1.5 text-xs font-medium rounded-lg border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-40 transition-colors">
@@ -582,7 +587,15 @@ function DeploymentsTab({ deployments, versions, actionLoading, onStop }: {
                             <div><span className="text-black/30 dark:text-white/30">Deployed by:</span> {dep.deployed_by}</div>
                             {dep.deployed_at && <div><span className="text-black/30 dark:text-white/30">Started:</span> {new Date(dep.deployed_at).toLocaleString()}</div>}
                             {dep.stopped_at && <div><span className="text-black/30 dark:text-white/30">Stopped:</span> {new Date(dep.stopped_at).toLocaleString()}</div>}
+                            {dep.last_checked_at && (
+                                <div><span className="text-black/30 dark:text-white/30">Last reconcile:</span> {new Date(dep.last_checked_at).toLocaleString()}</div>
+                            )}
                         </div>
+                        {dep.reconcile_message && (
+                            <div className="mt-3 text-xs px-3 py-2 rounded-lg bg-black/5 dark:bg-white/5 text-black/60 dark:text-white/60 font-mono break-all">
+                                {dep.reconcile_message}
+                            </div>
+                        )}
                     </section>
                 );
             })}
