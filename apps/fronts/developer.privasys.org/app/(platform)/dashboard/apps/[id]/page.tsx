@@ -9,7 +9,7 @@ import type { AppSchema, FunctionSchema, WitType, McpManifest } from '~/lib/api'
 import { useSSE } from '~/lib/use-sse';
 import { getApiBaseUrl } from '~/lib/api-base-url';
 import type { App, BuildJob, AppVersion, AppDeployment, Enclave } from '~/lib/types';
-import { STATUS_LABELS, STATUS_COLORS, DEPLOYMENT_STATUS_LABELS, DEPLOYMENT_STATUS_COLORS } from '~/lib/types';
+import { STATUS_LABELS, STATUS_COLORS, DEPLOYMENT_STATUS_LABELS, DEPLOYMENT_STATUS_COLORS, CONTAINER_STATE_LABELS, CONTAINER_STATE_COLORS } from '~/lib/types';
 import { RtmrVerifier } from '~/components/rtmr-verifier';
 import { AttestationConnect, AttestationResultView, useAttestation } from '@privasys/attestation-view';
 
@@ -2066,6 +2066,11 @@ function DeploymentsTab({ app, deployments, versions, enclaves, token, onRefresh
                                     </div>
                                     <div className="flex items-center gap-3">
                                         <StatusBadge status={dep.status} labels={DEPLOYMENT_STATUS_LABELS} colors={DEPLOYMENT_STATUS_COLORS} />
+                                        <StatusBadge
+                                            status={dep.container_state || 'unknown'}
+                                            labels={CONTAINER_STATE_LABELS}
+                                            colors={CONTAINER_STATE_COLORS}
+                                        />
                                         {isActive && (
                                             <button
                                                 onClick={() => handleStop(dep.id)}
