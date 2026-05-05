@@ -79,6 +79,7 @@ export default function InstancePage({ params }: { params: Promise<{ instance: s
         };
         return (
             <ChatShell
+                key="guest"
                 instance={instance ?? placeholder}
                 initialModel={null}
                 disabledReason={
@@ -103,6 +104,7 @@ export default function InstancePage({ params }: { params: Promise<{ instance: s
 
     return (
         <ChatShell
+            key="auth"
             instance={instance}
             initialModel={pickInitialModel(instance)}
             userGreeting={greeting}
