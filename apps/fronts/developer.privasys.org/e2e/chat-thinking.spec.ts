@@ -8,11 +8,12 @@
  *      `--served-model-name` vLLM is exposing (proves the model-name
  *      regression fix is live).
  *   2. With the production system prompt and a non-trivial question,
- *      Gemma 4 emits a `<think>...</think>` block in the streamed
- *      content (which the chat UI renders as a collapsible "Thinking"
- *      panel via splitReasoning()).
+ *      vLLM's gemma4 reasoning parser surfaces a non-empty
+ *      `delta.reasoning_content` channel before any `delta.content`.
+ *      The chat front-end re-wraps that channel in <think>…</think>
+ *      sentinels for splitReasoning() to render.
  *   3. SSE chunks arrive in a streaming cadence (more than one network
- *      flush, with the first delta in well under 5 s on a warm model).
+ *      flush, with the first delta in well under 15 s on a warm model).
  *
  * Run:
  *   npx playwright test --config apps/fronts/developer.privasys.org/e2e/playwright.config.ts \
@@ -25,17 +26,11 @@ const INSTANCE_API =
     'https://api-test.developer.privasys.org/api/v1/ai/instances/demo';
 const ENDPOINT_OVERRIDE = process.env.CHAT_INFERENCE_ENDPOINT || '';
 
-// Mirror lib/system-prompt.ts. Kept inline so the test does not import
-// from the chat front-end (which has React/Next deps not wanted here).
-const THINKING_SYSTEM_PROMPT = `You are Privasys Chat, a helpful assistant.
-
-Reasoning
-- For any question that benefits from multi-step reasoning, planning, or
-  fact-checking, FIRST emit a brief private thought wrapped in
-  <think>...</think> tags, then write the final answer for the user
-  outside the tags.
-- Keep the <think> block short (1-5 short sentences).
-`;
+// Plain helpful-assistant prompt. With vLLM's `--reasoning-parser
+// gemma4` the reasoning is forced into delta.reasoning_content and is
+// no longer prompt-coaxed, so we don't repeat any <think> instructions
+// here.
+const SYSTEM_PROMPT = `You are Privasys Chat, a helpful assistant.`;
 
 test('chat-test: instance API publishes a model name vLLM actually serves', async () => {
     const ctx = await request.newContext();
@@ -61,7 +56,7 @@ test('chat-test: instance API publishes a model name vLLM actually serves', asyn
     }
 });
 
-test('chat-test: gemma emits <think> block and streams chunk-by-chunk', async () => {
+test('chat-test: gemma emits reasoning_content channel and streams chunk-by-chunk', async () => {
     test.setTimeout(60_000);
     const ctx = await request.newContext();
     const meta = await (await ctx.get(INSTANCE_API)).json();
@@ -86,7 +81,7 @@ test('chat-test: gemma emits <think> block and streams chunk-by-chunk', async ()
             temperature: 0,
             seed: 0,
             messages: [
-                { role: 'system', content: THINKING_SYSTEM_PROMPT },
+                { role: 'system', content: SYSTEM_PROMPT },
                 {
                     role: 'user',
                     content:
@@ -100,7 +95,10 @@ test('chat-test: gemma emits <think> block and streams chunk-by-chunk', async ()
 
     const reader = (res.body as ReadableStream<Uint8Array>).getReader();
     const dec = new TextDecoder();
-    let full = '';
+    let reasoning = '';
+    let content = '';
+    let reasoningChunks = 0;
+    let contentChunks = 0;
     const chunkTimes: number[] = [];
     for (;;) {
         const { value, done } = await reader.read();
@@ -114,8 +112,16 @@ test('chat-test: gemma emits <think> block and streams chunk-by-chunk', async ()
                 if (!payload || payload === '[DONE]') continue;
                 try {
                     const j = JSON.parse(payload);
-                    const delta = j.choices?.[0]?.delta?.content;
-                    if (delta) full += delta;
+                    const delta = j.choices?.[0]?.delta;
+                    const r = delta?.reasoning_content ?? delta?.reasoning;
+                    if (r) {
+                        reasoning += r;
+                        reasoningChunks++;
+                    }
+                    if (delta?.content) {
+                        content += delta.content;
+                        contentChunks++;
+                    }
                 } catch {
                     /* keep going; reproducibility / usage chunks */
                 }
@@ -124,22 +130,29 @@ test('chat-test: gemma emits <think> block and streams chunk-by-chunk', async ()
     }
 
     /* eslint-disable no-console */
-    console.log(`[chat-thinking] model=${model} chunks=${chunkTimes.length} ttfb=${chunkTimes[0]}ms total=${Date.now() - t0}ms`);
-    console.log(`[chat-thinking] response length=${full.length}`);
-    console.log(`[chat-thinking] first 400 chars: ${full.slice(0, 400)}`);
+    console.log(
+        `[chat-thinking] model=${model} chunks=${chunkTimes.length} ttfb=${chunkTimes[0]}ms total=${Date.now() - t0}ms`
+    );
+    console.log(
+        `[chat-thinking] reasoning_chunks=${reasoningChunks} reasoning_len=${reasoning.length} content_chunks=${contentChunks} content_len=${content.length}`
+    );
+    console.log(`[chat-thinking] reasoning first 200: ${reasoning.slice(0, 200)}`);
+    console.log(`[chat-thinking] content first 200: ${content.slice(0, 200)}`);
     /* eslint-enable no-console */
 
-    // Streaming cadence: more than 1 chunk and first chunk in under
-    // 15 s. The big system prompt (~600 tokens) makes prefill take a
-    // few seconds even on H100; warm-cache TTFB on chat-test is
-    // typically 4-6 s for this prompt class. Anything > 15 s suggests
-    // either a cold model load or a buffering regression.
+    // Streaming cadence: more than 3 chunks and first chunk in under
+    // 15 s. The system prompt is small now so prefill is fast; warm-
+    // cache TTFB is typically < 5 s. Anything > 15 s suggests a cold
+    // model load or a buffering regression in the proxy / sealed
+    // session relay.
     expect(chunkTimes.length).toBeGreaterThan(3);
     expect(chunkTimes[0]).toBeLessThan(15_000);
 
-    // Thinking: model must emit at least one <think> open tag. We do
-    // NOT require a closing tag here in case max_tokens truncates mid-
-    // thought — the front-end's splitReasoning still renders an
-    // in-progress thinking panel in that case.
-    expect(full.toLowerCase()).toMatch(/<think(ing)?>/);
+    // Native reasoning channel: vLLM's gemma4 reasoning parser must
+    // surface non-empty `delta.reasoning_content` and the model must
+    // also produce a final answer in `delta.content`.
+    expect(reasoningChunks, 'no reasoning_content chunks received').toBeGreaterThan(0);
+    expect(reasoning.length, 'reasoning_content was empty').toBeGreaterThan(0);
+    expect(contentChunks, 'no content chunks received').toBeGreaterThan(0);
+    expect(content.length, 'content was empty').toBeGreaterThan(0);
 });
