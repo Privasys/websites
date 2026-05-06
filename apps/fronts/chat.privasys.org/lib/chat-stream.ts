@@ -111,7 +111,22 @@ export interface StreamChatArgs {
 
 interface SSEChunk {
     choices?: Array<{
-        delta?: { content?: string };
+        delta?: {
+            content?: string;
+            // vLLM extension (`--reasoning-parser gemma4`,
+            // `--reasoning-parser deepseek_r1`, ...): the model's
+            // chain-of-thought is streamed here, separately from the
+            // final answer in `content`. We re-wrap it in
+            // <think>…</think> sentinels so the existing
+            // splitReasoning() / ThinkingBlock UI keeps working
+            // unchanged. Servers without a reasoning parser simply
+            // don't set this field and the model emits any chain-of
+            // -thought inline in `content` (legacy path).
+            reasoning_content?: string;
+            // Older / alternative naming surfaced by some vLLM
+            // versions and recipe code samples.
+            reasoning?: string;
+        };
         finish_reason?: string | null;
     }>;
     reproducibility?: Reproducibility;
@@ -203,6 +218,17 @@ export async function streamChatCompletion(args: StreamChatArgs): Promise<void> 
     const decoder = new TextDecoder();
     let buffer = '';
     let full = '';
+    // Track whether we're currently emitting reasoning. When the model
+    // starts producing reasoning_content (via vLLM's --reasoning-parser)
+    // we open a synthetic <think> tag; when it switches to plain
+    // `content` we close it. The thinking.ts splitter then renders the
+    // reasoning inside the collapsible Thinking panel exactly as for
+    // models that emit <think> tags inline.
+    let inReasoning = false;
+    const emit = (delta: string) => {
+        full += delta;
+        args.onDelta(delta);
+    };
     let meta: Reproducibility | undefined;
 
     try {
@@ -262,10 +288,23 @@ export async function streamChatCompletion(args: StreamChatArgs): Promise<void> 
                     if (chunk.reproducibility) {
                         meta = chunk.reproducibility;
                     }
-                    const delta = chunk.choices?.[0]?.delta?.content;
-                    if (delta) {
-                        full += delta;
-                        args.onDelta(delta);
+                    const delta0 = chunk.choices?.[0]?.delta;
+                    const reasoning =
+                        delta0?.reasoning_content ?? delta0?.reasoning;
+                    if (reasoning) {
+                        if (!inReasoning) {
+                            emit('<think>');
+                            inReasoning = true;
+                        }
+                        emit(reasoning);
+                    }
+                    const content = delta0?.content;
+                    if (content) {
+                        if (inReasoning) {
+                            emit('</think>');
+                            inReasoning = false;
+                        }
+                        emit(content);
                     }
                 } catch {
                     // Ignore malformed chunks; vLLM occasionally emits
@@ -280,6 +319,13 @@ export async function streamChatCompletion(args: StreamChatArgs): Promise<void> 
         args.onError?.(err);
         throw err;
     } finally {
+        if (inReasoning) {
+            // Stream ended without ever switching to `content`. Close
+            // the synthetic <think> so the markdown isn't left dangling
+            // (which would render the whole reasoning block as code).
+            emit('</think>');
+            inReasoning = false;
+        }
         reader.releaseLock();
     }
 }

@@ -10,19 +10,9 @@
 // or `printf '%s' "$(cat)" | shasum -a 256`). The build will fail-fast
 // at module load if the two disagree (see assertSystemPromptHash()).
 
-export const SYSTEM_PROMPT_VERSION = 'v2' as const;
+export const SYSTEM_PROMPT_VERSION = 'v3' as const;
 
 export const SYSTEM_PROMPT = `You are Privasys Chat, a helpful assistant running inside a confidential Trusted Execution Environment (TEE) for chatp.privasys.org.
-
-Reasoning
-- For any question that benefits from multi-step reasoning, planning, or
-  fact-checking, FIRST emit a brief private thought wrapped in
-  <think>...</think> tags, then write the final answer for the user
-  outside the tags.
-- The <think> block is shown to the user inside a collapsible panel; keep
-  it short (typically 1-5 short sentences), in your own voice.
-- For trivial greetings or one-line factual questions, you may skip the
-  <think> block entirely and answer directly.
 
 Style and communication
 - Be concise, factual, and structured using Markdown headings and lists where helpful.
@@ -64,7 +54,7 @@ Output constraints
 
 // SHA-256(UTF-8(SYSTEM_PROMPT)). Pinned at build time. See header.
 export const SYSTEM_PROMPT_SHA256 =
-    '494d702c848d7947b6a34cfb42f3c4090d72b67f6af0e6d0178d877fc4478124';
+    'ca35285cefe1b359b219fcefd385a007fe6dbea317086570dd2cb6633ae80188';
 
 let cachedHashPromise: Promise<string> | null = null;
 
