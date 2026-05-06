@@ -101,6 +101,13 @@ export default defineConfig({
             use: {
                 video: 'retain-on-failure'
             }
+        },
+        {
+            name: 'chat-thinking',
+            testMatch: 'chat-thinking.spec.ts',
+            use: {
+                video: 'retain-on-failure'
+            }
         }
     ]
 });
