@@ -13,7 +13,9 @@ import { clearFeedback, recordFeedback } from '~/lib/pending-feedback';
 import { Composer } from './composer';
 import { Markdown } from './markdown';
 import { MetadataDialog } from './metadata-dialog';
+import { ThinkingBlock } from './thinking-block';
 import { ToolCallCard } from './tool-call-card';
+import { splitReasoning } from '~/lib/thinking';
 import {
     SYSTEM_PROMPT,
     SYSTEM_PROMPT_SHA256,
@@ -536,7 +538,10 @@ function Message({
                 </div>
             )}
             {message.content ? (
-                <Markdown>{message.content}</Markdown>
+                <AssistantContent
+                    content={message.content}
+                    streaming={!!message.streaming}
+                />
             ) : message.streaming ? (
                 <p className='text-sm text-[var(--color-text-muted)]'>
                     <StreamCursor />
@@ -720,6 +725,34 @@ function ThumbDownIcon() {
 function StreamCursor() {
     return (
         <span className='ml-0.5 inline-block h-3 w-1 animate-pulse bg-current align-middle' />
+    );
+}
+
+// AssistantContent splits a (possibly streaming) assistant message into
+// reasoning blocks and answer markdown. Reasoning blocks are rendered
+// in a collapsible ThinkingBlock above the answer text.
+function AssistantContent({
+    content,
+    streaming
+}: {
+    content: string;
+    streaming: boolean;
+}) {
+    const segments = splitReasoning(content);
+    return (
+        <div className='flex flex-col gap-2'>
+            {segments.map((seg, i) =>
+                seg.kind === 'thinking' ? (
+                    <ThinkingBlock
+                        key={`t${i}`}
+                        text={seg.text}
+                        streaming={streaming && !seg.closed}
+                    />
+                ) : (
+                    <Markdown key={`a${i}`}>{seg.text}</Markdown>
+                )
+            )}
+        </div>
     );
 }
 
