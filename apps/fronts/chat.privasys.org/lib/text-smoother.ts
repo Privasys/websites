@@ -14,9 +14,10 @@
  * Strategy:
  * - push(s) appends to the buffer and starts the rAF loop.
  * - Each frame drains `max(1, ceil(buffer.length / TARGET_DRAIN_FRAMES))`
- *   characters. With TARGET_DRAIN_FRAMES = 30 (~500ms at 60fps), any
- *   sudden burst unfolds visually over half a second instead of
- *   landing in a single paint.
+ *   characters. With TARGET_DRAIN_FRAMES = 6 (~100ms at 60fps), any
+ *   sudden burst unfolds visually in roughly 100 ms — fast enough that
+ *   tokens never visibly back up behind the smoother, while still
+ *   evening out the worst of the SSE bursts so the UI does not strobe.
  * - finish() switches to a faster drain so the trailing buffer
  *   empties promptly when the stream ends, then calls onDone.
  * - cancel() drops the buffer immediately (no flush) and stops rAF.
@@ -32,14 +33,14 @@ export interface TextSmoother {
 export interface TextSmootherOptions {
     onText: (text: string) => void;
     onDone?: () => void;
-    /** Frames over which a sudden burst is spread. Default 30 (~500ms). */
+    /** Frames over which a sudden burst is spread. Default 6 (~100ms). */
     targetDrainFrames?: number;
-    /** Frames over which the trailing buffer drains after finish(). Default 6. */
+    /** Frames over which the trailing buffer drains after finish(). Default 2. */
     finishDrainFrames?: number;
 }
 
-const TARGET_DRAIN_FRAMES_DEFAULT = 30;
-const FINISH_DRAIN_FRAMES_DEFAULT = 6;
+const TARGET_DRAIN_FRAMES_DEFAULT = 6;
+const FINISH_DRAIN_FRAMES_DEFAULT = 2;
 
 export function createTextSmoother(opts: TextSmootherOptions): TextSmoother {
     const targetFrames = Math.max(1, opts.targetDrainFrames ?? TARGET_DRAIN_FRAMES_DEFAULT);
