@@ -2,9 +2,19 @@
 
 import { useState } from 'react';
 
+import { Markdown } from './markdown';
+
 // Collapsible "Thinking" panel for reasoning-model output. Streamed
 // reasoning is auto-expanded so the user sees the chain-of-thought
 // arrive live; once the closing tag arrives the panel auto-collapses.
+//
+// The reasoning text itself is markdown — Gemma 4 (and the deepseek_r1
+// reasoning parser) emit headings, lists and inline code in the
+// chain-of-thought just like in the final answer. We render it through
+// the same `Markdown` component used for assistant messages so that
+// formatting comes through, with `prose-xs` style sizing applied via
+// the wrapper to keep the panel visually distinct from the answer
+// below it.
 export function ThinkingBlock({
     text,
     streaming
@@ -35,9 +45,13 @@ export function ThinkingBlock({
                 </span>
             </button>
             {open && (
-                <pre className='max-h-64 overflow-y-auto whitespace-pre-wrap border-t border-[var(--color-border-dark)] px-3 py-2 font-mono text-[12px] leading-relaxed text-[var(--color-text-secondary)]'>
-                    {text || ' '}
-                </pre>
+                <div className='thinking-prose max-h-64 overflow-y-auto border-t border-[var(--color-border-dark)] px-3 py-2 text-[13px] leading-relaxed text-[var(--color-text-secondary)]'>
+                    {text ? (
+                        <Markdown>{text}</Markdown>
+                    ) : (
+                        <span className='opacity-60'>…</span>
+                    )}
+                </div>
             )}
         </div>
     );
