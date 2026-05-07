@@ -21,7 +21,7 @@ const API = process.env.NEXT_PUBLIC_API_URL || 'https://api-test.developer.priva
 
 // ── App config ─────────────────────────────────────────────────────
 const WASM_COMMIT_URL =
-    'https://github.com/Privasys/wasm-app-example/commit/a6acb6da7a1e01b0a01dbb1bd6fcbd2054b6d345';
+    'https://github.com/Privasys/wasm-app-example/commit/6c2ae6a789ee4216af7ccfcf01627eef96b37782';
 const WASM_APP_NAME = 'e2e-wasm-verify';
 
 const CONTAINER_COMMIT_URL =
