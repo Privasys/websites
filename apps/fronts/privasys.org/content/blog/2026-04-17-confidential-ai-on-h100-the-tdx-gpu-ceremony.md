@@ -5,10 +5,10 @@ date: "2026-04-17"
 ---
 
 The previous post in this series described the
-[base images](2026-04-10-cvm-base-images-what-we-build-and-why) we
+[base images](/blog/cvm-base-images-what-we-build-and-why) we
 build for confidential VMs: minimal Ubuntu, read-only erofs, dm-verity,
 Secure Boot, kernel lockdown, our patch against the
-[BadAML](https://www.usenix.org/conference/usenixsecurity25/presentation/takekoshi)
+[BadAML](https://dl.acm.org/doi/10.1145/3719027.3765123)
 ACPI bypass.
 
 That covers the CPU. For confidential AI we also need the GPU to be
