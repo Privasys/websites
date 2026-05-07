@@ -39,7 +39,11 @@ jobs:
             echo "container=chat-prod"                          >> "$GITHUB_OUTPUT"
             echo "host_port=3010"                               >> "$GITHUB_OUTPUT"
             echo "env_file=~/chat.env"                          >> "$GITHUB_OUTPUT"
-            echo "api_url=https://api.developer.privasys.org"   >> "$GITHUB_OUTPUT"
+            # Production chat currently points at the same dev AI backend
+            # as chat-test (api-test.developer.privasys.org). Switch to
+            # api.developer.privasys.org once a dedicated prod gateway is
+            # provisioned with the inference VM.
+            echo "api_url=https://api-test.developer.privasys.org" >> "$GITHUB_OUTPUT"
             echo "default_instance=demo"                        >> "$GITHUB_OUTPUT"
           else
             echo "container=chat"                                  >> "$GITHUB_OUTPUT"
