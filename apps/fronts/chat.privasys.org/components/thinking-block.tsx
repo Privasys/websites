@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { Markdown } from './markdown';
 
@@ -12,9 +12,9 @@ import { Markdown } from './markdown';
 // reasoning parser) emit headings, lists and inline code in the
 // chain-of-thought just like in the final answer. We render it through
 // the same `Markdown` component used for assistant messages so that
-// formatting comes through, with `prose-xs` style sizing applied via
-// the wrapper to keep the panel visually distinct from the answer
-// below it.
+// formatting comes through, with a slightly muted/smaller treatment
+// applied via the wrapper to keep the panel visually distinct from
+// the answer below it.
 export function ThinkingBlock({
     text,
     streaming
@@ -24,6 +24,20 @@ export function ThinkingBlock({
 }) {
     const [openOverride, setOpenOverride] = useState<boolean | null>(null);
     const open = openOverride ?? streaming;
+    const scrollRef = useRef<HTMLDivElement>(null);
+
+    // While the panel is open and reasoning is still streaming, keep
+    // the scroll pinned to the bottom so the latest token is always
+    // visible. We only auto-scroll while *streaming*: once the model
+    // switches to the answer the user may want to scroll up to read
+    // the chain-of-thought, and we should leave their position alone.
+    useEffect(() => {
+        if (!open || !streaming) return;
+        const el = scrollRef.current;
+        if (!el) return;
+        el.scrollTop = el.scrollHeight;
+    }, [open, streaming, text]);
+
     return (
         <div className='rounded-md border border-[var(--color-border-dark)] bg-[var(--color-surface-2)]/60'>
             <button
@@ -45,7 +59,10 @@ export function ThinkingBlock({
                 </span>
             </button>
             {open && (
-                <div className='thinking-prose max-h-64 overflow-y-auto border-t border-[var(--color-border-dark)] px-3 py-2 text-[13px] leading-relaxed text-[var(--color-text-secondary)]'>
+                <div
+                    ref={scrollRef}
+                    className='thinking-prose max-h-64 overflow-y-auto border-t border-[var(--color-border-dark)] px-3 py-2 text-[12px] leading-relaxed text-[var(--color-text-muted)] opacity-90'
+                >
                     {text ? (
                         <Markdown>{text}</Markdown>
                     ) : (
@@ -56,3 +73,4 @@ export function ThinkingBlock({
         </div>
     );
 }
+

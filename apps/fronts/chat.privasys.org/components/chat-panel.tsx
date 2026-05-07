@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import type { AvailableModel, Instance } from '~/lib/types';
 import {
     streamChatCompletion
@@ -543,9 +543,7 @@ function Message({
                     streaming={!!message.streaming}
                 />
             ) : message.streaming ? (
-                <p className='text-sm text-[var(--color-text-muted)]'>
-                    <StreamCursor />
-                </p>
+                <PendingAssistant />
             ) : null}
             {message.streaming && message.content && (
                 <p className='text-sm text-[var(--color-text-muted)]'>
@@ -728,9 +726,56 @@ function StreamCursor() {
     );
 }
 
+// Pre-first-token affordance. End-to-end latency from “user hits send”
+// to the first streamed token can run several seconds (sealed-session
+// bootstrap + RA-TLS handshake + GPU prefill). A bare cursor was easy
+// to miss; this gives an unmistakable “something is happening” cue.
+function PendingAssistant() {
+    return (
+        <div
+            className='flex items-center gap-2 text-sm text-[var(--color-text-secondary)]'
+            aria-live='polite'
+        >
+            <span className='inline-flex items-center gap-1'>
+                <Dot delay={0} />
+                <Dot delay={150} />
+                <Dot delay={300} />
+            </span>
+            <span
+                className='animate-pulse bg-clip-text text-transparent'
+                style={{ backgroundImage: 'var(--brand-gradient)' }}
+            >
+                Working in the enclave…
+            </span>
+        </div>
+    );
+}
+
+function Dot({ delay }: { delay: number }) {
+    return (
+        <span
+            className='inline-block h-1.5 w-1.5 animate-bounce rounded-full bg-[var(--color-primary-blue)]'
+            style={{ animationDelay: `${delay}ms`, animationDuration: '900ms' }}
+            aria-hidden
+        />
+    );
+}
+
 // AssistantContent splits a (possibly streaming) assistant message into
 // reasoning blocks and answer markdown. Reasoning blocks are rendered
 // in a collapsible ThinkingBlock above the answer text.
+//
+// While the message is still streaming, we render the markdown from a
+// `useDeferredValue` of the content. React 18 schedules the heavy
+// react-markdown re-parse at low priority, so the typewriter cursor
+// keeps drawing at 60 fps even when the answer body is several KB and
+// each new character would otherwise force a fresh markdown parse on
+// every animation frame. The markdown lags by at most a couple of
+// frames, which is invisible to the user but cuts main-thread cost
+// dramatically — this is the actual fix for the “text arrives in
+// blocks of 5–10 lines” symptom (the smoother only paces *what we
+// already have*; if the renderer drops frames the smoother’s ticks
+// pile up and several lines paint at once).
 function AssistantContent({
     content,
     streaming
@@ -738,7 +783,12 @@ function AssistantContent({
     content: string;
     streaming: boolean;
 }) {
-    const segments = splitReasoning(content);
+    // While streaming, defer the value used for the (expensive)
+    // markdown render. Once the stream finishes, render the final
+    // content immediately so the user sees the canonical formatting.
+    const deferred = useDeferredValue(content);
+    const renderText = streaming ? deferred : content;
+    const segments = useMemo(() => splitReasoning(renderText), [renderText]);
     return (
         <div className='flex flex-col gap-2'>
             {segments.map((seg, i) =>
