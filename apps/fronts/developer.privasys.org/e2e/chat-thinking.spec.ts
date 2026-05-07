@@ -77,7 +77,13 @@ test('chat-test: gemma emits reasoning_content channel and streams chunk-by-chun
         body: JSON.stringify({
             model,
             stream: true,
-            max_tokens: 256,
+            // Gemma-4 thinking burns a few hundred tokens before
+            // emitting the final answer. Anything below ~800 risks the
+            // model truncating mid-thought (finish_reason=length with
+            // zero delta.content), which would mask whether the agentic
+            // SSE forwarder is correctly relaying both the reasoning
+            // and the post-thinking content channels.
+            max_tokens: 1500,
             temperature: 0,
             seed: 0,
             messages: [
