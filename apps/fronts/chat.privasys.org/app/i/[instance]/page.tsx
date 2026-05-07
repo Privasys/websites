@@ -2,9 +2,17 @@
 
 import { use, useEffect, useMemo, useState } from 'react';
 import type { Instance } from '~/lib/types';
-import { fetchInstance, InstanceNotFoundError, pickInitialModel } from '~/lib/instance-api';
+import { fetchInstance, InstanceNotFoundError, pickInitialModel, probeInstanceHealth } from '~/lib/instance-api';
 import { ChatShell } from '~/components/chat-shell';
 import { useAuth } from '~/lib/privasys-auth';
+
+const BOOK_DEMO_URL = 'https://tinyurl.com/bfoing-30';
+// Back-end probe budget. The dev/demo enclave lives on a Spot VM that is
+// frequently stopped between sessions; rather than letting the user type a
+// prompt and wait ~7 s for the gateway's 502, we ping `/healthz` first and
+// surface the friendly "infrastructure currently reserved" view when the
+// upstream is unreachable.
+const HEALTH_PROBE_TIMEOUT_MS = 4_000;
 
 // chat.privasys.org/i/<instance>.
 //   - When unauthenticated: render the full shell with the composer in
@@ -17,6 +25,11 @@ export default function InstancePage({ params }: { params: Promise<{ instance: s
     const { session, loading: authLoading, expired } = useAuth();
     const [instance, setInstance] = useState<Instance | null>(null);
     const [error, setError] = useState<string | null>(null);
+    // 'unknown' until we've probed; 'up' / 'down' after the probe resolves.
+    // We don't gate the UI on the probe — the chat shell renders as soon
+    // as `instance` arrives — but `down` swaps the chat panel for the
+    // "infrastructure reserved" notice with a Calendly link.
+    const [backendStatus, setBackendStatus] = useState<'unknown' | 'up' | 'down'>('unknown');
 
     // Fetch instance metadata. We do this even when unauthenticated so the
     // sign-in flow can read `instance.session_relay` and opt into the sealed
@@ -37,6 +50,41 @@ export default function InstancePage({ params }: { params: Promise<{ instance: s
             });
         return () => ctrl.abort();
     }, [instanceId]);
+
+    // Probe the enclave once we know its endpoint. While the back-end
+    // is unreachable we re-poll every 15 s so the friendly notice
+    // clears automatically once the operator brings the VM back up
+    // (and the user doesn't need to know to refresh the tab).
+    useEffect(() => {
+        const endpoint = instance?.endpoint;
+        if (!endpoint) return;
+        let cancelled = false;
+        let timer: ReturnType<typeof setTimeout> | null = null;
+
+        const probe = () => {
+            probeInstanceHealth(endpoint, HEALTH_PROBE_TIMEOUT_MS)
+                .then((reachable) => {
+                    if (cancelled) return;
+                    setBackendStatus(reachable ? 'up' : 'down');
+                    if (!reachable) {
+                        timer = setTimeout(probe, 15_000);
+                    }
+                })
+                .catch(() => {
+                    if (cancelled) return;
+                    setBackendStatus('down');
+                    timer = setTimeout(probe, 15_000);
+                });
+        };
+
+        setBackendStatus('unknown');
+        probe();
+
+        return () => {
+            cancelled = true;
+            if (timer) clearTimeout(timer);
+        };
+    }, [instance?.endpoint]);
 
     const greeting = useMemo(() => decodeGreeting(session?.accessToken), [session]);
 
@@ -98,6 +146,32 @@ export default function InstancePage({ params }: { params: Promise<{ instance: s
                 <div className="text-sm text-[var(--color-text-secondary)] animate-pulse">
                     Loading {instanceId}…
                 </div>
+            </main>
+        );
+    }
+
+    if (backendStatus === 'down') {
+        return (
+            <main className="mx-auto flex max-w-xl flex-1 flex-col items-center justify-center gap-5 px-6 py-16 text-center">
+                <h1 className="text-2xl font-semibold text-[var(--color-text-primary)]">
+                    Demo currently reserved
+                </h1>
+                <p className="text-[var(--color-text-secondary)]">
+                    Our infrastructure is currently reserved for a demo. Please try
+                    again in a few hours, or book a slot to see Privasys live.
+                </p>
+                <a
+                    href={BOOK_DEMO_URL}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="rounded-full px-6 py-2.5 text-sm font-semibold text-[var(--color-navy)] shadow-sm transition-opacity hover:opacity-90"
+                    style={{ background: 'var(--brand-gradient)' }}
+                >
+                    Book a demo
+                </a>
+                <p className="text-xs text-[var(--color-text-muted)]">
+                    This page will refresh automatically when the back-end is reachable again.
+                </p>
             </main>
         );
     }
