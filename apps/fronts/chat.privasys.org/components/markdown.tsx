@@ -19,9 +19,15 @@ import remarkGfm from 'remark-gfm';
 // `children` between the deferred render and the live one short-circuit
 // here too — the typewriter effect updates only when the deferred
 // content actually advanced.
-export const Markdown = memo(function Markdown({ children }: { children: string }) {
+export const Markdown = memo(function Markdown({
+    children,
+    className = 'space-y-3 text-[15px] leading-relaxed text-[var(--color-text-primary)]'
+}: {
+    children: string;
+    className?: string;
+}) {
     return (
-        <div className='space-y-3 text-[15px] leading-relaxed text-[var(--color-text-primary)]'>
+        <div className={className}>
             <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
                 components={{
