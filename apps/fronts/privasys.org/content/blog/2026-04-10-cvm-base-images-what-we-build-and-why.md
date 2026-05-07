@@ -105,7 +105,7 @@ malicious AML, the AML reads or writes private (encrypted) guest
 pages, the TDX/SEV memory encryption is irrelevant because the
 ACPICA interpreter has full kernel-mode access to private memory. The
 attack was published in 2024 as
-[BadAML](https://www.usenix.org/conference/usenixsecurity25/presentation/takekoshi)
+[BadAML](https://dl.acm.org/doi/10.1145/3719027.3765123)
 (Takekoshi et al., USENIX Security 2025; BlackHat EU 2024 / ACM CCS
 2025).
 
