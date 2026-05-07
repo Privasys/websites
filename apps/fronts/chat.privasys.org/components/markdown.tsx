@@ -1,5 +1,6 @@
 'use client';
 
+import { memo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -11,7 +12,14 @@ import remarkGfm from 'remark-gfm';
 // monospace background; inline code with a subtle highlight. Colours
 // pull from the chat theme variables so this renders correctly in
 // both dark and light mode.
-export function Markdown({ children }: { children: string }) {
+//
+// Wrapped in `React.memo` so when the chat panel re-renders (e.g. for
+// rating changes, scroll, sibling messages updating) we don't re-parse
+// the markdown of every assistant turn. During streaming, identical
+// `children` between the deferred render and the live one short-circuit
+// here too — the typewriter effect updates only when the deferred
+// content actually advanced.
+export const Markdown = memo(function Markdown({ children }: { children: string }) {
     return (
         <div className='space-y-3 text-[15px] leading-relaxed text-[var(--color-text-primary)]'>
             <ReactMarkdown
@@ -91,4 +99,4 @@ export function Markdown({ children }: { children: string }) {
             </ReactMarkdown>
         </div>
     );
-}
+});
