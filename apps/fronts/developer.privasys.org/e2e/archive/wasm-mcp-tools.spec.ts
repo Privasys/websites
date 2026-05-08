@@ -23,8 +23,8 @@ test('MCP Tools / AI Tools tab — full verification', async ({ page }) => {
     await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {});
 
     const url = page.url();
-    if (url.includes('auth.privasys.org') || url.includes('/login')) {
-        if (url.includes('auth.privasys.org')) {
+    if (url.includes('privasys.id') || url.includes('/login')) {
+        if (url.includes('privasys.id')) {
             const accountBtn = page.locator('[class*="account"]', { hasText: /@/ }).first();
             const genericAccount = page.locator('button, a, [role="button"]').filter({ hasText: /privasys\.org/ }).first();
             const anyAccount = accountBtn.or(genericAccount);

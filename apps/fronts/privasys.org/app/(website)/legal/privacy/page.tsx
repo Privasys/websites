@@ -37,7 +37,7 @@ export default function PrivacyPolicy() {
                 <p className='mt-4'>We use the information that you have given us to:</p>
                 <ul className='mt-4 list-disc pl-6 space-y-2'>
                     <li>Provide and maintain our services</li>
-                    <li>Authenticate your identity via GitHub (through Zitadel, our identity provider)</li>
+                    <li>Authenticate your identity via Privasys ID, our OIDC identity provider</li>
                     <li>Maintain developer communication and support</li>
                     <li>Improve our websites and services</li>
                 </ul>
@@ -47,7 +47,7 @@ export default function PrivacyPolicy() {
                     Your information is securely stored. We keep account information for as long as necessary to fulfil the purposes we collected it for, including for the purpose of satisfying any legal, accounting, or reporting requirements.
                 </p>
                 <p className='mt-4'>
-                    Authentication is handled via GitHub through Zitadel (our OIDC identity provider). Privasys does not store passwords. Account identifiers and metadata are kept for as long as your account is active.
+                    Authentication is handled by Privasys ID, our OIDC identity provider. Privasys does not store passwords. Account identifiers and metadata are kept for as long as your account is active.
                 </p>
                 <p className='mt-4'>
                     We keep basic information about visitors, usage data, and technical data that is tracked for routine administration and maintenance purposes only.
