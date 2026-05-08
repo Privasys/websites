@@ -39,7 +39,7 @@ export default defineConfig({
         },
         {
             name: 'portal',
-            testMatch: ['fast-verify.spec.ts', 'portal.spec.ts'],
+            testMatch: ['fast-verify.spec.ts', 'portal.spec.ts', 'multiarch-oci-label.spec.ts'],
             dependencies: ['auth-setup'],
             use: {
                 storageState: AUTH_FILE
