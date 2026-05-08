@@ -59,7 +59,7 @@ test.describe('Debug: create app flow', () => {
         console.log('Dashboard URL:', page.url());
 
         // Check if we got redirected to login — if so, wait for manual login
-        if (page.url().includes('/login') || page.url().includes('auth.privasys.org') || page.url().includes('github.com')) {
+        if (page.url().includes('/login') || page.url().includes('privasys.id') || page.url().includes('github.com')) {
             console.log('Not logged in — waiting for manual login (you have 2 minutes)...');
             console.log('Please log in in the browser window.');
             await page.waitForURL('**/dashboard/**', { timeout: 120_000 });

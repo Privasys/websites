@@ -64,14 +64,14 @@ The server uses an OIDC provider for bearer token authentication. All flags also
 | `--oidc-issuer` | `OIDC_ISSUER` | | OIDC issuer URL (**required**) |
 | `--oidc-audience` | `OIDC_AUDIENCE` | `attestation-server` | Expected `aud` claim |
 | `--oidc-client-role` | `OIDC_CLIENT_ROLE` | `attestation-server:client` | Required OIDC role |
-| `--oidc-role-claim` | `OIDC_ROLE_CLAIM` | `urn:zitadel:iam:org:project:roles` | JWT claim key containing roles |
+| `--oidc-role-claim` | `OIDC_ROLE_CLAIM` | `roles` | JWT claim key containing roles |
 | `--listen` | `LISTEN_ADDR` | `:8080` | Listen address |
 
 ### Supported role claim formats
 
-The server checks three claim paths (matching Zitadel, Keycloak, and standard OIDC providers):
+The server checks three claim paths (matching standard OIDC, Keycloak, and configured custom claims):
 
-1. **Zitadel** `urn:zitadel:iam:org:project:roles` (map of role to metadata)
+1. **Configured claim** (default `roles`) — string array or map of role to metadata
 2. **Standard** `roles` (string array)
 3. **Keycloak** `realm_access.roles` (string array)
 
@@ -111,7 +111,7 @@ journalctl -u attestation-server -f
 
 ## Verifying a Quote
 
-Callers must present a valid OIDC bearer token with the `attestation-server:client` role. Tokens are issued by your OIDC provider (e.g. Zitadel, Keycloak, Auth0).
+Callers must present a valid OIDC bearer token with the `attestation-server:client` role. Tokens are issued by your OIDC provider (e.g. Privasys ID, Keycloak, Auth0).
 
 ```bash
 curl -X POST https://as.privasys.org/ \

@@ -19,17 +19,17 @@ test.skip('diagnose auth callback', async ({ browser }) => {
         }
     });
 
-    // Go to dashboard — should redirect via login -> Zitadel -> GitHub
+    // Go to dashboard — should redirect via login -> Privasys ID -> GitHub
     console.log('=== Step 1: Go to /dashboard/ ===');
     await page.goto('https://developer-test.privasys.org/dashboard/');
     console.log(`URL after goto: ${page.url()}`);
 
-    // Wait for Zitadel or GitHub
+    // Wait for Privasys ID or GitHub
     await page.waitForURL(/auth\.privasys\.org|github\.com/, { timeout: 30_000 });
     console.log(`At auth: ${page.url()}`);
 
-    // Handle Zitadel IDP picker if shown
-    if (page.url().includes('auth.privasys.org')) {
+    // Handle Privasys ID IDP picker if shown
+    if (page.url().includes('privasys.id')) {
         const githubBtn = page.getByRole('button', { name: /github/i });
         if (await githubBtn.isVisible({ timeout: 5_000 }).catch(() => false)) {
             console.log('Clicking GitHub IDP button...');
