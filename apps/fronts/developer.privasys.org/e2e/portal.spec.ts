@@ -102,24 +102,16 @@ test.describe('Developer Portal', () => {
             // Click inspect (challenge mode — random hex is pre-filled)
             await inspectBtn.click();
 
-            // Wait for results to load — either TLS connection info or an error message.
-            // The management service may lack the Go fork for challenge-response mode,
-            // which produces an error text on screen. Either outcome means the tab works.
-            const gotResult = await Promise.race([
-                page.getByText(/TLS Connection/i).waitFor({ state: 'visible', timeout: 15_000 }).then(() => 'tls'),
-                page.getByText(/attestation failed/i).waitFor({ state: 'visible', timeout: 15_000 }).then(() => 'error'),
-            ]);
-
-            if (gotResult === 'tls') {
-                await expect(page.getByText(/x\.509 Certificate/i)).toBeVisible({ timeout: 5_000 });
-                // Verify workload attestation extensions section is visible
-                const workloadExts = page.getByText(/Workload Attestation Extensions/i);
-                const hasWorkloadExts = await workloadExts.isVisible().catch(() => false);
-                if (hasWorkloadExts) {
-                    console.log('Workload Attestation Extensions section visible');
-                }
-            }
-            // Either outcome means the attestation tab is functional
+            // Wait for the successful TLS connection result. The end-to-end
+            // attestation flow MUST succeed: a failure here points to a real
+            // bug (e.g. the management-service ↔ enclave RA-TLS handshake is
+            // broken) and must NOT be silently accepted.
+            await expect(page.getByText(/TLS Connection/i)).toBeVisible({ timeout: 30_000 });
+            await expect(page.getByText(/x\.509 Certificate/i)).toBeVisible({ timeout: 5_000 });
+            await expect(page.getByText(/Workload Attestation Extensions/i)).toBeVisible({ timeout: 5_000 });
+            // Explicitly assert no failure path was taken.
+            await expect(page.getByText(/attestation failed/i)).toHaveCount(0);
+            await expect(page.getByText(/attest request failed/i)).toHaveCount(0);
 
             await page.screenshot({ path: screenshot('attestation-tab-result'), fullPage: true });
             break;
