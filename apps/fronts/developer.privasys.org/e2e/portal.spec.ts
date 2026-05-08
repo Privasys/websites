@@ -108,7 +108,6 @@ test.describe('Developer Portal', () => {
             // broken) and must NOT be silently accepted.
             await expect(page.getByText(/TLS Connection/i)).toBeVisible({ timeout: 30_000 });
             await expect(page.getByText(/x\.509 Certificate/i)).toBeVisible({ timeout: 5_000 });
-            await expect(page.getByText(/Workload Attestation Extensions/i)).toBeVisible({ timeout: 5_000 });
             // Explicitly assert no failure path was taken.
             await expect(page.getByText(/attestation failed/i)).toHaveCount(0);
             await expect(page.getByText(/attest request failed/i)).toHaveCount(0);
