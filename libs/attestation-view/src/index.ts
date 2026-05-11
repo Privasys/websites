@@ -8,4 +8,6 @@ export * from './types';
 export * from './use-attestation';
 export { AttestationConnect } from './components/attestation-connect';
 export { AttestationResultView } from './components/attestation-result-view';
+export { CompositeAttestationView } from './components/composite-attestation-view';
+export type { AttestationTargetConfig, CompositeAttestationViewProps } from './components/composite-attestation-view';
 export { FieldRow } from './components/field-row';

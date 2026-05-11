@@ -27,7 +27,9 @@ export function AppSidebar({
     onDeleteConversation,
     onRenameConversation,
     onShowSecurity,
-    onShowSignIn
+    onShowSignIn,
+    enabledTools,
+    onToggleTool,
 }: {
     instance: Instance | null;
     conversations: Conversation[];
@@ -38,6 +40,10 @@ export function AppSidebar({
     onRenameConversation: (id: string, title: string) => void;
     onShowSecurity: () => void;
     onShowSignIn: () => void;
+    /** Set of currently enabled tool names. Undefined = feature off. */
+    enabledTools?: Set<string>;
+    /** Called when the user toggles a tool's checkbox. */
+    onToggleTool?: (name: string, on: boolean) => void;
 }) {
     const { session, signOut } = useAuth();
     const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -86,6 +92,38 @@ export function AppSidebar({
             </div>
 
             <div className="mt-6 flex-1 overflow-y-auto px-3">
+                {instance && instance.available_tools && instance.available_tools.length > 0 && (
+                    <div className="mb-5">
+                        <p className="px-2 pb-2 text-[11px] font-medium tracking-wider text-[var(--color-text-muted)] uppercase">
+                            AI Tools
+                        </p>
+                        <ul className="flex flex-col gap-0.5">
+                            {instance.available_tools.map((t) => {
+                                const on = enabledTools?.has(t.name) ?? false;
+                                return (
+                                    <li key={t.name}>
+                                        <label className="flex cursor-pointer items-start gap-2 rounded-md px-2 py-1.5 text-sm text-[var(--color-text-primary)] hover:bg-[var(--color-surface-2)]/60">
+                                            <input
+                                                type="checkbox"
+                                                className="mt-0.5"
+                                                checked={on}
+                                                onChange={(e) => onToggleTool?.(t.name, e.target.checked)}
+                                            />
+                                            <span className="min-w-0 flex-1">
+                                                <span className="block truncate text-sm">{t.label}</span>
+                                                {t.description && (
+                                                    <span className="block truncate text-[11px] text-[var(--color-text-muted)]">
+                                                        {t.description}
+                                                    </span>
+                                                )}
+                                            </span>
+                                        </label>
+                                    </li>
+                                );
+                            })}
+                        </ul>
+                    </div>
+                )}
                 <p className="px-2 pb-2 text-[11px] font-medium tracking-wider text-[var(--color-text-muted)] uppercase">
                     Chats
                 </p>
