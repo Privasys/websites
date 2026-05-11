@@ -107,6 +107,14 @@ export interface StreamChatArgs {
      * the gateway. Falls back to plain fetch when omitted.
      */
     sealedSession?: SealedSession;
+    /**
+     * Optional list of MCP server names (`AvailableTool.name`) the user
+     * has currently enabled. When provided, the proxy will scope
+     * `tools/list` injection to those servers for this single request.
+     * An empty array disables all tools; `undefined` keeps the proxy
+     * default (every configured server).
+     */
+    enabledTools?: string[];
 }
 
 interface SSEChunk {
@@ -144,6 +152,9 @@ export async function streamChatCompletion(args: StreamChatArgs): Promise<void> 
         'Accept': 'text/event-stream'
     };
     if (args.token) headers.Authorization = `Bearer ${args.token}`;
+    if (args.enabledTools !== undefined) {
+        headers['X-Privasys-Tools'] = args.enabledTools.join(',');
+    }
 
     const body: Record<string, unknown> = {
         model: args.model,
@@ -167,7 +178,10 @@ export async function streamChatCompletion(args: StreamChatArgs): Promise<void> 
     if (args.sealedSession) {
         try {
             const sealed = await args.sealedSession.stream('POST', '/v1/chat/completions', body, {
-                signal: args.signal
+                signal: args.signal,
+                headers: args.enabledTools !== undefined
+                    ? { 'X-Privasys-Tools': args.enabledTools.join(',') }
+                    : undefined,
             });
             if (sealed.status >= 400) {
                 const drained: Uint8Array[] = [];

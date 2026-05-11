@@ -53,7 +53,8 @@ export function ChatPanel({
     initialMessages,
     conversationId,
     onMessagesChange,
-    onBranchFromMessage
+    onBranchFromMessage,
+    enabledTools,
 }: {
     instance: Instance;
     model: AvailableModel | null;
@@ -78,6 +79,10 @@ export function ChatPanel({
      *  selecting the new conversation. The shell handles persistence
      *  + view routing; we just expose the action to MessageActions. */
     onBranchFromMessage?: (messageId: string) => void;
+    /** When set, sent verbatim as the X-Privasys-Tools header to the
+     *  proxy so the agentic loop is restricted to those MCP servers
+     *  for this conversation. `undefined` keeps the proxy default. */
+    enabledTools?: string[];
 }) {
     const [messages, setMessages] = useState<DisplayMessage[]>(
         () => initialMessages.map((m) => ({ ...m }))
@@ -202,6 +207,7 @@ export function ChatPanel({
                 token,
                 sealedSession,
                 signal: ctrl.signal,
+                enabledTools,
                 onDelta: (delta) => {
                     smoother.push(delta);
                 },

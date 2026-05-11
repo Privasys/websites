@@ -111,6 +111,7 @@ export const PRIVASYS_OID = {
     APP_EVENTS: '1.3.6.1.4.1.65230.3.4',
     MODEL_DIGEST: '1.3.6.1.4.1.65230.3.5',
     MULTIMODAL_DIGEST: '1.3.6.1.4.1.65230.3.6',
+    TOOLS_DIGEST: '1.3.6.1.4.1.65230.3.7',
 } as const;
 
 // OIDs whose value bytes are UTF-8 strings, not raw hashes.
@@ -132,11 +133,15 @@ export interface AttestationExpectations {
     modelDigest?: string;
     /** Expected MULTIMODAL_DIGEST (OID 3.6). */
     multimodalDigest?: string;
+    /** Expected TOOLS_DIGEST (OID 3.7) - sha256 over the canonical JSON
+     *  of the configured MCP tool servers. */
+    toolsDigest?: string;
     /** Optional friendly labels shown in the verification badge.
      *  Defaults to a generic "Matches expected value". */
     labels?: {
         workloadImageDigest?: string;
         modelDigest?: string;
         multimodalDigest?: string;
+        toolsDigest?: string;
     };
 }
