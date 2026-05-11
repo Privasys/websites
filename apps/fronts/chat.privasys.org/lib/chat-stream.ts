@@ -181,7 +181,7 @@ export async function streamChatCompletion(args: StreamChatArgs): Promise<void> 
                 signal: args.signal,
                 headers: args.enabledTools !== undefined
                     ? { 'X-Privasys-Tools': args.enabledTools.join(',') }
-                    : undefined,
+                    : undefined
             });
             if (sealed.status >= 400) {
                 const drained: Uint8Array[] = [];

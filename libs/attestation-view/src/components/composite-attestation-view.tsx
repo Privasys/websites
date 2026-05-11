@@ -109,17 +109,18 @@ function SummaryBanner({ total, ready, allOk }: { total: number; ready: number; 
 function AttestationRow({
     target,
     autoInspect,
-    onSummary,
+    onSummary
 }: {
     target: AttestationTargetConfig;
     autoInspect: boolean;
-    onSummary: (s: RowSummary) => void;
+    // eslint-disable-next-line no-unused-vars
+    onSummary: (_summary: RowSummary) => void;
 }) {
     const [state, actions] = useAttestation({
         attestUrl: target.attestUrl,
         verifyQuoteUrl: target.verifyQuoteUrl,
         autoInspect: autoInspect && Boolean(target.attestUrl),
-        autoVerifyQuote: autoInspect && Boolean(target.verifyQuoteUrl),
+        autoVerifyQuote: autoInspect && Boolean(target.verifyQuoteUrl)
     });
 
     // Compute the per-row summary on every render and notify the parent.
@@ -200,7 +201,7 @@ function RowStatus({ summary }: { summary: RowSummary }) {
 
 function computeSummary(
     state: ReturnType<typeof useAttestation>[0],
-    expectations: AttestationExpectations | undefined,
+    expectations: AttestationExpectations | undefined
 ): RowSummary {
     const ready = Boolean(state.result || state.error);
     if (!ready) {
@@ -211,7 +212,7 @@ function computeSummary(
     }
     const quoteOk = !state.quoteVerifyError
         && (!state.verifying)
-        && (!!state.quoteVerify ? state.quoteVerify.success : true);
+        && (state.quoteVerify ? state.quoteVerify.success : true);
 
     let digestsOk = true;
     if (expectations && state.result) {
@@ -222,7 +223,7 @@ function computeSummary(
             ['1.3.6.1.4.1.65230.3.2', expectations.workloadImageDigest],
             ['1.3.6.1.4.1.65230.3.5', expectations.modelDigest],
             ['1.3.6.1.4.1.65230.3.6', expectations.multimodalDigest],
-            ['1.3.6.1.4.1.65230.3.7', expectations.toolsDigest],
+            ['1.3.6.1.4.1.65230.3.7', expectations.toolsDigest]
         ];
         for (const [oid, want] of checks) {
             if (!want) continue;

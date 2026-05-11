@@ -54,7 +54,7 @@ export function ChatPanel({
     conversationId,
     onMessagesChange,
     onBranchFromMessage,
-    enabledTools,
+    enabledTools
 }: {
     instance: Instance;
     model: AvailableModel | null;

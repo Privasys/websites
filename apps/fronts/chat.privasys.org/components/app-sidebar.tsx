@@ -29,7 +29,7 @@ export function AppSidebar({
     onShowSecurity,
     onShowSignIn,
     enabledTools,
-    onToggleTool,
+    onToggleTool
 }: {
     instance: Instance | null;
     conversations: Conversation[];
