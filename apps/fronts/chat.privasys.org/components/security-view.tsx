@@ -1,13 +1,14 @@
 'use client';
 
+import * as React from 'react';
 import {
     AttestationResultView,
     CompositeAttestationView,
-    useAttestation,
+    useAttestation
 } from '@privasys/attestation-view';
 import type {
     AttestationExpectations,
-    AttestationTargetConfig,
+    AttestationTargetConfig
 } from '@privasys/attestation-view';
 import type { Instance } from '~/lib/types';
 
@@ -34,8 +35,8 @@ export function SecurityView({ instance }: { instance: Instance }) {
         ? {
             modelDigest: instance.loaded_model.digest,
             labels: {
-                modelDigest: `matches expected model "${instance.loaded_model.label ?? instance.loaded_model.name}"`,
-            },
+                modelDigest: `matches expected model "${instance.loaded_model.label ?? instance.loaded_model.name}"`
+            }
         }
         : undefined;
 
@@ -65,7 +66,7 @@ export function SecurityView({ instance }: { instance: Instance }) {
                 description: 'confidential-ai on the fleet enclave',
                 attestUrl,
                 verifyQuoteUrl,
-                expectations: aiExpectations,
+                expectations: aiExpectations
             },
             ...tools
                 .filter(t => Boolean(t.attest_url))
@@ -79,11 +80,11 @@ export function SecurityView({ instance }: { instance: Instance }) {
                         ? {
                             workloadImageDigest: t.expected_digest,
                             labels: {
-                                workloadImageDigest: `matches the expected ${t.label} image digest`,
-                            },
+                                workloadImageDigest: `matches the expected ${t.label} image digest`
+                            }
                         }
-                        : undefined,
-                })),
+                        : undefined
+                }))
         ];
         return (
             <div className='flex flex-1 flex-col overflow-y-auto'>
@@ -116,7 +117,7 @@ function SingleAttestation({
     attestUrl,
     verifyQuoteUrl,
     expectations,
-    header,
+    header
 }: {
     attestUrl: string;
     verifyQuoteUrl?: string;
@@ -127,7 +128,7 @@ function SingleAttestation({
         attestUrl,
         verifyQuoteUrl,
         autoInspect: Boolean(attestUrl),
-        autoVerifyQuote: Boolean(verifyQuoteUrl),
+        autoVerifyQuote: Boolean(verifyQuoteUrl)
     });
 
     return (
