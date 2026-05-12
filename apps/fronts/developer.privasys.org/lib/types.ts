@@ -379,3 +379,54 @@ export interface AppEvent {
     type: string;        // "container_load" | "container_unload"
     description: string;
 }
+
+// ---------------------------------------------------------------------------
+// Fleets and AI Tools (manager admin UI)
+// ---------------------------------------------------------------------------
+
+export interface Fleet {
+    id: string;
+    name: string;
+    alias: string | null;
+    owner: string;
+    zone: string | null;
+    vllm_mode: string;
+}
+
+export interface AITool {
+    id: string;
+    fleet_id: string;
+    name: string;
+    label: string;
+    description: string;
+    icon?: string | null;
+    transport: 'privasys_http' | 'mcp_sse';
+    base_url: string;
+    app_id?: string | null;
+    auth_mode: 'forward' | 'exchange' | 'static' | 'none';
+    auth_audience?: string | null;
+    auth_scopes: string[];
+    requires_user_confirmation: boolean;
+    enabled_default: boolean;
+    expected_digest?: string | null;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface CreateAIToolBody {
+    name: string;
+    label: string;
+    description: string;
+    icon?: string | null;
+    transport: 'privasys_http' | 'mcp_sse';
+    base_url: string;
+    app_id?: string | null;
+    auth_mode: 'forward' | 'exchange' | 'static' | 'none';
+    auth_audience?: string | null;
+    auth_scopes?: string[];
+    requires_user_confirmation: boolean;
+    enabled_default: boolean;
+    expected_digest?: string | null;
+}
+
+export type UpdateAIToolBody = Partial<CreateAIToolBody>;

@@ -529,3 +529,46 @@ export function adminDeleteApp(token: string, id: string): Promise<void> {
         method: 'DELETE'
     });
 }
+
+// ---------------------------------------------------------------------------
+// Fleets and AI Tools (manager role required)
+// ---------------------------------------------------------------------------
+
+export function listFleets(token: string): Promise<{ fleets: import('./types').Fleet[] }> {
+    return request<{ fleets: import('./types').Fleet[] }>(`/api/v1/fleets`, token);
+}
+
+export function adminListFleetTools(token: string, fleetId: string): Promise<{ tools: import('./types').AITool[] }> {
+    return request<{ tools: import('./types').AITool[] }>(
+        `/api/v1/admin/fleets/${encodeURIComponent(fleetId)}/tools`, token);
+}
+
+export function adminCreateFleetTool(
+    token: string, fleetId: string, body: import('./types').CreateAIToolBody,
+): Promise<import('./types').AITool> {
+    return request<import('./types').AITool>(
+        `/api/v1/admin/fleets/${encodeURIComponent(fleetId)}/tools`, token, {
+            method: 'POST',
+            body: JSON.stringify(body),
+        });
+}
+
+export function adminUpdateFleetTool(
+    token: string, fleetId: string, toolId: string,
+    body: import('./types').UpdateAIToolBody,
+): Promise<import('./types').AITool> {
+    return request<import('./types').AITool>(
+        `/api/v1/admin/fleets/${encodeURIComponent(fleetId)}/tools/${encodeURIComponent(toolId)}`,
+        token, {
+            method: 'PUT',
+            body: JSON.stringify(body),
+        });
+}
+
+export function adminDeleteFleetTool(
+    token: string, fleetId: string, toolId: string,
+): Promise<void> {
+    return request<void>(
+        `/api/v1/admin/fleets/${encodeURIComponent(fleetId)}/tools/${encodeURIComponent(toolId)}`,
+        token, { method: 'DELETE' });
+}
