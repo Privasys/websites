@@ -44,6 +44,14 @@ interface AuthContextValue {
      * service.
      */
     sealedSession: SealedSession | null;
+    /**
+     * Mint a per-audience JWT (challenge mode) without rotating the
+     * primary session. Used to call attestation-server's verify-quote
+     * endpoint with `aud=attestation-server`. The returned token is
+     * single-use-shaped (15-minute lifetime, audience-bound) and is
+     * never persisted into the session context.
+     */
+    getTokenForAudience: (audience: string) => Promise<string>;
     /** Open the auth ceremony in a full-screen overlay (default). */
     signIn: (opts?: { sessionRelayHost?: string }) => Promise<void>;
     /**
@@ -63,6 +71,9 @@ const AuthContext = createContext<AuthContextValue>({
     loading: true,
     expired: false,
     sealedSession: null,
+    getTokenForAudience: async () => {
+        throw new Error('getTokenForAudience called outside PrivasysAuthProvider');
+    },
     signIn: async () => {},
     signInInto: async () => {},
     signOut: async () => {}
@@ -217,9 +228,22 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
         setSealedSession(null);
     }, [getFrame]);
 
+    const getTokenForAudience = useCallback(
+        async (audience: string) => {
+            const frame = getFrame();
+            // The persistent renewal iframe must be live for the
+            // postMessage relay; cross-site SSO bootstraps it on mount,
+            // but call getSession() defensively to ensure it's mounted
+            // (no-op if a session iframe is already attached).
+            await frame.getSession();
+            return frame.getTokenForAudience(audience);
+        },
+        [getFrame]
+    );
+
     return (
         <AuthContext.Provider
-            value={{ session, loading, expired, sealedSession, signIn, signInInto, signOut }}
+            value={{ session, loading, expired, sealedSession, getTokenForAudience, signIn, signInInto, signOut }}
         >
             {children}
         </AuthContext.Provider>

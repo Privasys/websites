@@ -24,8 +24,15 @@ export interface AttestationTarget {
     attestUrl: string;
     /** Optional URL to POST the raw quote to for signature verification. */
     verifyQuoteUrl?: string;
-    /** Bearer token for both endpoints. Omit for public endpoints. */
-    token?: string;
+    /** Bearer token for the attest endpoint. Omit for public endpoints.
+     *  Pass a function to mint the token lazily — useful when the token
+     *  has a short lifetime and may need to be refreshed per call. */
+    token?: string | (() => Promise<string>);
+    /** Bearer token for the verify-quote endpoint. When omitted falls
+     *  back to {@link token}. Used by the chat security view to mint a
+     *  per-call `aud=attestation-server` JWT (challenge mode requires
+     *  an audience-bound token). */
+    verifyQuoteToken?: string | (() => Promise<string>);
     /** When true, automatically call inspect() once on mount (and again
      *  whenever attestUrl changes). The chat UI uses this to skip the
      *  pre-connect screen and go straight to the result view. */
@@ -54,6 +61,18 @@ export interface AttestationActions {
 }
 
 const CHALLENGE_RE = /^[0-9a-fA-F]{32,128}$/;
+
+/** Resolve a token spec to a string, calling a thunk if provided.
+ *  Returns undefined when no token is configured so callers can omit
+ *  the Authorization header entirely. */
+async function resolveToken(
+    spec: string | (() => Promise<string>) | undefined,
+): Promise<string | undefined> {
+    if (!spec) return undefined;
+    if (typeof spec === 'string') return spec || undefined;
+    const v = await spec();
+    return v || undefined;
+}
 
 /**
  * useAttestation manages a single attestation handshake against a target
@@ -87,7 +106,8 @@ export function useAttestation(target: AttestationTarget): [AttestationState, At
                 ? `${target.attestUrl}${target.attestUrl.includes('?') ? '&' : '?'}challenge=${encodeURIComponent(trimmed)}`
                 : target.attestUrl;
             const headers: Record<string, string> = { Accept: 'application/json' };
-            if (target.token) headers.Authorization = `Bearer ${target.token}`;
+            const tokenValue = await resolveToken(target.token);
+            if (tokenValue) headers.Authorization = `Bearer ${tokenValue}`;
             const res = await fetch(url, { headers });
             if (!res.ok) {
                 throw new Error(`Attest request failed: ${res.status} ${res.statusText}`);
@@ -111,7 +131,8 @@ export function useAttestation(target: AttestationTarget): [AttestationState, At
                 Accept: 'application/json',
                 'Content-Type': 'application/json',
             };
-            if (target.token) headers.Authorization = `Bearer ${target.token}`;
+            const tokenValue = await resolveToken(target.verifyQuoteToken ?? target.token);
+            if (tokenValue) headers.Authorization = `Bearer ${tokenValue}`;
             const res = await fetch(target.verifyQuoteUrl, {
                 method: 'POST',
                 headers,
@@ -127,7 +148,7 @@ export function useAttestation(target: AttestationTarget): [AttestationState, At
         } finally {
             setVerifying(false);
         }
-    }, [result, target.verifyQuoteUrl, target.token]);
+    }, [result, target.verifyQuoteUrl, target.token, target.verifyQuoteToken]);
 
     const regenerateChallenge = useCallback(() => {
         setChallenge(generateChallenge());
