@@ -13,7 +13,7 @@ import { ThemeToggle } from './theme-toggle';
 //   - "New chat" button
 //   - Chats list (placeholder until persistence lands)
 //   - Bottom block:
-//       · "Your session is secure" trust pill — only visible when the
+//       · "Secure enclaves attestations" trust pill — only visible when the
 //         user is authenticated; clicking opens the in-shell Security
 //         view (full-pane attestation).
 //       · Sign in (in-panel) / user pill + Sign out
@@ -157,7 +157,7 @@ export function AppSidebar({
                         className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-[var(--color-primary-green)] transition-colors hover:bg-[var(--color-surface-2)]/60 disabled:opacity-50"
                     >
                         <ShieldIcon />
-                        <span className="flex-1">Your session is secure</span>
+                        <span className="flex-1">Secure enclaves attestations</span>
                     </button>
                 )}
 

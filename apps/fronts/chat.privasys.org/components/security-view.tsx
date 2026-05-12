@@ -16,7 +16,7 @@ const API_BASE_URL =
     process.env.NEXT_PUBLIC_API_BASE_URL ?? 'https://api.developer.privasys.org';
 
 // Full-pane Security view rendered inside the chat shell when the user
-// clicks "Your session is secure" in the sidebar.
+// clicks "Secure enclaves attestations" in the sidebar.
 //
 // When the instance exposes one or more AI Tools (each backed by an
 // MCP server in its own enclave), the view renders a composite
@@ -60,14 +60,16 @@ export function SecurityView({ instance }: { instance: Instance }) {
 
     if (useComposite) {
         const targets: AttestationTargetConfig[] = [
-            {
-                id: 'ai',
-                label: 'AI inference container',
-                description: 'confidential-ai on the fleet enclave',
-                attestUrl,
-                verifyQuoteUrl,
-                expectations: aiExpectations
-            },
+            ...(attestUrl
+                ? [{
+                    id: 'ai',
+                    label: 'AI inference container',
+                    description: 'confidential-ai on the fleet enclave',
+                    attestUrl,
+                    verifyQuoteUrl,
+                    expectations: aiExpectations
+                }]
+                : []),
             ...tools
                 .filter(t => Boolean(t.attest_url))
                 .map(t => ({
@@ -90,13 +92,22 @@ export function SecurityView({ instance }: { instance: Instance }) {
             <div className='flex flex-1 flex-col overflow-y-auto'>
                 <div className='mx-auto w-full max-w-3xl px-6 py-8'>
                     {containerHeader}
-                    {!attestUrl ? (
+                    {targets.length === 0 ? (
                         <div className='rounded-xl border border-black/10 p-5 text-sm text-black/60 dark:border-white/10 dark:text-white/60'>
-                            No app is currently deployed on this fleet, so there is
-                            nothing to attest yet.
+                            No attestable component is currently exposed on this
+                            fleet.
                         </div>
                     ) : (
-                        <CompositeAttestationView targets={targets} />
+                        <>
+                            {!attestUrl && (
+                                <div className='mb-4 rounded-xl border border-amber-200/50 bg-amber-50/40 p-4 text-xs text-amber-800 dark:border-amber-500/20 dark:bg-amber-900/10 dark:text-amber-200'>
+                                    The AI inference container does not expose an
+                                    attestation endpoint on this fleet. Only the
+                                    enabled MCP tool enclaves are listed below.
+                                </div>
+                            )}
+                            <CompositeAttestationView targets={targets} />
+                        </>
                     )}
                 </div>
             </div>

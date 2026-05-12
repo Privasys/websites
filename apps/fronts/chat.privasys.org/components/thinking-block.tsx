@@ -61,10 +61,10 @@ export function ThinkingBlock({
             {open && (
                 <div
                     ref={scrollRef}
-                    className='max-h-64 overflow-y-auto border-t border-[var(--color-border-dark)] px-3 py-2'
+                    className='max-h-64 overflow-y-auto overflow-x-hidden border-t border-[var(--color-border-dark)] px-3 py-2'
                 >
                     {text ? (
-                        <Markdown className='space-y-2 text-[13px] leading-relaxed text-[var(--color-text-muted)] opacity-90'>
+                        <Markdown className='min-w-0 space-y-2 break-words text-[13px] leading-relaxed text-[var(--color-text-muted)] opacity-90'>
                             {text}
                         </Markdown>
                     ) : (

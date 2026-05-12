@@ -475,8 +475,8 @@ export function ChatPanel({
                 <div className='mx-auto max-w-3xl'>{composer}</div>
                 <p className='mx-auto mt-2 max-w-3xl text-center text-[11px] text-[var(--color-text-muted)]'>
                     Replies are signed by the hardware running the model. Verify
-                    any response from the &ldquo;Your session is secure&rdquo;
-                    panel.
+                    any response from the &ldquo;Secure enclaves
+                    attestations&rdquo; panel.
                 </p>
             </div>
 
@@ -751,7 +751,7 @@ function PendingAssistant() {
                 className='animate-pulse bg-clip-text text-transparent'
                 style={{ backgroundImage: 'var(--brand-gradient)' }}
             >
-                Working in the enclave…
+                Analysing…
             </span>
         </div>
     );
