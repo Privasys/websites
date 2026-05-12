@@ -27,6 +27,15 @@ export interface CompositeAttestationViewProps {
     targets: AttestationTargetConfig[];
     /** When true, every row auto-inspects on mount. */
     autoInspect?: boolean;
+    /** Bearer token used when calling each row's attest URL. Forwarded
+     *  unchanged — use a thunk for short-lived tokens. */
+    attestToken?: string | (() => Promise<string>);
+    /** Bearer-token thunk used when calling each row's verify-quote URL.
+     *  Distinct from attestToken because verify-quote (challenge mode)
+     *  requires a token whose `aud` claim equals the attestation server
+     *  identifier, while the attest URL takes the user's main session
+     *  token. */
+    verifyQuoteAuth?: () => Promise<string>;
 }
 
 interface RowSummary {
@@ -36,7 +45,7 @@ interface RowSummary {
     error?: string;
 }
 
-export function CompositeAttestationView({ targets, autoInspect = true }: CompositeAttestationViewProps) {
+export function CompositeAttestationView({ targets, autoInspect = true, attestToken, verifyQuoteAuth }: CompositeAttestationViewProps) {
     const [rows, setRows] = useState<Record<string, RowSummary>>({});
 
     const onRowSummary = useCallback((id: string, summary: RowSummary) => {
@@ -68,6 +77,8 @@ export function CompositeAttestationView({ targets, autoInspect = true }: Compos
                     key={t.id}
                     target={t}
                     autoInspect={autoInspect}
+                    attestToken={attestToken}
+                    verifyQuoteAuth={verifyQuoteAuth}
                     onSummary={s => onRowSummary(t.id, s)}
                 />
             ))}
@@ -109,16 +120,22 @@ function SummaryBanner({ total, ready, allOk }: { total: number; ready: number; 
 function AttestationRow({
     target,
     autoInspect,
+    attestToken,
+    verifyQuoteAuth,
     onSummary
 }: {
     target: AttestationTargetConfig;
     autoInspect: boolean;
+    attestToken?: string | (() => Promise<string>);
+    verifyQuoteAuth?: () => Promise<string>;
     // eslint-disable-next-line no-unused-vars
     onSummary: (_summary: RowSummary) => void;
 }) {
     const [state, actions] = useAttestation({
         attestUrl: target.attestUrl,
         verifyQuoteUrl: target.verifyQuoteUrl,
+        token: attestToken,
+        verifyQuoteToken: verifyQuoteAuth,
         autoInspect: autoInspect && Boolean(target.attestUrl),
         autoVerifyQuote: autoInspect && Boolean(target.verifyQuoteUrl)
     });

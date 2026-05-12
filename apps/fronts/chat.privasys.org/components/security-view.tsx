@@ -11,6 +11,7 @@ import type {
     AttestationTargetConfig
 } from '@privasys/attestation-view';
 import type { Instance } from '~/lib/types';
+import { useAuth } from '~/lib/privasys-auth';
 
 const API_BASE_URL =
     process.env.NEXT_PUBLIC_API_BASE_URL ?? 'https://api.developer.privasys.org';
@@ -24,6 +25,14 @@ const API_BASE_URL =
 // server), with a top banner that turns green only when every quote
 // verifies and every expected digest matches.
 export function SecurityView({ instance }: { instance: Instance }) {
+    const { getTokenForAudience } = useAuth();
+    // Stable thunk so React.memo / dep arrays inside attestation-view
+    // don't re-fire on every render. The actual token mint is short and
+    // happens at request time only.
+    const verifyQuoteAuth = React.useCallback(
+        () => getTokenForAudience('attestation-server'),
+        [getTokenForAudience]
+    );
     const attestUrl = instance.attest_url
         ? new URL(instance.attest_url, API_BASE_URL).toString()
         : '';
@@ -106,7 +115,7 @@ export function SecurityView({ instance }: { instance: Instance }) {
                                     enabled MCP tool enclaves are listed below.
                                 </div>
                             )}
-                            <CompositeAttestationView targets={targets} />
+                            <CompositeAttestationView targets={targets} verifyQuoteAuth={verifyQuoteAuth} />
                         </>
                     )}
                 </div>
@@ -118,6 +127,7 @@ export function SecurityView({ instance }: { instance: Instance }) {
         <SingleAttestation
             attestUrl={attestUrl}
             verifyQuoteUrl={verifyQuoteUrl}
+            verifyQuoteAuth={verifyQuoteAuth}
             expectations={aiExpectations}
             header={containerHeader}
         />
@@ -127,17 +137,20 @@ export function SecurityView({ instance }: { instance: Instance }) {
 function SingleAttestation({
     attestUrl,
     verifyQuoteUrl,
+    verifyQuoteAuth,
     expectations,
     header
 }: {
     attestUrl: string;
     verifyQuoteUrl?: string;
+    verifyQuoteAuth?: () => Promise<string>;
     expectations?: AttestationExpectations;
     header: React.ReactNode;
 }) {
     const [state, actions] = useAttestation({
         attestUrl,
         verifyQuoteUrl,
+        verifyQuoteToken: verifyQuoteAuth,
         autoInspect: Boolean(attestUrl),
         autoVerifyQuote: Boolean(verifyQuoteUrl)
     });
