@@ -31,7 +31,7 @@ export const Markdown = memo(function Markdown({
             <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
                 components={{
-                    p: ({ children }) => <p className='whitespace-pre-wrap'>{children}</p>,
+                    p: ({ children }) => <p className='whitespace-pre-wrap break-words'>{children}</p>,
                     h1: ({ children }) => (
                         <h1 className='mt-4 text-xl font-semibold'>{children}</h1>
                     ),
