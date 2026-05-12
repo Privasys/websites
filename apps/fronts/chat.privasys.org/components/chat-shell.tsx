@@ -6,6 +6,7 @@ import { useAuth } from '~/lib/privasys-auth';
 import { jwtSub } from '~/lib/jwt';
 import { modelLabel } from '~/lib/model-label';
 import { useConversations } from '~/lib/use-conversations';
+import { useEnabledTools } from '~/lib/use-enabled-tools';
 import { AppSidebar } from './app-sidebar';
 import { ChatPanel } from './chat-panel';
 import { SecurityView } from './security-view';
@@ -46,6 +47,10 @@ export function ChatShell({
         modelLabel: model ? modelLabel(model) : undefined
     });
 
+    const tools = useEnabledTools(instance.id, instance.available_tools);
+    const enabledToolsArray = useMemo(() => [...tools.enabled], [tools.enabled]);
+    const hasTools = (instance.available_tools?.length ?? 0) > 0;
+
     // ChatPanel is intentionally NOT remounted via a `key` when the
     // conversation changes. Re-keying was aborting in-flight chat
     // completion fetches via the unmount cleanup. The panel observes
@@ -74,6 +79,8 @@ export function ChatShell({
                 onRenameConversation={conv.rename}
                 onShowSecurity={() => setView('security')}
                 onShowSignIn={() => setView('signin')}
+                enabledTools={tools.enabled}
+                onToggleTool={tools.toggle}
             />
             <div className="flex min-w-0 flex-1 flex-col">
                 <header className="flex items-center gap-2 border-b border-[var(--color-border-dark)]/60 px-5 py-3">
@@ -121,6 +128,7 @@ export function ChatShell({
                             conv.branchFromMessage(messageId);
                             goChat();
                         }}
+                        enabledTools={hasTools ? enabledToolsArray : undefined}
                     />
                 )}
             </div>

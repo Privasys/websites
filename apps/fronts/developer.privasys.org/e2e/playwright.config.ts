@@ -108,6 +108,13 @@ export default defineConfig({
             use: {
                 video: 'retain-on-failure'
             }
+        },
+        {
+            name: 'chat-ai-tools',
+            testMatch: 'chat-ai-tools.spec.ts',
+            use: {
+                video: 'retain-on-failure'
+            }
         }
     ]
 });

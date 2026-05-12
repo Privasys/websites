@@ -1,19 +1,28 @@
 'use client';
 
-import { AttestationResultView, useAttestation } from '@privasys/attestation-view';
-import type { AttestationExpectations } from '@privasys/attestation-view';
+import * as React from 'react';
+import {
+    AttestationResultView,
+    CompositeAttestationView,
+    useAttestation
+} from '@privasys/attestation-view';
+import type {
+    AttestationExpectations,
+    AttestationTargetConfig
+} from '@privasys/attestation-view';
 import type { Instance } from '~/lib/types';
 
 const API_BASE_URL =
     process.env.NEXT_PUBLIC_API_BASE_URL ?? 'https://api.developer.privasys.org';
 
 // Full-pane Security view rendered inside the chat shell when the user
-// clicks "Your session is secure" in the sidebar.
+// clicks "Secure enclaves attestations" in the sidebar.
 //
-// The chat client never speaks to the enclave directly for attestation:
-// the management-service publishes an `attest_url` on the instance
-// discovery payload and proxies the RA-TLS handshake. That is the same
-// attestation flow the developer portal uses.
+// When the instance exposes one or more AI Tools (each backed by an
+// MCP server in its own enclave), the view renders a composite
+// attestation: one row per component (the AI container + each tool
+// server), with a top banner that turns green only when every quote
+// verifies and every expected digest matches.
 export function SecurityView({ instance }: { instance: Instance }) {
     const attestUrl = instance.attest_url
         ? new URL(instance.attest_url, API_BASE_URL).toString()
@@ -21,18 +30,8 @@ export function SecurityView({ instance }: { instance: Instance }) {
     const verifyQuoteUrl = instance.attestation_server
         ? `${instance.attestation_server.replace(/\/$/, '')}/verify-quote`
         : undefined;
-    const [state, actions] = useAttestation({
-        attestUrl,
-        verifyQuoteUrl,
-        autoInspect: Boolean(attestUrl),
-        autoVerifyQuote: Boolean(verifyQuoteUrl)
-    });
 
-    // Build the expectations object from the instance discovery payload
-    // so the result view can stamp green badges next to the workload
-    // and AI-model digest extensions when they match what the chat
-    // client expected to be running.
-    const expectations: AttestationExpectations | undefined = instance.loaded_model?.digest
+    const aiExpectations: AttestationExpectations | undefined = instance.loaded_model?.digest
         ? {
             modelDigest: instance.loaded_model.digest,
             labels: {
@@ -41,21 +40,112 @@ export function SecurityView({ instance }: { instance: Instance }) {
         }
         : undefined;
 
+    const tools = instance.available_tools ?? [];
+    const useComposite = tools.length > 0;
+
+    const containerHeader = (
+        <header className='mb-6'>
+            <h1 className='text-2xl font-semibold text-[var(--color-text-primary)]'>
+                Security
+            </h1>
+            <p className='mt-1 text-sm text-[var(--color-text-secondary)]'>
+                Live attestation for{' '}
+                <span className='font-medium text-[var(--color-text-primary)]'>
+                    {instance.alias ?? instance.id}
+                </span>
+                . Verify the hardware, firmware{useComposite ? ', model and AI tools' : ' and model'} running this session.
+            </p>
+        </header>
+    );
+
+    if (useComposite) {
+        const targets: AttestationTargetConfig[] = [
+            ...(attestUrl
+                ? [{
+                    id: 'ai',
+                    label: 'AI inference container',
+                    description: 'confidential-ai on the fleet enclave',
+                    attestUrl,
+                    verifyQuoteUrl,
+                    expectations: aiExpectations
+                }]
+                : []),
+            ...tools
+                .filter(t => Boolean(t.attest_url))
+                .map(t => ({
+                    id: `tool:${t.name}`,
+                    label: `Tool: ${t.label}`,
+                    description: t.description,
+                    attestUrl: new URL(t.attest_url!, API_BASE_URL).toString(),
+                    verifyQuoteUrl,
+                    expectations: t.expected_digest
+                        ? {
+                            workloadImageDigest: t.expected_digest,
+                            labels: {
+                                workloadImageDigest: `matches the expected ${t.label} image digest`
+                            }
+                        }
+                        : undefined
+                }))
+        ];
+        return (
+            <div className='flex flex-1 flex-col overflow-y-auto'>
+                <div className='mx-auto w-full max-w-3xl px-6 py-8'>
+                    {containerHeader}
+                    {targets.length === 0 ? (
+                        <div className='rounded-xl border border-black/10 p-5 text-sm text-black/60 dark:border-white/10 dark:text-white/60'>
+                            No attestable component is currently exposed on this
+                            fleet.
+                        </div>
+                    ) : (
+                        <>
+                            {!attestUrl && (
+                                <div className='mb-4 rounded-xl border border-amber-200/50 bg-amber-50/40 p-4 text-xs text-amber-800 dark:border-amber-500/20 dark:bg-amber-900/10 dark:text-amber-200'>
+                                    The AI inference container does not expose an
+                                    attestation endpoint on this fleet. Only the
+                                    enabled MCP tool enclaves are listed below.
+                                </div>
+                            )}
+                            <CompositeAttestationView targets={targets} />
+                        </>
+                    )}
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <SingleAttestation
+            attestUrl={attestUrl}
+            verifyQuoteUrl={verifyQuoteUrl}
+            expectations={aiExpectations}
+            header={containerHeader}
+        />
+    );
+}
+
+function SingleAttestation({
+    attestUrl,
+    verifyQuoteUrl,
+    expectations,
+    header
+}: {
+    attestUrl: string;
+    verifyQuoteUrl?: string;
+    expectations?: AttestationExpectations;
+    header: React.ReactNode;
+}) {
+    const [state, actions] = useAttestation({
+        attestUrl,
+        verifyQuoteUrl,
+        autoInspect: Boolean(attestUrl),
+        autoVerifyQuote: Boolean(verifyQuoteUrl)
+    });
+
     return (
         <div className='flex flex-1 flex-col overflow-y-auto'>
             <div className='mx-auto w-full max-w-3xl px-6 py-8'>
-                <header className='mb-6'>
-                    <h1 className='text-2xl font-semibold text-[var(--color-text-primary)]'>
-                        Security
-                    </h1>
-                    <p className='mt-1 text-sm text-[var(--color-text-secondary)]'>
-                        Live attestation for{' '}
-                        <span className='font-medium text-[var(--color-text-primary)]'>
-                            {instance.alias ?? instance.id}
-                        </span>
-                        . Verify the hardware, firmware and model running this session.
-                    </p>
-                </header>
+                {header}
 
                 {!attestUrl ? (
                     <div className='rounded-xl border border-black/10 p-5 text-sm text-black/60 dark:border-white/10 dark:text-white/60'>
