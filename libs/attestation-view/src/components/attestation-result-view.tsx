@@ -560,6 +560,9 @@ function checkExpectation(
     } else if (ext.oid === PRIVASYS_OID.MULTIMODAL_DIGEST) {
         expected = norm(expectations?.multimodalDigest);
         label = expectations?.labels?.multimodalDigest || 'matches expected multimodal model digest';
+    } else if (ext.oid === PRIVASYS_OID.TOOLS_DIGEST) {
+        expected = norm(expectations?.toolsDigest);
+        label = expectations?.labels?.toolsDigest || 'matches expected AI tool set';
     }
     if (!expected) return null;
     return actual === expected

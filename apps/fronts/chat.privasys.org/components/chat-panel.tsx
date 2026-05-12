@@ -53,7 +53,8 @@ export function ChatPanel({
     initialMessages,
     conversationId,
     onMessagesChange,
-    onBranchFromMessage
+    onBranchFromMessage,
+    enabledTools
 }: {
     instance: Instance;
     model: AvailableModel | null;
@@ -78,6 +79,10 @@ export function ChatPanel({
      *  selecting the new conversation. The shell handles persistence
      *  + view routing; we just expose the action to MessageActions. */
     onBranchFromMessage?: (messageId: string) => void;
+    /** When set, sent verbatim as the X-Privasys-Tools header to the
+     *  proxy so the agentic loop is restricted to those MCP servers
+     *  for this conversation. `undefined` keeps the proxy default. */
+    enabledTools?: string[];
 }) {
     const [messages, setMessages] = useState<DisplayMessage[]>(
         () => initialMessages.map((m) => ({ ...m }))
@@ -202,6 +207,7 @@ export function ChatPanel({
                 token,
                 sealedSession,
                 signal: ctrl.signal,
+                enabledTools,
                 onDelta: (delta) => {
                     smoother.push(delta);
                 },
@@ -469,8 +475,8 @@ export function ChatPanel({
                 <div className='mx-auto max-w-3xl'>{composer}</div>
                 <p className='mx-auto mt-2 max-w-3xl text-center text-[11px] text-[var(--color-text-muted)]'>
                     Replies are signed by the hardware running the model. Verify
-                    any response from the &ldquo;Your session is secure&rdquo;
-                    panel.
+                    any response from the &ldquo;Secure enclaves
+                    attestations&rdquo; panel.
                 </p>
             </div>
 
@@ -745,7 +751,7 @@ function PendingAssistant() {
                 className='animate-pulse bg-clip-text text-transparent'
                 style={{ backgroundImage: 'var(--brand-gradient)' }}
             >
-                Working in the enclave…
+                Analysing…
             </span>
         </div>
     );
