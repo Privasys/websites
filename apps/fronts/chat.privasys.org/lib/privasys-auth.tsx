@@ -20,8 +20,7 @@ import { AuthFrame, type AuthFrameConfig, type SealedSession } from '@privasys/a
 // this is the trimmed-down variant.
 //
 // All websites use the hosted `@privasys/auth` SDK against
-// privasys.id (OIDC PKCE inside an iframe). See
-// `.operations/identity-platform/auth.md`.
+// privasys.id (OIDC PKCE inside an iframe).
 
 export interface AuthSession {
     /** JWT access_token issued by the IdP. */

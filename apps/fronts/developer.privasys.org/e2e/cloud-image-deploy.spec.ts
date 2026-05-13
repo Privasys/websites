@@ -3,7 +3,7 @@
  *
  * This is the deployment path used for the public confidential-ai
  * service: the container image is pre-baked into a GCE persistent
- * disk by `.operations/scripts/publish-image-disk.sh` and surfaced to
+ * disk by an operator-side publish script and surfaced to
  * the portal via `GET /api/v1/cached-images`. Each enclave VM
  * (e.g. `ai-gpu`) attaches and mounts the cached disk, then containerd
  * imports the OCI layout from disk — no public ghcr.io pull, no cold
@@ -27,10 +27,8 @@
  *   - GPU-bound model load on top of confidential-ai
  *
  * Adding a new VM (e.g. ai-gpu-2):
- *   - Provision via cvm-images/.operations and let it auto-register.
- *   - Publish the disk to its zone:
- *       .operations/scripts/publish-image-disk.sh confidential-ai prod \
- *           --zone <zone> --source ghcr.io/privasys/confidential-ai:<tag>
+ *   - Provision via cvm-images and let it auto-register.
+ *   - Publish the disk to its zone via the operator publish script.
  *   - Set E2E_ENCLAVE_NAME=<vm-name> and re-run this test.
  *
  * Run:

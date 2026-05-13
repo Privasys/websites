@@ -27,7 +27,7 @@
 }
 
 /* ------------------------------------------------------------------ */
-/*  Privasys brand tokens — see .operations/brand-identity.md         */
+/*  Privasys brand tokens.                                            */
 /*                                                                    */
 /*  Light is the default theme. Dark is opt-in via                    */
 /*  `<html data-theme="dark">` (set by `theme-toggle.tsx`, persisted  */

@@ -78,7 +78,7 @@ For server-to-server calls (e.g. the management service requesting from the IdP)
 
 ## Refresh tokens
 
-Standard OIDC `refresh_token` grant. The IdP issues opaque refresh tokens with the same TTL discipline as the original session and rotates them on each use. Refresh **does not** re-include transient profile attributes — see [auth.md](https://github.com/Privasys/identity-platform/blob/main/.operations/identity-platform/auth.md) for the rationale.
+Standard OIDC `refresh_token` grant. The IdP issues opaque refresh tokens with the same TTL discipline as the original session and rotates them on each use. Refresh **does not** re-include transient profile attributes — they live only on the device, in the wallet.
 
 ## BYO IdP
 
@@ -93,4 +93,4 @@ The IdP image is published from [github.com/Privasys/identity-platform](https://
 - A reachable broker for FIDO2 rendezvous, or a custom rendezvous transport.
 - Public DNS + HTTPS (for the JWKS to be reachable by relying parties).
 
-For the OVH-hosted reference deployment, see the [identity-platform operational notes](https://github.com/Privasys/identity-platform/tree/main/.operations/identity-platform).
+The reference deployment used by `privasys.id` runs on OVH against a hosted PostgreSQL and the public Privasys broker.

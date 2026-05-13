@@ -32,7 +32,7 @@ The IdP-issued JWT then carries `att_verified`, `att_quote_hash`, `att_oids`, an
 | Binding challenge | `SHA-256("privasys-session-relay/v1" \|\| nonce \|\| sdk_pub \|\| quote_hash \|\| enc_pub \|\| session_id)` |
 | Sealed transport | `Content-Type: application/privasys-sealed+cbor`, `Authorization: PrivasysSession <id>`, body `CBOR{v, ctr, ct}` with AES-256-GCM, AD = `method:path:session_id`, monotonic per-direction counters |
 
-The full byte-level spec lives in the [identity-platform crypto contract](https://github.com/Privasys/identity-platform/blob/main/.operations/identity-platform/session-relay/crypto-contract.md).
+The full byte-level spec lives in the [identity-platform repository](https://github.com/Privasys/identity-platform).
 
 ## Why the binding-challenge check carries the whole protocol
 
