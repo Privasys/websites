@@ -6,7 +6,7 @@ import { getApiBaseUrl } from './api-base-url';
 
 const SDK_CONFIG = {
     apiBase: getApiBaseUrl(),
-    appName: 'Privasys Platform',
+    appName: 'Privasys Developer Platform',
     authOrigin: process.env.NEXT_PUBLIC_IDP_ORIGIN || 'https://privasys.id',
     rpId: process.env.NEXT_PUBLIC_IDP_RP_ID || 'privasys.id',
     brokerUrl: process.env.NEXT_PUBLIC_BROKER_URL || 'wss://relay.privasys.org/relay',
