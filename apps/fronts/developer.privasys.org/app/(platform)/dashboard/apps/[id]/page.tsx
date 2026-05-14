@@ -1676,7 +1676,23 @@ function DeploymentsTab({ app, deployments, versions, enclaves, token, onRefresh
     const [stopErrors, setStopErrors] = useState<Record<string, string>>({});
     const [error, setError] = useState<string | null>(null);
     type RuntimeEnvVar = { key: string; value: string; secret: boolean; oid?: string };
-    const [runtimeEnvVars, setRuntimeEnvVars] = useState<RuntimeEnvVar[]>([{ key: '', value: '', secret: true }]);
+    const [runtimeEnvVars, setRuntimeEnvVars] = useState<RuntimeEnvVar[]>(() => {
+        // Pre-fill from app.wasm_env for wasm apps so the operator can edit /
+        // re-deploy without re-typing every secret.  Values come back from the
+        // server (they are stored only in Postgres, not exposed via attestation).
+        if (app.app_type === 'wasm' && app.wasm_env) {
+            try {
+                const parsed = JSON.parse(app.wasm_env) as Record<string, unknown>;
+                const rows: RuntimeEnvVar[] = Object.entries(parsed)
+                    .filter(([, v]) => typeof v === 'string')
+                    .map(([k, v]) => ({ key: k, value: String(v), secret: true }));
+                if (rows.length > 0) return rows;
+            } catch {
+                // fall through to default empty row
+            }
+        }
+        return [{ key: '', value: '', secret: true }];
+    });
     const [showOidIdx, setShowOidIdx] = useState<Record<number, boolean>>({});
     const [jsonImportError, setJsonImportError] = useState<string | null>(null);
     const [isDraggingJson, setIsDraggingJson] = useState(false);
@@ -1866,7 +1882,7 @@ function DeploymentsTab({ app, deployments, versions, enclaves, token, onRefresh
                                 </select>
                             </div>
                         </div>
-                        {app.app_type === 'container' && (
+                        {(app.app_type === 'container' || app.app_type === 'wasm') && (
                             <div
                                 className={`mb-6 rounded-lg transition-colors ${isDraggingJson ? 'ring-2 ring-violet-400/60 bg-violet-50/30 dark:bg-violet-900/10' : ''}`}
                                 onDragOver={(e) => { e.preventDefault(); setIsDraggingJson(true); }}
@@ -1883,7 +1899,9 @@ function DeploymentsTab({ app, deployments, versions, enclaves, token, onRefresh
                                 }}
                             >
                                 <p className="text-xs text-black/40 dark:text-white/40 mt-6 mb-2">
-                                    Set environment variables that will be measured into the attestation Merkle tree.
+                                    {app.app_type === 'wasm'
+                                        ? 'Environment variables sealed at rest with the per-app key inside the enclave; surfaced to the guest via wasi:cli/environment.'
+                                        : 'Set environment variables that will be measured into the attestation Merkle tree.'}
                                 </p>
                                 <div className="space-y-2">
                                     {runtimeEnvVars.map((env, i) => (
