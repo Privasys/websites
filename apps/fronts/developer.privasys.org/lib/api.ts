@@ -553,11 +553,9 @@ export async function deployDirect(
         bytes = await fetchCwasmBytes(token, appId, versionId);
     }
 
-    const { newEnclaveAuthFrame } = await import('./enclave-session');
-    const frame = newEnclaveAuthFrame({ appHost: target.manager_host });
+    const { getEnclaveSealedSession, dropEnclaveAuthFrame } = await import('./enclave-session');
+    const session = await getEnclaveSealedSession({ appHost: target.manager_host });
     try {
-        await frame.signIn();
-        const session = await frame.session();
 
         let path: string;
         let envelope: Record<string, unknown>;
@@ -623,8 +621,17 @@ export async function deployDirect(
             throw new ApiError(`enclave deploy failed (${resp.status}): ${detail}`, resp.status);
         }
         return await recordDeployment(token, appId, versionId, enclaveId, 'active');
-    } finally {
-        try { frame.destroy(); } catch { /* ignore */ }
+    } catch (err) {
+        // If the sealed session looks dead (iframe destroyed, ECDH
+        // decryption failed, etc.) evict the cache so the next deploy
+        // rebuilds it from a fresh wallet ceremony. Application-level
+        // errors (4xx from wasm_load, recordDeployment 5xx) leave the
+        // session alone — they don't imply the sealed transport broke.
+        const msg = err instanceof Error ? err.message : String(err);
+        if (/AuthFrame|sealed iframe|sealed session|decryption|decrypt failed/i.test(msg)) {
+            dropEnclaveAuthFrame(target.manager_host);
+        }
+        throw err;
     }
 }
 
