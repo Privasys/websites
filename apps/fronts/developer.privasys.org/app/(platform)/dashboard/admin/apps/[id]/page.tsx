@@ -12,7 +12,6 @@ import {
     listDeployments,
     adminReviewVersion,
     adminBuildVersion,
-    adminDeployVersion,
     adminStopDeployment,
     adminDeleteApp,
 } from '~/lib/api';
@@ -153,17 +152,6 @@ export default function AdminAppDetailPage() {
         finally { setActionLoading(null); }
     }
 
-    async function handleVersionDeploy(versionId: string, enclaveId?: string) {
-        if (!session?.accessToken || !id) return;
-        setActionLoading(`deploy-${versionId}`);
-        setError(null);
-        try {
-            await adminDeployVersion(session.accessToken, id, versionId, enclaveId);
-            await load();
-        } catch (e) { setError(e instanceof Error ? e.message : 'Deploy failed'); }
-        finally { setActionLoading(null); }
-    }
-
     async function handleStopDeployment(deploymentId: string, force = false) {
         if (!session?.accessToken || !id) return;
         const label = force ? 'Force-remove this deployment? This contacts the enclave even if the deployment is recorded as stopped or failed.' : null;
@@ -271,9 +259,9 @@ export default function AdminAppDetailPage() {
                 {tab === 'overview' && <OverviewTab app={app} versions={versions} builds={builds} deployments={deployments} />}
                 {tab === 'versions' && (
                     <VersionsTab
-                        app={app} versions={versions} builds={builds} enclaves={enclaves}
+                        app={app} versions={versions} builds={builds}
                         actionLoading={actionLoading}
-                        onReview={handleVersionReview} onBuild={handleVersionBuild} onDeploy={handleVersionDeploy}
+                        onReview={handleVersionReview} onBuild={handleVersionBuild}
                     />
                 )}
                 {tab === 'deployments' && (
@@ -435,15 +423,13 @@ function OverviewTab({ app, versions, builds, deployments }: { app: App; version
     );
 }
 
-// ------- Versions Tab (admin: review, build, deploy) -------
-function VersionsTab({ app, versions, builds, enclaves, actionLoading, onReview, onBuild, onDeploy }: {
-    app: App; versions: AppVersion[]; builds: BuildJob[]; enclaves: Enclave[];
+// ------- Versions Tab (admin: review + build only — deploy is portal-direct) -------
+function VersionsTab({ app, versions, builds, actionLoading, onReview, onBuild }: {
+    app: App; versions: AppVersion[]; builds: BuildJob[];
     actionLoading: string | null;
     onReview: (vid: string, decision: 'approve' | 'reject') => void;
     onBuild: (vid: string) => void;
-    onDeploy: (vid: string, enclaveId?: string) => void;
 }) {
-    const [deployEnclaveId, setDeployEnclaveId] = useState<Record<string, string>>({});
 
     if (versions.length === 0) {
         return <div className="text-center py-12 text-sm text-black/40 dark:text-white/40">No versions submitted yet.</div>;
@@ -454,10 +440,6 @@ function VersionsTab({ app, versions, builds, enclaves, actionLoading, onReview,
             {versions.map((version) => {
                 const canReview = version.status === 'submitted';
                 const canBuild = version.status === 'approved' && app.source_type === 'github' && app.app_type !== 'container';
-                const canDeploy = version.status === 'ready';
-                const selectedEnclave = deployEnclaveId[version.id] || '';
-                const compatibleTeeType = app.app_type === 'container' ? 'tdx' : 'sgx';
-                const activeEnclaves = enclaves.filter(e => e.status === 'active' && (!e.tee_type || e.tee_type === compatibleTeeType));
 
                 return (
                     <section key={version.id} className="p-5 rounded-xl border border-black/10 dark:border-white/10">
@@ -486,7 +468,7 @@ function VersionsTab({ app, versions, builds, enclaves, actionLoading, onReview,
                             )}
                         </div>
 
-                        {(canReview || canBuild || canDeploy) && (
+                        {(canReview || canBuild) && (
                             <div className="mt-4 pt-3 border-t border-black/5 dark:border-white/5 flex flex-wrap items-center gap-3">
                                 {canReview && (
                                     <>
@@ -505,21 +487,6 @@ function VersionsTab({ app, versions, builds, enclaves, actionLoading, onReview,
                                         className="px-3 py-1.5 text-xs font-medium rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-40 transition-colors">
                                         {actionLoading === `build-${version.id}` ? 'Triggering…' : 'Build .cwasm'}
                                     </button>
-                                )}
-                                {canDeploy && (
-                                    <div className="flex items-center gap-2">
-                                        {activeEnclaves.length > 0 && (
-                                            <select value={selectedEnclave} onChange={(e) => setDeployEnclaveId({ ...deployEnclaveId, [version.id]: e.target.value })}
-                                                className="px-2 py-1.5 text-xs rounded-lg border border-black/10 dark:border-white/10 bg-transparent">
-                                                <option value="">Select enclave…</option>
-                                                {activeEnclaves.map(e => <option key={e.id} value={e.id}>{e.name} ({e.country}){e.tee_type ? ` [${e.tee_type.toUpperCase()}]` : ''}</option>)}
-                                            </select>
-                                        )}
-                                        <button onClick={() => onDeploy(version.id, selectedEnclave || undefined)} disabled={actionLoading !== null}
-                                            className="px-3 py-1.5 text-xs font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-80 disabled:opacity-40 transition-opacity">
-                                            {actionLoading === `deploy-${version.id}` ? 'Deploying…' : 'Deploy'}
-                                        </button>
-                                    </div>
                                 )}
                             </div>
                         )}

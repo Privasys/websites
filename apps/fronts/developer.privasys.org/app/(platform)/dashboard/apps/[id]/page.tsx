@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { useAuth } from '~/lib/privasys-auth';
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { getApp, listBuilds, listVersions, listDeployments, listCompatibleEnclaves, deleteApp, deployVersion, stopDeployment, getAppSchema, rpcCall, updateStoreListing, getAppMcp, updateContainerMcp, retryBuild } from '~/lib/api';
+import { getApp, listBuilds, listVersions, listDeployments, listCompatibleEnclaves, deleteApp, deployDirect, stopDeployment, getAppSchema, rpcCall, updateStoreListing, getAppMcp, updateContainerMcp, retryBuild } from '~/lib/api';
 import type { AppSchema, FunctionSchema, WitType, McpManifest } from '~/lib/api';
 import { useSSE } from '~/lib/use-sse';
 import { getApiBaseUrl } from '~/lib/api-base-url';
@@ -1764,7 +1764,7 @@ function DeploymentsTab({ app, deployments, versions, enclaves, token, onRefresh
             const envMeta = filled.length > 0
                 ? Object.fromEntries(filled.map(e => [e.key.trim(), { secret: e.secret, oid: e.oid?.trim() || undefined }]))
                 : undefined;
-            await deployVersion(token, app.id, selectedVersion, selectedEnclave, envMap, envMeta);
+            await deployDirect(token, app.id, selectedVersion, selectedEnclave, envMap, envMeta);
             setSelectedVersion('');
             setSelectedEnclave('');
             setRuntimeEnvVars([{ key: '', value: '', secret: true }]);
@@ -1866,7 +1866,7 @@ function DeploymentsTab({ app, deployments, versions, enclaves, token, onRefresh
                                 </select>
                             </div>
                         </div>
-                        {app.app_type === 'container' && (
+                        {(
                             <div
                                 className={`mb-6 rounded-lg transition-colors ${isDraggingJson ? 'ring-2 ring-violet-400/60 bg-violet-50/30 dark:bg-violet-900/10' : ''}`}
                                 onDragOver={(e) => { e.preventDefault(); setIsDraggingJson(true); }}

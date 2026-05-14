@@ -429,13 +429,6 @@ export function adminBuildVersion(token: string, appId: string, versionId: strin
     });
 }
 
-export function adminDeployVersion(token: string, appId: string, versionId: string, enclaveId?: string, enclaveHost?: string, enclavePort?: number): Promise<AppDeployment> {
-    return request<AppDeployment>(`/api/v1/admin/apps/${encodeURIComponent(appId)}/versions/${encodeURIComponent(versionId)}/deploy`, token, {
-        method: 'POST',
-        body: JSON.stringify({ enclave_id: enclaveId, enclave_host: enclaveHost, enclave_port: enclavePort })
-    });
-}
-
 // Developer-platform seen user (from management-service seen_users table).
 // NOTE: PII (email/name) lives here, NOT in the IdP.
 export interface AdminUser {
@@ -474,11 +467,165 @@ export interface RuntimeEnvVarMeta {
     oid?: string;
 }
 
-export function deployVersion(token: string, appId: string, versionId: string, enclaveId: string, runtimeEnv?: Record<string, string>, runtimeEnvMeta?: Record<string, RuntimeEnvVarMeta>): Promise<AppDeployment> {
-    return request<AppDeployment>(`/api/v1/apps/${encodeURIComponent(appId)}/versions/${encodeURIComponent(versionId)}/deploy`, token, {
-        method: 'POST',
-        body: JSON.stringify({ enclave_id: enclaveId, runtime_env: runtimeEnv, runtime_env_meta: runtimeEnvMeta })
-    });
+function bytesToBase64(buf: Uint8Array): string {
+    // Chunked to avoid blowing the call stack on large cwasms.
+    let bin = '';
+    const chunk = 0x8000;
+    for (let i = 0; i < buf.length; i += chunk) {
+        bin += String.fromCharCode(...buf.subarray(i, i + chunk));
+    }
+    return btoa(bin);
+}
+
+export interface DeployTarget {
+    manager_host: string;
+    enclave_id: string;
+    enclave_name: string;
+    app_name: string;
+    app_type: 'wasm' | 'container';
+    hostname: string;
+    cwasm_url?: string;
+    cwasm_sha256?: string;
+    container_image?: string;
+    container_port?: number;
+    container_storage?: string;
+    container_storage_key?: string;
+    container_devices?: string[];
+    oidc_issuer?: string;
+    oidc_audience?: string;
+}
+
+export function getDeployTarget(token: string, appId: string, versionId: string, enclaveId: string): Promise<DeployTarget> {
+    return request<DeployTarget>(
+        `/api/v1/apps/${encodeURIComponent(appId)}/versions/${encodeURIComponent(versionId)}/deploy-target?enclave_id=${encodeURIComponent(enclaveId)}`,
+        token,
+    );
+}
+
+export async function fetchCwasmBytes(token: string, appId: string, versionId: string): Promise<Uint8Array> {
+    const res = await fetch(
+        `${API_URL}/api/v1/apps/${encodeURIComponent(appId)}/versions/${encodeURIComponent(versionId)}/cwasm`,
+        { headers: { Authorization: `Bearer ${token}` } },
+    );
+    if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: res.statusText }));
+        throw new ApiError(body.error || `cwasm fetch ${res.status}`, res.status);
+    }
+    return new Uint8Array(await res.arrayBuffer());
+}
+
+export function recordDeployment(token: string, appId: string, versionId: string, enclaveId: string, status: 'active' | 'failed' = 'active'): Promise<AppDeployment> {
+    return request<AppDeployment>(
+        `/api/v1/apps/${encodeURIComponent(appId)}/versions/${encodeURIComponent(versionId)}/deployments/record`,
+        token,
+        {
+            method: 'POST',
+            body: JSON.stringify({ enclave_id: enclaveId, status }),
+        },
+    );
+}
+
+/**
+ * Direct portal -> enclave deploy. The management service is NOT in the
+ * data path: it only serves the cwasm artifact and records the resulting
+ * deployment. The actual `wasm_load` / `container_load` envelope is sent
+ * sealed (CBOR + AES-GCM via PrivasysSession) directly to the enclave's
+ * RA-TLS server through the gateway sealed-relay, after a wallet QR
+ * ceremony attests the enclave.
+ *
+ * UX: a wallet QR modal pops up on every Deploy click. The session is
+ * one-shot and torn down immediately after the wasm_load completes.
+ *
+ * Returns the recorded `AppDeployment`.
+ */
+export async function deployDirect(
+    token: string,
+    appId: string,
+    versionId: string,
+    enclaveId: string,
+    runtimeEnv?: Record<string, string>,
+    _runtimeEnvMeta?: Record<string, RuntimeEnvVarMeta>,
+): Promise<AppDeployment> {
+    const target = await getDeployTarget(token, appId, versionId, enclaveId);
+
+    let bytes: Uint8Array | undefined;
+    if (target.app_type === 'wasm') {
+        bytes = await fetchCwasmBytes(token, appId, versionId);
+    }
+
+    const { newEnclaveAuthFrame } = await import('./enclave-session');
+    const frame = newEnclaveAuthFrame({ appHost: target.manager_host });
+    try {
+        await frame.signIn();
+        const session = await frame.session();
+
+        let path: string;
+        let envelope: Record<string, unknown>;
+        if (target.app_type === 'wasm') {
+            const permissions: Record<string, unknown> = { version: 1, fido2: true };
+            if (target.oidc_issuer && target.oidc_audience) {
+                permissions.oidc = {
+                    issuer: target.oidc_issuer,
+                    jwks_uri: '',
+                    audience: target.oidc_audience,
+                    roles_claim: 'roles',
+                };
+            }
+            path = '/data';
+            envelope = {
+                wasm_load: {
+                    name: target.app_name,
+                    hostname: target.hostname,
+                    bytes: bytes ? bytesToBase64(bytes) : '',
+                    permissions,
+                    env: runtimeEnv ?? {},
+                },
+            };
+        } else {
+            if (!target.container_image) {
+                throw new ApiError('container deploy: image not yet resolved (build incomplete?)', 500);
+            }
+            const port = target.container_port ?? 0;
+            const envMeta: Record<string, RuntimeEnvVarMeta> | undefined =
+                _runtimeEnvMeta && Object.keys(_runtimeEnvMeta).length > 0 ? _runtimeEnvMeta : undefined;
+            path = '/api/v1/containers';
+            envelope = {
+                name: target.app_name,
+                image: target.container_image,
+                port,
+                hostname: target.hostname,
+                env: runtimeEnv ?? {},
+                ...(envMeta ? { env_meta: envMeta } : {}),
+                ...(target.container_storage ? { storage: target.container_storage } : {}),
+                ...(target.container_storage_key ? { storage_key: target.container_storage_key } : {}),
+                ...(target.container_devices && target.container_devices.length > 0
+                    ? { devices: target.container_devices }
+                    : {}),
+                ...(port > 0
+                    ? {
+                          health_check: {
+                              http: `http://localhost:${port}/health`,
+                              interval_seconds: 5,
+                              timeout_seconds: 3,
+                              retries: 3,
+                          },
+                      }
+                    : {}),
+            };
+        }
+
+        const resp = await session.request('POST', path, envelope, {
+            headers: { Authorization: `Bearer ${token}` },
+        });
+        if (resp.status >= 400) {
+            const detail = new TextDecoder().decode(resp.body);
+            await recordDeployment(token, appId, versionId, enclaveId, 'failed').catch(() => undefined);
+            throw new ApiError(`enclave deploy failed (${resp.status}): ${detail}`, resp.status);
+        }
+        return await recordDeployment(token, appId, versionId, enclaveId, 'active');
+    } finally {
+        try { frame.destroy(); } catch { /* ignore */ }
+    }
 }
 
 export function stopDeployment(token: string, appId: string, deploymentId: string, force = false): Promise<AppDeployment> {
