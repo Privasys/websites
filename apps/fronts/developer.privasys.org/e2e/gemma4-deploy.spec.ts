@@ -154,11 +154,11 @@ test.describe('Gemma 4 Package Deploy', () => {
         });
         expect(enclResp.ok()).toBeTruthy();
         const enclaves: { id: string; name: string; tee_type: string; status: string }[] = await enclResp.json();
-        const tdx = enclaves.find(e => e.name.includes('ai-gpu') && e.status === 'active');
+        const tdx = enclaves.find(e => e.name.includes('m2-dev-ai') && e.status === 'active');
         if (!tdx) {
             console.log('Available enclaves:', enclaves.map(e => `${e.name} (${e.tee_type}, ${e.status})`));
         }
-        expect(tdx, 'ai-gpu TDX enclave not found or not active').toBeTruthy();
+        expect(tdx, 'm2-dev-ai TDX enclave not found or not active').toBeTruthy();
         console.log(`Deploying to: ${tdx!.name} (${tdx!.id})`);
 
         // Deploy - model weights are pre-loaded on a persistent disk,
