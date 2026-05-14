@@ -80,3 +80,78 @@ export async function probeInstanceHealth(
         clearTimeout(timer);
     }
 }
+
+/**
+ * Poll the enclave's `/healthz` until the requested model is fully
+ * loaded (or the deadline expires). Used by the chat panel to
+ * automatically retry a prompt that was rejected with
+ * `503 Model is loading` after a Spot-VM cold start.
+ *
+ * Resolves with `true` once `/healthz` reports `model_state === 'ready'`
+ * AND `model === requestedModel` (so we don't accidentally retry while
+ * a different model is finishing its load). Resolves with `false` on
+ * timeout or persistent network error. Honours `signal` so the caller
+ * can cancel when the user aborts the conversation.
+ *
+ * Implementation note: we deliberately use `/healthz` instead of the
+ * mgmt-service `/instances/{alias}` endpoint because (a) it is one
+ * round-trip, (b) it goes directly to the enclave so it reflects real
+ * model state without the 30s runtime-status push lag, and (c) it
+ * stays inside the same trust boundary the chat session is already
+ * using for `/v1/chat/completions`.
+ */
+export async function waitForModelReady(
+    endpoint: string,
+    requestedModel: string,
+    opts: {
+        timeoutMs: number;
+        intervalMs?: number;
+        signal?: AbortSignal;
+        onTick?: (elapsedMs: number) => void;
+    }
+): Promise<boolean> {
+    const interval = opts.intervalMs ?? 5_000;
+    const url = `${endpoint.replace(/\/$/, '')}/healthz`;
+    const startedAt = Date.now();
+
+    // Tight loop with `await new Promise(setTimeout)` so we cooperate
+    // with React's scheduler and surface elapsed time to the UI.
+    while (Date.now() - startedAt < opts.timeoutMs) {
+        if (opts.signal?.aborted) return false;
+        try {
+            const ctrl = new AbortController();
+            const subSignal = opts.signal;
+            const onAbort = () => ctrl.abort();
+            subSignal?.addEventListener('abort', onAbort, { once: true });
+            const t = setTimeout(() => ctrl.abort(), Math.min(interval, 8_000));
+            try {
+                const res = await fetch(url, {
+                    method: 'GET',
+                    signal: ctrl.signal,
+                    cache: 'no-store',
+                    credentials: 'omit',
+                    headers: { Accept: 'application/json' }
+                });
+                if (res.ok) {
+                    const body = (await res.json().catch(() => null)) as
+                        | { model_state?: string; model?: string }
+                        | null;
+                    if (
+                        body?.model_state === 'ready' &&
+                        (body.model === requestedModel || !body.model)
+                    ) {
+                        return true;
+                    }
+                }
+            } finally {
+                clearTimeout(t);
+                subSignal?.removeEventListener('abort', onAbort);
+            }
+        } catch {
+            // Network blip — keep polling until deadline.
+        }
+        opts.onTick?.(Date.now() - startedAt);
+        await new Promise((r) => setTimeout(r, interval));
+    }
+    return false;
+}

@@ -3,13 +3,15 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import type { AvailableModel, Instance } from '~/lib/types';
 import {
-    streamChatCompletion
+    streamChatCompletion,
+    ModelLoadingError
 } from '~/lib/chat-stream';
 import { DEFAULT_SAMPLING, type SamplingParams } from '~/lib/sampling';
 import { modelLabel } from '~/lib/model-label';
 import type { PersistedMessage, Rating, ToolInvocation } from '~/lib/conversations';
 import type { SealedSession } from '@privasys/auth';
 import { clearFeedback, recordFeedback } from '~/lib/pending-feedback';
+import { waitForModelReady } from '~/lib/instance-api';
 import { Composer } from './composer';
 import { Markdown } from './markdown';
 import { MetadataDialog } from './metadata-dialog';
@@ -195,8 +197,15 @@ export function ChatPanel({
         });
         ctrl.signal.addEventListener('abort', () => smoother.cancel());
 
-        try {
-            await streamChatCompletion({
+        // The chat stream is wrapped in a tiny retry loop so a "Model
+        // is loading" 503 (e.g. right after a Spot-VM cold-start) is
+        // converted into an inline "loading model…" notice + automatic
+        // resend once the enclave's `/healthz` reports ready. The user
+        // never sees the raw 503 string and never has to retype the
+        // prompt. See lib/chat-stream.ts::ModelLoadingError and
+        // lib/instance-api.ts::waitForModelReady.
+        const runStream = () =>
+            streamChatCompletion({
                 endpoint: instance.endpoint,
                 model: model.name,
                 sampling: samplingSnapshot,
@@ -273,7 +282,8 @@ export function ChatPanel({
                                     ...m,
                                     streaming: false,
                                     meta: stampedMeta,
-                                    finishedAt: Date.now()
+                                    finishedAt: Date.now(),
+                                    loadingModel: undefined
                                 }
                                 : m
                         );
@@ -283,10 +293,15 @@ export function ChatPanel({
                 },
                 onError: (err) => {
                     smoother.cancel();
+                    // Model-loading errors are handled below by the
+                    // retry loop; don't paint a red error string for
+                    // them — the inline "loading model…" notice will
+                    // be shown instead.
+                    if (err instanceof ModelLoadingError) return;
                     setMessages((prev) => {
                         const next = prev.map((m) =>
                             m.id === assistantId
-                                ? { ...m, streaming: false, error: err.message }
+                                ? { ...m, streaming: false, error: err.message, loadingModel: undefined }
                                 : m
                         );
                         persist(next);
@@ -294,6 +309,64 @@ export function ChatPanel({
                     });
                 }
             });
+
+        try {
+            try {
+                await runStream();
+            } catch (e) {
+                if (!(e instanceof ModelLoadingError)) throw e;
+                // Switch the placeholder to a friendly "loading model"
+                // notice while we poll the enclave. Use the model's
+                // declared `load_time_seconds` (set by the operator on
+                // the fleet's available_models JSON) as the ETA, with
+                // a sane default for unknown models.
+                const eta = model.load_time_seconds ?? 240;
+                const loadingStartedAt = Date.now();
+                setMessages((prev) =>
+                    prev.map((m) =>
+                        m.id === assistantId
+                            ? {
+                                ...m,
+                                streaming: true,
+                                error: undefined,
+                                loadingModel: { startedAt: loadingStartedAt, etaSeconds: eta }
+                            }
+                            : m
+                    )
+                );
+                const ready = await waitForModelReady(instance.endpoint, model.name, {
+                    timeoutMs: Math.max(eta * 2, 60) * 1000,
+                    intervalMs: 5_000,
+                    signal: ctrl.signal
+                });
+                if (!ready) {
+                    setMessages((prev) => {
+                        const next = prev.map((m) =>
+                            m.id === assistantId
+                                ? {
+                                    ...m,
+                                    streaming: false,
+                                    loadingModel: undefined,
+                                    error:
+                                        'The model did not finish loading in time. Please try again in a moment.'
+                                }
+                                : m
+                        );
+                        persist(next);
+                        return next;
+                    });
+                    return;
+                }
+                // Model is ready — clear the loading notice and retry.
+                setMessages((prev) =>
+                    prev.map((m) =>
+                        m.id === assistantId
+                            ? { ...m, loadingModel: undefined }
+                            : m
+                    )
+                );
+                await runStream();
+            }
         } finally {
             setStreaming(false);
             abortRef.current = null;
@@ -548,6 +621,8 @@ function Message({
                     content={message.content}
                     streaming={!!message.streaming}
                 />
+            ) : message.loadingModel ? (
+                <ModelLoadingNotice info={message.loadingModel} />
             ) : message.streaming ? (
                 <PendingAssistant />
             ) : null}
@@ -753,6 +828,73 @@ function PendingAssistant() {
             >
                 Analysing…
             </span>
+        </div>
+    );
+}
+
+// Inline notice shown while the GPU enclave loads the requested model
+// after a cold start. Re-renders every second so the user sees the
+// elapsed wall-clock vs. the operator-declared ETA. The chat panel
+// polls /healthz in the background and replays the prompt for the
+// user as soon as the model is ready.
+function ModelLoadingNotice({
+    info
+}: {
+    info: { startedAt: number; etaSeconds?: number };
+}) {
+    const [now, setNow] = useState(Date.now());
+    useEffect(() => {
+        const t = setInterval(() => setNow(Date.now()), 1000);
+        return () => clearInterval(t);
+    }, []);
+    const elapsedSec = Math.max(0, Math.round((now - info.startedAt) / 1000));
+    const eta = info.etaSeconds;
+    const remaining = eta ? Math.max(0, eta - elapsedSec) : null;
+    const pct = eta ? Math.min(100, Math.round((elapsedSec / eta) * 100)) : null;
+    return (
+        <div
+            className='flex flex-col gap-2 rounded-md border border-[var(--color-border-subtle)] bg-[var(--color-surface-elevated)] p-3 text-sm text-[var(--color-text-secondary)]'
+            aria-live='polite'
+        >
+            <div className='flex items-center gap-2'>
+                <span className='inline-flex items-center gap-1'>
+                    <Dot delay={0} />
+                    <Dot delay={150} />
+                    <Dot delay={300} />
+                </span>
+                <span
+                    className='bg-clip-text text-transparent'
+                    style={{ backgroundImage: 'var(--brand-gradient)' }}
+                >
+                    Loading the model into GPU memory…
+                </span>
+            </div>
+            <p className='text-xs'>
+                The enclave just booted, so the weights still need to be paged
+                in. Your prompt will run automatically as soon as the model is
+                ready — no need to resend.
+            </p>
+            <div className='flex items-center justify-between text-xs tabular-nums'>
+                <span>Elapsed: {elapsedSec}s</span>
+                {eta != null && (
+                    <span>
+                        {remaining != null && remaining > 0
+                            ? `~${remaining}s remaining`
+                            : 'Almost there…'}
+                    </span>
+                )}
+            </div>
+            {pct != null && (
+                <div className='h-1 w-full overflow-hidden rounded bg-[var(--color-surface-base)]'>
+                    <div
+                        className='h-full rounded transition-[width] duration-1000 ease-linear'
+                        style={{
+                            width: `${pct}%`,
+                            backgroundImage: 'var(--brand-gradient)'
+                        }}
+                    />
+                </div>
+            )}
         </div>
     );
 }

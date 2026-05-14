@@ -15,6 +15,32 @@ export interface ChatMessage {
     content: string;
 }
 
+/**
+ * Thrown by streamChatCompletion when the enclave proxy answers
+ * 503 with `{"error":"Model is loading, please wait..."}`. Carries
+ * the original args so the caller (chat-panel) can re-issue the
+ * exact same request once the model becomes ready, without losing
+ * the user's prompt.
+ *
+ * Detection is deliberately string-based — the proxy's response
+ * shape is `{"error":"Model is loading, please wait..."}` and is
+ * stable across confidential-ai versions (see
+ * `platform/confidential-ai/internal/handler/handler.go`). Any 503
+ * with that error message body counts.
+ */
+export class ModelLoadingError extends Error {
+    constructor(public readonly upstreamMessage: string) {
+        super('model is loading');
+        this.name = 'ModelLoadingError';
+    }
+}
+
+/** Returns true when a 4xx/5xx body indicates the model is still loading. */
+function looksLikeModelLoading(status: number, body: string): boolean {
+    if (status !== 503) return false;
+    return /model is loading/i.test(body);
+}
+
 // Reproducibility metadata block emitted by the confidential-ai
 // proxy as the last SSE event (before [DONE]) and as a top-level
 // "reproducibility" key on non-stream responses. See
@@ -192,6 +218,11 @@ export async function streamChatCompletion(args: StreamChatArgs): Promise<void> 
                     if (value) drained.push(value);
                 }
                 const text = drained.length ? new TextDecoder().decode(concatU8(drained)) : '';
+                if (looksLikeModelLoading(sealed.status, text)) {
+                    const err = new ModelLoadingError(text);
+                    args.onError?.(err);
+                    throw err;
+                }
                 const err = new Error(
                     `chat request failed: ${sealed.status}${text ? ` - ${text.slice(0, 200)}` : ''}`
                 );
@@ -220,6 +251,11 @@ export async function streamChatCompletion(args: StreamChatArgs): Promise<void> 
 
         if (!res.ok || !res.body) {
             const text = await res.text().catch(() => '');
+            if (looksLikeModelLoading(res.status, text)) {
+                const err = new ModelLoadingError(text);
+                args.onError?.(err);
+                throw err;
+            }
             const err = new Error(
                 `chat request failed: ${res.status} ${res.statusText}${text ? ` - ${text.slice(0, 200)}` : ''}`
             );
