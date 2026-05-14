@@ -17,6 +17,13 @@ export interface App {
     cwasm_path?: string;
     cwasm_hash?: string;
     cwasm_size?: number;
+    /**
+     * Per-app environment variables for WASM apps, JSON-encoded
+     * `Record<string,string>`. Sealed at rest by the enclave's per-app
+     * AES-256 key and surfaced to the guest via
+     * `wasi:cli/environment.get-environment()`.
+     */
+    wasm_env?: string;
     container_image?: string;
     container_port?: number;
     container_env?: string;
