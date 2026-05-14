@@ -40,35 +40,38 @@ interface CacheEntry {
 const frameCache = new Map<string, CacheEntry>();
 
 function buildAuthFrame(appHost: string): AuthFrame {
-    // CRITICAL: do NOT pass `clientId` here.
+    // The sealed AuthFrame uses OIDC (clientId='privasys-platform' is
+    // the only registered IdP client) so the privasys.id frame-host can
+    // drive the wallet FIDO2 ceremony — without it the non-OIDC branch
+    // tries to call `${apiBase}/fido2/...` against the management
+    // service, which has no FIDO2 endpoints, and no push notification
+    // is ever sent.
     //
-    // The sealed AuthFrame's only job is to run the wallet ECDH
-    // ceremony so the enclave can derive a shared session key
-    // (`installSessionRelay()` inside the IdP frame-host). The user's
-    // identity for the deploy is carried separately as a Bearer header
-    // inside the sealed envelope (see `deployDirect()` in api.ts).
+    // CRITICAL: use a distinct `rpId` per `appHost` (NOT 'privasys.id').
     //
-    // If we set `clientId='privasys-platform'` here, the IdP frame-host
-    // takes the OIDC PKCE branch — it runs a fresh `/authorize` +
-    // `/token` exchange, stores the resulting session in privasys.id
-    // localStorage under the SAME `(rpId='privasys.id', clientId=
-    // 'privasys-platform')` key the app-wide PrivasysAuthProvider uses,
-    // and calls `scheduleRenewal()` — which `cancelRenewal(rpId)`
-    // first. That cancels the provider's existing renewal timer.
-    // After this AuthFrame goes idle, no OIDC refresh runs, the JWT
-    // expires after 15 minutes, the next API call returns 401, and the
-    // portal shows "session expired".
+    // SessionManager keys solely by `rpId` (see auth/sdk/src/session.ts
+    // `store()`/`get()`). The frame-host's OIDC branch:
+    //   1. Stores the new session under that rpId.
+    //   2. Calls `scheduleRenewal()`, which `cancelRenewal(rpId)` first.
     //
-    // Using a distinct `rpId` per appHost adds belt-and-braces
-    // isolation: even the non-OIDC branch stores an opaque session
-    // under that rpId, so it can never collide with the provider's
-    // entry under `rpId='privasys.id'`.
+    // If `rpId='privasys.id'` (matching the app-wide
+    // `PrivasysAuthProvider`), every sealed sign-in OVERWRITES the
+    // provider's session in privasys.id localStorage AND cancels its
+    // renewal timer. After the deploy the provider has no refresh
+    // scheduled, the JWT expires ~15 min later, the next API call
+    // returns 401, and the portal shows "session expired".
+    //
+    // A per-appHost rpId gives this AuthFrame its own localStorage
+    // entry and its own renewal timer, both fully isolated from the
+    // provider's.
     const cfg: AuthFrameConfig = {
         apiBase: getApiBaseUrl(),
         appName: `Privasys Deploy (${appHost})`,
         authOrigin: process.env.NEXT_PUBLIC_IDP_ORIGIN || 'https://privasys.id',
         rpId: `privasys-platform-deploy:${appHost}`,
         brokerUrl: process.env.NEXT_PUBLIC_BROKER_URL || 'wss://relay.privasys.org/relay',
+        clientId: 'privasys-platform',
+        scope: ['openid', 'offline_access'],
         sessionRelay: { appHost },
     };
     return new AuthFrame(cfg);
