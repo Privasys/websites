@@ -11,6 +11,14 @@ export interface AvailableModel {
     modality: Modality;
     loaded: boolean;
     loadable: boolean;
+    /**
+     * Estimated cold-load time in seconds (weights mmap + vLLM warm-up
+     * + first compile pass). Surfaced by the management service from
+     * the fleet's `available_models` JSON. The chat UI uses it to
+     * render an honest ETA on the "Model is loading…" notice and to
+     * size the polling deadline. Absent → fallback generic message.
+     */
+    load_time_seconds?: number;
 }
 
 export interface InstanceAuth {

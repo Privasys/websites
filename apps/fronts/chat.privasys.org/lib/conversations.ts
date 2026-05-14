@@ -66,6 +66,18 @@ export interface PersistedMessage extends ChatMessage {
     ratingComment?: string;
     /** MCP tool calls the agent made on this turn (live updated, then frozen). */
     toolInvocations?: ToolInvocation[];
+    /**
+     * When set, the assistant turn is currently waiting for the model
+     * to finish loading on the GPU. The chat UI renders an inline
+     * "Loading model… (~Xs)" notice instead of the red error string,
+     * polls the enclave's `/healthz`, and automatically retries the
+     * prompt as soon as the model becomes ready. Cleared once the
+     * retried stream produces its first delta.
+     */
+    loadingModel?: {
+        startedAt: number;
+        etaSeconds?: number;
+    };
 }
 
 export interface Conversation {
