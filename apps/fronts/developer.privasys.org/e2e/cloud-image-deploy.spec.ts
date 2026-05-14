@@ -44,7 +44,7 @@ import { setupAuth, getToken as getE2eToken } from './e2e-auth';
 const API = process.env.NEXT_PUBLIC_API_URL || 'https://api-test.developer.privasys.org';
 
 const APP_NAME = process.env.E2E_APP_NAME || 'e2e-cloud-ai';
-const ENCLAVE_MATCH = process.env.E2E_ENCLAVE_NAME || 'ai-gpu';
+const ENCLAVE_MATCH = process.env.E2E_ENCLAVE_NAME || 'm2-dev-ai';
 const CLOUD_IMAGE_NAME = process.env.E2E_CLOUD_IMAGE_NAME || 'confidential-ai';
 const CLOUD_IMAGE_CHANNEL = process.env.E2E_CLOUD_IMAGE_CHANNEL || 'prod';
 const CONTAINER_PORT = 8080;
@@ -235,7 +235,9 @@ test.describe('Cloud-image deploy', () => {
         expect(resp.ok(), `deploy failed: ${txt}`).toBeTruthy();
     });
 
-    test('deployment becomes active', async ({ page }) => {
+    test.skip('deployment becomes active', async ({ page }) => {
+        // Skipped along with the legacy deploy step above. Re-enable when the
+        // portal-direct (Stage B) deploy is driven by this spec.
         // Allow up to 10 minutes for first-time disk attach + manager load.
         test.setTimeout(12 * 60_000);
         token = await getToken(page);
@@ -268,7 +270,9 @@ test.describe('Cloud-image deploy', () => {
         expect(active, `no active deployment; last statuses=${last.join(',')}`).toBeTruthy();
     });
 
-    test('attestation exposes per-env-var OID extension', async ({ page }) => {
+    test.skip('attestation exposes per-env-var OID extension', async ({ page }) => {
+        // Skipped along with the legacy deploy step above. Re-enable when the
+        // portal-direct (Stage B) deploy is driven by this spec.
         test.setTimeout(60_000);
         token = await getToken(page);
 
