@@ -205,7 +205,11 @@ test.describe('Cloud-image deploy', () => {
         expect(false, 'no ready version').toBeTruthy();
     });
 
-    test('deploy with runtime_env_meta (OID assigned)', async ({ page }) => {
+    test.skip('deploy with runtime_env_meta (OID assigned)', async ({ page }) => {
+        // TODO Stage B: rewrite to drive deployDirect via the portal UI or to
+        // POST sealed wasm_load directly to the enclave (needs CA-trusted
+        // playwright + the sealed session-relay client in Node). The legacy
+        // mgmt-relayed POST /versions/{vid}/deploy endpoint is gone.
         test.setTimeout(180_000);
         token = await getToken(page);
 
