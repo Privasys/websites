@@ -40,14 +40,35 @@ interface CacheEntry {
 const frameCache = new Map<string, CacheEntry>();
 
 function buildAuthFrame(appHost: string): AuthFrame {
+    // CRITICAL: do NOT pass `clientId` here.
+    //
+    // The sealed AuthFrame's only job is to run the wallet ECDH
+    // ceremony so the enclave can derive a shared session key
+    // (`installSessionRelay()` inside the IdP frame-host). The user's
+    // identity for the deploy is carried separately as a Bearer header
+    // inside the sealed envelope (see `deployDirect()` in api.ts).
+    //
+    // If we set `clientId='privasys-platform'` here, the IdP frame-host
+    // takes the OIDC PKCE branch — it runs a fresh `/authorize` +
+    // `/token` exchange, stores the resulting session in privasys.id
+    // localStorage under the SAME `(rpId='privasys.id', clientId=
+    // 'privasys-platform')` key the app-wide PrivasysAuthProvider uses,
+    // and calls `scheduleRenewal()` — which `cancelRenewal(rpId)`
+    // first. That cancels the provider's existing renewal timer.
+    // After this AuthFrame goes idle, no OIDC refresh runs, the JWT
+    // expires after 15 minutes, the next API call returns 401, and the
+    // portal shows "session expired".
+    //
+    // Using a distinct `rpId` per appHost adds belt-and-braces
+    // isolation: even the non-OIDC branch stores an opaque session
+    // under that rpId, so it can never collide with the provider's
+    // entry under `rpId='privasys.id'`.
     const cfg: AuthFrameConfig = {
         apiBase: getApiBaseUrl(),
-        appName: 'Privasys Developer Platform',
+        appName: `Privasys Deploy (${appHost})`,
         authOrigin: process.env.NEXT_PUBLIC_IDP_ORIGIN || 'https://privasys.id',
-        rpId: process.env.NEXT_PUBLIC_IDP_RP_ID || 'privasys.id',
+        rpId: `privasys-platform-deploy:${appHost}`,
         brokerUrl: process.env.NEXT_PUBLIC_BROKER_URL || 'wss://relay.privasys.org/relay',
-        clientId: 'privasys-platform',
-        scope: ['openid', 'offline_access'],
         sessionRelay: { appHost },
     };
     return new AuthFrame(cfg);
