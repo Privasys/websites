@@ -240,6 +240,15 @@ window.addEventListener('message', function(e) {
                 sessionId: 'e2e-mock-session',
             }
         }, '*');
+        // Stage B portal-direct deploy: ack sealed session immediately.
+        if (d.config && d.config.sessionRelay) {
+            e.source.postMessage({
+                type: 'privasys:session:ready',
+                sessionId: 'e2e-mock-session',
+                appHost: d.config.sessionRelay.appHost || 'mock.local',
+                expiresAt: Date.now() + 60 * 60 * 1000,
+            }, '*');
+        }
     } else if (d.type === 'privasys:check-session') {
         e.source.postMessage({
             type: 'privasys:session',
@@ -251,6 +260,33 @@ window.addEventListener('message', function(e) {
         }, '*');
     } else if (d.type === 'privasys:clear-session') {
         e.source.postMessage({ type: 'privasys:session-cleared' }, '*');
+    }
+    // Sealed session-relay (Stage B portal-direct deploy).
+    // The real iframe derives an X25519 shared key with the enclave and
+    // forwards sealed CBOR. For the mock we stub-respond to every sealed
+    // request so portal-side UI tests can drive the deploy button without
+    // a live enclave.
+    else if (d.type === 'privasys:session:request') {
+        e.source.postMessage({
+            type: 'privasys:session:response',
+            id: d.id,
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+            body: new TextEncoder().encode(JSON.stringify({ status: 'ok', mock: true })),
+            sealed: true,
+        }, '*');
+    } else if (d.type === 'privasys:session:stream-request') {
+        e.source.postMessage({
+            type: 'privasys:session:stream-start',
+            id: d.id,
+            status: 200,
+            headers: { 'content-type': 'text/event-stream' },
+            sealed: true,
+        }, '*');
+        e.source.postMessage({
+            type: 'privasys:session:stream-end',
+            id: d.id,
+        }, '*');
     }
 });
 if (window.parent !== window) {
