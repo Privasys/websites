@@ -163,12 +163,7 @@ test.describe('Gemma 4 Package Deploy', () => {
 
         // Deploy - model weights are pre-loaded on a persistent disk,
         // bind-mounted at /models/ via the image's ai.privasys.volume label.
-        // TODO Stage B: rewrite to drive deployDirect via the portal UI or
-        // to POST sealed container_load directly to the enclave (needs
-        // CA-trusted playwright + the sealed session-relay client in Node).
-        // The legacy mgmt-relayed POST /versions/{vid}/deploy endpoint is gone.
         let deployBody: { id: string; status: string; hostname: string } | undefined;
-        test.skip(true, 'legacy /deploy endpoint removed; rewrite for portal-direct flow');
         for (let attempt = 0; attempt < 6; attempt++) {
             const resp = await page.request.post(
                 `${API}/api/v1/apps/${appId}/versions/${versionId}/deploy`,
@@ -179,7 +174,6 @@ test.describe('Gemma 4 Package Deploy', () => {
                     },
                     data: {
                         enclave_id: tdx!.id,
-                        runtime_env: {},
                     },
                     timeout: 120_000,
                 },
