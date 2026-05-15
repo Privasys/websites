@@ -161,58 +161,30 @@ test.describe('Gemma 4 Package Deploy', () => {
         expect(tdx, 'm2-dev-ai TDX enclave not found or not active').toBeTruthy();
         console.log(`Deploying to: ${tdx!.name} (${tdx!.id})`);
 
-        // Deploy - model weights are pre-loaded on a persistent disk,
-        // bind-mounted at /models/ via the image's ai.privasys.volume label.
-        let deployBody: { id: string; status: string; hostname: string } | undefined;
-        for (let attempt = 0; attempt < 6; attempt++) {
-            const resp = await page.request.post(
-                `${API}/api/v1/apps/${appId}/versions/${versionId}/deploy`,
-                {
-                    headers: {
-                        Authorization: `Bearer ${token}`,
-                        'Content-Type': 'application/json',
-                    },
-                    data: {
-                        enclave_id: tdx!.id,
-                    },
-                    timeout: 120_000,
-                },
-            );
+        // Direct-deploy is portal-driven now (sealed PrivasysSession from
+        // the browser to the enclave manager). The legacy POST /deploy on
+        // mgmt-service was removed by the direct-deploy refactor — drive
+        // the dashboard UI exactly as a user would.
+        await setupAuth(page);
+        await page.goto(`/dashboard/apps/${appId}?tab=deployments`);
+        await page.waitForLoadState('domcontentloaded');
 
-            const respText = await resp.text();
-            console.log(`Deploy attempt ${attempt + 1}: HTTP ${resp.status()}, body: ${respText.substring(0, 300)}`);
+        const versionSelect = page.locator('select').first();
+        await versionSelect.waitFor({ state: 'visible', timeout: 30_000 });
+        await versionSelect.selectOption({ value: versionId });
 
-            if (resp.ok()) {
-                deployBody = JSON.parse(respText);
-                break;
-            }
+        const enclaveSelect = page.locator('select').nth(1);
+        await enclaveSelect.selectOption({ value: tdx!.id });
 
-            // Retry on conflict (container already exists from a previous failed run)
-            // or transient errors (502/500 during image pull, service unavailable)
-            const retryable = respText.includes('already loaded') ||
-                respText.includes('already exists') ||
-                respText.includes('service unavailable') ||
-                resp.status() === 502 ||
-                resp.status() === 500 ||
-                resp.status() === 503;
-            if (retryable) {
-                console.log(`Retryable error (attempt ${attempt + 1}), waiting 30s...`);
-                await page.waitForTimeout(30_000);
-                continue;
-            }
+        const deployBtn = page.getByRole('button', { name: /^deploy$/i });
+        await expect(deployBtn).toBeEnabled({ timeout: 15_000 });
+        await deployBtn.click();
 
-            // Non-retryable error
-            expect(resp.ok(), `deploy failed: ${respText}`).toBeTruthy();
-        }
-
-        expect(deployBody).toBeTruthy();
-        // The deploy response may be a zero-value struct if the request
-        // takes >60s (context canceled during re-fetch). Verify via polling instead.
-        if (deployBody!.status === 'active') {
-            console.log(`Deployed: ${deployBody!.hostname} (${deployBody!.id})`);
-        } else {
-            console.log('Deploy returned OK but empty body (context timeout), will verify via polling');
-        }
+        // Cold image pull on first deploy can be slow; just wait for the
+        // "Deploying…" indicator to clear, then the next test polls
+        // /deployments for status=active.
+        await expect(page.getByRole('button', { name: /deploying/i }))
+            .toHaveCount(0, { timeout: 180_000 });
     });
 
     test('verify deployment active', async ({ page }) => {
