@@ -503,14 +503,14 @@ function bytesToBase64(buf: Uint8Array): string {
 export function getDeployTarget(token: string, appId: string, versionId: string, enclaveId: string): Promise<DeployTarget> {
     return request<DeployTarget>(
         `/api/v1/apps/${encodeURIComponent(appId)}/versions/${encodeURIComponent(versionId)}/deploy-target?enclave_id=${encodeURIComponent(enclaveId)}`,
-        token,
+        token
     );
 }
 
 export async function fetchCwasmBytes(token: string, appId: string, versionId: string): Promise<Uint8Array> {
     const res = await fetch(
         `${API_URL}/api/v1/apps/${encodeURIComponent(appId)}/versions/${encodeURIComponent(versionId)}/cwasm`,
-        { headers: { Authorization: `Bearer ${token}` } },
+        { headers: { Authorization: `Bearer ${token}` } }
     );
     if (!res.ok) {
         const body = await res.json().catch(() => ({ error: res.statusText }));
@@ -525,8 +525,8 @@ export function recordDeployment(token: string, appId: string, versionId: string
         token,
         {
             method: 'POST',
-            body: JSON.stringify({ enclave_id: enclaveId, status }),
-        },
+            body: JSON.stringify({ enclave_id: enclaveId, status })
+        }
     );
 }
 
@@ -549,7 +549,7 @@ export async function deployDirect(
     token: string,
     appId: string,
     versionId: string,
-    enclaveId: string,
+    enclaveId: string
 ): Promise<AppDeployment> {
     const target = await getDeployTarget(token, appId, versionId, enclaveId);
 
@@ -571,7 +571,7 @@ export async function deployDirect(
                     issuer: target.oidc_issuer,
                     jwks_uri: '',
                     audience: target.oidc_audience,
-                    roles_claim: 'roles',
+                    roles_claim: 'roles'
                 };
             }
             path = '/data';
@@ -581,8 +581,8 @@ export async function deployDirect(
                     hostname: target.hostname,
                     bytes: bytes ? bytesToBase64(bytes) : '',
                     permissions,
-                    ...(target.config_api ? { config_api: parseConfigApi(target.config_api) } : {}),
-                },
+                    ...(target.config_api ? { config_api: parseConfigApi(target.config_api) } : {})
+                }
             };
         } else {
             if (!target.container_image) {
@@ -603,19 +603,19 @@ export async function deployDirect(
                     : {}),
                 ...(port > 0
                     ? {
-                          health_check: {
-                              http: `http://localhost:${port}/health`,
-                              interval_seconds: 5,
-                              timeout_seconds: 3,
-                              retries: 3,
-                          },
-                      }
-                    : {}),
+                        health_check: {
+                            http: `http://localhost:${port}/health`,
+                            interval_seconds: 5,
+                            timeout_seconds: 3,
+                            retries: 3
+                        }
+                    }
+                    : {})
             };
         }
 
         const resp = await session.request('POST', path, envelope, {
-            headers: { Authorization: `Bearer ${token}` },
+            headers: { Authorization: `Bearer ${token}` }
         });
         if (resp.status >= 400) {
             const detail = new TextDecoder().decode(resp.body);
@@ -691,7 +691,7 @@ export function adminDeleteApp(token: string, id: string): Promise<void> {
 // ---------------------------------------------------------------------------
 
 export function listFleets(token: string): Promise<{ fleets: import('./types').Fleet[] }> {
-    return request<{ fleets: import('./types').Fleet[] }>(`/api/v1/fleets`, token);
+    return request<{ fleets: import('./types').Fleet[] }>('/api/v1/fleets', token);
 }
 
 export function adminListFleetTools(token: string, fleetId: string): Promise<{ tools: import('./types').AITool[] }> {
@@ -700,29 +700,29 @@ export function adminListFleetTools(token: string, fleetId: string): Promise<{ t
 }
 
 export function adminCreateFleetTool(
-    token: string, fleetId: string, body: import('./types').CreateAIToolBody,
+    token: string, fleetId: string, body: import('./types').CreateAIToolBody
 ): Promise<import('./types').AITool> {
     return request<import('./types').AITool>(
         `/api/v1/admin/fleets/${encodeURIComponent(fleetId)}/tools`, token, {
             method: 'POST',
-            body: JSON.stringify(body),
+            body: JSON.stringify(body)
         });
 }
 
 export function adminUpdateFleetTool(
     token: string, fleetId: string, toolId: string,
-    body: import('./types').UpdateAIToolBody,
+    body: import('./types').UpdateAIToolBody
 ): Promise<import('./types').AITool> {
     return request<import('./types').AITool>(
         `/api/v1/admin/fleets/${encodeURIComponent(fleetId)}/tools/${encodeURIComponent(toolId)}`,
         token, {
             method: 'PUT',
-            body: JSON.stringify(body),
+            body: JSON.stringify(body)
         });
 }
 
 export function adminDeleteFleetTool(
-    token: string, fleetId: string, toolId: string,
+    token: string, fleetId: string, toolId: string
 ): Promise<void> {
     return request<void>(
         `/api/v1/admin/fleets/${encodeURIComponent(fleetId)}/tools/${encodeURIComponent(toolId)}`,

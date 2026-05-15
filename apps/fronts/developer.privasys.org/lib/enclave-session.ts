@@ -72,7 +72,7 @@ function buildAuthFrame(appHost: string): AuthFrame {
         brokerUrl: process.env.NEXT_PUBLIC_BROKER_URL || 'wss://relay.privasys.org/relay',
         clientId: 'privasys-platform',
         scope: ['openid', 'offline_access'],
-        sessionRelay: { appHost },
+        sessionRelay: { appHost }
     };
     return new AuthFrame(cfg);
 }
@@ -93,7 +93,7 @@ export async function getEnclaveSealedSession(opts: OpenEnclaveSessionOptions): 
         entry = {
             frame: buildAuthFrame(opts.appHost),
             pending: null,
-            signedIn: false,
+            signedIn: false
         };
         frameCache.set(opts.appHost, entry);
     }
@@ -107,7 +107,7 @@ export async function getEnclaveSealedSession(opts: OpenEnclaveSessionOptions): 
                     // attempt starts from a clean iframe.
                     dropEnclaveAuthFrame(opts.appHost);
                     throw err;
-                },
+                }
             ).finally(() => { if (entry) entry.pending = null; });
         }
         await entry.pending;
