@@ -197,23 +197,41 @@ test.describe('Cloud-image deploy', () => {
     });
 
     test('deploy version to enclave', async ({ page }) => {
+        // Direct-deploy is portal-driven: the browser establishes a sealed
+        // PrivasysSession to the enclave manager and pushes the
+        // container_load envelope itself. There is no `POST /deploy` on
+        // mgmt-service anymore — see direct_deploy.go and lib/api.ts
+        // (deployDirect). We drive the dashboard UI exactly as a user would.
         test.setTimeout(180_000);
         token = await getToken(page);
+        // getToken() short-circuits when cached, so the per-page cookie +
+        // AuthFrame mock injected by setupAuth may not have happened on
+        // this fresh page. Always inject for any test that does a real
+        // page.goto into a protected route.
+        await setupAuth(page);
 
-        const resp = await page.request.post(
-            `${API}/api/v1/apps/${appId}/versions/${versionId}/deploy`,
-            {
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                    'Content-Type': 'application/json',
-                },
-                data: { enclave_id: enclaveId },
-                timeout: 150_000,
-            },
-        );
-        const txt = await resp.text();
-        console.log(`deploy HTTP ${resp.status()}: ${txt.substring(0, 400)}`);
-        expect(resp.ok(), `deploy failed: ${txt}`).toBeTruthy();
+        await page.goto(`/dashboard/apps/${appId}?tab=deployments`);
+        await page.waitForLoadState('domcontentloaded');
+
+        // The Deploy panel renders a version <select> + an enclave <select>
+        // + a Deploy button. The first option of each is the empty
+        // placeholder; pick the only ready version and the target enclave.
+        const versionSelect = page.locator('select').first();
+        await versionSelect.waitFor({ state: 'visible', timeout: 30_000 });
+        await versionSelect.selectOption({ value: versionId });
+
+        const enclaveSelect = page.locator('select').nth(1);
+        await enclaveSelect.selectOption({ value: enclaveId });
+
+        const deployBtn = page.getByRole('button', { name: /^deploy$/i });
+        await expect(deployBtn).toBeEnabled({ timeout: 15_000 });
+        await deployBtn.click();
+
+        // Sealed-relay handshake + container_load can take a while on cold
+        // ai-gpu (disk attach + image import). Wait until the button is
+        // re-enabled OR a "Deploying…" indicator goes away.
+        await expect(page.getByRole('button', { name: /deploying/i }))
+            .toHaveCount(0, { timeout: 150_000 });
     });
 
     test('deployment becomes active', async ({ page }) => {
