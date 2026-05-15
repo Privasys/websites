@@ -1,67 +1,114 @@
 ---
 title: Configure & Attest
-description: How per-deployment configuration and per-app attestation extensions work after the env-var redesign.
+description: How per-deployment configuration and per-app attestation extensions work on the Privasys Developer Platform.
 ---
 
-The Privasys platform no longer accepts environment variables on deploy.
-Instead, each app declares two things, and the platform wires them up
-deterministically across restarts:
+Privasys apps configure themselves on first boot and bind opaque values
+into their RA-TLS leaf certificate at runtime. Two declarations drive this:
 
 | Declaration | Where | Purpose |
 |---|---|---|
-| `config_api` | `org.privasys.config_api` OCI label, or `privasys.json` (WIT for wasm) | One-shot in-process endpoint the manager POSTs to before allowing other traffic |
-| `oid_extensions` | Set by the app via the SDK or the enclave manager's internal API | Per-app X.509 extensions under `1.3.6.1.4.1.65230.3.5.*` baked into the RA-TLS leaf |
+| `config_api` | `org.privasys.config_api` OCI label (containers), or `privasys.json` (containers fallback), or the `@config-api` WIT decoration (wasm) | One-shot in-process endpoint the deployer POSTs to before the app is allowed to serve other traffic. For wasm, naming a function with `@config-api` automatically marks it as the freeze-gate AND restricts it to the app's owner team — no separate `@auth` line is required. |
+| Per-app OID extensions | Set by the app at runtime via the SDK (`setAttestationExtension`) | Per-app X.509 extensions under `1.3.6.1.4.1.65230.3.5.*`, baked into the RA-TLS leaf and replayed across restarts. |
+
+## Per-app owners team
+
+The deployer of an app is automatically added to its **owners team** (a
+list of platform OIDC `sub` claims persisted on the management service
+under `app_owners`). Owners can:
+
+1. Deploy / re-deploy the app.
+2. Call `@config-api` (or `org.privasys.config_api`) endpoints — i.e.
+   the freeze-gate. Even a platform `manager` cannot configure an app
+   they don't own; the configure entrypoint is private to the team.
+3. Manage the team itself via:
+   - `GET    /api/v1/apps/{id}/owners`
+   - `POST   /api/v1/apps/{id}/owners`  (body: `{sub, email, name}`)
+   - `DELETE /api/v1/apps/{id}/owners/{sub}`
+
+The original creator (`apps.owner_sub`) cannot be removed from the team
+— this guarantees there is always at least one principal able to
+recover the app. The owners list is shipped to the enclave on
+`wasm_load`/`container_load` and persisted with the app metadata, so
+owner-only calls keep working across enclave restarts without
+consulting the platform.
 
 ## Lifecycle
 
-1. **Deploy.** The user (or `privasys-platform:manager`) deploys an app version
-   to an enclave. No env vars are accepted; the call carries only `enclave_id`.
-2. **Wait for app.** The container/wasm starts and binds its listener.
-3. **Freeze.** The manager intercepts the first request to the app's hostname
-   and replies `503 Retry-After` until the app has been configured (or unless
-   the request matches `config_api.method` + `config_api.path`, in which case
-   it is forwarded in-process).
-4. **Configure.** The configuration step (typically the deploying tool, or a
-   one-shot job the deployer triggers) POSTs the deployment-time payload to
-   `${config_api.path}`. The app validates and seals the payload to its own
-   storage, then returns 2xx. The manager flips the freeze flag.
+1. **Deploy.** A user (or a token bearing `privasys-platform:manager`)
+   deploys an app version to an enclave. The deploy call carries only
+   `enclave_id` and the version pin — no per-app secrets.
+2. **Wait for app.** The container or wasm module starts and binds its
+   listener.
+3. **Freeze.** The manager intercepts the first request to the app's
+   hostname and replies `503 Retry-After` to anything that does not match
+   `config_api.{method,path}`. The configure path is forwarded in-process.
+4. **Configure.** The deployer POSTs the configuration payload to
+   `${config_api.path}`. The app validates it, seals it to its own
+   storage (encrypted volume / sealed KV), and calls
+   `setConfigComplete()`. The manager flips the freeze flag.
 5. **Serve.** All subsequent traffic is forwarded normally.
 6. **Restart.** On any restart, the app reloads its sealed config from
-   storage; the manager keeps the freeze flag set and never re-runs the
-   configure step.
+   storage; the manager keeps the freeze flag set so the configure step
+   never runs twice for the same payload.
 
 ## Per-app attestation extensions (OID `1.3.6.1.4.1.65230.3.5.*`)
 
 Apps that want to bind opaque values into their RA-TLS leaf certificate
-(for example: an MCP server URL list, a vector-DB project ID, a
-license-key fingerprint) call the SDK's `setAttestationExtension(oid,
-value)` while they are alive. The enclave manager:
+— for example: an MCP server URL list, a vector-DB project ID, a hash
+of a configured API key — call the SDK at runtime:
 
-1. Validates the OID is under `1.3.6.1.4.1.65230.3.5.`
-2. Forwards the `(oid, value)` pair to mgmt-service over its enclave-token
-   channel for durable storage in `app_oid_extensions`
-3. Re-issues the per-workload RA-TLS certificate so subsequent connections
-   see the new extension
-4. On restart, the manager pulls the stored extensions from mgmt-service
-   and replays them into the leaf cert before unblocking traffic
+```text
+setAttestationExtension(arc_suffix: u32, value: list<u8>)
+```
 
-This means the OID set is part of the verified app surface and survives
-across restarts, but is set at runtime by the app rather than at deploy
-time by the operator.
+The platform:
 
-## Why no env vars?
+1. Asserts the OID is under `1.3.6.1.4.1.65230.3.5.<arc_suffix>` and
+   under the calling app's namespace.
+2. Stores the `(oid, value)` pair durably so it survives restarts.
+3. Re-issues the per-app RA-TLS certificate so subsequent connections
+   see the new extension immediately.
+4. On restart, replays the stored extensions into the leaf cert before
+   unblocking traffic.
 
-Environment variables had three problems we kept hitting:
+This means the OID set is part of the verified app surface and is owned
+by the app itself, not by the operator at deploy time.
 
-- **No type or format guarantees.** An app receiving `MCP_SERVERS=...,...`
-  has to invent its own parser; the platform can't help.
-- **Attested but inert.** The strings were measured into the Merkle tree,
-  but the app could ignore them or use them differently from what the
-  attestation suggested.
-- **Permanent.** They were baked into the deploy and could only be changed
-  by re-deploying — even for things the app naturally already persists
-  (like a user-supplied API key).
+## SDK surface
 
-The configure-then-freeze model lets the app define its own structured
-configuration schema, validate it in-process, and own the persistence
-story; the platform's job is just to gate the first request.
+Both wasm and container apps expose the same two SDK calls:
+
+| Call | Effect |
+|---|---|
+| `setAttestationExtension(arc_suffix, value)` | Install or replace the per-app OID extension. Updates the RA-TLS cert. |
+| `setConfigComplete()` | Mark this app as configured. Lifts the manager's freeze gate. Idempotent. |
+
+The intended pattern in the configure handler is:
+
+1. Validate the inbound payload.
+2. Persist anything that needs to survive restart (sealed KV / encrypted
+   volume).
+3. `setAttestationExtension(<your-arc>, sha256(payload))` so verifying
+   clients can confirm the running app saw exactly the configuration
+   they delivered.
+4. `setConfigComplete()`.
+5. Return 2xx.
+
+## Verifying as a client
+
+A client connecting to the app:
+
+1. Performs the standard RA-TLS handshake; the leaf cert carries the
+   TDX/SGX quote.
+2. Pulls the per-app OIDs out of the leaf and recomputes the expected
+   value (e.g. SHA-256 of the API key it provisioned).
+3. Equality means this enclave instance was configured with exactly
+   that input — no env var indirection, no out-of-band attestation
+   document needed.
+
+## Next steps
+
+- [Deploy a container](/solutions/platform/developer-platform/deploy-container)
+- [Deploy a wasm app](/solutions/platform/developer-platform/deploy-wasm)
+- [Attestation and verification](/solutions/platform/developer-platform/attestation)

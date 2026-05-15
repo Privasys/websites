@@ -24,10 +24,10 @@ Container applications run inside **Enclave OS Virtual** on Intel TDX hardware, 
 |---------|-------------|
 | **Image reference** | Full image URI including tag or digest. Use a digest (`@sha256:...`) for reproducibility. |
 | **Port** | The port your container listens on. Only one HTTP port is exposed through the RA-TLS proxy. |
-| **Configure endpoint** | Optional `config_api` declaration (`{ method, path }`) describing the in-process endpoint the platform will POST to once at first request, before any other traffic is allowed through. Declared via the `org.privasys.config_api` OCI label or in `privasys.json`. |
+| **Configure endpoint** | Optional `config_api` declaration (`{ method, path }`) describing the in-process endpoint the platform POSTs to once at first request, before any other traffic is allowed through. Declared via the `org.privasys.config_api` OCI label or in `privasys.json`. See [Configure & Attest](/solutions/platform/developer-platform/configure-and-attest). |
 | **Encrypted storage** | Toggle to enable an encrypted filesystem volume for persistent data. |
 
-> **Environment variables are no longer accepted.** Per-deployment configuration is delivered in-process via the declared `config_api` endpoint, then frozen by the manager. The container persists what it needs; subsequent restarts replay the same config without going back to the platform.
+> Per-deployment configuration is delivered in-process via the declared `config_api` endpoint, then frozen by the manager. The container persists what it needs (typically on the encrypted volume) and calls `setConfigComplete()` to lift the freeze. Subsequent restarts replay the sealed config without going back to the platform.
 
 ## What happens on deployment
 
@@ -49,7 +49,7 @@ Container deployments are attested through TDX RTMR registers:
 | RTMR[0] | UEFI firmware |
 | RTMR[1] | OS kernel and initrd |
 | RTMR[2] | OS configuration and runtime |
-| RTMR[3] | Application layer (container image digest, environment hash) |
+| RTMR[3] | Application layer (container image digest, per-app OID extensions) |
 
 Clients can verify the full boot chain from firmware through to your application. The RA-TLS certificate includes quotes signed by the TDX hardware, which can be validated against Intel's provisioning certificates.
 

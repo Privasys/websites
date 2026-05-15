@@ -462,6 +462,42 @@ export function listDeployments(token: string, appId: string): Promise<AppDeploy
     return request<AppDeployment[]>(`/api/v1/apps/${encodeURIComponent(appId)}/deployments`, token);
 }
 
+// ---------------------------------------------------------------------------
+// Per-app team API (owners)
+// ---------------------------------------------------------------------------
+
+export interface AppOwner {
+    sub: string;
+    email: string;
+    name: string;
+    added_at: string;
+    added_by: string;
+}
+
+export interface AppTeam {
+    owners: AppOwner[];
+    creator_sub: string;
+}
+
+export function listAppOwners(token: string, appId: string): Promise<AppTeam> {
+    return request<AppTeam>(`/api/v1/apps/${encodeURIComponent(appId)}/owners`, token);
+}
+
+export function addAppOwner(token: string, appId: string, owner: { sub: string; email?: string; name?: string }): Promise<AppTeam> {
+    return request<AppTeam>(`/api/v1/apps/${encodeURIComponent(appId)}/owners`, token, {
+        method: 'POST',
+        body: JSON.stringify(owner)
+    });
+}
+
+export function removeAppOwner(token: string, appId: string, sub: string): Promise<AppTeam> {
+    return request<AppTeam>(
+        `/api/v1/apps/${encodeURIComponent(appId)}/owners/${encodeURIComponent(sub)}`,
+        token,
+        { method: 'DELETE' }
+    );
+}
+
 export interface DeployTarget {
     manager_host: string;
     enclave_id: string;
@@ -479,6 +515,10 @@ export interface DeployTarget {
     oidc_issuer?: string;
     oidc_audience?: string;
     config_api?: string;
+    /** Per-app owners team (platform OIDC `sub` claims). Shipped to
+     *  the enclave on `wasm_load`/`container_load` so that the
+     *  runtime can authorize WIT @config-api calls (Owner policy). */
+    owners?: string[];
 }
 
 function parseConfigApi(spec: string): { method: string; path: string } | undefined {
@@ -488,6 +528,23 @@ function parseConfigApi(spec: string): { method: string; path: string } | undefi
     const parts = trimmed.split(/\s+/);
     if (parts.length === 1) return { method: 'POST', path: parts[0] };
     return { method: parts[0].toUpperCase(), path: parts.slice(1).join(' ') };
+}
+
+// WASM apps dispatch by exported function name, not by HTTP path. The
+// enclave's preferred source of truth is the WIT `@config-api`
+// decoration carried in the package-docs custom section; the
+// protocol-level field below acts as a fallback for legacy apps that
+// only declare it via privasys.json. Strips any leading slash and
+// HTTP method that may be present in the stored spec for symmetry
+// with the container shape.
+function parseConfigApiWasm(spec: string): { function: string } | undefined {
+    const trimmed = (spec ?? '').trim();
+    if (!trimmed) return undefined;
+    const parts = trimmed.split(/\s+/);
+    const last = parts[parts.length - 1] ?? '';
+    const fn = last.replace(/^\/+/, '').trim();
+    if (!fn) return undefined;
+    return { function: fn };
 }
 
 function bytesToBase64(buf: Uint8Array): string {
@@ -581,7 +638,8 @@ export async function deployDirect(
                     hostname: target.hostname,
                     bytes: bytes ? bytesToBase64(bytes) : '',
                     permissions,
-                    ...(target.config_api ? { config_api: parseConfigApi(target.config_api) } : {})
+                    ...(target.config_api ? { config_api: parseConfigApiWasm(target.config_api) } : {}),
+                    ...(target.owners && target.owners.length > 0 ? { owners: target.owners } : {})
                 }
             };
         } else {
@@ -596,6 +654,7 @@ export async function deployDirect(
                 port,
                 hostname: target.hostname,
                 ...(target.config_api ? { config_api: parseConfigApi(target.config_api) } : {}),
+                ...(target.owners && target.owners.length > 0 ? { owners: target.owners } : {}),
                 ...(target.container_storage ? { storage: target.container_storage } : {}),
                 ...(target.container_storage_key ? { storage_key: target.container_storage_key } : {}),
                 ...(target.container_devices && target.container_devices.length > 0
