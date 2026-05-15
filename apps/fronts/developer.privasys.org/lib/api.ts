@@ -462,21 +462,6 @@ export function listDeployments(token: string, appId: string): Promise<AppDeploy
     return request<AppDeployment[]>(`/api/v1/apps/${encodeURIComponent(appId)}/deployments`, token);
 }
 
-export interface RuntimeEnvVarMeta {
-    secret: boolean;
-    oid?: string;
-}
-
-function bytesToBase64(buf: Uint8Array): string {
-    // Chunked to avoid blowing the call stack on large cwasms.
-    let bin = '';
-    const chunk = 0x8000;
-    for (let i = 0; i < buf.length; i += chunk) {
-        bin += String.fromCharCode(...buf.subarray(i, i + chunk));
-    }
-    return btoa(bin);
-}
-
 export interface DeployTarget {
     manager_host: string;
     enclave_id: string;
@@ -493,6 +478,26 @@ export interface DeployTarget {
     container_devices?: string[];
     oidc_issuer?: string;
     oidc_audience?: string;
+    config_api?: string;
+}
+
+function parseConfigApi(spec: string): { method: string; path: string } | undefined {
+    const trimmed = (spec ?? '').trim();
+    if (!trimmed) return undefined;
+    // Accept "POST /configure" or just "/configure".
+    const parts = trimmed.split(/\s+/);
+    if (parts.length === 1) return { method: 'POST', path: parts[0] };
+    return { method: parts[0].toUpperCase(), path: parts.slice(1).join(' ') };
+}
+
+function bytesToBase64(buf: Uint8Array): string {
+    // Chunked to avoid blowing the call stack on large cwasms.
+    let bin = '';
+    const chunk = 0x8000;
+    for (let i = 0; i < buf.length; i += chunk) {
+        bin += String.fromCharCode(...buf.subarray(i, i + chunk));
+    }
+    return btoa(bin);
 }
 
 export function getDeployTarget(token: string, appId: string, versionId: string, enclaveId: string): Promise<DeployTarget> {
@@ -526,15 +531,17 @@ export function recordDeployment(token: string, appId: string, versionId: string
 }
 
 /**
- * Direct portal -> enclave deploy. The management service is NOT in the
- * data path: it only serves the cwasm artifact and records the resulting
- * deployment. The actual `wasm_load` / `container_load` envelope is sent
- * sealed (CBOR + AES-GCM via PrivasysSession) directly to the enclave's
- * RA-TLS server through the gateway sealed-relay, after a wallet QR
- * ceremony attests the enclave.
+ * Portal → mgmt-service deploy. The browser POSTs the deploy request
+ * to the management service; the mgmt-service service-account then
+ * performs the actual `wasm_load` / `container_load` against the
+ * enclave over RA-TLS. The browser is no longer in the data path —
+ * the wallet sealed-relay is gone for deploys.
  *
- * UX: a wallet QR modal pops up on every Deploy click. The session is
- * one-shot and torn down immediately after the wasm_load completes.
+ * User-supplied env vars are no longer accepted by the platform.
+ * Apps that need configuration should declare a `config_api`
+ * decoration (WIT for wasm, Dockerfile `LABEL org.privasys.config_api`
+ * for containers) and persist their own state to the per-app
+ * encrypted volume.
  *
  * Returns the recorded `AppDeployment`.
  */
@@ -543,8 +550,6 @@ export async function deployDirect(
     appId: string,
     versionId: string,
     enclaveId: string,
-    runtimeEnv?: Record<string, string>,
-    _runtimeEnvMeta?: Record<string, RuntimeEnvVarMeta>,
 ): Promise<AppDeployment> {
     const target = await getDeployTarget(token, appId, versionId, enclaveId);
 
@@ -576,7 +581,7 @@ export async function deployDirect(
                     hostname: target.hostname,
                     bytes: bytes ? bytesToBase64(bytes) : '',
                     permissions,
-                    env: runtimeEnv ?? {},
+                    ...(target.config_api ? { config_api: parseConfigApi(target.config_api) } : {}),
                 },
             };
         } else {
@@ -584,16 +589,13 @@ export async function deployDirect(
                 throw new ApiError('container deploy: image not yet resolved (build incomplete?)', 500);
             }
             const port = target.container_port ?? 0;
-            const envMeta: Record<string, RuntimeEnvVarMeta> | undefined =
-                _runtimeEnvMeta && Object.keys(_runtimeEnvMeta).length > 0 ? _runtimeEnvMeta : undefined;
             path = '/api/v1/containers';
             envelope = {
                 name: target.app_name,
                 image: target.container_image,
                 port,
                 hostname: target.hostname,
-                env: runtimeEnv ?? {},
-                ...(envMeta ? { env_meta: envMeta } : {}),
+                ...(target.config_api ? { config_api: parseConfigApi(target.config_api) } : {}),
                 ...(target.container_storage ? { storage: target.container_storage } : {}),
                 ...(target.container_storage_key ? { storage_key: target.container_storage_key } : {}),
                 ...(target.container_devices && target.container_devices.length > 0

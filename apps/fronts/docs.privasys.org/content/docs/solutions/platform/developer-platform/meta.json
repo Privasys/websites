@@ -6,6 +6,7 @@
         "tutorial",
         "deploy-wasm",
         "deploy-container",
+        "configure-and-attest",
         "attestation",
         "app-lifecycle"
     ]

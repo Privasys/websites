@@ -24,8 +24,10 @@ Container applications run inside **Enclave OS Virtual** on Intel TDX hardware, 
 |---------|-------------|
 | **Image reference** | Full image URI including tag or digest. Use a digest (`@sha256:...`) for reproducibility. |
 | **Port** | The port your container listens on. Only one HTTP port is exposed through the RA-TLS proxy. |
-| **Environment variables** | Key-value pairs injected at runtime. Secrets are delivered over the RA-TLS channel. |
+| **Configure endpoint** | Optional `config_api` declaration (`{ method, path }`) describing the in-process endpoint the platform will POST to once at first request, before any other traffic is allowed through. Declared via the `org.privasys.config_api` OCI label or in `privasys.json`. |
 | **Encrypted storage** | Toggle to enable an encrypted filesystem volume for persistent data. |
+
+> **Environment variables are no longer accepted.** Per-deployment configuration is delivered in-process via the declared `config_api` endpoint, then frozen by the manager. The container persists what it needs; subsequent restarts replay the same config without going back to the platform.
 
 ## What happens on deployment
 
@@ -34,7 +36,7 @@ When a container application is deployed:
 1. Enclave OS Virtual boots on a TDX-enabled node
 2. The UEFI firmware measures the OS image into TDX **RTMR** registers
 3. The container image is pulled over an attested channel
-4. The container starts with the configured port, environment variables, and storage
+4. The container starts with the configured port and storage; the manager holds the very first request, POSTs the deployment-time configuration to `config_api`, and only then unblocks normal traffic
 5. An RA-TLS proxy terminates TLS in front of your container, serving certificates that include TDX attestation evidence
 6. The deployment is complete when the container passes a health check
 
@@ -57,7 +59,7 @@ Clients can verify the full boot chain from firmware through to your application
 
 **Minimise the image.** Smaller images reduce the attack surface. Use multi-stage builds and distroless or scratch base images where possible.
 
-**Do not embed secrets in the image.** Use environment variables delivered via the platform's encrypted channel instead.
+**Do not embed secrets in the image.** Receive secrets at the declared `config_api` endpoint inside the enclave instead, and (optionally) seal them to encrypted storage for replay across restarts.
 
 ## Encrypted storage
 

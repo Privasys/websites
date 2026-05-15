@@ -1,0 +1,67 @@
+---
+title: Configure & Attest
+description: How per-deployment configuration and per-app attestation extensions work after the env-var redesign.
+---
+
+The Privasys platform no longer accepts environment variables on deploy.
+Instead, each app declares two things, and the platform wires them up
+deterministically across restarts:
+
+| Declaration | Where | Purpose |
+|---|---|---|
+| `config_api` | `org.privasys.config_api` OCI label, or `privasys.json` (WIT for wasm) | One-shot in-process endpoint the manager POSTs to before allowing other traffic |
+| `oid_extensions` | Set by the app via the SDK or the enclave manager's internal API | Per-app X.509 extensions under `1.3.6.1.4.1.65230.3.5.*` baked into the RA-TLS leaf |
+
+## Lifecycle
+
+1. **Deploy.** The user (or `privasys-platform:manager`) deploys an app version
+   to an enclave. No env vars are accepted; the call carries only `enclave_id`.
+2. **Wait for app.** The container/wasm starts and binds its listener.
+3. **Freeze.** The manager intercepts the first request to the app's hostname
+   and replies `503 Retry-After` until the app has been configured (or unless
+   the request matches `config_api.method` + `config_api.path`, in which case
+   it is forwarded in-process).
+4. **Configure.** The configuration step (typically the deploying tool, or a
+   one-shot job the deployer triggers) POSTs the deployment-time payload to
+   `${config_api.path}`. The app validates and seals the payload to its own
+   storage, then returns 2xx. The manager flips the freeze flag.
+5. **Serve.** All subsequent traffic is forwarded normally.
+6. **Restart.** On any restart, the app reloads its sealed config from
+   storage; the manager keeps the freeze flag set and never re-runs the
+   configure step.
+
+## Per-app attestation extensions (OID `1.3.6.1.4.1.65230.3.5.*`)
+
+Apps that want to bind opaque values into their RA-TLS leaf certificate
+(for example: an MCP server URL list, a vector-DB project ID, a
+license-key fingerprint) call the SDK's `setAttestationExtension(oid,
+value)` while they are alive. The enclave manager:
+
+1. Validates the OID is under `1.3.6.1.4.1.65230.3.5.`
+2. Forwards the `(oid, value)` pair to mgmt-service over its enclave-token
+   channel for durable storage in `app_oid_extensions`
+3. Re-issues the per-workload RA-TLS certificate so subsequent connections
+   see the new extension
+4. On restart, the manager pulls the stored extensions from mgmt-service
+   and replays them into the leaf cert before unblocking traffic
+
+This means the OID set is part of the verified app surface and survives
+across restarts, but is set at runtime by the app rather than at deploy
+time by the operator.
+
+## Why no env vars?
+
+Environment variables had three problems we kept hitting:
+
+- **No type or format guarantees.** An app receiving `MCP_SERVERS=...,...`
+  has to invent its own parser; the platform can't help.
+- **Attested but inert.** The strings were measured into the Merkle tree,
+  but the app could ignore them or use them differently from what the
+  attestation suggested.
+- **Permanent.** They were baked into the deploy and could only be changed
+  by re-deploying — even for things the app naturally already persists
+  (like a user-supplied API key).
+
+The configure-then-freeze model lets the app define its own structured
+configuration schema, validate it in-process, and own the persistence
+story; the platform's job is just to gate the first request.

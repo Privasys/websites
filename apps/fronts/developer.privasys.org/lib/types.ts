@@ -19,7 +19,7 @@ export interface App {
     cwasm_size?: number;
     container_image?: string;
     container_port?: number;
-    container_env?: string;
+    config_api?: string;
     container_storage?: boolean;
     container_storage_key?: string;
     container_mcp?: Record<string, unknown>;
@@ -62,7 +62,6 @@ export interface CreateAppRequest {
     enclave_id?: string;
     container_image?: string;
     container_port?: number;
-    container_env?: Record<string, string>;
     container_storage?: boolean;
     container_storage_key?: string;
     container_mcp?: Record<string, unknown>;

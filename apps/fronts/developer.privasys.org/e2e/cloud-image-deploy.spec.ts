@@ -13,18 +13,18 @@
  *
  *   1. POST /api/v1/apps  source_type=cloud_image
  *   2. wait for a ready version
- *   3. POST /api/v1/apps/{id}/versions/{vid}/deploy with
- *        runtime_env      MCP_SERVERS=...
- *        runtime_env_meta MCP_SERVERS={oid:"1"}
+ *   3. POST /api/v1/apps/{id}/versions/{vid}/deploy with { enclave_id }
+ *      (env vars are no longer accepted; configuration is delivered to the
+ *      app in-process via the declared config_api endpoint)
  *   4. poll deployments until status=active   (≤ 10 min tolerance)
- *   5. GET /api/v1/apps/{id}/attest  → expect app_extensions
- *      to include the per-env-var OID 1.3.6.1.4.1.65230.3.5.1
- *      with value = the raw value bytes (secret=false in this test).
  *
- * Future variants:
- *   - secret=true (value = SHA-256(value))
- *   - additional OIDs ...3.5.2, ...3.5.3
- *   - GPU-bound model load on top of confidential-ai
+ * Per-deployment runtime configuration & OID-tagged attestation extensions:
+ *   apps now declare `config_api` (method+path) in privasys.json or the
+ *   container LABEL, and the manager forwards the first POST to that path
+ *   in-process; the app then registers attestation extensions under sub-arc
+ *   1.3.6.1.4.1.65230.3.5.* via the `setAttestationExtension` SDK call.
+ *   The end-to-end OID flow is covered by an integration test in the
+ *   confidential-ai repo (which owns the in-app SDK use), not here.
  *
  * Adding a new VM (e.g. ai-gpu-2):
  *   - Provision via cvm-images and let it auto-register.
@@ -48,15 +48,6 @@ const ENCLAVE_MATCH = process.env.E2E_ENCLAVE_NAME || 'm2-dev-ai';
 const CLOUD_IMAGE_NAME = process.env.E2E_CLOUD_IMAGE_NAME || 'confidential-ai';
 const CLOUD_IMAGE_CHANNEL = process.env.E2E_CLOUD_IMAGE_CHANNEL || 'prod';
 const CONTAINER_PORT = 8080;
-
-// Per-env-var attestation under sub-arc 1.3.6.1.4.1.65230.3.5.*
-// MCP_SERVERS is non-secret, so the extension carries the raw value.
-const TEST_ENV_KEY = 'MCP_SERVERS';
-const TEST_ENV_VALUE =
-    'lightpanda=https://container-app-lightpanda.apps-test.privasys.org,' +
-    'rag=https://private-rag-demo.apps-test.privasys.org?bearer=1';
-const TEST_ENV_SUBARC = '1';
-const EXPECTED_OID = `1.3.6.1.4.1.65230.3.5.${TEST_ENV_SUBARC}`;
 
 let token: string;
 let appId: string;
@@ -205,11 +196,7 @@ test.describe('Cloud-image deploy', () => {
         expect(false, 'no ready version').toBeTruthy();
     });
 
-    test.skip('deploy with runtime_env_meta (OID assigned)', async ({ page }) => {
-        // TODO Stage B: rewrite to drive deployDirect via the portal UI or to
-        // POST sealed wasm_load directly to the enclave (needs CA-trusted
-        // playwright + the sealed session-relay client in Node). The legacy
-        // mgmt-relayed POST /versions/{vid}/deploy endpoint is gone.
+    test('deploy version to enclave', async ({ page }) => {
         test.setTimeout(180_000);
         token = await getToken(page);
 
@@ -220,13 +207,7 @@ test.describe('Cloud-image deploy', () => {
                     Authorization: `Bearer ${token}`,
                     'Content-Type': 'application/json',
                 },
-                data: {
-                    enclave_id: enclaveId,
-                    runtime_env: { [TEST_ENV_KEY]: TEST_ENV_VALUE },
-                    runtime_env_meta: {
-                        [TEST_ENV_KEY]: { secret: false, oid: TEST_ENV_SUBARC },
-                    },
-                },
+                data: { enclave_id: enclaveId },
                 timeout: 150_000,
             },
         );
@@ -235,9 +216,7 @@ test.describe('Cloud-image deploy', () => {
         expect(resp.ok(), `deploy failed: ${txt}`).toBeTruthy();
     });
 
-    test.skip('deployment becomes active', async ({ page }) => {
-        // Skipped along with the legacy deploy step above. Re-enable when the
-        // portal-direct (Stage B) deploy is driven by this spec.
+    test('deployment becomes active', async ({ page }) => {
         // Allow up to 10 minutes for first-time disk attach + manager load.
         test.setTimeout(12 * 60_000);
         token = await getToken(page);
@@ -270,43 +249,14 @@ test.describe('Cloud-image deploy', () => {
         expect(active, `no active deployment; last statuses=${last.join(',')}`).toBeTruthy();
     });
 
-    test.skip('attestation exposes per-env-var OID extension', async ({ page }) => {
-        // Skipped along with the legacy deploy step above. Re-enable when the
-        // portal-direct (Stage B) deploy is driven by this spec.
-        test.setTimeout(60_000);
-        token = await getToken(page);
-
-        // Caddy needs a beat after activation to issue the per-workload cert
-        // with the freshly-written extension file.
-        for (let i = 0; i < 12; i++) {
-            const resp = await page.request.get(`${API}/api/v1/apps/${appId}/attest`, {
-                headers: { Authorization: `Bearer ${token}` },
-                timeout: 30_000,
-            });
-            if (!resp.ok()) {
-                console.log(`attest poll ${i + 1}/12: HTTP ${resp.status()}`);
-                await page.waitForTimeout(5_000);
-                continue;
-            }
-            const result: {
-                app_extensions?: { oid: string; value_hex: string; label?: string }[];
-            } = await resp.json();
-            const exts = result.app_extensions ?? [];
-            const oids = exts.map((e) => e.oid);
-            console.log(`attest poll ${i + 1}/12: app_extensions oids=${oids.join(',')}`);
-
-            const match = exts.find((e) => e.oid === EXPECTED_OID);
-            if (match) {
-                // For secret=false the extension carries raw UTF-8 of the value.
-                const expectedHex = Buffer.from(TEST_ENV_VALUE, 'utf8').toString('hex');
-                console.log(`expected_hex(${expectedHex.length / 2} bytes)=${expectedHex.substring(0, 64)}…`);
-                console.log(`actual_hex  (${match.value_hex.length / 2} bytes)=${match.value_hex.substring(0, 64)}…`);
-                expect(match.value_hex.toLowerCase()).toBe(expectedHex.toLowerCase());
-                return;
-            }
-            await page.waitForTimeout(5_000);
-        }
-        expect(false, `extension ${EXPECTED_OID} not found in app_extensions`).toBeTruthy();
+    test.skip('attestation exposes per-env-var OID extension', async ({ page: _page }) => {
+        // Per-env-var OID extensions were removed when env vars were dropped
+        // from the deploy API. Apps now register attestation extensions via
+        // the SDK's `setAttestationExtension(oid, value)` call (sub-arc
+        // 1.3.6.1.4.1.65230.3.5.*); coverage for that flow lives with the
+        // app that uses it (see confidential-ai integration tests). The
+        // legacy block below is preserved in git history for reference.
+        return;
     });
 
     test('cleanup', async ({ page }) => {
