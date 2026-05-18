@@ -32,7 +32,7 @@ const API = process.env.NEXT_PUBLIC_API_URL || 'https://api-test.developer.priva
 // Same wasm app as fast-verify — has @config-api configure +
 // protected-call exports.
 const WASM_COMMIT_URL =
-    'https://github.com/Privasys/wasm-app-example/commit/2f2df1e1483ce87ff3cef1eae9abb75db4098c08';
+    'https://github.com/Privasys/wasm-app-example/commit/a80164ac87d517e672d161d881dfb880d122c754';
 const APP_NAME = 'e2e-team-configure';
 
 let token: string;
