@@ -113,7 +113,7 @@ The enclave does not require the caller to declare which auth method they are us
 
 ```
 app_auth: "a1b2c3d4...64 hex chars"  →  FIDO2 session lookup  →  AuthResult
-app_auth: "eyJhbGciOiJFUzI1NiI..."    →  OIDC JWT verification →  AuthResult
+app_auth: "eyJhbGciOiJFUzI1NiI..."   →  OIDC JWT verification →  AuthResult
 
 Either way:
     @auth public         → allow
