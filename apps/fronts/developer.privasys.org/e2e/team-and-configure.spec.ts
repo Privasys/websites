@@ -32,7 +32,7 @@ const API = process.env.NEXT_PUBLIC_API_URL || 'https://api-test.developer.priva
 // Same wasm app as fast-verify — has @config-api configure +
 // protected-call exports.
 const WASM_COMMIT_URL =
-    'https://github.com/Privasys/wasm-app-example/commit/375c37da9902b0b009a3160cc28cb0cd794082d9';
+    'https://github.com/Privasys/wasm-app-example/commit/2f2df1e1483ce87ff3cef1eae9abb75db4098c08';
 const APP_NAME = 'e2e-team-configure';
 
 let token: string;
@@ -182,18 +182,42 @@ test.describe('Owners Team + @config-api Freeze Gate', () => {
         throw new Error('Build did not become ready in time');
     });
 
+    test('set config_api so the freeze gate engages', async ({ page }) => {
+        test.setTimeout(15_000);
+        token = await getToken(page);
+
+        const resp = await page.request.patch(
+            `${API}/api/v1/apps/${appId}/config-api`,
+            {
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                },
+                data: { config_api: 'configure' },
+            },
+        );
+        expect(resp.ok()).toBeTruthy();
+        const app = await resp.json();
+        expect(app.config_api).toBe('configure');
+        console.log(`config_api set: ${app.config_api}`);
+    });
+
     test('deploy to SGX — DeployTarget carries owners', async ({ page }) => {
-        test.setTimeout(180_000);
+        test.setTimeout(300_000);
         token = await getToken(page);
 
         const enclResp = await page.request.get(`${API}/api/v1/enclaves`, {
             headers: { Authorization: `Bearer ${token}` },
         });
         expect(enclResp.ok()).toBeTruthy();
-        const enclaves: { id: string; tee_type: string }[] = await enclResp.json();
-        const sgx = enclaves.find(e => e.tee_type === 'sgx');
-        expect(sgx).toBeTruthy();
+        const enclaves: { id: string; name: string; tee_type: string; status: string }[] =
+            await enclResp.json();
+        const sgx = enclaves.find(e => e.tee_type === 'sgx' && e.status === 'active');
+        expect(sgx, 'no active SGX enclave found').toBeTruthy();
+        console.log(`Deploying to: ${sgx!.name} (${sgx!.id})`);
 
+        // Server-side deploy: mgmt-service SA loads the wasm into the
+        // enclave (no portal sealed-relay involved).
         const deploy = await page.request.post(
             `${API}/api/v1/apps/${appId}/versions/${versionId}/deploy`,
             {
@@ -202,9 +226,13 @@ test.describe('Owners Team + @config-api Freeze Gate', () => {
                     'Content-Type': 'application/json',
                 },
                 data: { enclave_id: sgx!.id },
-                timeout: 150_000,
+                timeout: 240_000,
             },
         );
+        if (!deploy.ok()) {
+            const errText = await deploy.text();
+            console.log(`Deploy failed: ${deploy.status()} ${errText.substring(0, 500)}`);
+        }
         expect(deploy.ok()).toBeTruthy();
         const dep = await deploy.json();
         expect(dep.status).toBe('active');

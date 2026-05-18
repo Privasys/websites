@@ -498,202 +498,25 @@ export function removeAppOwner(token: string, appId: string, sub: string): Promi
     );
 }
 
-export interface DeployTarget {
-    manager_host: string;
-    enclave_id: string;
-    enclave_name: string;
-    app_name: string;
-    app_type: 'wasm' | 'container';
-    hostname: string;
-    cwasm_url?: string;
-    cwasm_sha256?: string;
-    container_image?: string;
-    container_port?: number;
-    container_storage?: string;
-    container_storage_key?: string;
-    container_devices?: string[];
-    oidc_issuer?: string;
-    oidc_audience?: string;
-    config_api?: string;
-    /** Per-app owners team (platform OIDC `sub` claims). Shipped to
-     *  the enclave on `wasm_load`/`container_load` so that the
-     *  runtime can authorize WIT @config-api calls (Owner policy). */
-    owners?: string[];
-}
-
-function parseConfigApi(spec: string): { method: string; path: string } | undefined {
-    const trimmed = (spec ?? '').trim();
-    if (!trimmed) return undefined;
-    // Accept "POST /configure" or just "/configure".
-    const parts = trimmed.split(/\s+/);
-    if (parts.length === 1) return { method: 'POST', path: parts[0] };
-    return { method: parts[0].toUpperCase(), path: parts.slice(1).join(' ') };
-}
-
-// WASM apps dispatch by exported function name, not by HTTP path. The
-// enclave's preferred source of truth is the WIT `@config-api`
-// decoration carried in the package-docs custom section; the
-// protocol-level field below acts as a fallback for legacy apps that
-// only declare it via privasys.json. Strips any leading slash and
-// HTTP method that may be present in the stored spec for symmetry
-// with the container shape.
-function parseConfigApiWasm(spec: string): { function: string } | undefined {
-    const trimmed = (spec ?? '').trim();
-    if (!trimmed) return undefined;
-    const parts = trimmed.split(/\s+/);
-    const last = parts[parts.length - 1] ?? '';
-    const fn = last.replace(/^\/+/, '').trim();
-    if (!fn) return undefined;
-    return { function: fn };
-}
-
-function bytesToBase64(buf: Uint8Array): string {
-    // Chunked to avoid blowing the call stack on large cwasms.
-    let bin = '';
-    const chunk = 0x8000;
-    for (let i = 0; i < buf.length; i += chunk) {
-        bin += String.fromCharCode(...buf.subarray(i, i + chunk));
-    }
-    return btoa(bin);
-}
-
-export function getDeployTarget(token: string, appId: string, versionId: string, enclaveId: string): Promise<DeployTarget> {
-    return request<DeployTarget>(
-        `/api/v1/apps/${encodeURIComponent(appId)}/versions/${encodeURIComponent(versionId)}/deploy-target?enclave_id=${encodeURIComponent(enclaveId)}`,
-        token
-    );
-}
-
-export async function fetchCwasmBytes(token: string, appId: string, versionId: string): Promise<Uint8Array> {
-    const res = await fetch(
-        `${API_URL}/api/v1/apps/${encodeURIComponent(appId)}/versions/${encodeURIComponent(versionId)}/cwasm`,
-        { headers: { Authorization: `Bearer ${token}` } }
-    );
-    if (!res.ok) {
-        const body = await res.json().catch(() => ({ error: res.statusText }));
-        throw new ApiError(body.error || `cwasm fetch ${res.status}`, res.status);
-    }
-    return new Uint8Array(await res.arrayBuffer());
-}
-
-export function recordDeployment(token: string, appId: string, versionId: string, enclaveId: string, status: 'active' | 'failed' = 'active'): Promise<AppDeployment> {
-    return request<AppDeployment>(
-        `/api/v1/apps/${encodeURIComponent(appId)}/versions/${encodeURIComponent(versionId)}/deployments/record`,
-        token,
-        {
-            method: 'POST',
-            body: JSON.stringify({ enclave_id: enclaveId, status })
-        }
-    );
-}
-
 /**
- * Portal → mgmt-service deploy. The browser POSTs the deploy request
- * to the management service; the mgmt-service service-account then
- * performs the actual `wasm_load` / `container_load` against the
- * enclave over RA-TLS. The browser is no longer in the data path —
- * the wallet sealed-relay is gone for deploys.
- *
- * User-supplied env vars are no longer accepted by the platform.
- * Apps that need configuration should declare a `config_api`
- * decoration (WIT for wasm, Dockerfile `LABEL org.privasys.config_api`
- * for containers) and persist their own state to the per-app
- * encrypted volume.
- *
- * Returns the recorded `AppDeployment`.
+ * Deploy a built version onto an enclave. The browser POSTs a tiny
+ * `{enclave_id}` payload; the management-service service account performs
+ * the actual `wasm_load` / `container_load` against the enclave over
+ * RA-TLS. The wallet sealed-relay is reserved for runtime API calls
+ * (e.g. `@config-api`) that carry user identity / secrets — deploys
+ * themselves never touch it.
  */
-export async function deployDirect(
+export function deployDirect(
     token: string,
     appId: string,
     versionId: string,
     enclaveId: string
 ): Promise<AppDeployment> {
-    const target = await getDeployTarget(token, appId, versionId, enclaveId);
-
-    let bytes: Uint8Array | undefined;
-    if (target.app_type === 'wasm') {
-        bytes = await fetchCwasmBytes(token, appId, versionId);
-    }
-
-    const { getEnclaveSealedSession, dropEnclaveAuthFrame } = await import('./enclave-session');
-    const session = await getEnclaveSealedSession({ appHost: target.manager_host });
-    try {
-
-        let path: string;
-        let envelope: Record<string, unknown>;
-        if (target.app_type === 'wasm') {
-            const permissions: Record<string, unknown> = { version: 1, fido2: true };
-            if (target.oidc_issuer && target.oidc_audience) {
-                permissions.oidc = {
-                    issuer: target.oidc_issuer,
-                    jwks_uri: '',
-                    audience: target.oidc_audience,
-                    roles_claim: 'roles'
-                };
-            }
-            path = '/data';
-            envelope = {
-                wasm_load: {
-                    name: target.app_name,
-                    hostname: target.hostname,
-                    bytes: bytes ? bytesToBase64(bytes) : '',
-                    permissions,
-                    ...(target.config_api ? { config_api: parseConfigApiWasm(target.config_api) } : {}),
-                    ...(target.owners && target.owners.length > 0 ? { owners: target.owners } : {})
-                }
-            };
-        } else {
-            if (!target.container_image) {
-                throw new ApiError('container deploy: image not yet resolved (build incomplete?)', 500);
-            }
-            const port = target.container_port ?? 0;
-            path = '/api/v1/containers';
-            envelope = {
-                name: target.app_name,
-                image: target.container_image,
-                port,
-                hostname: target.hostname,
-                ...(target.config_api ? { config_api: parseConfigApi(target.config_api) } : {}),
-                ...(target.owners && target.owners.length > 0 ? { owners: target.owners } : {}),
-                ...(target.container_storage ? { storage: target.container_storage } : {}),
-                ...(target.container_storage_key ? { storage_key: target.container_storage_key } : {}),
-                ...(target.container_devices && target.container_devices.length > 0
-                    ? { devices: target.container_devices }
-                    : {}),
-                ...(port > 0
-                    ? {
-                        health_check: {
-                            http: `http://localhost:${port}/health`,
-                            interval_seconds: 5,
-                            timeout_seconds: 3,
-                            retries: 3
-                        }
-                    }
-                    : {})
-            };
-        }
-
-        const resp = await session.request('POST', path, envelope, {
-            headers: { Authorization: `Bearer ${token}` }
-        });
-        if (resp.status >= 400) {
-            const detail = new TextDecoder().decode(resp.body);
-            await recordDeployment(token, appId, versionId, enclaveId, 'failed').catch(() => undefined);
-            throw new ApiError(`enclave deploy failed (${resp.status}): ${detail}`, resp.status);
-        }
-        return await recordDeployment(token, appId, versionId, enclaveId, 'active');
-    } catch (err) {
-        // If the sealed session looks dead (iframe destroyed, ECDH
-        // decryption failed, etc.) evict the cache so the next deploy
-        // rebuilds it from a fresh wallet ceremony. Application-level
-        // errors (4xx from wasm_load, recordDeployment 5xx) leave the
-        // session alone — they don't imply the sealed transport broke.
-        const msg = err instanceof Error ? err.message : String(err);
-        if (/AuthFrame|sealed iframe|sealed session|decryption|decrypt failed/i.test(msg)) {
-            dropEnclaveAuthFrame(target.manager_host);
-        }
-        throw err;
-    }
+    return request<AppDeployment>(
+        `/api/v1/apps/${encodeURIComponent(appId)}/versions/${encodeURIComponent(versionId)}/deploy`,
+        token,
+        { method: 'POST', body: JSON.stringify({ enclave_id: enclaveId }) }
+    );
 }
 
 export function stopDeployment(token: string, appId: string, deploymentId: string, force = false): Promise<AppDeployment> {
