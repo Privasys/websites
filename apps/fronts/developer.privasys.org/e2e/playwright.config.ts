@@ -115,6 +115,20 @@ export default defineConfig({
             use: {
                 video: 'retain-on-failure'
             }
+        },
+        {
+            name: 'chat-brave-search',
+            testMatch: 'chat-brave-search.spec.ts',
+            use: {
+                video: 'retain-on-failure'
+            }
+        },
+        {
+            name: 'chat-attestations-green',
+            testMatch: 'chat-attestations-green.spec.ts',
+            use: {
+                video: 'retain-on-failure'
+            }
         }
     ]
 });
