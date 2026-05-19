@@ -4,8 +4,8 @@ import Link from 'next/link';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { useAuth } from '~/lib/privasys-auth';
 import { useEffect, useState, useCallback } from 'react';
-import { getApp, listBuilds, listVersions, listDeployments, listCompatibleEnclaves, deleteApp, deployDirect, stopDeployment, getAppSchema, rpcCall, updateStoreListing, getAppMcp, updateContainerMcp, retryBuild } from '~/lib/api';
-import type { AppSchema, FunctionSchema, WitType, McpManifest } from '~/lib/api';
+import { getApp, listBuilds, listVersions, listDeployments, listCompatibleEnclaves, deleteApp, deployDirect, stopDeployment, getAppSchema, rpcCall, updateStoreListing, getAppMcp, updateContainerMcp, retryBuild, listAppOwners, addAppOwner, removeAppOwner } from '~/lib/api';
+import type { AppSchema, FunctionSchema, WitType, McpManifest, AppTeam } from '~/lib/api';
 import { useSSE } from '~/lib/use-sse';
 import { getApiBaseUrl } from '~/lib/api-base-url';
 import type { App, BuildJob, AppVersion, AppDeployment, Enclave } from '~/lib/types';
@@ -30,7 +30,7 @@ function BuildStatusDot({ status }: { status: string }) {
     return <span className={`w-2 h-2 rounded-full inline-block ${color}`} />;
 }
 
-type Tab = 'overview' | 'deployments' | 'store' | 'attestation' | 'api' | 'mcp' | 'ui';
+type Tab = 'overview' | 'deployments' | 'store' | 'attestation' | 'api' | 'mcp' | 'ui' | 'team';
 
 export default function AppDetailPage() {
     const { id } = useParams<{ id: string }>();
@@ -184,7 +184,8 @@ export default function AppDetailPage() {
             ...(containerUI?.url ? [
                 { key: 'ui' as Tab, label: containerUI.label || 'App UI' }
             ] : [])
-        ] : [])
+        ] : []),
+        { key: 'team', label: 'Team' }
     ];
 
     return (
@@ -268,6 +269,9 @@ export default function AppDetailPage() {
                 )}
                 {tab === 'ui' && session?.accessToken && containerUI?.url && (
                     <AppUITab appId={app.id} appName={app.name} hostname={activeDeployments[0]?.hostname} token={session.accessToken} containerMcp={app.container_mcp as Record<string, unknown>} onMcpUpdate={(updated) => setApp(updated)} />
+                )}
+                {tab === 'team' && session?.accessToken && (
+                    <TeamTab appId={app.id} token={session.accessToken} />
                 )}
 
             </div>
@@ -2050,6 +2054,185 @@ function AppUITab({ appId, appName, hostname, token, containerMcp, onMcpUpdate }
                     title={`${appName} UI`}
                 />
             )}
+        </div>
+    );
+}
+
+// ------- Team Tab -------
+function TeamTab({ appId, token }: { appId: string; token: string }) {
+    const [data, setData] = useState<AppTeam | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    const [busy, setBusy] = useState(false);
+    const [newSub, setNewSub] = useState('');
+    const [newEmail, setNewEmail] = useState('');
+    const [newName, setNewName] = useState('');
+
+    const load = useCallback(async () => {
+        try {
+            const resp = await listAppOwners(token, appId);
+            setData(resp);
+            setError(null);
+        } catch (e) {
+            setError(e instanceof Error ? e.message : 'Failed to load owners');
+        } finally {
+            setLoading(false);
+        }
+    }, [token, appId]);
+
+    useEffect(() => { load(); }, [load]);
+
+    async function handleAdd(e: React.FormEvent) {
+        e.preventDefault();
+        const sub = newSub.trim();
+        if (!sub) return;
+        setBusy(true);
+        setError(null);
+        try {
+            const resp = await addAppOwner(token, appId, {
+                sub,
+                email: newEmail.trim() || undefined,
+                name: newName.trim() || undefined
+            });
+            setData(prev => prev ? { ...prev, owners: resp.owners } : resp);
+            setNewSub('');
+            setNewEmail('');
+            setNewName('');
+        } catch (e) {
+            setError(e instanceof Error ? e.message : 'Failed to add owner');
+        } finally {
+            setBusy(false);
+        }
+    }
+
+    async function handleRemove(sub: string, label: string) {
+        if (!confirm(`Remove ${label} from the owners team?`)) return;
+        setBusy(true);
+        setError(null);
+        try {
+            const resp = await removeAppOwner(token, appId, sub);
+            setData(prev => prev ? { ...prev, owners: resp.owners } : resp);
+        } catch (e) {
+            setError(e instanceof Error ? e.message : 'Failed to remove owner');
+        } finally {
+            setBusy(false);
+        }
+    }
+
+    if (loading) {
+        return <div className="text-sm text-black/50 dark:text-white/50">Loading owners…</div>;
+    }
+
+    if (!data) {
+        return (
+            <div className="text-sm text-red-600 dark:text-red-400">
+                {error || 'Failed to load owners.'}
+            </div>
+        );
+    }
+
+    return (
+        <div className="space-y-6">
+            <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">
+                <h2 className="text-sm font-semibold">Owners team</h2>
+                <p className="mt-1 text-xs text-black/50 dark:text-white/50">
+                    Owners can deploy this app, call its Owner-only RPCs, and manage the team.
+                </p>
+                {error && (
+                    <div className="mt-3 p-2.5 rounded-lg bg-red-50 dark:bg-red-900/20 text-sm text-red-700 dark:text-red-300">
+                        {error}
+                    </div>
+                )}
+                <ul className="mt-4 divide-y divide-black/10 dark:divide-white/10">
+                    {data.owners.map((o) => {
+                        const isCreator = o.sub === data.creator_sub;
+                        const label = o.name || o.email || o.sub;
+                        return (
+                            <li key={o.sub} className="py-3 flex items-start justify-between gap-4">
+                                <div className="min-w-0">
+                                    <div className="text-sm font-medium flex items-center gap-2">
+                                        <span className="truncate">{label}</span>
+                                        {isCreator && (
+                                            <span className="inline-block px-2 py-0.5 text-[10px] font-medium rounded-full bg-violet-100 text-violet-800 dark:bg-violet-900/30 dark:text-violet-300">
+                                                Creator
+                                            </span>
+                                        )}
+                                    </div>
+                                    {o.email && o.email !== label && (
+                                        <div className="text-xs text-black/50 dark:text-white/50 mt-0.5 truncate">{o.email}</div>
+                                    )}
+                                    <div className="text-[11px] font-mono text-black/40 dark:text-white/40 mt-0.5 truncate" title={o.sub}>{o.sub}</div>
+                                    <div className="text-[11px] text-black/40 dark:text-white/40 mt-0.5">
+                                        Added {new Date(o.added_at).toLocaleDateString()}
+                                    </div>
+                                </div>
+                                {!isCreator && (
+                                    <button
+                                        type="button"
+                                        onClick={() => handleRemove(o.sub, label)}
+                                        disabled={busy}
+                                        className="shrink-0 text-xs px-2.5 py-1 rounded-lg border border-red-300 text-red-700 hover:bg-red-50 dark:border-red-900/50 dark:text-red-400 dark:hover:bg-red-900/20 disabled:opacity-40"
+                                    >
+                                        Remove
+                                    </button>
+                                )}
+                            </li>
+                        );
+                    })}
+                    {data.owners.length === 0 && (
+                        <li className="py-3 text-sm text-black/50 dark:text-white/50">No owners.</li>
+                    )}
+                </ul>
+            </section>
+
+            <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">
+                <h2 className="text-sm font-semibold">Add owner</h2>
+                <p className="mt-1 text-xs text-black/50 dark:text-white/50">
+                    Ask the new owner for their <span className="font-medium">Subject ID</span> — they can find it in their <Link href="/dashboard/settings" className="underline">Settings</Link> page under Identity.
+                </p>
+                <form onSubmit={handleAdd} className="mt-4 space-y-3">
+                    <div>
+                        <label className="block text-xs font-medium text-black/60 dark:text-white/60">Subject ID <span className="text-red-600">*</span></label>
+                        <input
+                            type="text"
+                            value={newSub}
+                            onChange={(e) => setNewSub(e.target.value)}
+                            placeholder="e.g. r2C7Km0L2j0TbNuIPWd2JaxsayWawjP7jvRtMlBzVPw"
+                            required
+                            className="mt-1 w-full px-3 py-2 text-sm font-mono rounded-lg border border-black/15 dark:border-white/15 bg-transparent focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/20"
+                        />
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                            <label className="block text-xs font-medium text-black/60 dark:text-white/60">Email (display only)</label>
+                            <input
+                                type="email"
+                                value={newEmail}
+                                onChange={(e) => setNewEmail(e.target.value)}
+                                placeholder="alice@example.com"
+                                className="mt-1 w-full px-3 py-2 text-sm rounded-lg border border-black/15 dark:border-white/15 bg-transparent focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/20"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-medium text-black/60 dark:text-white/60">Name (display only)</label>
+                            <input
+                                type="text"
+                                value={newName}
+                                onChange={(e) => setNewName(e.target.value)}
+                                placeholder="Alice"
+                                className="mt-1 w-full px-3 py-2 text-sm rounded-lg border border-black/15 dark:border-white/15 bg-transparent focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/20"
+                            />
+                        </div>
+                    </div>
+                    <button
+                        type="submit"
+                        disabled={busy || !newSub.trim()}
+                        className="px-4 py-2 text-sm font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-90 disabled:opacity-40"
+                    >
+                        {busy ? 'Adding…' : 'Add owner'}
+                    </button>
+                </form>
+            </section>
         </div>
     );
 }
