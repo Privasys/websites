@@ -5,6 +5,7 @@ import { useAuth } from '~/lib/privasys-auth';
 import { fetchUserProfile, type UserProfile } from '~/lib/me-api';
 import type { Instance } from '~/lib/types';
 import type { Conversation } from '~/lib/conversations';
+import type { AggregateAttestationStatus } from '@privasys/attestation-view';
 import { ThemeToggle } from './theme-toggle';
 
 // Gemini-style left sidebar.
@@ -22,6 +23,7 @@ export function AppSidebar({
     instance,
     conversations,
     activeConversationId,
+    attestationStatus,
     onNewChat,
     onSelectConversation,
     onDeleteConversation,
@@ -34,6 +36,9 @@ export function AppSidebar({
     instance: Instance | null;
     conversations: Conversation[];
     activeConversationId: string | null;
+    /** Aggregate verification status from the always-mounted SecurityView.
+     *  Drives the color of the "Secure enclaves attestations" pill. */
+    attestationStatus?: AggregateAttestationStatus;
     onNewChat: () => void;
     onSelectConversation: (id: string) => void;
     onDeleteConversation: (id: string) => void;
@@ -68,7 +73,7 @@ export function AppSidebar({
     const secureEnabled = !!session && !!instance && !!instance.endpoint;
 
     return (
-        <aside className="hidden w-[260px] shrink-0 flex-col border-r border-[var(--color-border-dark)] bg-[var(--color-surface-1)]/80 md:flex">
+        <aside className="hidden w-[260px] shrink-0 flex-col border-r border-[var(--color-border-dark)] bg-[var(--color-surface-1)]/80 md:sticky md:top-0 md:flex md:h-screen md:self-start">
             <div className="flex items-center gap-2 px-4 pt-4 pb-3">
                 <img
                     src="/favicon/privasys-logo.mini.svg"
@@ -154,7 +159,7 @@ export function AppSidebar({
                         type="button"
                         onClick={onShowSecurity}
                         disabled={!secureEnabled}
-                        className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-[var(--color-primary-green)] transition-colors hover:bg-[var(--color-surface-2)]/60 disabled:opacity-50"
+                        className={`flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm transition-colors hover:bg-[var(--color-surface-2)]/60 disabled:opacity-50 ${attestationPillClass(attestationStatus, secureEnabled)}`}
                     >
                         <ShieldIcon />
                         <span className="flex-1">Secure enclaves attestations</span>
@@ -199,6 +204,19 @@ export function AppSidebar({
             </div>
         </aside>
     );
+}
+
+// Pill color reflects real attestation result: green only when every
+// component verified, red when any failed, muted while in flight or
+// when there is no endpoint to attest.
+function attestationPillClass(
+    status: AggregateAttestationStatus | undefined,
+    secureEnabled: boolean
+): string {
+    if (!secureEnabled) return 'text-[var(--color-text-muted)]';
+    if (status === 'verified') return 'text-[var(--color-primary-green)]';
+    if (status === 'failed') return 'text-red-600 dark:text-red-400';
+    return 'text-[var(--color-text-muted)]';
 }
 
 interface DisplayInfo {
