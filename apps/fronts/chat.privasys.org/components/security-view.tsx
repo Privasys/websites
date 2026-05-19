@@ -7,6 +7,7 @@ import {
     useAttestation
 } from '@privasys/attestation-view';
 import type {
+    AggregateAttestationStatus,
     AttestationExpectations,
     AttestationTargetConfig
 } from '@privasys/attestation-view';
@@ -24,7 +25,7 @@ const API_BASE_URL =
 // attestation: one row per component (the AI container + each tool
 // server), with a top banner that turns green only when every quote
 // verifies and every expected digest matches.
-export function SecurityView({ instance }: { instance: Instance }) {
+export function SecurityView({ instance, onStatus }: { instance: Instance; onStatus?: (_status: AggregateAttestationStatus) => void }) {
     const { getTokenForAudience } = useAuth();
     // Stable thunk so React.memo / dep arrays inside attestation-view
     // don't re-fire on every render. The actual token mint is short and
@@ -115,7 +116,7 @@ export function SecurityView({ instance }: { instance: Instance }) {
                                     enabled MCP tool enclaves are listed below.
                                 </div>
                             )}
-                            <CompositeAttestationView targets={targets} verifyQuoteAuth={verifyQuoteAuth} />
+                            <CompositeAttestationView targets={targets} verifyQuoteAuth={verifyQuoteAuth} onAggregateStatus={onStatus} />
                         </>
                     )}
                 </div>
@@ -130,6 +131,7 @@ export function SecurityView({ instance }: { instance: Instance }) {
             verifyQuoteAuth={verifyQuoteAuth}
             expectations={aiExpectations}
             header={containerHeader}
+            onStatus={onStatus}
         />
     );
 }
@@ -139,13 +141,15 @@ function SingleAttestation({
     verifyQuoteUrl,
     verifyQuoteAuth,
     expectations,
-    header
+    header,
+    onStatus
 }: {
     attestUrl: string;
     verifyQuoteUrl?: string;
     verifyQuoteAuth?: () => Promise<string>;
     expectations?: AttestationExpectations;
     header: React.ReactNode;
+    onStatus?: (_status: AggregateAttestationStatus) => void;
 }) {
     const [state, actions] = useAttestation({
         attestUrl,
@@ -154,6 +158,20 @@ function SingleAttestation({
         autoInspect: Boolean(attestUrl),
         autoVerifyQuote: Boolean(verifyQuoteUrl)
     });
+
+    // Mirror CompositeAttestationView's status semantics for the single-target case
+    // so the sidebar pill behaves the same when no tools are exposed.
+    React.useEffect(() => {
+        if (!onStatus) return;
+        if (!attestUrl) { onStatus('failed'); return; }
+        if (!state.result && !state.error) { onStatus('verifying'); return; }
+        if (state.error && !state.result) { onStatus('failed'); return; }
+        if (verifyQuoteUrl) {
+            if (state.verifying || (!state.quoteVerify && !state.quoteVerifyError)) { onStatus('verifying'); return; }
+            if (state.quoteVerifyError || (state.quoteVerify && !state.quoteVerify.success)) { onStatus('failed'); return; }
+        }
+        onStatus('verified');
+    }, [onStatus, attestUrl, verifyQuoteUrl, state.result, state.error, state.verifying, state.quoteVerify, state.quoteVerifyError]);
 
     return (
         <div className='flex flex-1 flex-col overflow-y-auto'>

@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import type { AvailableModel, Instance } from '~/lib/types';
+import type { AggregateAttestationStatus } from '@privasys/attestation-view';
 import { useAuth } from '~/lib/privasys-auth';
 import { jwtSub } from '~/lib/jwt';
 import { modelLabel } from '~/lib/model-label';
@@ -39,6 +40,11 @@ export function ChatShell({
     const { session, sealedSession } = useAuth();
     const [model, setModel] = useState<AvailableModel | null>(initialModel);
     const [view, setView] = useState<ShellView>('chat');
+    // Aggregate attestation status for the sidebar pill. Driven by the
+    // always-mounted SecurityView (hidden when view !== 'security') so
+    // the pill color reflects real verification, not just "endpoint
+    // available".
+    const [attestationStatus, setAttestationStatus] = useState<AggregateAttestationStatus>('verifying');
 
     const sub = useMemo(() => jwtSub(session?.accessToken), [session?.accessToken]);
     const conv = useConversations({
@@ -67,6 +73,7 @@ export function ChatShell({
                 instance={instance}
                 conversations={conv.conversations}
                 activeConversationId={conv.currentId}
+                attestationStatus={attestationStatus}
                 onNewChat={() => {
                     conv.startNew();
                     goChat();
@@ -103,8 +110,21 @@ export function ChatShell({
                     )}
                 </header>
 
-                {view === 'security' && instance.endpoint && (
-                    <SecurityView instance={instance} />
+                {view === 'security' && instance.endpoint && session && (
+                    <SecurityView instance={instance} onStatus={setAttestationStatus} />
+                )}
+                {view !== 'security' && instance.endpoint && session && (
+                    // Keep the attestation pipeline running in the
+                    // background so the sidebar pill is accurate even
+                    // before the user opens the Security view.
+                    // Gated on `session` so we don't fire verify-quote
+                    // before the Privasys ID auth iframe has minted a
+                    // session — `getTokenForAudience()` otherwise
+                    // rejects with "no active session iframe; call
+                    // getSession() first".
+                    <div className="hidden" aria-hidden="true">
+                        <SecurityView instance={instance} onStatus={setAttestationStatus} />
+                    </div>
                 )}
 
                 {view === 'signin' && (

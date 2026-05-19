@@ -23,6 +23,8 @@ export interface AttestationTargetConfig {
     expectations?: AttestationExpectations;
 }
 
+export type AggregateAttestationStatus = 'verifying' | 'verified' | 'failed';
+
 export interface CompositeAttestationViewProps {
     targets: AttestationTargetConfig[];
     /** When true, every row auto-inspects on mount. */
@@ -36,6 +38,11 @@ export interface CompositeAttestationViewProps {
      *  identifier, while the attest URL takes the user's main session
      *  token. */
     verifyQuoteAuth?: () => Promise<string>;
+    /** Called whenever the aggregate verification status changes.
+     *  'verifying' while any row is still in flight; 'verified' when
+     *  every row's quote AND digest checks pass; 'failed' otherwise. */
+    // eslint-disable-next-line no-unused-vars
+    onAggregateStatus?: (_status: AggregateAttestationStatus) => void;
 }
 
 interface RowSummary {
@@ -45,7 +52,7 @@ interface RowSummary {
     error?: string;
 }
 
-export function CompositeAttestationView({ targets, autoInspect = true, attestToken, verifyQuoteAuth }: CompositeAttestationViewProps) {
+export function CompositeAttestationView({ targets, autoInspect = true, attestToken, verifyQuoteAuth, onAggregateStatus }: CompositeAttestationViewProps) {
     const [rows, setRows] = useState<Record<string, RowSummary>>({});
 
     const onRowSummary = useCallback((id: string, summary: RowSummary) => {
@@ -68,6 +75,20 @@ export function CompositeAttestationView({ targets, autoInspect = true, attestTo
         const r = rows[t.id];
         return r && r.quoteOk && r.digestsOk;
     });
+
+    // Push aggregate status up to consumers (e.g. the sidebar pill).
+    // 'verifying' covers the zero-target bootstrap case too so the
+    // sidebar doesn't flash green before any row has reported.
+    useEffect(() => {
+        if (!onAggregateStatus) return;
+        if (total === 0 || !allReady) {
+            onAggregateStatus('verifying');
+        } else if (allOk) {
+            onAggregateStatus('verified');
+        } else {
+            onAggregateStatus('failed');
+        }
+    }, [onAggregateStatus, total, allReady, allOk]);
 
     return (
         <div className='flex flex-col gap-6'>
@@ -140,6 +161,11 @@ function AttestationRow({
         autoVerifyQuote: autoInspect && Boolean(target.verifyQuoteUrl)
     });
 
+    // Collapsed by default — each row is long, the user opens what they
+    // care about. Background attestation still runs (autoInspect above),
+    // so the header status pill is accurate without expanding.
+    const [open, setOpen] = useState(false);
+
     // Compute the per-row summary on every render and notify the parent.
     // useAttestation already debounces network work; this is cheap.
     const summary = computeSummary(state, target.expectations);
@@ -147,22 +173,33 @@ function AttestationRow({
         onSummary(summary);
     }, [onSummary, summary.ready, summary.quoteOk, summary.digestsOk, summary.error]);
 
+    const panelId = `attest-row-${target.id}`;
     return (
         <section className='rounded-xl border border-black/10 dark:border-white/10'>
-            <header className='flex items-center justify-between gap-3 border-b border-black/10 p-4 dark:border-white/10'>
-                <div>
-                    <div className='text-sm font-semibold text-[var(--color-text-primary)]'>
-                        {target.label}
-                    </div>
-                    {target.description && (
-                        <div className='text-xs text-[var(--color-text-secondary)]'>
-                            {target.description}
+            <button
+                type='button'
+                onClick={() => setOpen(o => !o)}
+                aria-expanded={open}
+                aria-controls={panelId}
+                className={`flex w-full items-center justify-between gap-3 p-4 text-left transition-colors hover:bg-black/[0.02] dark:hover:bg-white/[0.02] ${open ? 'border-b border-black/10 dark:border-white/10' : ''}`}
+            >
+                <div className='flex min-w-0 items-center gap-2'>
+                    <ChevronIcon open={open} />
+                    <div className='min-w-0'>
+                        <div className='truncate text-sm font-semibold text-[var(--color-text-primary)]'>
+                            {target.label}
                         </div>
-                    )}
+                        {target.description && (
+                            <div className='truncate text-xs text-[var(--color-text-secondary)]'>
+                                {target.description}
+                            </div>
+                        )}
+                    </div>
                 </div>
                 <RowStatus summary={summary} />
-            </header>
-            <div className='p-4'>
+            </button>
+            {open && (
+            <div id={panelId} className='p-4'>
                 {!target.attestUrl ? (
                     <div className='text-sm text-black/60 dark:text-white/60'>
                         No attest URL configured for this component.
@@ -199,7 +236,21 @@ function AttestationRow({
                     />
                 )}
             </div>
+            )}
         </section>
+    );
+}
+
+function ChevronIcon({ open }: { open: boolean }) {
+    return (
+        <svg
+            aria-hidden='true'
+            className={`h-4 w-4 shrink-0 text-[var(--color-text-secondary)] transition-transform ${open ? 'rotate-90' : ''}`}
+            viewBox='0 0 20 20'
+            fill='currentColor'
+        >
+            <path d='M7.05 4.55a1 1 0 0 1 1.4 0l4 4a1 1 0 0 1 0 1.4l-4 4a1 1 0 1 1-1.4-1.4L10.3 9.25 7.05 6a1 1 0 0 1 0-1.45z' />
+        </svg>
     );
 }
 
