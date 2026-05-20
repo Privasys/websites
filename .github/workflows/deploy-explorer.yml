@@ -79,19 +79,22 @@ jobs:
           TAG="$(date -u +%Y%m%d-%H%M%S)-${GITHUB_SHA::7}"
           STAGING="explorer-builds/${TAG}"
           # 1. Stage the build under the OVH user's home dir.
-          ssh -p "$PORT" -i ~/.ssh/id_ed25519 "${OVH_USER}@${OVH_HOST}" "mkdir -p \$HOME/${STAGING}"
+          #    SSH lands in $HOME, so relative paths Just Work — avoid
+          #    $HOME / ~ here because rsync's non-interactive remote
+          #    shell can keep them literal.
+          ssh -p "$PORT" -i ~/.ssh/id_ed25519 "${OVH_USER}@${OVH_HOST}" "mkdir -p ${STAGING}"
           rsync -avz --delete \
             -e "ssh -p ${PORT} -i ~/.ssh/id_ed25519" \
-            "${DIST}/" "${OVH_USER}@${OVH_HOST}:\$HOME/${STAGING}/"
+            "${DIST}/" "${OVH_USER}@${OVH_HOST}:${STAGING}/"
           # 2. Atomically rsync staging → /var/websites. Keep the legacy
-          #    `privasys-auth.js` file in place (it's loaded by nothing
-          #    in the current index.html — the SDK comes from
-          #    privasys.id — but removing it would break any cached
-          #    indexes still in flight). Reload nginx to pick up
-          #    new files (optional for static; cheap insurance).
+          #    `privasys-auth.js` file in place (loaded by nothing in
+          #    the current index.html — the SDK comes from privasys.id
+          #    — but removing it would break any cached indexes still
+          #    in flight). Reload nginx as cheap insurance.
           ssh -p "$PORT" -i ~/.ssh/id_ed25519 "${OVH_USER}@${OVH_HOST}" "set -euo pipefail; \
+            cd \$HOME && \
             sudo rsync -av --delete --exclude='privasys-auth.js' \
-              \$HOME/${STAGING}/ /var/websites/explorer.privasys.org/ && \
+              ${STAGING}/ /var/websites/explorer.privasys.org/ && \
             sudo nginx -t && sudo systemctl reload nginx"
 
       - name: Smoke test
