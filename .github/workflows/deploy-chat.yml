@@ -148,6 +148,29 @@ jobs:
             echo root=\$ROOT; \
             test \"\$ROOT\" = '307' -o \"\$ROOT\" = '308' -o \"\$ROOT\" = '200' || { echo 'root failed'; sudo docker logs ${CONTAINER} --tail 50; exit 1; }"
 
+      # Post-deploy smoke against the API the chat actually points at:
+      # mirrors the "Security view" rows the user sees in chat-test/i/demo.
+      # Catches the failure modes that hit prod:
+      #   - a tool silently dropping out of available_tools[] (Brave Search vanish)
+      #   - an enclave /attest returning 502 (stale gateway_host after Spot rotation)
+      #   - /attest returning a malformed body (missing quote.raw_base64 or certificate)
+      # verify-quote (deep TDX/SGX ECDSA check) is not run here because the
+      # CI runner has no SA bearer token; the spec degrades to shape-only.
+      - name: Smoke test (chat attestations - api shape)
+        if: always() && steps.target.outputs.api_url != ''
+        env:
+          CHAT_API_BASE: ${{ steps.target.outputs.api_url }}
+          CHAT_INSTANCE_API: ${{ steps.target.outputs.api_url }}/api/v1/ai/instances/${{ steps.target.outputs.default_instance }}
+        run: |
+          set -euo pipefail
+          # Playwright browsers aren't needed (API-only spec) but the
+          # runner is required. yarn install already provided it.
+          npx playwright test \
+            --config apps/fronts/developer.privasys.org/e2e/playwright.config.ts \
+            chat-attestations-green.spec.ts \
+            --project=chat-attestations-green \
+            --no-deps
+
       - name: Prune old build directories on OVH (keep last 5)
         if: always()
         env:

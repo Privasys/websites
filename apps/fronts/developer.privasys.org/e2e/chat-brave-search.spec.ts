@@ -56,7 +56,7 @@ test('brave-search: instance API publishes brave_search in available_tools', asy
 
     const brave = tools.find((t) => t.name === TOOL_NAME);
     expect(brave, `no available_tools entry for '${TOOL_NAME}'`).toBeTruthy();
-    expect(brave!.transport).toBe('mcp_sse');
+    expect(brave!.transport).toBe('privasys_http');
     expect(brave!.attest_url, 'brave_search missing attest_url').toBeTruthy();
     expect(brave!.attest_url).toMatch(/^\/api\/v1\/apps\/[0-9a-f-]+\/attest$/);
 });
