@@ -218,6 +218,7 @@ function SingleAttestation({
                             actions.regenerateChallenge();
                             void actions.inspect();
                         }}
+                        verifyQuoteUrl={verifyQuoteUrl}
                     />
                 )}
             </div>

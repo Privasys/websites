@@ -330,7 +330,7 @@
         quoteVerifyResult = null;
         renderAttestation();
         try {
-            var url = attestationServerUrl + '/verify';
+            var url = attestationServerUrl + '/verify-quote';
             var headers = { 'Content-Type': 'application/json' };
             if (attestationServerToken) headers['Authorization'] = 'Bearer ' + attestationServerToken;
             var res = await fetch(url, {
@@ -479,6 +479,13 @@
             els.push(renderQuoteVerificationCard());
         }
 
+        // Copy-paste verification snippet (always shown when we have a raw quote,
+        // so users can re-run the verification from their own console without
+        // having configured an attestation server URL up-front).
+        if (r.quote && r.quote.raw_base64 && !r.quote.is_mock) {
+            els.push(renderQuoteVerificationSnippetCard(r.quote.raw_base64));
+        }
+
         // Platform extensions
         if (r.extensions && r.extensions.length > 0) {
             els.push(renderExtCard('Platform Attestation Extensions', 'Platform-level x.509 extensions (OIDs 1.x/2.x) from the enclave certificate.', r.extensions, false, r));
@@ -541,6 +548,63 @@
             h('div', { className: 'card-body' },
                 h('p', null, 'Quote signature verified via ' + attestationServerUrl),
                 ...items
+            )
+        );
+    }
+
+    function renderQuoteVerificationSnippetCard(rawBase64) {
+        var url = (attestationServerUrl || 'https://as.privasys.org') + '/verify-quote';
+        var lines = [
+            '// SGX/TDX Quote signature verification - paste in your browser console',
+            '// Sends the raw quote to the Privasys Attestation Server for cryptographic verification.',
+            '//',
+            '// The attestation server requires an OIDC bearer token with',
+            '//   - audience: "attestation-server"',
+            '//   - issuer:   "https://privasys.id"  (or "https://relay.privasys.org" for app-bound tokens)',
+            '//',
+            '// If you are on a Privasys front-end that has signed you in to privasys.id,',
+            '// the snippet will mint a short-lived audience-scoped token for you.',
+            '// Otherwise sign in at https://privasys.id and paste an access_token below.',
+            '',
+            'const ATTESTATION_SERVER = "' + url + '";',
+            '',
+            'const quoteBase64 = "' + rawBase64 + '";',
+            '',
+            'async function getToken() {',
+            '  const sdk = window.PrivasysAuth || window.privasysAuth;',
+            '  if (sdk && typeof sdk.getTokenForAudience === "function") {',
+            '    return await sdk.getTokenForAudience("attestation-server");',
+            '  }',
+            '  const MANUAL_TOKEN = "";  // <-- paste your access_token here',
+            '  if (MANUAL_TOKEN) return MANUAL_TOKEN;',
+            '  throw new Error("No Privasys Auth SDK on this page. Sign in at https://privasys.id and paste an access_token into MANUAL_TOKEN above.");',
+            '}',
+            '',
+            '(async () => {',
+            '  const token = await getToken();',
+            '  const resp = await fetch(ATTESTATION_SERVER, {',
+            '    method: "POST",',
+            '    headers: { "Content-Type": "application/json", "Authorization": "Bearer " + token },',
+            '    body: JSON.stringify({ quote: quoteBase64 })',
+            '  });',
+            '  const r = await resp.json();',
+            '  console.log(r.success ? "\u2713 VERIFIED" : "\u2717 FAILED", r);',
+            '})();'
+        ];
+        var snippet = lines.join('\n');
+        var pre = h('pre', { className: 'code-block', style: 'max-height:14rem;overflow-y:auto;white-space:pre-wrap;word-break:break-all;font-size:11px' }, snippet);
+        var btn = h('button', {
+            className: 'btn btn-outline btn-sm',
+            onclick: function () { copyText(snippet); }
+        }, 'Copy');
+        return h('div', { className: 'card' },
+            h('div', { className: 'card-header' },
+                h('h3', null, 'Quote Verification Code'),
+                btn
+            ),
+            h('div', { className: 'card-body' },
+                h('p', null, 'Copy this snippet and paste it in your browser\u2019s developer console to independently verify the SGX/TDX quote signature via the Privasys Attestation Server. The snippet auto-mints an audience-scoped token when the Privasys Auth SDK is available; otherwise paste one from privasys.id.'),
+                pre
             )
         );
     }
@@ -646,6 +710,18 @@
         }
         return authFrame;
     }
+
+    // Expose a `window.PrivasysAuth.getTokenForAudience(audience)` helper so the
+    // copy-paste quote-verification snippet (and other dev-console flows) can
+    // mint an audience-scoped token without wiring auth state by hand.
+    window.PrivasysAuth = {
+        getTokenForAudience: function (audience) {
+            var frame = getAuthFrame();
+            return frame.getSession().then(function () {
+                return frame.getTokenForAudience(audience);
+            });
+        }
+    };
 
     function startSignIn() {
         var container = $('#auth-iframe-container');
@@ -1153,6 +1229,60 @@
         for (var i = 0; i < ids.length; i++) {
             var el = $('#' + ids[i]);
             if (el) el.addEventListener('keydown', function (e) { if (e.key === 'Enter') handleConnect(); });
+        }
+
+        // "Get Token" button: mint an `aud=attestation-server` JWT via
+        // Privasys.id and drop it straight into the token field. Only
+        // useful when the URL points at as.privasys.org (or a relay
+        // that trusts the same issuers); for self-hosted attestation
+        // servers the user must paste a token manually.
+        var tokenBtn = $('#attestation-token-btn');
+        var urlInput = $('#attestation-url-input');
+        function refreshTokenBtnState() {
+            if (!tokenBtn || !urlInput) return;
+            var v = (urlInput.value || '').trim().toLowerCase().replace(/\/+$/, '');
+            var ok = v === 'https://as.privasys.org' || v === '';
+            tokenBtn.disabled = !ok;
+            tokenBtn.title = ok
+                ? 'Sign in with Privasys.id to mint a token scoped to attestation-server'
+                : 'Get Token only works with https://as.privasys.org. For self-hosted servers, paste a token manually.';
+        }
+        if (urlInput) urlInput.addEventListener('input', refreshTokenBtnState);
+        refreshTokenBtnState();
+        if (tokenBtn) {
+            tokenBtn.addEventListener('click', function () {
+                var tokenInput = $('#attestation-token-input');
+                if (!tokenInput) return;
+                var originalLabel = tokenBtn.textContent;
+                tokenBtn.disabled = true;
+                tokenBtn.textContent = 'Signing in…';
+                var frame;
+                try {
+                    frame = getAuthFrame();
+                } catch (e) {
+                    tokenBtn.textContent = originalLabel;
+                    refreshTokenBtnState();
+                    alert('Auth SDK not loaded: ' + (e && e.message ? e.message : e));
+                    return;
+                }
+                frame.getSession()
+                    .then(function () { return frame.getTokenForAudience('attestation-server'); })
+                    .then(function (token) {
+                        if (!token) throw new Error('No token returned');
+                        tokenInput.value = token;
+                        // Briefly reveal so the user can see something happened.
+                        tokenBtn.textContent = '✓ Token set';
+                        setTimeout(function () {
+                            tokenBtn.textContent = originalLabel;
+                            refreshTokenBtnState();
+                        }, 1500);
+                    })
+                    .catch(function (err) {
+                        tokenBtn.textContent = originalLabel;
+                        refreshTokenBtnState();
+                        alert('Failed to obtain token: ' + (err && err.message ? err.message : err));
+                    });
+            });
         }
 
         // Environment selector

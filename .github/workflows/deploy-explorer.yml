@@ -1,0 +1,117 @@
+name: Deploy Explorer to OVH
+
+# Deploys the static `explorer.privasys.org` site (plain HTML/JS/CSS)
+# to `vm-ovh-fr-par-1` under `/var/websites/explorer.privasys.org/`.
+# Nginx serves the directory directly (TLS via Let's Encrypt) — no
+# container swap required, just an atomic rsync.
+#
+# Mirrors the SSH/secrets surface used by deploy-chat.yml so a single
+# OVH_SSH_KEY / OVH_HOST / OVH_USER / OVH_SSH_PORT triplet covers both.
+
+on:
+  workflow_dispatch:
+    inputs:
+      smoke:
+        description: 'Run post-deploy HTTP smoke test'
+        required: false
+        type: boolean
+        default: true
+
+concurrency:
+  group: deploy-explorer
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy explorer.privasys.org
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.NX_CACHE_AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.NX_CACHE_AWS_SECRET_ACCESS_KEY }}
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.x
+          cache: yarn
+
+      - name: Install dependencies
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: yarn install --network-timeout 1000000 --immutable
+
+      - name: Build explorer (static copy)
+        run: |
+          set -euo pipefail
+          npx nx reset
+          npx nx build explorer.privasys.org --skip-nx-cache
+          test -f dist/apps/fronts/explorer.privasys.org/index.html
+          echo "::group::Files to deploy"
+          ls -la dist/apps/fronts/explorer.privasys.org/
+          echo "::endgroup::"
+
+      - name: Configure SSH
+        env:
+          OVH_SSH_KEY: ${{ secrets.OVH_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$OVH_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "${{ secrets.OVH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Stage build on OVH and publish atomically
+        env:
+          OVH_HOST: ${{ secrets.OVH_HOST }}
+          OVH_USER: ${{ secrets.OVH_USER }}
+          OVH_SSH_PORT: ${{ secrets.OVH_SSH_PORT }}
+        run: |
+          set -euo pipefail
+          PORT="${OVH_SSH_PORT:-22}"
+          DIST=dist/apps/fronts/explorer.privasys.org
+          TAG="$(date -u +%Y%m%d-%H%M%S)-${GITHUB_SHA::7}"
+          STAGING="explorer-builds/${TAG}"
+          # 1. Stage the build under the OVH user's home dir.
+          ssh -p "$PORT" -i ~/.ssh/id_ed25519 "${OVH_USER}@${OVH_HOST}" "mkdir -p \$HOME/${STAGING}"
+          rsync -avz --delete \
+            -e "ssh -p ${PORT} -i ~/.ssh/id_ed25519" \
+            "${DIST}/" "${OVH_USER}@${OVH_HOST}:\$HOME/${STAGING}/"
+          # 2. Atomically rsync staging → /var/websites. Keep the legacy
+          #    `privasys-auth.js` file in place (it's loaded by nothing
+          #    in the current index.html — the SDK comes from
+          #    privasys.id — but removing it would break any cached
+          #    indexes still in flight). Reload nginx to pick up
+          #    new files (optional for static; cheap insurance).
+          ssh -p "$PORT" -i ~/.ssh/id_ed25519 "${OVH_USER}@${OVH_HOST}" "set -euo pipefail; \
+            sudo rsync -av --delete --exclude='privasys-auth.js' \
+              \$HOME/${STAGING}/ /var/websites/explorer.privasys.org/ && \
+            sudo nginx -t && sudo systemctl reload nginx"
+
+      - name: Smoke test
+        if: ${{ inputs.smoke }}
+        run: |
+          set -euo pipefail
+          ROOT=$(curl -sS -o /tmp/explorer-index.html -w '%{http_code}' https://explorer.privasys.org/)
+          echo "root=$ROOT"
+          test "$ROOT" = "200"
+          grep -q 'attestation-url-input' /tmp/explorer-index.html
+          grep -q 'value="https://as.privasys.org"' /tmp/explorer-index.html
+
+      - name: Prune old staged builds on OVH (keep last 5)
+        if: always()
+        env:
+          OVH_HOST: ${{ secrets.OVH_HOST }}
+          OVH_USER: ${{ secrets.OVH_USER }}
+          OVH_SSH_PORT: ${{ secrets.OVH_SSH_PORT }}
+        run: |
+          set -euo pipefail
+          PORT="${OVH_SSH_PORT:-22}"
+          ssh -p "$PORT" -i ~/.ssh/id_ed25519 "${OVH_USER}@${OVH_HOST}" \
+            "ls -1t ~/explorer-builds 2>/dev/null | tail -n +6 | xargs -r -I{} rm -rf ~/explorer-builds/{}" || true

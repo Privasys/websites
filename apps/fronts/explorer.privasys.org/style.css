@@ -138,6 +138,36 @@ code, pre, .mono { font-family: var(--mono); }
     margin-bottom: 12px;
 }
 .connect-card input:focus { border-color: var(--blue); }
+.connect-card .token-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+.connect-card .token-row input {
+    flex: 1;
+    margin-bottom: 0;
+}
+.connect-card .token-row .token-btn {
+    flex: 0 0 auto;
+    padding: 0 14px;
+    font-size: 12px;
+    font-family: var(--font);
+    font-weight: 500;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--input-bg);
+    color: var(--fg);
+    cursor: pointer;
+    white-space: nowrap;
+}
+.connect-card .token-row .token-btn:hover:not(:disabled) {
+    border-color: var(--blue);
+    color: var(--blue);
+}
+.connect-card .token-row .token-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
 .connect-card select {
     width: 100%;
     padding: 10px 12px;
