@@ -714,12 +714,59 @@
     // Expose a `window.PrivasysAuth.getTokenForAudience(audience)` helper so the
     // copy-paste quote-verification snippet (and other dev-console flows) can
     // mint an audience-scoped token without wiring auth state by hand.
+    //
+    // IMPORTANT: this is a SEPARATE AuthFrame from `getAuthFrame()`. The latter
+    // signs the user into a *per-WASM-app* RP (`<appName>.<gatewayDomain>`)
+    // using EncAuth — completely different credentials and OIDC client. To
+    // mint an `aud=attestation-server` JWT we need the user's *Privasys.id*
+    // identity (OIDC `privasys-platform` client on `privasys.id`).
+    var idpAuthFrame = null;
+    function getIdpAuthFrame() {
+        if (idpAuthFrame) return idpAuthFrame;
+        idpAuthFrame = new Privasys.AuthFrame({
+            apiBase: ENV_CONFIG[currentEnv].baseUrl,
+            appName: 'Privasys Explorer',
+            rpId: 'privasys.id',
+            authOrigin: ENV_CONFIG[currentEnv].authOrigin,
+            clientId: 'privasys-platform',
+            scope: ['openid', 'email', 'profile', 'offline_access']
+        });
+        return idpAuthFrame;
+    }
+
+    // Drive a full sign-in + audience-token mint against privasys.id.
+    //
+    // The SDK contract is:
+    //   * `getSession()` returns the existing session if one is cached on
+    //     privasys.id, otherwise resolves to null AND tears down the hidden
+    //     SSO probe iframe.
+    //   * `getTokenForAudience()` posts to the session iframe — so it
+    //     requires either a live cached session, or a fresh `signIn()` to
+    //     establish one.
+    //   * `signIn()` opens the visible OIDC overlay; on success the user
+    //     is signed into privasys.id but the overlay iframe is torn down.
+    //     We must then call `getSession()` again to remount the hidden
+    //     renewal iframe before `getTokenForAudience()` will work.
+    //
+    // The previous implementation `getSession().then(getTokenForAudience)`
+    // collapsed to "no active session iframe; call getSession() first"
+    // whenever the user wasn't already signed in.
+    function mintAudienceToken(audience) {
+        var frame = getIdpAuthFrame();
+        return frame.getSession().then(function (s) {
+            if (s) return s;
+            return frame.signIn().then(function () {
+                return frame.getSession();
+            });
+        }).then(function (s) {
+            if (!s) throw new Error('Sign-in completed but no session was established');
+            return frame.getTokenForAudience(audience);
+        });
+    }
+
     window.PrivasysAuth = {
         getTokenForAudience: function (audience) {
-            var frame = getAuthFrame();
-            return frame.getSession().then(function () {
-                return frame.getTokenForAudience(audience);
-            });
+            return mintAudienceToken(audience);
         }
     };
 
@@ -1256,21 +1303,16 @@
                 var originalLabel = tokenBtn.textContent;
                 tokenBtn.disabled = true;
                 tokenBtn.textContent = 'Signing in…';
-                var frame;
-                try {
-                    frame = getAuthFrame();
-                } catch (e) {
+                if (typeof Privasys === 'undefined' || !Privasys.AuthFrame) {
                     tokenBtn.textContent = originalLabel;
                     refreshTokenBtnState();
-                    alert('Auth SDK not loaded: ' + (e && e.message ? e.message : e));
+                    alert('Auth SDK not loaded. The hosted privasys-auth-client.iife.js bundle on privasys.id may be unavailable.');
                     return;
                 }
-                frame.getSession()
-                    .then(function () { return frame.getTokenForAudience('attestation-server'); })
+                mintAudienceToken('attestation-server')
                     .then(function (token) {
                         if (!token) throw new Error('No token returned');
                         tokenInput.value = token;
-                        // Briefly reveal so the user can see something happened.
                         tokenBtn.textContent = '✓ Token set';
                         setTimeout(function () {
                             tokenBtn.textContent = originalLabel;
@@ -1280,6 +1322,9 @@
                     .catch(function (err) {
                         tokenBtn.textContent = originalLabel;
                         refreshTokenBtnState();
+                        // "Authentication cancelled" is the user closing the
+                        // SDK iframe — don't surface a scary alert.
+                        if (err && /cancelled/i.test(err.message || '')) return;
                         alert('Failed to obtain token: ' + (err && err.message ? err.message : err));
                     });
             });
