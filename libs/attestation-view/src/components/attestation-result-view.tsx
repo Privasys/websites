@@ -64,6 +64,7 @@ export function AttestationResultView({
     onChallengeChange,
     onRegenerateChallenge,
     loading,
+    verifyQuoteUrl,
 }: {
     result: AttestationResult;
     quoteVerify?: QuoteVerifyResult | null;
@@ -94,6 +95,12 @@ export function AttestationResultView({
     /** True while a re-inspect is in flight - disables Refresh and
      *  surfaces a spinner. */
     loading?: boolean;
+    /** Full URL of the attestation server's verify-quote endpoint
+     *  (e.g. `https://as.privasys.org/verify-quote`). When provided,
+     *  the copy-paste verification snippet at the bottom of the view
+     *  targets this URL. When omitted the snippet renders a clear
+     *  placeholder so users know what to substitute. */
+    verifyQuoteUrl?: string;
 }) {
     const reportDataCheck = useReportDataCheck(result);
     const showChallengeEditor = challenge != null && (onChallengeChange || onRegenerateChallenge);
@@ -227,7 +234,10 @@ export function AttestationResultView({
             )}
 
             {result.quote?.raw_base64 && !result.quote.is_mock && (
-                <QuoteVerificationCodeSection rawBase64={result.quote.raw_base64} />
+                <QuoteVerificationCodeSection
+                    rawBase64={result.quote.raw_base64}
+                    verifyQuoteUrl={verifyQuoteUrl}
+                />
             )}
         </div>
     );
@@ -761,20 +771,53 @@ function VerificationCodeSection({
     );
 }
 
-function QuoteVerificationCodeSection({ rawBase64 }: { rawBase64: string }) {
-    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+function QuoteVerificationCodeSection({
+    rawBase64,
+    verifyQuoteUrl,
+}: {
+    rawBase64: string;
+    verifyQuoteUrl?: string;
+}) {
+    // The attestation server is OIDC-protected (audience
+    // `attestation-server`, issuers `https://privasys.id` and
+    // `https://relay.privasys.org`). The snippet below mints a token
+    // via the Privasys Auth SDK when available on the page, and
+    // otherwise falls back to a clear "paste a bearer token" comment
+    // so users can experiment from any console.
+    const url = verifyQuoteUrl || 'https://as.privasys.org/verify-quote';
     const snippet = [
         '// SGX/TDX Quote signature verification - paste in your browser console',
         '// Sends the raw quote to the Privasys Attestation Server for cryptographic verification.',
-        `const ATTESTATION_SERVER = "${origin}/api/v1/verify-quote";`,
-        'const TOKEN = "YOUR_ACCESS_TOKEN"; // Replace with your bearer token',
+        '//',
+        '// The attestation server requires an OIDC bearer token with',
+        '//   - audience: "attestation-server"',
+        '//   - issuer:   "https://privasys.id"  (or "https://relay.privasys.org" for app-bound tokens)',
+        '//',
+        '// If you are on a Privasys front-end that has signed you in to privasys.id,',
+        '// the snippet will mint a short-lived audience-scoped token for you.',
+        '// Otherwise sign in at https://privasys.id and paste an access_token below.',
+        '',
+        `const ATTESTATION_SERVER = "${url}";`,
         '',
         `const quoteBase64 = "${rawBase64}";`,
         '',
+        'async function getToken() {',
+        "  // 1. Hosted Privasys Auth SDK (chat.privasys.org, developer-portal, explorer\u2026):",
+        '  const sdk = window.PrivasysAuth || window.privasysAuth;',
+        '  if (sdk && typeof sdk.getTokenForAudience === "function") {',
+        '    return await sdk.getTokenForAudience("attestation-server");',
+        '  }',
+        '  // 2. Manual fallback: paste a bearer token here.',
+        '  const MANUAL_TOKEN = "";  // <-- paste your access_token here',
+        '  if (MANUAL_TOKEN) return MANUAL_TOKEN;',
+        '  throw new Error("No Privasys Auth SDK on this page. Sign in at https://privasys.id and paste an access_token into MANUAL_TOKEN above.");',
+        '}',
+        '',
         '(async () => {',
+        '  const token = await getToken();',
         '  const resp = await fetch(ATTESTATION_SERVER, {',
         '    method: "POST",',
-        '    headers: { "Content-Type": "application/json", "Authorization": "Bearer " + TOKEN },',
+        '    headers: { "Content-Type": "application/json", "Authorization": "Bearer " + token },',
         '    body: JSON.stringify({ quote: quoteBase64 })',
         '  });',
         '  const r = await resp.json();',
@@ -790,7 +833,9 @@ function QuoteVerificationCodeSection({ rawBase64 }: { rawBase64: string }) {
             <p className='mb-3 text-xs text-black/40 dark:text-white/40'>
                 Copy this snippet and paste it in your browser&rsquo;s developer console to
                 independently verify the SGX/TDX quote signature and certificate chain via the
-                Privasys Attestation Server.
+                Privasys Attestation Server. The snippet auto-mints an audience-scoped token
+                when the Privasys Auth SDK is available; otherwise paste one from{' '}
+                <a href='https://privasys.id' className='underline' target='_blank' rel='noreferrer'>privasys.id</a>.
             </p>
             <pre className='max-h-56 overflow-y-auto whitespace-pre-wrap break-all rounded-lg bg-black/5 p-3 font-mono text-[11px] dark:bg-white/5'>
                 {snippet}

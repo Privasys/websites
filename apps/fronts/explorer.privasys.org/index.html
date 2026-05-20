@@ -60,12 +60,15 @@
 
             <fieldset class="connect-section">
                 <legend>Quote Verification</legend>
-                <label for="attestation-url-input">Attestation Server URL <span class="optional">(optional)</span></label>
-                <input type="text" id="attestation-url-input" placeholder="https://as.privasys.org">
+                <label for="attestation-url-input">Attestation Server URL</label>
+                <input type="text" id="attestation-url-input" placeholder="https://as.privasys.org" value="https://as.privasys.org">
 
                 <label for="attestation-token-input">Attestation Server Token <span class="optional">(optional)</span></label>
-                <input type="password" id="attestation-token-input" placeholder="eyJhbGciOi...">
-                <div class="field-hint">When provided, the SGX/TDX quote signature will be verified via the attestation server.</div>
+                <div class="token-row">
+                    <input type="password" id="attestation-token-input" placeholder="eyJhbGciOi...">
+                    <button type="button" id="attestation-token-btn" class="token-btn" title="Sign in with Privasys.id to mint a token scoped to attestation-server">Get Token</button>
+                </div>
+                <div class="field-hint">When the URL points at <code>as.privasys.org</code>, click <em>Get Token</em> to mint an audience-scoped JWT via Privasys.id. Otherwise paste a token manually.</div>
             </fieldset>
 
             <button class="connect-btn" id="connect-btn">Connect</button>

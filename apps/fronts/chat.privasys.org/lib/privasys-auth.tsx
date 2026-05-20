@@ -240,6 +240,24 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
         [getFrame]
     );
 
+    // Expose a minimal helper on `window.PrivasysAuth` so the copy-paste
+    // quote-verification snippet (and other dev-console flows) can mint
+    // an audience-scoped token without having to wire the React context
+    // out by hand. Only the audience-token method is exposed - sign-in /
+    // sign-out flows stay routed through the React context.
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        const w = window as unknown as {
+            PrivasysAuth?: { getTokenForAudience: (_audience: string) => Promise<string> };
+        };
+        w.PrivasysAuth = { getTokenForAudience };
+        return () => {
+            if (w.PrivasysAuth?.getTokenForAudience === getTokenForAudience) {
+                delete w.PrivasysAuth;
+            }
+        };
+    }, [getTokenForAudience]);
+
     return (
         <AuthContext.Provider
             value={{ session, loading, expired, sealedSession, getTokenForAudience, signIn, signInInto, signOut }}

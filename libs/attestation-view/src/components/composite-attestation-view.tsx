@@ -233,6 +233,7 @@ function AttestationRow({
                             actions.regenerateChallenge();
                             void actions.inspect();
                         }}
+                        verifyQuoteUrl={target.verifyQuoteUrl}
                     />
                 )}
             </div>
