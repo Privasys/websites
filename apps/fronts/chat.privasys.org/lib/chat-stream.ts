@@ -175,7 +175,11 @@ export async function streamChatCompletion(args: StreamChatArgs): Promise<void> 
     const url = `${args.endpoint.replace(/\/$/, '')}/v1/chat/completions`;
     const headers: Record<string, string> = {
         'Content-Type': 'application/json',
-        'Accept': 'text/event-stream'
+        'Accept': 'text/event-stream',
+        // Opt in to the privasys-specific reproducibility metadata
+        // SSE frame. Stock OpenAI clients (e.g. Zed) omit this header
+        // and get a vanilla stream they can parse.
+        'X-Privasys-Reproducibility': '1'
     };
     if (args.token) headers.Authorization = `Bearer ${args.token}`;
     if (args.enabledTools !== undefined) {
@@ -205,9 +209,12 @@ export async function streamChatCompletion(args: StreamChatArgs): Promise<void> 
         try {
             const sealed = await args.sealedSession.stream('POST', '/v1/chat/completions', body, {
                 signal: args.signal,
-                headers: args.enabledTools !== undefined
-                    ? { 'X-Privasys-Tools': args.enabledTools.join(',') }
-                    : undefined
+                headers: {
+                    'X-Privasys-Reproducibility': '1',
+                    ...(args.enabledTools !== undefined
+                        ? { 'X-Privasys-Tools': args.enabledTools.join(',') }
+                        : {})
+                }
             });
             if (sealed.status >= 400) {
                 const drained: Uint8Array[] = [];
