@@ -383,6 +383,16 @@ export interface AppEvent {
 // Fleets and AI Tools (manager admin UI)
 // ---------------------------------------------------------------------------
 
+export interface AvailableModel {
+    name: string;
+    label?: string;
+    digest: string;
+    modality: string;
+    loaded: boolean;
+    loadable: boolean;
+    load_time_seconds?: number;
+}
+
 export interface Fleet {
     id: string;
     name: string;
@@ -390,7 +400,39 @@ export interface Fleet {
     owner: string;
     zone: string | null;
     vllm_mode: string;
+    quota_tokens_per_day?: number | null;
+    quota_rpm?: number | null;
+    available_models?: AvailableModel[];
+    multi_model?: boolean;
+    endpoint?: string;
+    attestation_server?: string;
+    auth_required?: boolean;
+    auth_issuer?: string;
+    created_at?: string;
+    updated_at?: string;
 }
+
+export interface CreateFleetBody {
+    name: string;
+    alias?: string | null;
+    owner: string;
+    zone: string;
+    vllm_mode?: string;
+    quota_tokens_per_day?: number | null;
+    quota_rpm?: number | null;
+    available_models?: AvailableModel[];
+    multi_model?: boolean;
+    endpoint?: string;
+    attestation_server?: string;
+    auth_required?: boolean;
+    auth_issuer?: string;
+}
+
+export type UpdateFleetBody = Partial<CreateFleetBody> & {
+    clear_alias?: boolean;
+    clear_quota_tokens_per_day?: boolean;
+    clear_quota_rpm?: boolean;
+};
 
 export interface AITool {
     id: string;
