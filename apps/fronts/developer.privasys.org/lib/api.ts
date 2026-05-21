@@ -576,6 +576,32 @@ export function listFleets(token: string): Promise<{ fleets: import('./types').F
     return request<{ fleets: import('./types').Fleet[] }>('/api/v1/fleets', token);
 }
 
+export function adminCreateFleet(
+    token: string, body: import('./types').CreateFleetBody
+): Promise<import('./types').Fleet> {
+    return request<import('./types').Fleet>('/api/v1/admin/fleets/', token, {
+        method: 'POST',
+        body: JSON.stringify(body)
+    });
+}
+
+export function adminUpdateFleet(
+    token: string, fleetId: string, body: import('./types').UpdateFleetBody
+): Promise<import('./types').Fleet> {
+    return request<import('./types').Fleet>(
+        `/api/v1/admin/fleets/${encodeURIComponent(fleetId)}`,
+        token, {
+            method: 'PATCH',
+            body: JSON.stringify(body)
+        });
+}
+
+export function adminDeleteFleet(token: string, fleetId: string): Promise<void> {
+    return request<void>(
+        `/api/v1/admin/fleets/${encodeURIComponent(fleetId)}`,
+        token, { method: 'DELETE' });
+}
+
 export function adminListFleetTools(token: string, fleetId: string): Promise<{ tools: import('./types').AITool[] }> {
     return request<{ tools: import('./types').AITool[] }>(
         `/api/v1/admin/fleets/${encodeURIComponent(fleetId)}/tools`, token);
