@@ -8,7 +8,15 @@ export interface NavItem {
     label: string;
     href: string;
     external?: boolean;
-    children?: { label: string; href: string }[];
+    description?: string;
+    children?: {
+        label: string;
+        href: string;
+        external?: boolean;
+        eyebrow?: string;
+        description?: string;
+    }[];
+    dropdownLinks?: { label: string; href: string; external?: boolean }[];
 }
 
 export interface NavbarProps {
@@ -39,6 +47,17 @@ export function Navbar({ brand, brandSuffix, items = [], cta, trailing, faviconP
     }, []);
 
     useEffect(() => {
+        const onKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                setOpenDropdown(null);
+                setMobileOpen(false);
+            }
+        };
+        document.addEventListener('keydown', onKeyDown);
+        return () => document.removeEventListener('keydown', onKeyDown);
+    }, []);
+
+    useEffect(() => {
         document.body.style.overflow = mobileOpen ? 'hidden' : '';
         return () => { document.body.style.overflow = ''; };
     }, [mobileOpen]);
@@ -66,6 +85,7 @@ export function Navbar({ brand, brandSuffix, items = [], cta, trailing, faviconP
                                         <button
                                             onClick={() => setOpenDropdown(openDropdown === item.label ? null : item.label)}
                                             className="pui-navbar-link pui-navbar-dropdown-trigger"
+                                            aria-expanded={openDropdown === item.label}
                                         >
                                             {item.label}
                                             <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className={openDropdown === item.label ? 'pui-rotate' : ''}>
@@ -73,13 +93,7 @@ export function Navbar({ brand, brandSuffix, items = [], cta, trailing, faviconP
                                             </svg>
                                         </button>
                                         {openDropdown === item.label && (
-                                            <div className="pui-navbar-dropdown">
-                                                {item.children.map((child) => (
-                                                    <Link key={child.href} href={child.href} className="pui-navbar-dropdown-item">
-                                                        {child.label}
-                                                    </Link>
-                                                ))}
-                                            </div>
+                                            <DropdownMenu item={item} onClose={() => setOpenDropdown(null)} />
                                         )}
                                     </div>
                                 ) : (
@@ -155,6 +169,76 @@ export function Navbar({ brand, brandSuffix, items = [], cta, trailing, faviconP
     );
 }
 
+function DropdownMenu({ item, onClose }: { item: NavItem; onClose: () => void }) {
+    const rich = item.children?.some((child) => child.description || child.eyebrow);
+
+    if (!item.children) return null;
+
+    if (!rich) {
+        return (
+            <div className="pui-navbar-dropdown">
+                {item.children.map((child) => (
+                    <Link
+                        key={child.href}
+                        href={child.href}
+                        className="pui-navbar-dropdown-item"
+                        onClick={onClose}
+                        {...(child.external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+                    >
+                        {child.label}
+                    </Link>
+                ))}
+            </div>
+        );
+    }
+
+    return (
+        <div className="pui-navbar-megamenu">
+            <div className="pui-navbar-megamenu-inner">
+                <div className="pui-navbar-megamenu-intro">
+                    <p className="pui-navbar-megamenu-kicker">{item.label}</p>
+                    {item.description && (
+                        <p className="pui-navbar-megamenu-copy">{item.description}</p>
+                    )}
+                    {item.dropdownLinks && item.dropdownLinks.length > 0 && (
+                        <div className="pui-navbar-megamenu-actions">
+                            {item.dropdownLinks.map((link) => (
+                                <Link
+                                    key={link.href}
+                                    href={link.href}
+                                    onClick={onClose}
+                                    {...(link.external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+                                >
+                                    {link.label}
+                                </Link>
+                            ))}
+                        </div>
+                    )}
+                </div>
+                <div className="pui-navbar-megamenu-grid">
+                    {item.children.map((child) => (
+                        <Link
+                            key={child.href}
+                            href={child.href}
+                            className="pui-navbar-megamenu-item"
+                            onClick={onClose}
+                            {...(child.external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+                        >
+                            {child.eyebrow && (
+                                <span className="pui-navbar-megamenu-eyebrow">{child.eyebrow}</span>
+                            )}
+                            <span className="pui-navbar-megamenu-title">{child.label}</span>
+                            {child.description && (
+                                <span className="pui-navbar-megamenu-description">{child.description}</span>
+                            )}
+                        </Link>
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
+}
+
 function MobileDropdown({ item }: { item: NavItem }) {
     const [open, setOpen] = useState(false);
     return (
@@ -171,8 +255,16 @@ function MobileDropdown({ item }: { item: NavItem }) {
             {open && item.children && (
                 <div className="pui-mobile-dropdown-children">
                     {item.children.map((child) => (
-                        <Link key={child.href} href={child.href} className="pui-mobile-dropdown-child">
-                            {child.label}
+                        <Link
+                            key={child.href}
+                            href={child.href}
+                            className="pui-mobile-dropdown-child"
+                            {...(child.external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+                        >
+                            <span className="pui-mobile-dropdown-child-title">{child.label}</span>
+                            {child.description && (
+                                <span className="pui-mobile-dropdown-child-description">{child.description}</span>
+                            )}
                         </Link>
                     ))}
                 </div>
