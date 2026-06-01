@@ -7,17 +7,52 @@ const NAV_ITEMS = [
     {
         label: 'Solutions',
         href: '#',
+        description: 'Build, run, and verify applications where data stays protected by hardware.',
         children: [
-            { label: 'Enclave OS', href: '/solutions/enclave-os' },
-            { label: 'Enclave Vaults', href: '/solutions/enclave-vaults' },
-            { label: 'Enclave Agent', href: '/solutions/enclave-agent' },
-            { label: 'Privasys AI', href: '/solutions/ai' },
-            { label: 'Privasys Platform', href: '/solutions/platform' },
-            { label: 'Privasys Wallet', href: '/solutions/wallet' }
+            {
+                label: 'Enclave OS',
+                href: '/solutions/enclave-os',
+                eyebrow: 'Runtime',
+                description: 'Run applications inside attested confidential environments with encrypted memory and verifiable runtime state.'
+            },
+            {
+                label: 'Enclave Vaults',
+                href: '/solutions/enclave-vaults',
+                eyebrow: 'Keys',
+                description: 'A distributed virtual HSM for keys, policies, approvals, and cryptographic operations inside secure enclaves.'
+            },
+            {
+                label: 'Enclave Agent',
+                href: '/solutions/enclave-agent',
+                eyebrow: 'Agents',
+                description: 'Deploy AI agents and retrieval workflows where prompts, tools, and private data stay inside the trust boundary.'
+            },
+            {
+                label: 'Privasys AI',
+                href: '/solutions/ai',
+                eyebrow: 'Inference',
+                description: 'Confidential inference for sensitive workloads, with hardware attestation from the client to the model endpoint.'
+            },
+            {
+                label: 'Privasys Platform',
+                href: '/solutions/platform',
+                eyebrow: 'Deploy',
+                description: 'Developer tools to build, deploy, route, and attest WASM or container apps on confidential infrastructure.'
+            },
+            {
+                label: 'Privasys Wallet',
+                href: '/solutions/wallet',
+                eyebrow: 'Identity',
+                description: 'Passwordless identity and approvals from your phone, with server verification before users authenticate.'
+            }
+        ],
+        dropdownLinks: [
+            { label: 'Developer portal', href: 'https://developer.privasys.org', external: true },
+            { label: 'Documentation', href: 'https://docs.privasys.org', external: true }
         ]
     },
     { label: 'App Store', href: '/uk/apps' },
-    { label: 'Technology', href: 'https://docs.privasys.org', external: true },
+    { label: 'Docs', href: 'https://docs.privasys.org', external: true },
     { label: 'Blog', href: '/blog' },
     { label: 'Contact Us', href: 'mailto:contact@privasys.org?subject=Privasys%20website%20contact', external: true }
 ];
