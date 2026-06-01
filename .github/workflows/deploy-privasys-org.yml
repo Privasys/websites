@@ -1,0 +1,116 @@
+name: Deploy Privasys.org to OVH
+
+# Deploys the static `privasys.org` Next export to `vm-ovh-fr-par-1`
+# under `/var/websites/privasys.org/`. Nginx serves the directory directly
+# and keeps the Plausible proxy locations in its server block.
+#
+# Mirrors the SSH/secrets surface used by deploy-explorer.yml.
+
+on:
+  workflow_dispatch:
+    inputs:
+      smoke:
+        description: 'Run post-deploy HTTP smoke test'
+        required: false
+        type: boolean
+        default: true
+
+concurrency:
+  group: deploy-privasys-org
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy privasys.org
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      NEXT_TELEMETRY_DISABLED: 1
+      AWS_ACCESS_KEY_ID: ${{ secrets.NX_CACHE_AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.NX_CACHE_AWS_SECRET_ACCESS_KEY }}
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.x
+          cache: yarn
+
+      - name: Install dependencies
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: yarn install --network-timeout 1000000 --immutable
+
+      - name: Build privasys.org static export
+        run: |
+          set -euo pipefail
+          npx nx reset
+          npx nx run privasys.org:postbuild --skip-nx-cache
+          test -f dist/apps/fronts/privasys.org/.next/index.html
+          test -f dist/apps/fronts/privasys.org/.next/sitemap.xml
+          test -d dist/apps/fronts/privasys.org/.next/_next/static
+          echo "::group::Files to deploy"
+          find dist/apps/fronts/privasys.org/.next -maxdepth 2 -type f | sort | head -200
+          echo "::endgroup::"
+
+      - name: Configure SSH
+        env:
+          OVH_SSH_KEY: ${{ secrets.OVH_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$OVH_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "${{ secrets.OVH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Stage build on OVH and publish atomically
+        env:
+          OVH_HOST: ${{ secrets.OVH_HOST }}
+          OVH_USER: ${{ secrets.OVH_USER }}
+          OVH_SSH_PORT: ${{ secrets.OVH_SSH_PORT }}
+        run: |
+          set -euo pipefail
+          PORT="${OVH_SSH_PORT:-22}"
+          DIST=dist/apps/fronts/privasys.org/.next
+          TAG="$(date -u +%Y%m%d-%H%M%S)-${GITHUB_SHA::7}"
+          STAGING="privasys-org-builds/${TAG}"
+          ssh -p "$PORT" -i ~/.ssh/id_ed25519 "${OVH_USER}@${OVH_HOST}" "mkdir -p ${STAGING}"
+          rsync -avz --delete \
+            -e "ssh -p ${PORT} -i ~/.ssh/id_ed25519" \
+            "${DIST}/" "${OVH_USER}@${OVH_HOST}:${STAGING}/"
+          ssh -p "$PORT" -i ~/.ssh/id_ed25519 "${OVH_USER}@${OVH_HOST}" "set -euo pipefail; \
+            cd \$HOME && \
+            sudo rsync -av --delete \
+              ${STAGING}/ /var/websites/privasys.org/ && \
+            sudo nginx -t && sudo systemctl reload nginx"
+
+      - name: Smoke test
+        if: ${{ inputs.smoke }}
+        run: |
+          set -euo pipefail
+          ROOT=$(curl -sS -o /tmp/privasys-org-index.html -w '%{http_code}' https://privasys.org/)
+          echo "root=$ROOT"
+          test "$ROOT" = "200"
+          grep -q 'We&rsquo;re committed to' /tmp/privasys-org-index.html
+          grep -q 'pui-navbar-dropdown-trigger' /tmp/privasys-org-index.html
+          CSS=$(grep -o 'href="[^"]*\.css"' /tmp/privasys-org-index.html | head -1 | sed 's/^href="//;s/"$//')
+          test -n "$CSS"
+          curl -sS "https://privasys.org${CSS}" -o /tmp/privasys-org.css
+          grep -q 'pui-navbar-megamenu' /tmp/privasys-org.css
+
+      - name: Prune old staged builds on OVH (keep last 5)
+        if: always()
+        env:
+          OVH_HOST: ${{ secrets.OVH_HOST }}
+          OVH_USER: ${{ secrets.OVH_USER }}
+          OVH_SSH_PORT: ${{ secrets.OVH_SSH_PORT }}
+        run: |
+          set -euo pipefail
+          PORT="${OVH_SSH_PORT:-22}"
+          ssh -p "$PORT" -i ~/.ssh/id_ed25519 "${OVH_USER}@${OVH_HOST}" \
+            "ls -1t ~/privasys-org-builds 2>/dev/null | tail -n +6 | xargs -r -I{} rm -rf ~/privasys-org-builds/{}" || true
