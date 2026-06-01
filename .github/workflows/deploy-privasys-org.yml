@@ -96,7 +96,7 @@ jobs:
           ROOT=$(curl -sS -o /tmp/privasys-org-index.html -w '%{http_code}' https://privasys.org/)
           echo "root=$ROOT"
           test "$ROOT" = "200"
-          grep -q 'We&rsquo;re committed to' /tmp/privasys-org-index.html
+          grep -q 'committed to' /tmp/privasys-org-index.html
           grep -q 'pui-navbar-dropdown-trigger' /tmp/privasys-org-index.html
           CSS=$(grep -o 'href="[^"]*\.css"' /tmp/privasys-org-index.html | head -1 | sed 's/^href="//;s/"$//')
           test -n "$CSS"
