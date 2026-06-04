@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { Navbar, Footer } from '@privasys/ui';
 
 const NAV_ITEMS = [
+    { label: 'Pricing', href: '/pricing' },
     { label: 'Docs', href: 'https://docs.privasys.org', external: true },
     { label: 'Website', href: 'https://privasys.org', external: true },
     { label: 'GitHub', href: 'https://github.com/Privasys', external: true }
