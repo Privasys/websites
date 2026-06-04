@@ -580,6 +580,73 @@ export function removeAccountMember(token: string, sub: string): Promise<{ membe
     );
 }
 
+// --- Billing (read-only views proxied from the credit-ledger service) ---
+
+export interface BillingBalance {
+    account_id: string;
+    balance: number;
+    frozen: boolean;
+    updated_at: string;
+}
+
+export interface BillingUsageResource {
+    resource: string;
+    quantity: number;
+    calls: number;
+    credits: number;
+}
+
+export interface BillingUsage {
+    by_resource: BillingUsageResource[];
+    total_credits: number;
+    since: string;
+}
+
+export interface BillingLedgerEntry {
+    id: number;
+    account_id: string;
+    ts: string;
+    kind: 'grant' | 'usage' | 'topup' | 'adjustment';
+    credits: number;
+    reason: string;
+    ref: string;
+}
+
+export interface BillingLedger {
+    entries: BillingLedgerEntry[];
+}
+
+// The management-service wraps ledger payloads as {enabled, data?}. When the
+// ledger is not configured, enabled is false and data is absent.
+interface BillingEnvelope<T> {
+    enabled: boolean;
+    data?: T;
+}
+
+export interface BillingResult<T> {
+    enabled: boolean;
+    data: T | null;
+}
+
+async function billingRequest<T>(path: string, token: string): Promise<BillingResult<T>> {
+    const env = await request<BillingEnvelope<T>>(path, token);
+    return { enabled: env.enabled, data: env.data ?? null };
+}
+
+export function getBillingBalance(token: string): Promise<BillingResult<BillingBalance>> {
+    return billingRequest<BillingBalance>('/api/v1/billing/balance', token);
+}
+
+export function getBillingUsage(token: string, since?: string): Promise<BillingResult<BillingUsage>> {
+    const q = since ? `?since=${encodeURIComponent(since)}` : '';
+    return billingRequest<BillingUsage>(`/api/v1/billing/usage${q}`, token);
+}
+
+export function getBillingLedger(token: string, limit?: number): Promise<BillingResult<BillingLedger>> {
+    const q = limit ? `?limit=${limit}` : '';
+    return billingRequest<BillingLedger>(`/api/v1/billing/ledger${q}`, token);
+}
+
 /**
  * Deploy a built version onto an enclave. The browser POSTs a tiny
  * `{enclave_id}` payload; the management-service service account performs
