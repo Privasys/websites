@@ -647,6 +647,64 @@ export function getBillingLedger(token: string, limit?: number): Promise<Billing
     return billingRequest<BillingLedger>(`/api/v1/billing/ledger${q}`, token);
 }
 
+// --- Billing (Stripe membership + pre-paid credit deposits) ---
+
+export interface BillingSubscription {
+    enabled: boolean;
+    subscription_status: string;
+    current_period_end: string | null;
+    cancel_at_period_end: boolean;
+    active: boolean;
+}
+
+// getBillingSubscription returns the account's membership state. When Stripe is
+// not configured the management-service returns {enabled:false} only.
+export async function getBillingSubscription(token: string): Promise<BillingSubscription> {
+    const res = await request<Partial<BillingSubscription> & { enabled: boolean }>(
+        '/api/v1/billing/subscription',
+        token
+    );
+    return {
+        enabled: res.enabled,
+        subscription_status: res.subscription_status ?? '',
+        current_period_end: res.current_period_end ?? null,
+        cancel_at_period_end: res.cancel_at_period_end ?? false,
+        active: res.active ?? false
+    };
+}
+
+interface CheckoutResponse {
+    enabled: boolean;
+    url?: string;
+}
+
+// startMembershipCheckout returns a Stripe Checkout URL for the annual
+// membership subscription, or null when billing is disabled.
+export async function startMembershipCheckout(token: string): Promise<string | null> {
+    const res = await request<CheckoutResponse>('/api/v1/billing/checkout/membership', token, {
+        method: 'POST'
+    });
+    return res.url ?? null;
+}
+
+// startCreditsCheckout returns a Stripe Checkout URL for a customer-chosen
+// pre-paid credit deposit, or null when billing is disabled.
+export async function startCreditsCheckout(token: string): Promise<string | null> {
+    const res = await request<CheckoutResponse>('/api/v1/billing/checkout/credits', token, {
+        method: 'POST'
+    });
+    return res.url ?? null;
+}
+
+// openBillingPortal returns a Stripe Customer Portal URL for managing the
+// subscription, payment methods and invoices, or null when billing is disabled.
+export async function openBillingPortal(token: string): Promise<string | null> {
+    const res = await request<CheckoutResponse>('/api/v1/billing/portal', token, {
+        method: 'POST'
+    });
+    return res.url ?? null;
+}
+
 /**
  * Deploy a built version onto an enclave. The browser POSTs a tiny
  * `{enclave_id}` payload; the management-service service account performs
