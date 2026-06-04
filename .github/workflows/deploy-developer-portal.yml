@@ -156,3 +156,20 @@ jobs:
           PORT="${OVH_SSH_PORT:-22}"
           ssh -p "$PORT" -i ~/.ssh/id_ed25519 "${OVH_USER}@${OVH_HOST}" \
             "ls -1t ~/portal-builds 2>/dev/null | tail -n +6 | xargs -r -I{} rm -rf ~/portal-builds/{}" || true
+
+      - name: Reclaim Docker disk on OVH (dangling images + build cache)
+        if: always()
+        env:
+          OVH_HOST: ${{ secrets.OVH_HOST }}
+          OVH_USER: ${{ secrets.OVH_USER }}
+          OVH_SSH_PORT: ${{ secrets.OVH_SSH_PORT }}
+        run: |
+          set -euo pipefail
+          PORT="${OVH_SSH_PORT:-22}"
+          # Drop dangling (untagged) images and build cache so the host's small
+          # disk doesn't fill up over successive deploys (containers in use are
+          # never removed). Tagged developer-portal:* images are kept.
+          ssh -p "$PORT" -i ~/.ssh/id_ed25519 "${OVH_USER}@${OVH_HOST}" \
+            "sudo docker image prune -f >/dev/null 2>&1 || true; \
+             sudo docker builder prune -f --keep-storage 5GB >/dev/null 2>&1 || true; \
+             df -h / | tail -1" || true
