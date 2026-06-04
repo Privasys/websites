@@ -6,13 +6,18 @@ import {
     getAccount,
     getBillingBalance,
     getBillingUsage,
-    getBillingLedger
+    getBillingLedger,
+    getBillingSubscription,
+    startMembershipCheckout,
+    startCreditsCheckout,
+    openBillingPortal
 } from '~/lib/api';
 import type {
     AccountRole,
     BillingBalance,
     BillingUsage,
-    BillingLedger
+    BillingLedger,
+    BillingSubscription
 } from '~/lib/api';
 
 // 1 credit = £0.000001 (£1 = 1,000,000 credits). See pricing-plan.md §4.1.
@@ -58,8 +63,10 @@ export default function BillingPage() {
     const [balance, setBalance] = useState<BillingBalance | null>(null);
     const [usage, setUsage] = useState<BillingUsage | null>(null);
     const [ledger, setLedger] = useState<BillingLedger | null>(null);
+    const [subscription, setSubscription] = useState<BillingSubscription | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
+    const [actionBusy, setActionBusy] = useState('');
 
     const canView = role === 'admin' || role === 'billing';
 
@@ -74,15 +81,17 @@ export default function BillingPage() {
                 setLoading(false);
                 return;
             }
-            const [bal, use, led] = await Promise.all([
+            const [bal, use, led, sub] = await Promise.all([
                 getBillingBalance(session.accessToken),
                 getBillingUsage(session.accessToken),
-                getBillingLedger(session.accessToken, 50)
+                getBillingLedger(session.accessToken, 50),
+                getBillingSubscription(session.accessToken)
             ]);
             setEnabled(bal.enabled);
             setBalance(bal.data);
             setUsage(use.data);
             setLedger(led.data);
+            setSubscription(sub);
         } catch (e) {
             setError(e instanceof Error ? e.message : 'Failed to load billing');
         }
@@ -92,6 +101,39 @@ export default function BillingPage() {
     useEffect(() => {
         load();
     }, [load]);
+
+    const redirectTo = useCallback(
+        async (action: string, fn: (token: string) => Promise<string | null>) => {
+            if (!session?.accessToken) return;
+            setActionBusy(action);
+            setError('');
+            try {
+                const url = await fn(session.accessToken);
+                if (url) {
+                    window.location.href = url;
+                    return;
+                }
+                setError('Billing is not enabled for this environment.');
+            } catch (e) {
+                setError(e instanceof Error ? e.message : 'Action failed');
+            }
+            setActionBusy('');
+        },
+        [session?.accessToken]
+    );
+
+    const subscribe = useCallback(
+        () => redirectTo('subscribe', startMembershipCheckout),
+        [redirectTo]
+    );
+    const deposit = useCallback(
+        () => redirectTo('deposit', startCreditsCheckout),
+        [redirectTo]
+    );
+    const manage = useCallback(
+        () => redirectTo('portal', openBillingPortal),
+        [redirectTo]
+    );
 
     return (
         <div className="max-w-3xl">
@@ -147,6 +189,76 @@ export default function BillingPage() {
                             </div>
                         </div>
                     </section>
+
+                    {/* Membership & deposits (Stripe) */}
+                    {subscription?.enabled && (
+                        <section className="mt-8">
+                            <div className="p-5 rounded-xl border border-black/10 dark:border-white/10">
+                                <div className="flex items-baseline justify-between">
+                                    <span className="text-xs font-medium uppercase tracking-wide text-black/50 dark:text-white/50">
+                                        Membership
+                                    </span>
+                                    {subscription.active ? (
+                                        <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300">
+                                            Active
+                                        </span>
+                                    ) : (
+                                        <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-black/5 dark:bg-white/10 text-black/60 dark:text-white/60">
+                                            {subscription.subscription_status || 'Not subscribed'}
+                                        </span>
+                                    )}
+                                </div>
+                                {subscription.active ? (
+                                    <p className="mt-2 text-sm text-black/60 dark:text-white/60">
+                                        Your £100/year membership is active and includes a
+                                        £10/month credit allowance.
+                                        {subscription.current_period_end && (
+                                            <>
+                                                {' '}
+                                                {subscription.cancel_at_period_end
+                                                    ? 'Cancels on'
+                                                    : 'Renews on'}{' '}
+                                                {new Date(subscription.current_period_end).toLocaleDateString()}.
+                                            </>
+                                        )}
+                                    </p>
+                                ) : (
+                                    <p className="mt-2 text-sm text-black/60 dark:text-white/60">
+                                        Subscribe to the £100/year membership to receive a
+                                        £10/month credit allowance. Top up pre-paid credits any
+                                        time to cover overage.
+                                    </p>
+                                )}
+                                <div className="mt-4 flex flex-wrap gap-3">
+                                    {!subscription.active && (
+                                        <button
+                                            onClick={subscribe}
+                                            disabled={actionBusy !== ''}
+                                            className="px-4 py-2 text-sm font-medium rounded-full bg-black text-white dark:bg-white dark:text-black hover:opacity-80 transition-opacity disabled:opacity-50"
+                                        >
+                                            {actionBusy === 'subscribe' ? 'Redirecting…' : 'Subscribe'}
+                                        </button>
+                                    )}
+                                    <button
+                                        onClick={deposit}
+                                        disabled={actionBusy !== ''}
+                                        className="px-4 py-2 text-sm font-medium rounded-full border border-black/15 dark:border-white/15 hover:bg-black/5 dark:hover:bg-white/5 transition-colors disabled:opacity-50"
+                                    >
+                                        {actionBusy === 'deposit' ? 'Redirecting…' : 'Add credits'}
+                                    </button>
+                                    {subscription.active && (
+                                        <button
+                                            onClick={manage}
+                                            disabled={actionBusy !== ''}
+                                            className="px-4 py-2 text-sm font-medium rounded-full border border-black/15 dark:border-white/15 hover:bg-black/5 dark:hover:bg-white/5 transition-colors disabled:opacity-50"
+                                        >
+                                            {actionBusy === 'portal' ? 'Redirecting…' : 'Manage billing'}
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                        </section>
+                    )}
 
                     {/* Usage by resource */}
                     <section className="mt-8">
