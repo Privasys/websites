@@ -296,6 +296,9 @@ export interface UserInfo {
     is_individual: boolean;
     roles: string[];
     is_admin: boolean;
+    account_id?: string;
+    account_kind?: 'individual' | 'org';
+    account_name?: string;
 }
 
 export function getUserInfo(token: string): Promise<UserInfo> {
@@ -493,6 +496,85 @@ export function addAppOwner(token: string, appId: string, owner: { sub: string; 
 export function removeAppOwner(token: string, appId: string, sub: string): Promise<AppTeam> {
     return request<AppTeam>(
         `/api/v1/apps/${encodeURIComponent(appId)}/owners/${encodeURIComponent(sub)}`,
+        token,
+        { method: 'DELETE' }
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Account & team API (the billing/ownership boundary above apps)
+// ---------------------------------------------------------------------------
+
+export type AccountRole = 'admin' | 'billing' | 'member';
+
+export interface Account {
+    id: string;
+    kind: 'individual' | 'org';
+    name: string;
+    domain: string;
+    owner_sub: string;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface AccountMember {
+    sub: string;
+    email: string;
+    name: string;
+    role: AccountRole;
+    added_by: string;
+    added_at: string;
+}
+
+export interface AccountView {
+    account: Account;
+    role: AccountRole | '';
+    members: AccountMember[];
+}
+
+export function getAccount(token: string): Promise<AccountView> {
+    return request<AccountView>('/api/v1/account', token);
+}
+
+export function updateAccount(
+    token: string,
+    patch: { kind?: 'individual' | 'org'; name?: string; domain?: string }
+): Promise<{ account: Account }> {
+    return request<{ account: Account }>('/api/v1/account', token, {
+        method: 'PATCH',
+        body: JSON.stringify(patch)
+    });
+}
+
+export function listAccountMembers(token: string): Promise<{ members: AccountMember[]; owner_sub: string }> {
+    return request<{ members: AccountMember[]; owner_sub: string }>('/api/v1/account/members', token);
+}
+
+export function addAccountMember(
+    token: string,
+    member: { sub: string; email?: string; name?: string; role?: AccountRole }
+): Promise<{ members: AccountMember[] }> {
+    return request<{ members: AccountMember[] }>('/api/v1/account/members', token, {
+        method: 'POST',
+        body: JSON.stringify(member)
+    });
+}
+
+export function updateAccountMember(
+    token: string,
+    sub: string,
+    role: AccountRole
+): Promise<{ members: AccountMember[] }> {
+    return request<{ members: AccountMember[] }>(
+        `/api/v1/account/members/${encodeURIComponent(sub)}`,
+        token,
+        { method: 'PATCH', body: JSON.stringify({ role }) }
+    );
+}
+
+export function removeAccountMember(token: string, sub: string): Promise<{ members: AccountMember[] }> {
+    return request<{ members: AccountMember[] }>(
+        `/api/v1/account/members/${encodeURIComponent(sub)}`,
         token,
         { method: 'DELETE' }
     );
