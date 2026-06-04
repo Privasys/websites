@@ -131,6 +131,21 @@ function Sidebar() {
                     Team
                 </Link>
 
+                {/* Billing */}
+                <Link
+                    href="/dashboard/billing"
+                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
+                        pathname === '/dashboard/billing'
+                            ? 'bg-black/5 dark:bg-white/10 font-medium'
+                            : 'hover:bg-black/3 dark:hover:bg-white/5 text-black/60 dark:text-white/60'
+                    }`}
+                >
+                    <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+                        <path d="M3 10h18M3 10l1.5-5h15L21 10M3 10v9a1 1 0 001 1h16a1 1 0 001-1v-9M7 15h4" />
+                    </svg>
+                    Billing
+                </Link>
+
                 {/* Settings */}
                 <Link
                     href="/dashboard/settings"
