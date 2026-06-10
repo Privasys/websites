@@ -48,11 +48,11 @@ The attestation quote is the hardware-signed evidence. The panel shows:
 
 | Field | Description |
 |-------|-------------|
-| **MRTD** | Measurement of the initial TD contents |
-| **RTMR[0]** | UEFI firmware measurement |
-| **RTMR[1]** | OS kernel and initrd measurement |
-| **RTMR[2]** | OS configuration measurement |
-| **RTMR[3]** | Application-layer measurement |
+| **MRTD** | Measurement of the initial TD contents (TD firmware) |
+| **RTMR[0]** | Firmware configuration measurement |
+| **RTMR[1]** | EFI boot path measurement (shim and GRUB binaries) |
+| **RTMR[2]** | OS boot measurement: kernel, initrd, command line (including the dm-verity root hash) |
+| **RTMR[3]** | Application-defined (unused) |
 | **SEAMSVN** | TDX module security version |
 
 ### Platform extensions (WASM)
@@ -62,21 +62,22 @@ For WASM applications, the RA-TLS certificate includes custom X.509 extensions u
 | OID | Content |
 |-----|---------|
 | `1.3.6.1.4.1.65230.1.1` | Config Merkle root (covers all enclave settings) |
-| `1.3.6.1.4.1.65230.1.2` | Config Merkle tree (full tree for verification) |
-| `1.3.6.1.4.1.65230.1.3` | Server configuration hash |
-| `1.3.6.1.4.1.65230.1.4` | RA-TLS certificate hash |
+| `1.3.6.1.4.1.65230.2.1` | Egress CA bundle hash |
+| `1.3.6.1.4.1.65230.2.5` | Combined workloads hash (all loaded apps) |
+| `1.3.6.1.4.1.65230.2.7` | Attestation servers hash |
 
 ### Workload extensions (WASM)
 
-Each deployed WASM application adds its own extensions:
+Each deployed WASM application gets its own leaf certificate (selected via SNI) carrying per-app extensions:
 
 | OID | Content |
 |-----|---------|
-| `1.3.6.1.4.1.65230.2.1` | Application name |
-| `1.3.6.1.4.1.65230.2.2` | Route prefix |
-| `1.3.6.1.4.1.65230.2.3` | SHA-256 code hash of the WASM binary |
+| `1.3.6.1.4.1.65230.3.1` | Per-app config Merkle root |
+| `1.3.6.1.4.1.65230.3.2` | SHA-256 code hash of the WASM binary |
+| `1.3.6.1.4.1.65230.3.4` | App key source |
+| `1.3.6.1.4.1.65230.3.5.*` | App-defined extensions (set at runtime via the SDK) |
 
-This means the certificate attests not just the enclave, but the specific application running inside it.
+This means the certificate attests not just the enclave, but the specific application running inside it. See the [X.509 OID scheme](/solutions/enclave-os/attestation/oids) for the full reference.
 
 ## Verification actions
 
@@ -89,10 +90,10 @@ The attestation panel provides buttons to:
 
 ## Programmatic verification
 
-Beyond the UI, you can verify attestation programmatically using the [verification libraries](/solutions/platform/verification-libraries):
+Beyond the UI, you can verify attestation programmatically using the [verification libraries](/solutions/platform/verification-libraries), available for Python, Go, Rust, TypeScript, and C#:
 
-- **JavaScript / TypeScript** — `@aspect-apps/ra-tls-verify`
-- **Go** — `github.com/aspect-apps/ra-tls-verify-go`
+- **JavaScript / TypeScript** — `@privasys/ra-tls`
+- **Go** — `github.com/Privasys/ratls-client-go/ratls`
 
 These libraries connect to your deployed application, validate the RA-TLS certificate, extract the quote, and verify it against Intel's root of trust.
 

@@ -261,6 +261,8 @@ TDX Quote (platform attestation)
                 |
                 |-- Attestation Servers Hash (OID 65230.2.7)
                 |
+                |-- Image Profile (OID 65230.2.8)
+                |
                 +-- Per-Container Certs (via SNI)
                         |-- Image Digest (OID 65230.3.2)
                         |-- Image Ref (OID 65230.3.3)
@@ -287,7 +289,8 @@ A relying party verifying an RA-TLS certificate follows these steps:
 3. **Verify the quote** against the hardware vendor's attestation infrastructure (Intel DCAP for SGX, Intel Trust Authority or configfs-tsm for TDX).
 4. **Check code identity**: MRENCLAVE (SGX) or MRTD + RTMR values (TDX) against known-good measurements.
 5. **Recompute `ReportData`**: `SHA-512( SHA-256(SPKI_DER) || binding )` and confirm it matches the quote. This proves the TLS key was generated inside the attested TEE.
-6. **Check configuration OIDs**: Verify the Merkle root, workload hashes, or individual OID values against expected values.
+6. **Check the image profile** (Virtual): the Image Profile extension (OID `2.8`) must be `"production"`. Dev-profile images (built with SSH and debug tools) are rejected unless the verifier explicitly opts in.
+7. **Check configuration OIDs**: Verify the Merkle root, workload hashes, or individual OID values against expected values.
 
 ### Verification Depth
 
@@ -317,5 +320,5 @@ The Privasys [verification libraries](/solutions/platform/verification-libraries
 - [X.509 OID Scheme](/solutions/enclave-os/attestation/oids): Full reference of all Privasys OID extensions
 - [Configuration Merkle Tree](/solutions/enclave-os/attestation/merkle-tree): How configuration inputs are attested via Merkle trees
 - [Mutual RA-TLS](/solutions/enclave-os/attestation/mutual-ra-tls): Bidirectional attestation between TEEs
-- [Enclave OS Virtual Architecture](/solutions/enclave-os/enclave-os-virtual): How the RA-TLS module generates certificates in Confidential VMs
+- [Enclave OS Virtual Architecture](/solutions/enclave-os/enclave-os-virtual/architecture): How the RA-TLS module generates certificates in Confidential VMs
 - [Verification Libraries](/solutions/platform/verification-libraries): Client libraries for Python, Go, Rust, TypeScript, and C#

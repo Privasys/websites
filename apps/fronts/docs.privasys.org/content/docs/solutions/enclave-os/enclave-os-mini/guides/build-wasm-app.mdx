@@ -83,7 +83,7 @@ Your WASM module can use the following interfaces provided by the enclave:
 | `wasi:random/random` | Cryptographic randomness (SGX RDRAND) |
 | `wasi:cli/environment` | Environment variables (app name, version) |
 
-See [WASM Runtime](/solutions/enclave-os/wasm-runtime) for details on capabilities and isolation.
+See [WASM Runtime](/solutions/enclave-os/enclave-os-mini/wasm-runtime) for details on capabilities and isolation.
 
 ## Building
 
@@ -165,19 +165,19 @@ When a WASM app is loaded into the enclave:
 
 ## Attestation
 
-Once loaded, the WASM app's code hash is embedded in every RA-TLS certificate:
+Once loaded, the WASM app's code hash is embedded in its RA-TLS leaf certificate (served via SNI):
 
 | OID | Content |
 |-----|---------|
-| `1.3.6.1.4.1.65230.2.1` | App name |
-| `1.3.6.1.4.1.65230.2.2` | Route prefix |
-| `1.3.6.1.4.1.65230.2.3` | SHA-256 code hash |
+| `1.3.6.1.4.1.65230.3.1` | Per-app config Merkle root |
+| `1.3.6.1.4.1.65230.3.2` | SHA-256 code hash of the WASM binary |
+| `1.3.6.1.4.1.65230.2.5` | Combined workloads hash (platform certificate, covers all apps) |
 
 Clients can verify not just the enclave identity (MRENCLAVE) but the exact application code running inside it.
 
 ## Building Enclave OS with WASM Support
 
-To build the enclave with WASM runtime enabled, see [Deploy Enclave OS](/solutions/enclave-os/guides/deploy#build-with-wasm-runtime).
+To build the enclave with WASM runtime enabled, see [Deploy Enclave OS](/solutions/enclave-os/enclave-os-mini/guides/deploy#build-with-wasm-runtime).
 
 ## Deploy to the Privasys Platform
 

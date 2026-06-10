@@ -34,7 +34,7 @@ Enclave OS Virtual runs OCI containers inside Intel TDX (or AMD SEV-SNP) Confide
 │  │             └─────────────────────┘              │  │
 │  └──────────────────────────────────────────────────┘  │
 │                                                        │
-│   dm-verity root │ UKI Secure Boot │ measured /etc/    │
+│  dm-verity root │ measured boot (RTMRs) │ erofs rootfs │
 └────────────────────────────────────────────────────────┘
 ```
 
@@ -46,7 +46,7 @@ Three components run inside the Confidential VM:
 
 ## How It Works
 
-1. **Boot.** The VM starts from a [dm-verity protected, UKI Secure Boot image](/solutions/enclave-os/hardened-images) built with tdx-image-base. Every byte of the root filesystem is verified against a hash tree measured by TDX.
+1. **Boot.** The VM starts from a [dm-verity protected, fully measured image](/solutions/enclave-os/enclave-os-virtual/hardened-images) built with the Privasys cvm-images project. Every boot stage is measured into the TDX RTMRs, and every byte of the root filesystem is verified against a hash tree whose root is part of the measurement.
 
 2. **Dynamic loading.** The manager starts with zero containers. Operators call `POST /api/v1/containers` (authenticated via OIDC bearer token) to load containers at runtime. Each request specifies a digest-pinned OCI image reference, environment variables, volumes, and ports.
 
@@ -116,13 +116,13 @@ The platform-level certificate (served for the management hostname) carries the 
 ## Requirements
 
 - A **Confidential VM** running Intel TDX or AMD SEV-SNP
-- A [hardened base image](/solutions/enclave-os/hardened-images) with dm-verity and Secure Boot
+- A [hardened base image](/solutions/enclave-os/enclave-os-virtual/hardened-images) with dm-verity and measured boot
 - An **intermediary CA** certificate and private key (private PKI)
 - An **OIDC provider** for management API authentication
 - containerd installed on the VM
 
 ## What to Read Next
 
-- [Containers and Workload Manifest](/solutions/enclave-os/containers): How containers are loaded, configured, and managed
-- [Hardened Guest Images](/solutions/enclave-os/hardened-images): The dm-verity base image and trust chain from silicon to userland
-- [Disk Encryption](/solutions/enclave-os/disk-encryption): LUKS2+AEAD encryption for the OS data partition and per-container volumes
+- [Containers and Workload Manifest](/solutions/enclave-os/enclave-os-virtual/containers): How containers are loaded, configured, and managed
+- [Hardened Guest Images](/solutions/enclave-os/enclave-os-virtual/hardened-images): The dm-verity base image and trust chain from silicon to userland
+- [Disk Encryption](/solutions/enclave-os/enclave-os-virtual/disk-encryption): LUKS2+AEAD encryption for the OS data partition and per-container volumes

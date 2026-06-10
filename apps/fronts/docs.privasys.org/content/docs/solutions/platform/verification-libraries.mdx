@@ -45,15 +45,20 @@ All clients follow the same verification logic described in [Attestation](/techn
    and compare with quote's ReportData
          │
          ▼
-7. (Optional) Extract and verify the
+7. Check the Image Profile (OID 65230.2.8):
+   must be "production" unless the policy
+   explicitly allows debug/dev images
+         │
+         ▼
+8. (Optional) Extract and verify the
    Config Merkle Root from OID 65230.1.1
          │
          ▼
-8. (Optional) Extract workload hashes
+9. (Optional) Extract workload hashes
    from OID 65230.2.* extensions
          │
          ▼
-9. Connection is attested ✓
+10. Connection is attested ✓
 ```
 
 ## Usage Examples
@@ -160,6 +165,7 @@ Each client supports configurable verification policies:
 |-------|------|-------------|
 | `mrtd` | `string` (hex) | Expected MRTD (Trust Domain measurement). |
 | `rtmr` | `string[]` (hex) | Expected Runtime Measurement Registers (RTMR0-3). |
+| `allow_debug_images` | `bool` | Whether to accept certificates whose Image Profile extension (OID `65230.2.8`) is not `"production"` (e.g. `dev` images built with SSH and debug tools). Defaults to `false` and **must stay `false` in production**. The check fails closed: any unknown profile value is rejected. Certificates without the extension (images that predate it) are accepted. |
 
 ### Merkle Root Policy (Optional)
 
