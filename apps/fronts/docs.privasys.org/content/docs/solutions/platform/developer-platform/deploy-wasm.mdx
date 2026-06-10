@@ -64,13 +64,14 @@ When a WASM application is deployed to an SGX enclave:
 4. The RA-TLS certificate is **regenerated** with the updated Merkle root and WASM OID extensions
 5. All subsequent TLS connections serve the new certificate, attesting to the deployed application
 
-The deployed application's code hash is embedded in every RA-TLS certificate under these OIDs:
+The deployed application's code hash is embedded in the app's RA-TLS leaf certificate under these OIDs:
 
 | OID | Content |
 |-----|---------|
-| `1.3.6.1.4.1.65230.2.1` | Application name |
-| `1.3.6.1.4.1.65230.2.2` | Route prefix |
-| `1.3.6.1.4.1.65230.2.3` | SHA-256 code hash |
+| `1.3.6.1.4.1.65230.3.1` | Per-app config Merkle root |
+| `1.3.6.1.4.1.65230.3.2` | SHA-256 code hash of the WASM binary |
+
+The platform certificate additionally carries the combined workloads hash (OID `1.3.6.1.4.1.65230.2.5`) covering all deployed apps.
 
 Clients can verify not just the enclave identity (MRENCLAVE) but the exact application code running inside it.
 

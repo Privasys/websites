@@ -3,7 +3,7 @@ title: Hardened Guest Images
 description: The dm-verity base image for Enclave OS Virtual, the trust chain from silicon to userland, and why minimal images matter for confidential computing.
 ---
 
-Enclave OS Virtual boots from a minimal, read-only, fully measured VM image built with mkosi. Every byte of the root filesystem is verified by dm-verity against a hash tree whose root hash is measured by TDX into the RTMR registers. A remote verifier can check the RTMR values and know, cryptographically, that the VM is running exactly the code that was built from the tdx-image-base repository.
+Enclave OS Virtual boots from a minimal, read-only, fully measured VM image built with mkosi. Every byte of the root filesystem is verified by dm-verity against a hash tree whose root hash is measured by TDX into the RTMR registers. A remote verifier can check the RTMR values and know, cryptographically, that the VM is running exactly the code that was built from the Privasys cvm-images repository.
 
 ## Trust Chain
 
@@ -11,24 +11,33 @@ Enclave OS Virtual boots from a minimal, read-only, fully measured VM image buil
 Silicon (TDX hardware)
   └─ MRTD     measures the TD firmware (OVMF/TDVF) loaded by the hypervisor
       └─ RTMR[0]     measures the firmware configuration (CC MR 1)
-          └─ Secure Boot     UEFI verifies shimx64.efi → grubx64.efi → kernel
-              └─ RTMR[1]     measures the EFI boot path: shim and GRUB binaries (CC MR 2)
-                  └─ RTMR[2]     measures OS boot: kernel, initrd, cmdline with dm-verity root hash (CC MR 3)
-                      └─ dm-verity     every block of the rootfs verified against the hash tree
-                          └─ All userland binaries     any modification = I/O error + kernel panic
+          └─ RTMR[1]     measures the EFI boot path: shim and GRUB binaries (CC MR 2)
+              └─ RTMR[2]     measures OS boot: kernel, initrd, cmdline with dm-verity root hash (CC MR 3)
+                  └─ dm-verity     every block of the rootfs verified against the hash tree
+                      └─ All userland binaries     any modification = I/O error + kernel panic
 ```
 
 Every byte of code that executes on the machine is either measured by TDX hardware or verified by dm-verity. There are no gaps in the chain.
+
+## Measured Boot, Not Secure Boot
+
+The images rely on **measured boot** (TDX RTMRs verified through remote attestation) rather than UEFI Secure Boot, and are deployed with Secure Boot disabled. This is deliberate:
+
+- **Secure Boot with stock keys adds nothing for a verifier.** The standard Microsoft/Canonical key chain accepts *any* generically signed OS, so a "Secure Boot enabled" bit proves nothing about which code booted. The RTMRs identify the exact shim, GRUB, kernel, command line, and dm-verity root hash, bit for bit.
+- **Cloud independence.** Enrolling custom Secure Boot keys is a cloud-specific mechanism (different on GCP, Azure, and bare metal). Measured boot works identically everywhere TDX or SEV-SNP is available, keeping the trust chain cloud-agnostic.
+- **A hardened custom kernel cannot be Microsoft-signed** without depending on an external review process. Measuring it instead keeps the supply chain entirely under Privasys control.
+
+The security guarantee is unchanged: a verifier that checks the RTMR values gets a *stronger* statement than Secure Boot can make, because it learns exactly what booted instead of merely that something acceptably signed booted.
 
 ## Why a Custom Image
 
 General-purpose Confidential VM images (such as Google's pre-built Ubuntu images) are designed to run any workload. That generality is at odds with verifiability. A confidential VM is only as trustworthy as the code running inside it.
 
-| | General-purpose CVM image | tdx-image-base |
+| | General-purpose CVM image | Privasys cvm-images |
 |---|---|---|
 | **Root filesystem** | ext4 (read-write) | erofs (read-only) |
 | **dm-verity** | Not enabled | Enabled on every block |
-| **Installed packages** | ~2000+ (full Ubuntu stack, cloud agents, package managers) | ~40 (minimal: kernel, systemd, openssh, attestation tools) |
+| **Installed packages** | ~2000+ (full Ubuntu stack, cloud agents, package managers) | ~40 (minimal: kernel, systemd, attestation tools — no SSH, no debug tools in production) |
 | **Image size** | ~30 GB | ~1.5 GB |
 | **Can modify rootfs at runtime** | Yes | No (I/O error then kernel panic) |
 | **Kernel modules** | All modules including unsigned third-party drivers | Signed modules only (`module.sig_enforce=1`) |
@@ -43,23 +52,24 @@ The core problem with general-purpose images:
 3. Thousands of packages means a large attack surface.
 4. Unsigned kernel modules can be loaded, giving arbitrary code full ring-0 access to TEE-protected memory.
 
-With tdx-image-base, the dm-verity root hash is baked into the kernel command line and measured by TDX. A remote verifier can check the RTMR values against the expected hash and confirm the VM is running exactly the code in the repository.
+With cvm-images, the dm-verity root hash is baked into the kernel command line and measured by TDX. A remote verifier can check the RTMR values against the expected hash and confirm the VM is running exactly the code in the repository.
 
 ## What Is in the Image
 
 | Component | Details |
 |-----------|---------|
 | Guest OS | Ubuntu 24.04 LTS (Noble Numbat) |
-| Kernel | `linux-image-gcp` (6.17+, with TDX guest support) |
+| Kernel | Custom-built, ABI-pinned Ubuntu 6.17 kernel (CVM Guard hardening patches, TDX guest support), built and signed in CI |
 | Root filesystem | erofs (read-only) |
 | Integrity | dm-verity hash tree |
-| Boot | Signed shim (Microsoft) then signed GRUB (Canonical) then kernel + initrd + dm-verity root hash in cmdline |
-| Secure Boot | Enabled: full chain from UEFI firmware through bootloader to kernel |
+| Boot | shim then GRUB then kernel + initrd, each stage measured into the RTMRs; dm-verity root hash in cmdline |
+| Boot integrity | Measured boot: every boot component recorded in the TDX RTMRs and checked via remote attestation (see above) |
 | Partitions | ESP (512 MB) + root erofs (~940 MB) + verity hash (~63 MB) |
 | Networking | systemd-networkd with DHCP |
-| SSH | openssh-server (password auth disabled) |
+| SSH | None: production images carry no sshd binary at all. The separate `dev` image profile adds openssh and debug tools, and is identifiable in the attestation. |
+| Image profile marker | `/etc/privasys/image-profile` (`production` or `dev`), part of the measured rootfs, surfaced in RA-TLS certificates as OID `1.3.6.1.4.1.65230.2.8` |
 | Attestation support | tpm2-tools, clevis, cryptsetup |
-| Cloud integration | google-compute-engine, google-guest-agent (removable for other platforms) |
+| Cloud integration | google-guest-agent (dev profile adds google-compute-engine and OS Login; removable for other platforms) |
 
 ## erofs and dm-verity
 
@@ -84,7 +94,7 @@ Together, they guarantee that the root filesystem is bit-for-bit identical to wh
 └──────────────────────────┬──────────────────────────────────┘
                            │ launches
 ┌──────────────────────────▼──────────────────────────────────┐
-│  tdx-image-base                             Guest OS image  │
+│  cvm-images (tdx-base)                      Guest OS image  │
 │  GRUB boot, erofs root, dm-verity, attestation tools        │
 └──────────────────────────┬──────────────────────────────────┘
                            │ services go here
@@ -142,13 +152,13 @@ sudo tpm2_eventlog /sys/kernel/security/tpm0/binary_bios_measurements
 
 ### Finding the dm-verity root hash
 
-Search the event log for the kernel command line event. On a tdx-image-base image, it contains the dm-verity root hash:
+Search the event log for the kernel command line event. On a cvm-images image, it contains the dm-verity root hash:
 
 ```bash
 sudo tpm2_eventlog /sys/kernel/security/tpm0/binary_bios_measurements \
   | grep -A2 "kernel_cmdline"
 # Example output:
-#   kernel_cmdline: /vmlinuz-6.17.0-1009-gcp root=PARTUUID=... roothash=b93b4ee5...
+#   kernel_cmdline: /vmlinuz-6.17.0-35-generic root=PARTUUID=... roothash=b93b4ee5...
 ```
 
 ### Replaying RTMR extends (Go)
@@ -297,19 +307,33 @@ If the computed values match the RTMR values in the TDX attestation quote, the e
 
 The rootfs is read-only. Running `apt install` on a booted VM is impossible. To update:
 
-1. Edit the configuration in the tdx-image-base repository (add or update packages, bump the image version).
+1. Edit the configuration in the cvm-images repository (add or update packages, bump the image version).
 2. Build the image with `sudo mkosi build`.
 3. Test locally with QEMU.
 4. Upload and register the new image on the target cloud platform.
 5. Create a new VM, attach the existing data disk, and delete the old VM.
 
-The [data partition](/solutions/enclave-os/disk-encryption) (LUKS-encrypted, separate persistent disk) survives image updates.
+The [data partition](/solutions/enclave-os/enclave-os-virtual/disk-encryption) (LUKS-encrypted, separate persistent disk) survives image updates.
+
+## Production and Dev Profiles
+
+Every image is built in two flavors from the same configuration:
+
+| | Production | Dev |
+|--|-----------|-----|
+| **SSH** | No sshd binary on disk | openssh-server (key-based, via OS Login) |
+| **Debug tools** | None | strace, tcpdump, curl, jq |
+| **Profile marker** | `/etc/privasys/image-profile` = `production` | `/etc/privasys/image-profile` = `dev` |
+
+The marker lives on the dm-verity-protected rootfs, so it cannot be changed at runtime and a forged value would change the measurement. The [RA-TLS certificate](/solutions/enclave-os/attestation/oids) carries it as the Image Profile extension (OID `1.3.6.1.4.1.65230.2.8`); verification libraries reject `dev` images unless explicitly opted in.
 
 ## Design Choices
 
 | Decision | Rationale |
 |----------|-----------|
 | **erofs over ext4** | Read-only by design. Smaller than ext4, ideal for dm-verity. No accidental writes possible. |
-| **GRUB over systemd-boot** | GCP's TDX firmware (TDVF) enforces Secure Boot which silently rejects unsigned EFI binaries. GRUB is the proven boot chain for TDX across cloud platforms. |
+| **Measured boot over UEFI Secure Boot** | Stock Secure Boot keys accept any generically signed OS and custom-key enrollment is cloud-specific. Attested RTMRs identify the exact boot chain on any cloud. |
+| **GRUB over systemd-boot** | GRUB measures its configuration, the kernel, and the command line (including the dm-verity root hash) into the RTMRs. It is the proven measured-boot chain for TDX across cloud platforms. |
 | **Minimal package set** | Every additional package increases the attack surface. ~40 packages means fewer potential CVEs than ~2000. |
-| **Signed kernel modules only** | `module.sig_enforce=1` plus `lockdown=integrity` prevents unsigned code from running in ring 0. |
+| **Signed kernel modules only** | `module.sig_enforce=1` plus `lockdown=integrity` prevents unsigned code from running in ring 0. Out-of-tree modules (e.g. NVIDIA) are signed in CI with an ephemeral key that is destroyed after the build. |
+| **Production/dev image split** | Debugging needs SSH; production must not have it. Two profiles of the same image, distinguishable in the attestation, instead of one compromise image. |

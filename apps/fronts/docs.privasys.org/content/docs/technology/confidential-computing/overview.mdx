@@ -37,7 +37,7 @@ Because an SGX enclave is isolated from the rest of the system, it cannot direct
 - **ECALL (Enclave Call):** The host calls *into* the enclave. This is how the host starts enclave code or passes data to it.
 - **OCALL (Outside Call):** The enclave calls *out* to the host. This is how the enclave requests services it cannot perform itself, such as network I/O or file access.
 
-Each ECALL/OCALL involves a hardware-enforced context switch (~10,000 CPU cycles), so minimising the number of transitions is critical for performance. The Enclave OS [RPC and Circular Buffers](/solutions/enclave-os/rpc-and-circular-buffers) design addresses this by replacing per-request ECALLs/OCALLs with shared-memory queues.
+Each ECALL/OCALL involves a hardware-enforced context switch (~10,000 CPU cycles), so minimising the number of transitions is critical for performance. The Enclave OS [RPC and Circular Buffers](/solutions/enclave-os/enclave-os-mini/rpc-and-circular-buffers) design addresses this by replacing per-request ECALLs/OCALLs with shared-memory queues.
 
 ECALLs and OCALLs are declared in an **Enclave Definition Language (EDL)** file, which defines the exact function signatures allowed to cross the trust boundary. This is the enclave's attack surface: the smaller and simpler the EDL, the harder it is to exploit.
 

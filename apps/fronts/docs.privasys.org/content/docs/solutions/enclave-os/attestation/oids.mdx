@@ -22,11 +22,13 @@ Platform OIDs describe the TEE instance as a whole: its configuration, loaded wo
 |-----|------|-------------|------------|
 | `1.1` | Config Merkle Root | SHA-256 root of the platform [configuration tree](/solutions/enclave-os/attestation/merkle-tree) | Both |
 | `2.1` | Egress CA Hash | SHA-256 of the egress CA bundle | Mini |
-| `2.3` | WASM Code Hash | SHA-256 of loaded WASM bytecode | Mini |
-| `2.4` | Runtime Version Hash | SHA-256 of the runtime version string | Virtual |
+| `2.4` | Runtime Version Hash | SHA-256 of the runtime version string | Both |
 | `2.5` | Combined Workloads Hash | SHA-256 covering all loaded workload digests | Both |
 | `2.6` | Data Encryption Key Origin | `"byok:<fingerprint>"` or `"generated"` | Virtual |
 | `2.7` | Attestation Servers Hash | SHA-256 of the attestation server URL list | Both |
+| `2.8` | Image Profile | `"production"` or `"dev"` — the build flavor of the VM image, read from the dm-verity-measured marker `/etc/privasys/image-profile`. Verifiers reject `dev` unless explicitly opted in. Absent on images that predate the marker. | Virtual |
+
+Per-workload code hashes live under the `3.*` arc (OID `3.2`), not here.
 
 ## Per-Workload OIDs (arc `1.3.6.1.4.1.65230.3.*`)
 
@@ -38,6 +40,8 @@ Per-workload OIDs appear in certificates served via [SNI routing](/solutions/enc
 | `3.2` | Workload Image/Code Digest | SHA-256 of the WASM bytecode or OCI image |
 | `3.3` | Container Image Ref | Full OCI image reference string (Virtual only) |
 | `3.4` | Volume/Key Source | `"byok:<fingerprint>"` or `"generated"` |
+| `3.5` | Workload Configuration / Model Digest | SHA-256 of the workload's configuration metadata (Mini) or of the AI/ML model weights loaded in the container (Virtual, when reported) |
+| `3.5.<n>` | App-Defined Extensions | Sub-arc for workload-supplied extensions, installed at runtime via the SDK (`set-attestation-extension`) or pinned at deploy time (e.g. attested environment variables) |
 
 ## OID Hierarchy
 
@@ -49,16 +53,18 @@ Per-workload OIDs appear in certificates served via [SNI routing](/solutions/enc
 +-- 1.1                              Config Merkle root (platform-wide)
 +-- 2.*                              Platform OIDs
 |   +-- 2.1                          Egress CA bundle hash (Mini)
-|   +-- 2.3                          WASM code hash (Mini)
-|   +-- 2.4                          Runtime version hash (Virtual)
+|   +-- 2.4                          Runtime version hash
 |   +-- 2.5                          Combined workloads hash
 |   +-- 2.6                          Data encryption key origin (Virtual)
 |   +-- 2.7                          Attestation servers hash
+|   +-- 2.8                          Image profile (Virtual)
 +-- 3.*                              Per-workload OIDs
     +-- 3.1                          Workload config Merkle root
     +-- 3.2                          Workload image/code digest
     +-- 3.3                          Container image ref (Virtual)
     +-- 3.4                          Volume/key source
+    +-- 3.5                          Workload config hash / model digest
+        +-- 3.5.<n>                  App-defined extensions
 ```
 
 ## Verification Strategies
