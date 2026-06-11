@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { AvailableModel, Instance } from '~/lib/types';
 import type { AggregateAttestationStatus } from '@privasys/attestation-view';
 import { useAuth } from '~/lib/privasys-auth';
@@ -37,8 +37,20 @@ export function ChatShell({
     disabledReason?: string;
     userGreeting?: string;
 }) {
-    const { session, sealedSession } = useAuth();
+    const { session, sealedSession, resumeSealed } = useAuth();
     const [model, setModel] = useState<AvailableModel | null>(initialModel);
+
+    // Sealed transport must survive page reloads without a wallet
+    // ceremony: the OIDC session restores via cross-site SSO, and the
+    // sealed session re-bootstraps from the EncAuth voucher stored at
+    // the IdP. Without this, a reload would silently leave the chat
+    // without a transport (the plaintext-through-the-gateway fallback
+    // no longer exists — the gateway must never see message bodies).
+    useEffect(() => {
+        if (!session || sealedSession) return;
+        if (!instance.session_relay?.enabled || !instance.session_relay.app_host) return;
+        void resumeSealed(instance.session_relay.app_host);
+    }, [session, sealedSession, instance.session_relay, resumeSealed]);
     const [view, setView] = useState<ShellView>('chat');
     // Aggregate attestation status for the sidebar pill. Driven by the
     // always-mounted SecurityView (hidden when view !== 'security') so
