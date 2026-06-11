@@ -13,7 +13,7 @@
         "preinstall": "node ./hintYarn.js",
         "lint": "nx affected --target=lint --base=main",
         "nx": "nx",
-        "prepare": "is-ci || husky install",
+        "postinstall": "is-ci || husky",
         "test": "nx affected --target=test --base=main",
         "e2e": "cd apps/fronts/developer.privasys.org/e2e && npx playwright test",
         "e2e:ui": "cd apps/fronts/developer.privasys.org/e2e && npx playwright test --ui"
