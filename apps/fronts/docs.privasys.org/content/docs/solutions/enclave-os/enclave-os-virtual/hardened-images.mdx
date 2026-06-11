@@ -306,6 +306,19 @@ go build -o rtmr-replay . && sudo ./rtmr-replay
 
 If the computed values match the RTMR values in the TDX attestation quote, the event log is authentic and the boot chain is verified.
 
+### Letting the attestation server do the replay
+
+The Privasys attestation server performs the same cross-check on the server side. Send the quote together with the base64-encoded CCEL:
+
+```bash
+curl -X POST https://as.privasys.org/ \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"quote": "<base64 quote>", "eventLog": "<base64 CCEL>", "includeEventLog": true}'
+```
+
+The verification fails closed: if the replayed registers do not equal the quote's RTMRs, the response is `VERIFICATION_FAILED` naming the mismatching register. On success, `eventLogVerified` is `true` and `includeEventLog` returns each decoded event (register, type, digest, and printable payloads such as `grub_cmd` lines), which you can compare entry by entry against the `measurements.json` published with every cvm-images release to pinpoint exactly which boot component changed.
+
 ## How Updates Work
 
 The rootfs is read-only. Running `apt install` on a booted VM is impossible. To update:
