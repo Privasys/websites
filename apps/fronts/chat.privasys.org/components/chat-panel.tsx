@@ -215,6 +215,9 @@ export function ChatPanel({
                 ],
                 token,
                 sealedSession,
+                // Instances that support sealed transport must never fall
+                // back to plaintext through the gateway.
+                sealedRequired: !!instance.session_relay?.enabled,
                 signal: ctrl.signal,
                 enabledTools,
                 onDelta: (delta) => {

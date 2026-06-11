@@ -130,9 +130,19 @@ export interface StreamChatArgs {
      * Optional sealed session-relay handle. When provided, the request
      * is tunnelled through PrivasysSession.stream() so the chat traffic
      * is encrypted end-to-end (browser ↔ enclave) and never visible to
-     * the gateway. Falls back to plain fetch when omitted.
+     * the gateway.
      */
     sealedSession?: SealedSession;
+    /**
+     * True when the instance supports sealed transport
+     * (`instance.session_relay.enabled`). In that case a missing
+     * `sealedSession` is an error — the request is refused locally
+     * instead of falling back to plaintext through the gateway, which
+     * must never see message bodies. (The enclave enforces the same
+     * rule server-side via the gateway's terminate marker; this check
+     * just fails faster and with a clearer message.)
+     */
+    sealedRequired?: boolean;
     /**
      * Optional list of MCP server names (`AvailableTool.name`) the user
      * has currently enabled. When provided, the proxy will scope
@@ -205,6 +215,14 @@ export async function streamChatCompletion(args: StreamChatArgs): Promise<void> 
 
     let res: Response | null = null;
     let reader: ReadableStreamDefaultReader<Uint8Array>;
+    if (args.sealedRequired && !args.sealedSession) {
+        const err = new Error(
+            'Secure session required: sign in to establish the end-to-end ' +
+            'encrypted session before chatting.'
+        );
+        args.onError?.(err);
+        throw err;
+    }
     if (args.sealedSession) {
         try {
             const sealed = await args.sealedSession.stream('POST', '/v1/chat/completions', body, {

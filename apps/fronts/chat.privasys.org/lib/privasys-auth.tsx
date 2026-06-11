@@ -62,6 +62,15 @@ interface AuthContextValue {
      * SSO and starts the silent-renewal timer.
      */
     signInInto: (container: HTMLElement, opts?: { sessionRelayHost?: string }) => Promise<void>;
+    /**
+     * Re-establish the sealed enclave session after a page reload with
+     * no wallet ceremony and no push: the privasys.id iframe bootstraps
+     * against the enclave using the EncAuth voucher stored at the IdP.
+     * No-op when a sealed session is already live; silently leaves
+     * `sealedSession` null when no voucher exists or the enclave
+     * refused it (sign-in then re-creates it).
+     */
+    resumeSealed: (appHost: string) => Promise<void>;
     signOut: () => Promise<void>;
 }
 
@@ -75,6 +84,7 @@ const AuthContext = createContext<AuthContextValue>({
     },
     signIn: async () => {},
     signInInto: async () => {},
+    resumeSealed: async () => {},
     signOut: async () => {}
 });
 
@@ -109,6 +119,13 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
     const [expired, setExpired] = useState(false);
     const [sealedSession, setSealedSession] = useState<SealedSession | null>(null);
     const frameRef = useRef<AuthFrame | null>(null);
+    // Dedicated frame for voucher-based sealed resume. Separate from the
+    // persistent renewal frame because `sessionRelay.appHost` is a
+    // constructor-only option and the appHost is per-instance (only
+    // known once the instance metadata loads).
+    const sealedFrameRef = useRef<AuthFrame | null>(null);
+    const sealedHostRef = useRef<string | null>(null);
+    const sealedResumeInFlight = useRef<Promise<void> | null>(null);
 
     const getFrame = useCallback(() => {
         if (!frameRef.current) {
@@ -220,11 +237,52 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
         [config, acceptResultToken]
     );
 
+    const resumeSealed = useCallback(
+        async (appHost: string) => {
+            if (sealedSession) return;
+            if (sealedResumeInFlight.current) return sealedResumeInFlight.current;
+            const run = (async () => {
+                let frame = sealedFrameRef.current;
+                if (!frame || sealedHostRef.current !== appHost) {
+                    sealedFrameRef.current?.destroy();
+                    frame = new AuthFrame({
+                        ...config,
+                        sessionRelay: { appHost }
+                    });
+                    sealedFrameRef.current = frame;
+                    sealedHostRef.current = appHost;
+                }
+                try {
+                    const s = await frame.resumeSession();
+                    setSealedSession(s);
+                } catch (err) {
+                    // no-voucher    → user never completed a sealed sign-in here
+                    // rejected      → enclave identity/measurement changed; a
+                    //                 wallet ceremony is required
+                    // unavailable   → transient transport failure
+                    // All three leave sealedSession null; the sign-in flow
+                    // (or a later retry) re-creates the sealed transport.
+                    console.log('[chat-auth] sealed resume unavailable:', (err as Error).message);
+                }
+            })();
+            sealedResumeInFlight.current = run;
+            try {
+                await run;
+            } finally {
+                sealedResumeInFlight.current = null;
+            }
+        },
+        [config, sealedSession]
+    );
+
     const signOut = useCallback(async () => {
         const frame = getFrame();
         await frame.clearSession();
         setSession(null);
         setSealedSession(null);
+        sealedFrameRef.current?.destroy();
+        sealedFrameRef.current = null;
+        sealedHostRef.current = null;
     }, [getFrame]);
 
     const getTokenForAudience = useCallback(
@@ -260,7 +318,7 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
 
     return (
         <AuthContext.Provider
-            value={{ session, loading, expired, sealedSession, getTokenForAudience, signIn, signInInto, signOut }}
+            value={{ session, loading, expired, sealedSession, getTokenForAudience, signIn, signInInto, resumeSealed, signOut }}
         >
             {children}
         </AuthContext.Provider>
