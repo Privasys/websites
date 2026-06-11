@@ -104,7 +104,9 @@ jobs:
           SITEMAP=$(curl -sS -o /dev/null -w '%{http_code}' https://docs.privasys.org/sitemap.xml)
           echo "sitemap=$SITEMAP"
           test "$SITEMAP" = "200"
-          CSS=$(grep -o 'href="[^"]*\.css"' /tmp/docs-index.html | head -1 | sed 's/^href="//;s/"$//')
+          # The export pages are RSC shells: the stylesheet path lives in the
+          # __next_f flight payload, not in a <link href> tag.
+          CSS=$(grep -o '/_next/static/css/[A-Za-z0-9_-]*\.css' /tmp/docs-index.html | head -1)
           test -n "$CSS"
           curl -sS "https://docs.privasys.org${CSS}" -o /tmp/docs.css
           grep -q -- '--fd-' /tmp/docs.css
