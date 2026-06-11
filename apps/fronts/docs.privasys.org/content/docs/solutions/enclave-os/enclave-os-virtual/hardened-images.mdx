@@ -113,7 +113,10 @@ Each tagged release of the base image publishes:
 | Artifact | Description |
 |----------|-------------|
 | **dm-verity root hash** | The SHA-256 root of the hash tree covering every byte on the read-only root filesystem. This is the primary code identity measurement. |
+| **Predicted RTMR[1] / RTMR[2]** | The expected TDX measurement register values, computed from the artifact itself (GPT, shim/GRUB Authenticode digests, grub.cfg command sequence, kernel, command line, initrds) by replaying the SHA-384 extend chain — no boot required. A per-event digest manifest (`.measurements.json`) accompanies each artifact. |
 | **Disk image** | Bootable TDX Confidential VM image (cloud-specific formats produced by CI) |
+
+Because the expected values are derived from the published artifact rather than recorded from a "golden boot", a verifier can independently rebuild the measurement chain and confirm both the artifact and the attestation refer to exactly the same bytes. Build inputs are pinned (apt packages to a dated snapshot.ubuntu.com timestamp, the kernel to an exact ABI, the toolchain to commit SHAs) so rebuilds see identical inputs.
 
 The dm-verity root hash is embedded in the kernel command line (`roothash=...`) and measured into **RTMR[2]** at boot (via CC MR 3). RTMR[1] (CC MR 2) measures the boot manager code (shim and GRUB binaries). Together, a remote verifier can confirm the exact bootloader AND root filesystem by checking RTMR[1] and RTMR[2] in the TDX quote.
 
