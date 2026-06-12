@@ -131,17 +131,17 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
                 setExpired(true);
                 clearSessionCookie();
             };
-            frameRef.current.onSessionRenewed = () => {
-                // Re-fetch session to get the refreshed token.
-                // The SDK already handles expiry — if the token is expired, it returns null
-                // and fires onSessionExpired which clears the session.
-                frameRef.current?.getSession().then((s) => {
-                    if (s) {
-                        setSession(sessionFromToken(s.token, s.rpId, s.authenticatedAt));
-                        setSessionCookie(s.token);
-                        setExpired(false);
-                    }
-                });
+            frameRef.current.onSessionRenewed = (_rpId, accessToken) => {
+                // Use the freshly-renewed token the SDK hands us directly.
+                // (Do NOT round-trip through getSession() — that can return
+                // a cached, already-expired token, which then 401s on the
+                // next API call and surfaces a false "session expired" that
+                // only a reload clears.)
+                if (accessToken) {
+                    setSession(sessionFromToken(accessToken, config.rpId ?? config.appName));
+                    setSessionCookie(accessToken);
+                    setExpired(false);
+                }
             };
         }
         return frameRef.current;
