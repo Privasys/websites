@@ -134,13 +134,14 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
                 setSession(null);
                 setExpired(true);
             };
-            frameRef.current.onSessionRenewed = () => {
-                frameRef.current?.getSession().then((s) => {
-                    if (s) {
-                        setSession(sessionFromToken(s.token, s.rpId, s.authenticatedAt));
-                        setExpired(false);
-                    }
-                });
+            frameRef.current.onSessionRenewed = (_rpId, accessToken) => {
+                // Adopt the freshly-renewed token directly. Round-tripping
+                // through getSession() can return a cached, already-expired
+                // token → false "session expired" cleared only by reload.
+                if (accessToken) {
+                    setSession(sessionFromToken(accessToken, config.rpId ?? config.appName));
+                    setExpired(false);
+                }
             };
         }
         return frameRef.current;
