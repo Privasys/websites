@@ -73,7 +73,19 @@ export async function probeInstanceHealth(
             credentials: 'omit',
             headers: { Accept: 'application/json' }
         });
-        return res.ok;
+        if (res.ok) return true;
+        // Terminate-marker enforcement (session hardening) can 403
+        // plaintext probes through the gateway with
+        // "sealed-transport-required". That response is emitted by the
+        // enclave itself, so it proves the backend is up — the actual
+        // chat traffic rides the sealed transport and is unaffected.
+        // (Enclave images with the /healthz enforcement exemption
+        // answer 200 here instead; both paths report "up".)
+        if (res.status === 403) {
+            const body = await res.text().catch(() => '');
+            return body.includes('sealed-transport-required');
+        }
+        return false;
     } catch {
         return false;
     } finally {
@@ -107,7 +119,7 @@ export async function waitForModelReady(
         timeoutMs: number;
         intervalMs?: number;
         signal?: AbortSignal;
-        onTick?: (elapsedMs: number) => void;
+        onTick?: (_elapsedMs: number) => void;
     }
 ): Promise<boolean> {
     const interval = opts.intervalMs ?? 5_000;
