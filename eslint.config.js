@@ -60,6 +60,16 @@ const javascriptRules = {
 
 const typescriptRules = {
     ...javascriptRules,
+    // The base `no-unused-vars` rule (inherited from javascriptRules)
+    // mis-fires on TypeScript type positions — e.g. interface method
+    // signature parameter names — reporting them as "unused" even when
+    // `_`-prefixed. typescript-eslint's guidance is to disable the base
+    // rule and rely solely on its TS-aware replacement, which the
+    // per-project @nx/react-typescript preset already does. The root
+    // config (used when lint-staged resolves config from the repo root)
+    // did not, so the husky pre-commit hook flagged code the project /
+    // CI lint accepts. Align them.
+    'no-unused-vars': 'off',
     '@typescript-eslint/no-explicit-any': 'warn',
     '@typescript-eslint/no-unused-vars': 'error'
 };
@@ -73,7 +83,7 @@ const baseConfig = [
             '@nx': nxEslintPlugin,
             '@typescript-eslint': tsEslint
             ,
-            react: reactPlugin,
+            'react': reactPlugin,
             'react-hooks': reactHooksPlugin
         },
         languageOptions: {
