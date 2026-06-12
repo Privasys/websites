@@ -16,6 +16,12 @@ jobs:
   e2e-explorer:
     name: Explorer Tests
     runs-on: ubuntu-latest
+    # See e2e-portal.yml: run in Playwright's official image so there is
+    # no `playwright install --with-deps` apt step (it hangs on the
+    # ubuntu-24.04 runner's apt lock). Keep the tag in sync with the
+    # `@playwright/test` version in package.json.
+    container:
+      image: mcr.microsoft.com/playwright:v1.58.2-noble
     timeout-minutes: 10
 
     steps:
@@ -31,8 +37,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: yarn install --immutable
 
-      - name: Install Playwright browsers
-        run: npx playwright install chromium --with-deps
+      # Playwright browsers + OS deps are already present in the image.
 
       - name: Run explorer e2e tests
         run: |

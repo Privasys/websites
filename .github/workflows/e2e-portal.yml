@@ -25,6 +25,15 @@ jobs:
   e2e-portal:
     name: Portal Tests
     runs-on: ubuntu-latest
+    # Run inside Playwright's official image: the browsers and all their
+    # system dependencies are prebaked, so there is no `playwright
+    # install --with-deps` step. That apt step began hanging (until the
+    # 15-min job timeout) when ubuntu-latest moved to 24.04 — it blocked
+    # on the runner's apt/dpkg lock — leaving this job red on main for
+    # weeks without ever running a test. Keep the tag in sync with the
+    # `@playwright/test` version in package.json.
+    container:
+      image: mcr.microsoft.com/playwright:v1.58.2-noble
     timeout-minutes: 15
 
     steps:
@@ -40,8 +49,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: yarn install --immutable
 
-      - name: Install Playwright browsers
-        run: npx playwright install chromium --with-deps
+      # Playwright browsers + OS deps are already present in the image.
 
       - name: Restore FIDO2 test identity
         run: |
