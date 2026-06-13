@@ -48,7 +48,7 @@ jobs:
         run: |
           set -euo pipefail
           npx nx reset
-          npx nx run privasys.org:postbuild --skip-nx-cache
+          npx nx run privasys.org:build --skip-nx-cache
           test -f dist/apps/fronts/privasys.org/.next/index.html
           test -f dist/apps/fronts/privasys.org/.next/sitemap.xml
           test -d dist/apps/fronts/privasys.org/.next/_next/static

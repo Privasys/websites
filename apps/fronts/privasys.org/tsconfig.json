@@ -34,7 +34,6 @@
         "**/*.tsx",
         ".next/types/**/*.ts",
         "next-env.d.ts",
-        "next-sitemap.config.cjs",
         "next.config.cjs",
         "../../../dist/apps/fronts/privasys.org/.next/types/**/*.ts"
     ],
