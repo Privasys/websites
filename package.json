@@ -2,7 +2,7 @@
     "name": "@privasys/websites",
     "version": "0.0.0",
     "private": true,
-    "license": "MIT",
+    "license": "AGPL-3.0",
     "type": "module",
     "workspaces": [
         "apps/fronts/*",
