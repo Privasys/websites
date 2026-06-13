@@ -38,16 +38,6 @@
                 "production": {}
             }
         },
-        "postbuild": {
-            "dependsOn": [
-                "build"
-            ],
-            "executor": "nx:run-commands",
-            "options": {
-                "command": "yarn next-sitemap --config next-sitemap.config.cjs",
-                "cwd": "apps/fronts/privasys.org"
-            }
-        },
         "serve": {
             "dependsOn": ["copy-logo", "copy-fonts"],
             "executor": "nx:run-commands",
@@ -77,7 +67,7 @@
                 "command": "docker build --platform linux/amd64 -t privasys/privasys.org:latest -f apps/fronts/privasys.org/Dockerfile dist/apps/fronts/privasys.org"
             },
             "dependsOn": [
-                "postbuild"
+                "build"
             ]
         }
     }
