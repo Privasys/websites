@@ -47,7 +47,7 @@ jobs:
             --reporter=list
 
       - name: Upload test artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: explorer-test-results
