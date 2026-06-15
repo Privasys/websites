@@ -68,7 +68,7 @@ Tokens are stored in the OS keychain, with a `0600` file fallback for headless e
 
 | Group | Commands |
 | --- | --- |
-| `apps` | `list`, `describe`, `create`, `upload`, `delete`, `versions`, `deploy`, `deployments`, `stop`, `api`, `mcp`, `call`, `builds`, `owners` |
+| `apps` | `list`, `describe`, `create`, `upload`, `delete`, `versions` (incl. `stage`/`pending`/`promote`/`revoke`), `deploy`, `upgrade`, `deployments`, `stop`, `api`, `mcp`, `call`, `builds`, `owners` |
 | `account` | `show`, `update` |
 | `team` | `list`, `add`, `set-role`, `remove` |
 | `billing` | `balance`, `usage`, `ledger`, `status`, `subscribe`, `buy-credits`, `portal` |
@@ -123,6 +123,38 @@ privasys attest my-app --format json                      # full result as JSON
 ```
 
 The data plane is direct too: `privasys apps call` connects to the enclave over RA-TLS, verifies the report-data binding locally, and streams the response. Pass `--attest` to add a full attestation-server quote check on the call. The control plane is never in the data path.
+
+## Upgrades and data keys
+
+Apps with vault-backed encrypted storage bind their data key to a precise measurement (the enclave MRTD plus the container image digest). When you deploy a new version, or the enclave itself is upgraded, that measurement changes and the vault refuses to release the key until **you, the app owner, approve the new measurement**. The platform cannot approve it for you. See [Enclave upgrades](/solutions/enclave-vaults/overview) for the full model.
+
+The guided command stages the new measurement, shows you what is being approved, and promotes it after your confirmation:
+
+```sh
+privasys apps upgrade my-app
+```
+
+```text
+staged 2/2 vaults
+Measurement to approve (review the digest against your build):
+{ … MRTD, image digest, per-vault progress … }
+Promote pending #0 for my-app? This releases the data key to the new version. [y/N]
+```
+
+For scripting or finer control, the discrete owner-only verbs:
+
+```sh
+privasys apps versions stage   my-app [version] [--enclave <id>]
+privasys apps versions pending my-app [version]
+privasys apps versions promote my-app [version] [--pending 0]
+privasys apps versions revoke  my-app [version] [--pending 0]
+```
+
+<Callout type="info">
+If `apps deploy --watch` reports a vault-backed app failing to start right after a version or enclave change, the data key is locked pending approval. Run `privasys apps upgrade <app>` to review and promote the new measurement.
+</Callout>
+
+Because builds are reproducible, the digest in the staged measurement is something you can verify against your own build before you approve. That is the point: you authorize a specific, known version to read your data, you do not take the platform's word for it.
 
 ## Agent-first
 
