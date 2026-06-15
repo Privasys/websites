@@ -4,6 +4,7 @@
     "pages": [
         "overview",
         "developer-platform",
+        "cli",
         "gateway",
         "app-store",
         "verification-libraries"

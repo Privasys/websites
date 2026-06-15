@@ -1,6 +1,7 @@
 'use client';
 
 import Balancer from 'react-wrap-balancer';
+import { CliWindow } from '@privasys/cli-window';
 import { PageShell } from '~/app/components/page-shell';
 
 export default function Platform() {
@@ -15,6 +16,10 @@ export default function Platform() {
                     Bring your code as a lightweight WASM module or a full container.
                     Our platform handles attestation, encryption, reproducible builds, and verification, so you can focus on building.
                 </p>
+            </section>
+
+            <section className='mt-16 lg:mt-24'>
+                <CliWindow title='privasys — confidential apps' />
             </section>
 
             <section className='mt-20 lg:mt-40'>
@@ -229,6 +234,57 @@ export default function Platform() {
                             </Balancer>
                         </p>
                     </div>
+                </div>
+            </section>
+
+            <section className='mt-20 lg:mt-40'>
+                <h2 className='text-2xl lg:text-4xl'>
+                    <Balancer>The whole platform, from your terminal.</Balancer>
+                </h2>
+                <p className='mt-8 text-lg'>
+                    The <code className='text-base bg-[#1d1d1f]/5 dark:bg-[#f5f5f7]/10 px-1.5 py-0.5 rounded'>privasys</code> CLI
+                    drives everything you can do in the dashboard: sign in with your wallet, deploy WASM or container apps, manage teams and billing,
+                    and verify attestation. Attestation runs <strong>client-side</strong>: the CLI challenges the enclave directly over RA-TLS and checks the hardware quote itself, so you never have to trust an intermediary.
+                </p>
+                <div className='mt-8'>
+                    <p className='text-sm font-medium tracking-wide uppercase text-[#1d1d1f]/50 dark:text-[#f5f5f7]/50 mb-2'>Install</p>
+                    <pre className='overflow-x-auto rounded-xl bg-[#0B0F17] text-[#C9D1D9] p-4 text-sm'>
+                        <code>curl -fsSL https://raw.githubusercontent.com/Privasys/cli/main/install.sh | sh</code>
+                    </pre>
+                    <p className='mt-3 text-sm text-[#1d1d1f]/60 dark:text-[#f5f5f7]/60'>
+                        Also available via Homebrew (<code className='bg-[#1d1d1f]/5 dark:bg-[#f5f5f7]/10 px-1 rounded'>brew install Privasys/tap/privasys</code>), Scoop, and <code className='bg-[#1d1d1f]/5 dark:bg-[#f5f5f7]/10 px-1 rounded'>.deb</code>/<code className='bg-[#1d1d1f]/5 dark:bg-[#f5f5f7]/10 px-1 rounded'>.rpm</code> packages.
+                    </p>
+                </div>
+                <div className='mt-16 grid grid-cols-1 lg:grid-cols-2 gap-16 lg:gap-x-32 lg:gap-y-20'>
+                    <div>
+                        <h3 className='text-xl lg:text-3xl'>Agent-first by design</h3>
+                        <p>
+                            <Balancer>
+                                The CLI is also a Model Context Protocol server: run <code className='text-base bg-[#1d1d1f]/5 dark:bg-[#f5f5f7]/10 px-1.5 py-0.5 rounded'>privasys mcp serve</code> and your AI agent can deploy and verify confidential apps as native tools.
+                                <code className='text-base bg-[#1d1d1f]/5 dark:bg-[#f5f5f7]/10 px-1.5 py-0.5 rounded'>privasys agents init</code> wires it into Claude Code, Cursor, VS Code, or Gemini in a single command.
+                                Every command speaks JSON and returns stable exit codes, so it scripts cleanly in CI.
+                            </Balancer>
+                        </p>
+                    </div>
+                    <div>
+                        <h3 className='text-xl lg:text-3xl'>Verify, don&apos;t trust</h3>
+                        <p>
+                            <Balancer>
+                                <code className='text-base bg-[#1d1d1f]/5 dark:bg-[#f5f5f7]/10 px-1.5 py-0.5 rounded'>privasys attest</code> connects through the gateway&apos;s L4 splice, challenges the enclave with a fresh nonce, and verifies the TEE quote and the per-workload code hash.
+                                Your data plane is direct: <code className='text-base bg-[#1d1d1f]/5 dark:bg-[#f5f5f7]/10 px-1.5 py-0.5 rounded'>privasys apps call</code> streams straight to the enclave over RA-TLS, with the control plane never in the path.
+                            </Balancer>
+                        </p>
+                    </div>
+                </div>
+                <div className='mt-10 flex flex-wrap gap-4'>
+                    <a href='https://github.com/Privasys/cli' target='_blank' rel='noopener noreferrer'
+                        className='px-6 py-2.5 font-bold border rounded-full text-black dark:text-white hover:bg-black hover:text-white dark:border-white dark:hover:bg-white dark:hover:text-black transition-colors'>
+                        Privasys CLI on GitHub
+                    </a>
+                    <a href='https://docs.privasys.org/solutions/platform/cli/'
+                        className='px-6 py-2.5 font-bold border rounded-full text-black dark:text-white hover:bg-black hover:text-white dark:border-white dark:hover:bg-white dark:hover:text-black transition-colors'>
+                        CLI documentation
+                    </a>
                 </div>
             </section>
 

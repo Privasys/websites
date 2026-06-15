@@ -22,7 +22,9 @@
             "@privasys/ui": ["libs/ui/src/index.ts"],
             "@privasys/ui/*": ["libs/ui/src/*"],
             "@privasys/attestation-view": ["libs/attestation-view/src/index.ts"],
-            "@privasys/attestation-view/*": ["libs/attestation-view/src/*"]
+            "@privasys/attestation-view/*": ["libs/attestation-view/src/*"],
+            "@privasys/cli-window": ["libs/cli-window/src/index.ts"],
+            "@privasys/cli-window/*": ["libs/cli-window/src/*"]
         },
         "strict": true,
         "verbatimModuleSyntax": null,
