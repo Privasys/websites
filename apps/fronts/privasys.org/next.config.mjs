@@ -12,7 +12,7 @@ const nextConfig = {
     experimental: {
         reactCompiler: true
     },
-    transpilePackages: ['@privasys/ui'],
+    transpilePackages: ['@privasys/ui', '@privasys/cli-window'],
     output: 'export',
     trailingSlash: true,
     poweredByHeader: false,

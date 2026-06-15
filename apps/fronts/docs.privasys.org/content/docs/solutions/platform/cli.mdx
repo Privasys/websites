@@ -1,0 +1,197 @@
+---
+title: CLI
+description: The privasys command-line interface. Sign in with your wallet, deploy WASM or container apps, manage teams and billing, and verify hardware attestation from your terminal, your CI pipeline, or an AI agent.
+---
+
+The `privasys` CLI is a single binary that drives the whole [Privasys Platform](/solutions/platform/overview): wallet authentication, app lifecycle, teams, billing, and client-side attestation. It is built for three audiences: developers, CI pipelines, and AI agents.
+
+It talks only to the public platform API and, for the data plane, **directly to enclaves over RA-TLS**. There is no proprietary control plane in the path when you call or attest an app.
+
+The source is public and AGPL-3.0 at [github.com/Privasys/cli](https://github.com/Privasys/cli).
+
+## Install
+
+The canonical install is a script you can read before you run it:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Privasys/cli/main/install.sh | sh
+```
+
+Other channels:
+
+```sh
+# Homebrew (macOS / Linux)
+brew install Privasys/tap/privasys
+
+# Scoop (Windows)
+scoop bucket add privasys https://github.com/Privasys/scoop-bucket
+scoop install privasys
+```
+
+Debian and RPM packages (`.deb` / `.rpm`) and raw archives for every OS and architecture are attached to each [GitHub release](https://github.com/Privasys/cli/releases).
+
+<Callout type="info">
+`go install` is not supported. The CLI performs client-side RA-TLS, which links the RA-TLS client library and is built with the [Privasys Go fork](https://github.com/Privasys/go). Use the released binaries or one of the package managers above.
+</Callout>
+
+Verify the install:
+
+```sh
+privasys version
+```
+
+## Quickstart
+
+```sh
+privasys auth login                          # scan the QR with your Privasys Wallet
+privasys apps deploy my-app --watch          # build, roll out, and follow progress
+privasys attest my-app                        # challenge the enclave and verify its quote
+privasys apps call my-app hello --data '{}'  # call it directly over RA-TLS
+```
+
+Commands that take an app accept either its **id or its name**.
+
+## Authentication
+
+The CLI never holds your signing key. The key stays on your wallet; the CLI holds a short-lived access token that it refreshes silently. Every interactive flow is the OAuth 2.0 Device Authorization Grant (RFC 8628). See [Privasys ID](/solutions/privasys-id/overview) for the identity platform behind it.
+
+| Mode | Command | Use it for |
+| --- | --- | --- |
+| Wallet (default) | `privasys auth login` | A human with the Privasys Wallet. Scan the QR; the wallet verifies enclave attestation before approving. |
+| No wallet | open the URL printed by `auth login` | Complete a passkey, security key, or social sign-in in the browser. |
+| Agent-brokered | `privasys auth begin` then `privasys auth poll --wait` | An agent surfaces the verification URL and code to a human, who approves; the agent then receives the token. |
+| Service account | `privasys auth activate-service-account --key-file key.json` | Unattended CI and agents. Or set `PRIVASYS_SERVICE_KEY`. |
+
+Tokens are stored in the OS keychain, with a `0600` file fallback for headless environments. Helpers: `privasys auth whoami`, `auth print-access-token`, `auth list`, `auth logout`.
+
+## Commands
+
+| Group | Commands |
+| --- | --- |
+| `apps` | `list`, `describe`, `create`, `upload`, `delete`, `versions`, `deploy`, `deployments`, `stop`, `api`, `mcp`, `call`, `builds`, `owners` |
+| `account` | `show`, `update` |
+| `team` | `list`, `add`, `set-role`, `remove` |
+| `billing` | `balance`, `usage`, `ledger`, `status`, `subscribe`, `buy-credits`, `portal` |
+| `attest` | `attest <app>` |
+| `auth` | `login`, `begin`, `poll`, `activate-service-account`, `whoami`, `print-access-token`, `list`, `logout` |
+| `agents` | `init` |
+| `mcp` | `serve` |
+| `config` | `set`, `get`, `list` |
+
+Deploy an app end to end:
+
+```sh
+privasys apps create --name demo --source github --commit-url https://github.com/you/demo/commit/<sha>
+privasys apps deploy demo --watch
+privasys apps call demo hello --data '{"who":"world"}'
+```
+
+Manage a team and billing:
+
+```sh
+privasys team add <sub> --email dev@acme.com --role member
+privasys apps owners add demo <sub>
+privasys billing balance
+privasys billing subscribe          # opens Stripe Checkout; no card data touches the CLI
+```
+
+## Attestation is client-side
+
+`privasys attest <app>` connects to the app's enclave through the gateway's L4 splice, challenges it with a fresh nonce, and verifies the hardware quote against the [attestation server](/solutions/enclave-os/attestation/ra-tls). You trust the enclave's hardware attestation, not the control plane.
+
+```sh
+privasys attest my-app
+```
+
+```text
+host          my-app.apps.privasys.org:443
+tls           TLSv1.3  TLS_AES_128_GCM_SHA256
+quote type    TDX Quote
+challenged    true   nonce 42e0ac75…
+workload      code b453d9aa…   image my-app:817987b
+quote status  OK
+✓ VERIFIED    hardware attestation matches the source
+```
+
+Useful flags:
+
+```sh
+privasys attest my-app --host my-app.apps.privasys.org   # skip the control-plane hostname lookup entirely
+privasys attest my-app --mrtd <hex>                       # pin an expected measurement
+privasys attest my-app --out ./att                        # dump certificate.pem, quote.bin, attestation.json
+privasys attest my-app --format json                      # full result as JSON
+```
+
+The data plane is direct too: `privasys apps call` connects to the enclave over RA-TLS, verifies the report-data binding locally, and streams the response. Pass `--attest` to add a full attestation-server quote check on the call. The control plane is never in the data path.
+
+## Agent-first
+
+The CLI is built to be driven by AI agents.
+
+### MCP server
+
+`privasys mcp serve` exposes the full command surface as [Model Context Protocol](https://modelcontextprotocol.io) tools over stdio. Register it with any MCP client:
+
+```sh
+# Claude Code
+claude mcp add privasys -- privasys mcp serve
+```
+
+```jsonc
+// Generic MCP client config
+{
+  "mcpServers": {
+    "privasys": { "command": "privasys", "args": ["mcp", "serve"] }
+  }
+}
+```
+
+### One-command wiring
+
+`privasys agents init` writes the right MCP registration into your repository so an agent picks up the tools with no manual JSON editing, plus an `AGENTS.md` briefing:
+
+```sh
+privasys agents init            # Claude Code + AGENTS.md
+privasys agents init --all      # every supported harness: claude, cursor, vscode, gemini
+privasys agents init --print    # show what would be written, touch nothing
+```
+
+It is idempotent and never writes secrets. The generated config only points at the local `privasys` binary, which reads its token from the OS keychain.
+
+### Claude Code plugin
+
+Install the plugin for slash commands (`/deploy`, `/attest`), a workflow skill, and the MCP server in one step:
+
+```sh
+claude plugin marketplace add Privasys/cli
+claude plugin install privasys@privasys
+```
+
+## Scripting and output
+
+Every command takes `--format json` (and `yaml`), and output auto-switches to JSON when stdout is not a TTY. `--no-input` never prompts. Exit codes are stable so scripts and agents can branch on the failure class:
+
+| Code | Meaning |
+| --- | --- |
+| `0` | success |
+| `1` | generic error |
+| `3` | not authenticated |
+| `4` | not authorized |
+| `5` | not found |
+
+```sh
+TOKEN=$(privasys auth print-access-token)        # pipe into curl
+privasys apps list --format json | jq '.[].name'
+```
+
+## Configuration
+
+Configuration lives at `~/.privasys/config.yaml` (named configurations). Global flags: `--endpoint`, `--issuer`, `--account`, `--format`, `--no-input`, `--quiet`.
+
+```sh
+privasys config set endpoint https://api.developer.privasys.org
+privasys config set account <account-id>
+privasys config list
+```
+
+Environment overrides include `PRIVASYS_ENDPOINT`, `PRIVASYS_ISSUER`, `PRIVASYS_ACCOUNT`, `PRIVASYS_FORMAT`, `PRIVASYS_SERVICE_KEY`, `PRIVASYS_ACCESS_TOKEN`, and `PRIVASYS_NO_INPUT`.
