@@ -11,6 +11,10 @@ on:
         options:
           - test
           - prod
+      version_tag:
+        description: 'Version (e.g. 0.2.0). Blank = derive from the latest developer-portal-v* git tag.'
+        required: false
+        default: ''
 
 concurrency:
   group: deploy-developer-portal-${{ github.event.inputs.environment }}
@@ -29,6 +33,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0   # full history + tags so we can derive the version
 
       - name: Resolve target config
         id: target
@@ -62,7 +68,20 @@ jobs:
       - name: Build portal
         run: |
           set -euo pipefail
-          echo "NEXT_PUBLIC_API_URL=${{ steps.target.outputs.api_url }}" > apps/fronts/developer.privasys.org/.env.local
+          # Derive the version (input wins, else the latest developer-portal-v* tag)
+          # and stamp the real commit so the UI footer truth-tells what is deployed.
+          VERSION='${{ github.event.inputs.version_tag }}'
+          if [[ -z "$VERSION" ]]; then
+            VERSION="$(git describe --tags --match 'developer-portal-v*' --abbrev=0 2>/dev/null | sed 's/^developer-portal-v//')"
+          fi
+          [[ -z "$VERSION" ]] && VERSION='0.0.0'
+          SHA="${GITHUB_SHA::7}"
+          echo "Stamping portal build: v${VERSION} (${SHA})"
+          {
+            echo "NEXT_PUBLIC_API_URL=${{ steps.target.outputs.api_url }}"
+            echo "NEXT_PUBLIC_APP_VERSION=${VERSION}"
+            echo "NEXT_PUBLIC_GIT_SHA=${SHA}"
+          } > apps/fronts/developer.privasys.org/.env.local
           npx nx reset
           npx nx build developer.privasys.org --skip-nx-cache
 
