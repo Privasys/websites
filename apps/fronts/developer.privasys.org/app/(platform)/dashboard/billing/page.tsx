@@ -20,6 +20,7 @@ import type {
     BillingLedger,
     BillingSubscription
 } from '~/lib/api';
+import { notifyBalanceChanged } from '~/lib/use-balance';
 
 // 1 credit = £0.000001 (£1 = 1,000,000 credits). See pricing-plan.md §4.1.
 const CREDITS_PER_GBP = 1_000_000;
@@ -153,6 +154,7 @@ export default function BillingPage() {
             );
             setPromoCode('');
             await load();
+            notifyBalanceChanged();
         } catch (e) {
             setError(e instanceof Error ? e.message : 'Could not redeem code');
         }
