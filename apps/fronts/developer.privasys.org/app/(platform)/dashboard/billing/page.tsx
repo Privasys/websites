@@ -326,7 +326,7 @@ export default function BillingPage() {
                                 ? `Since ${new Date(usage.since).toLocaleDateString()}`
                                 : 'Recent period'}
                         </p>
-                        {!usage || usage.by_resource.length === 0 ? (
+                        {!usage?.by_resource || usage.by_resource.length === 0 ? (
                             <div className="mt-4 p-4 rounded-xl border border-black/10 dark:border-white/10 text-sm text-black/40 dark:text-white/40">
                                 No usage recorded yet.
                             </div>
@@ -368,7 +368,7 @@ export default function BillingPage() {
                         <p className="mt-1 text-sm text-black/50 dark:text-white/50">
                             Grants, top-ups and usage charges in credit units.
                         </p>
-                        {!ledger || ledger.entries.length === 0 ? (
+                        {!ledger?.entries || ledger.entries.length === 0 ? (
                             <div className="mt-4 p-4 rounded-xl border border-black/10 dark:border-white/10 text-sm text-black/40 dark:text-white/40">
                                 No ledger entries yet.
                             </div>
