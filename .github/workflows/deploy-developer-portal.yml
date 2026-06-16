@@ -75,13 +75,12 @@ jobs:
             VERSION="$(git describe --tags --match 'developer-portal-v*' --abbrev=0 2>/dev/null | sed 's/^developer-portal-v//')"
           fi
           [[ -z "$VERSION" ]] && VERSION='0.0.0'
-          SHA="${GITHUB_SHA::7}"
-          echo "Stamping portal build: v${VERSION} (${SHA})"
-          {
-            echo "NEXT_PUBLIC_API_URL=${{ steps.target.outputs.api_url }}"
-            echo "NEXT_PUBLIC_APP_VERSION=${VERSION}"
-            echo "NEXT_PUBLIC_GIT_SHA=${SHA}"
-          } > apps/fronts/developer.privasys.org/.env.local
+          echo "Stamping portal build: v${VERSION} ($(git rev-parse --short HEAD))"
+          echo "NEXT_PUBLIC_API_URL=${{ steps.target.outputs.api_url }}" > apps/fronts/developer.privasys.org/.env.local
+          # next.config.mjs maps process.env.APP_VERSION -> NEXT_PUBLIC_APP_VERSION,
+          # and derives NEXT_PUBLIC_GIT_SHA from `git rev-parse --short HEAD` itself
+          # (hence fetch-depth: 0 above).
+          export APP_VERSION="${VERSION}"
           npx nx reset
           npx nx build developer.privasys.org --skip-nx-cache
 
