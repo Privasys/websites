@@ -7,6 +7,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { getApp, listBuilds, listVersions, listDeployments, listCompatibleEnclaves, deleteApp, deployDirect, stopDeployment, getAppSchema, rpcCall, updateStoreListing, getAppMcp, updateContainerMcp, retryBuild, listAppOwners, addAppOwner, removeAppOwner } from '~/lib/api';
 import type { AppSchema, FunctionSchema, WitType, McpManifest, AppTeam } from '~/lib/api';
 import { useSSE } from '~/lib/use-sse';
+import { useBalance } from '~/lib/use-balance';
 import { getApiBaseUrl } from '~/lib/api-base-url';
 import type { App, BuildJob, AppVersion, AppDeployment, Enclave } from '~/lib/types';
 import { STATUS_LABELS, STATUS_COLORS, DEPLOYMENT_STATUS_LABELS, DEPLOYMENT_STATUS_COLORS, CONTAINER_STATE_LABELS, CONTAINER_STATE_COLORS } from '~/lib/types';
@@ -280,7 +281,7 @@ export default function AppDetailPage() {
 }
 
 // ------- Overview Tab -------
-function OverviewTab({ app, versions, builds, deployments, deleting, onDelete, retrying, onRetry }: { app: App; versions: AppVersion[]; builds: BuildJob[]; deployments: AppDeployment[]; deleting: boolean; onDelete: () => void; retrying: boolean; onRetry: () => void }) {
+function OverviewTab({ app, builds, deployments, deleting, onDelete, retrying, onRetry }: { app: App; versions: AppVersion[]; builds: BuildJob[]; deployments: AppDeployment[]; deleting: boolean; onDelete: () => void; retrying: boolean; onRetry: () => void }) {
     const lastBuild = builds[0];
     const canRetry = !!lastBuild && (lastBuild.status === 'failed' || lastBuild.status === 'cancelled');
     const activeDeployments = deployments.filter(d => d.status === 'active');
@@ -1679,9 +1680,17 @@ function DeploymentsTab({ app, deployments, versions, enclaves, token, onRefresh
     const [stopping, setStopping] = useState<string | null>(null);
     const [stopErrors, setStopErrors] = useState<Record<string, string>>({});
     const [error, setError] = useState<string | null>(null);
+    const { enabled: billingEnabled, frozen: balanceEmpty } = useBalance();
+    // Only block when we actually know the balance is empty (billing enabled +
+    // caller has billing access); "unknown" never gates a deploy.
+    const deployBlockedByCredits = billingEnabled && balanceEmpty;
 
     async function handleDeploy() {
         if (!selectedVersion || !selectedEnclave) return;
+        if (deployBlockedByCredits) {
+            setError('Your credit balance is empty. Top up credits or redeem a code on the Billing page to deploy.');
+            return;
+        }
         setDeploying(true);
         setError(null);
         try {
@@ -1785,9 +1794,18 @@ function DeploymentsTab({ app, deployments, versions, enclaves, token, onRefresh
                                 </select>
                             </div>
                         </div>
+                        {deployBlockedByCredits && (
+                            <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 text-xs text-amber-700 dark:text-amber-300">
+                                Your credit balance is empty.{' '}
+                                <Link href="/dashboard/billing" className="underline font-medium">
+                                    Top up or redeem a code
+                                </Link>{' '}
+                                to deploy.
+                            </div>
+                        )}
                         <button
                             onClick={handleDeploy}
-                            disabled={deploying || !selectedVersion || !selectedEnclave}
+                            disabled={deploying || !selectedVersion || !selectedEnclave || deployBlockedByCredits}
                             className="px-4 py-2 text-sm font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
                         >
                             {deploying ? 'Deploying…' : 'Deploy'}

@@ -10,6 +10,7 @@ import { listApps } from '~/lib/api';
 import { useSSE } from '~/lib/use-sse';
 import type { App } from '~/lib/types';
 import { UserMenu } from '~/components/user-menu';
+import { CreditBalance } from '~/components/credit-balance';
 
 const STATUS_DOT: Record<string, string> = {
     deployed: 'bg-emerald-500',
@@ -288,7 +289,7 @@ export default function PlatformLayout({ children }: { children: ReactNode }) {
 
     return (
         <>
-            <Navbar brandSuffix="Developer" items={NAVBAR_ITEMS} fullWidth trailing={<UserMenu />} />
+            <Navbar brandSuffix="Developer" items={NAVBAR_ITEMS} fullWidth trailing={<div className="flex items-center gap-3"><CreditBalance /><UserMenu /></div>} />
             <div className="flex flex-1 pt-14">
                 <Sidebar />
                 <main className="flex-1 p-6 lg:p-10 min-w-0">
