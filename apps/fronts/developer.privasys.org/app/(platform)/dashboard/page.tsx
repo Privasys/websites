@@ -6,8 +6,17 @@ import { useAuth } from '~/lib/privasys-auth';
 import { useEffect, useState, useCallback } from 'react';
 import { isApiStatus, listApps } from '~/lib/api';
 import { useSSE } from '~/lib/use-sse';
+import { useBalance } from '~/lib/use-balance';
 import type { App, AppStatus } from '~/lib/types';
 import { STATUS_LABELS, STATUS_COLORS } from '~/lib/types';
+
+const CREDITS_PER_GBP = 1_000_000;
+function gbp(credits: number): string {
+    return `£${(credits / CREDITS_PER_GBP).toLocaleString('en-GB', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+    })}`;
+}
 
 function StatusBadge({ status }: { status: string }) {
     const s = status as AppStatus;
@@ -52,6 +61,9 @@ const BENEFITS = [
 ];
 
 function WelcomePage() {
+    const { enabled: billingEnabled, balance } = useBalance();
+    // When billing is off (or balance unknown), don't present funding as a gate.
+    const funded = !billingEnabled || (balance !== null && balance > 0);
     return (
         <div className="max-w-3xl mx-auto">
             {/* Hero */}
@@ -68,37 +80,61 @@ function WelcomePage() {
                 </p>
             </div>
 
-            {/* Actions */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-16">
-                <Link
-                    href="/dashboard/new"
-                    className="group p-6 rounded-xl border-2 border-black/10 dark:border-white/10 hover:border-black/30 dark:hover:border-white/30 transition-all"
-                >
-                    <div className="w-10 h-10 rounded-lg bg-black dark:bg-white flex items-center justify-center mb-4">
-                        <svg className="w-5 h-5 text-white dark:text-black" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                            <path d="M12 4v16m8-8H4" />
-                        </svg>
+            {/* Get started checklist */}
+            <div className="mb-16">
+                <h2 className="text-xs font-semibold uppercase tracking-wide text-black/40 dark:text-white/40 mb-4">Get started</h2>
+                <div className="space-y-3">
+                    {/* Step 1 — fund the account (deploys need credits) */}
+                    <div className="flex items-start gap-4 p-5 rounded-xl border-2 border-black/10 dark:border-white/10">
+                        <div className={`shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold ${funded ? 'bg-emerald-500 text-white' : 'bg-black text-white dark:bg-white dark:text-black'}`}>
+                            {funded ? '✓' : '1'}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between gap-2">
+                                <h3 className="text-base font-semibold">Fund your account</h3>
+                                {billingEnabled && balance !== null && (
+                                    <span className={`shrink-0 text-xs font-medium px-2 py-0.5 rounded-full ${funded ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300' : 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300'}`}>
+                                        {gbp(balance)}{!funded && ' · empty'}
+                                    </span>
+                                )}
+                            </div>
+                            <p className="mt-1 text-sm text-black/50 dark:text-white/50">
+                                {funded
+                                    ? 'Your account has credits and is ready to deploy.'
+                                    : 'Credits are required before you can deploy. Subscribe to the £100/year membership, top up pre-paid credits, or redeem a code.'}
+                            </p>
+                            {!funded && (
+                                <Link
+                                    href="/dashboard/billing"
+                                    className="inline-block mt-3 px-4 py-2 text-sm font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-80 transition-opacity"
+                                >
+                                    Add credits or redeem a code
+                                </Link>
+                            )}
+                        </div>
                     </div>
-                    <h2 className="text-lg font-semibold group-hover:underline">Create a new App</h2>
-                    <p className="mt-1 text-sm text-black/50 dark:text-white/50">
-                        Submit a GitHub commit or upload a WASM module to get started with your first confidential application.
-                    </p>
-                </Link>
 
-                <Link
-                    href="/dashboard/settings"
-                    className="group p-6 rounded-xl border-2 border-black/10 dark:border-white/10 hover:border-black/30 dark:hover:border-white/30 transition-all"
-                >
-                    <div className="w-10 h-10 rounded-lg bg-black/5 dark:bg-white/10 flex items-center justify-center mb-4">
-                        <svg className="w-5 h-5 text-black/70 dark:text-white/70" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                            <path d="M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18M9 6.75h1.5m-1.5 3h1.5m-1.5 3h1.5m3-6H15m-1.5 3H15m-1.5 3H15M9 21v-3.375c0-.621.504-1.125 1.125-1.125h3.75c.621 0 1.125.504 1.125 1.125V21" />
-                        </svg>
+                    {/* Step 2 — create the first app */}
+                    <div className="flex items-start gap-4 p-5 rounded-xl border-2 border-black/10 dark:border-white/10">
+                        <div className="shrink-0 w-7 h-7 rounded-full bg-black text-white dark:bg-white dark:text-black flex items-center justify-center text-xs font-semibold">2</div>
+                        <div className="flex-1 min-w-0">
+                            <h3 className="text-base font-semibold">Create your first app</h3>
+                            <p className="mt-1 text-sm text-black/50 dark:text-white/50">
+                                Submit a GitHub commit or upload a WASM module to build a confidential application.
+                            </p>
+                            <Link
+                                href="/dashboard/new"
+                                className="inline-block mt-3 px-4 py-2 text-sm font-medium rounded-lg border border-black/15 dark:border-white/15 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                            >
+                                New application
+                            </Link>
+                        </div>
                     </div>
-                    <h2 className="text-lg font-semibold group-hover:underline">Organisation settings</h2>
-                    <p className="mt-1 text-sm text-black/50 dark:text-white/50">
-                        Tell us about yourself or your company. This information is shown on the App Store.
-                    </p>
-                </Link>
+                </div>
+                <p className="mt-3 text-xs text-black/40 dark:text-white/40">
+                    Tell us about your organisation in{' '}
+                    <Link href="/dashboard/settings" className="underline">organisation settings</Link>.
+                </p>
             </div>
 
             {/* Benefits grid */}
