@@ -705,6 +705,22 @@ export async function openBillingPortal(token: string): Promise<string | null> {
     return res.url ?? null;
 }
 
+export interface RedeemResponse {
+    enabled: boolean;
+    code: string;
+    credits: number;
+    already_redeemed: boolean;
+    balance: BillingBalance;
+}
+
+/** Redeem a promo code (e.g. WELCOME-JUNE-2026) for free platform credits. */
+export async function redeemPromoCode(token: string, code: string): Promise<RedeemResponse> {
+    return request<RedeemResponse>('/api/v1/billing/redeem', token, {
+        method: 'POST',
+        body: JSON.stringify({ code })
+    });
+}
+
 /**
  * Deploy a built version onto an enclave. The browser POSTs a tiny
  * `{enclave_id}` payload; the management-service service account performs

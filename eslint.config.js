@@ -70,6 +70,12 @@ const typescriptRules = {
     // did not, so the husky pre-commit hook flagged code the project /
     // CI lint accepts. Align them.
     'no-unused-vars': 'off',
+    // Likewise, the base `no-undef` rule mis-fires on TypeScript: DOM/global
+    // types such as `RequestInit` read as "undefined" identifiers. TypeScript
+    // already errors on genuinely-undefined names, and typescript-eslint's
+    // recommended config disables `no-undef` for this reason. The project / CI
+    // lint already does; align the root (lint-staged) config too.
+    'no-undef': 'off',
     '@typescript-eslint/no-explicit-any': 'warn',
     '@typescript-eslint/no-unused-vars': 'error'
 };

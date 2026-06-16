@@ -10,7 +10,8 @@ import {
     getBillingSubscription,
     startMembershipCheckout,
     startCreditsCheckout,
-    openBillingPortal
+    openBillingPortal,
+    redeemPromoCode
 } from '~/lib/api';
 import type {
     AccountRole,
@@ -67,6 +68,9 @@ export default function BillingPage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [actionBusy, setActionBusy] = useState('');
+    const [promoCode, setPromoCode] = useState('');
+    const [promoBusy, setPromoBusy] = useState(false);
+    const [promoMsg, setPromoMsg] = useState('');
 
     const canView = role === 'admin' || role === 'billing';
 
@@ -134,6 +138,26 @@ export default function BillingPage() {
         () => redirectTo('portal', openBillingPortal),
         [redirectTo]
     );
+
+    const redeem = useCallback(async () => {
+        if (!session?.accessToken || !promoCode.trim()) return;
+        setPromoBusy(true);
+        setPromoMsg('');
+        setError('');
+        try {
+            const res = await redeemPromoCode(session.accessToken, promoCode.trim());
+            setPromoMsg(
+                res.already_redeemed
+                    ? `You have already redeemed ${res.code}.`
+                    : `${res.code} redeemed — ${fmtCredits(res.credits)} credits (${gbp(res.credits)}) added.`
+            );
+            setPromoCode('');
+            await load();
+        } catch (e) {
+            setError(e instanceof Error ? e.message : 'Could not redeem code');
+        }
+        setPromoBusy(false);
+    }, [session?.accessToken, promoCode, load]);
 
     return (
         <div className="max-w-3xl">
@@ -259,6 +283,40 @@ export default function BillingPage() {
                             </div>
                         </section>
                     )}
+
+                    {/* Redeem a promo code */}
+                    <section className="mt-8">
+                        <div className="p-5 rounded-xl border border-black/10 dark:border-white/10">
+                            <span className="text-xs font-medium uppercase tracking-wide text-black/50 dark:text-white/50">
+                                Have a code?
+                            </span>
+                            <p className="mt-2 text-sm text-black/60 dark:text-white/60">
+                                Redeem a promo code for free platform credits.
+                            </p>
+                            <form
+                                onSubmit={(e) => { e.preventDefault(); redeem(); }}
+                                className="mt-4 flex flex-wrap gap-3"
+                            >
+                                <input
+                                    value={promoCode}
+                                    onChange={(e) => setPromoCode(e.target.value)}
+                                    placeholder="WELCOME-JUNE-2026"
+                                    spellCheck={false}
+                                    className="flex-1 min-w-[12rem] px-4 py-2 text-sm rounded-full border border-black/15 dark:border-white/15 bg-transparent uppercase placeholder:normal-case placeholder:text-black/30 dark:placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-black/10 dark:focus:ring-white/10"
+                                />
+                                <button
+                                    type="submit"
+                                    disabled={promoBusy || promoCode.trim() === ''}
+                                    className="px-4 py-2 text-sm font-medium rounded-full bg-black text-white dark:bg-white dark:text-black hover:opacity-80 transition-opacity disabled:opacity-50"
+                                >
+                                    {promoBusy ? 'Redeeming…' : 'Redeem'}
+                                </button>
+                            </form>
+                            {promoMsg && (
+                                <p className="mt-3 text-sm text-emerald-600 dark:text-emerald-400">{promoMsg}</p>
+                            )}
+                        </div>
+                    </section>
 
                     {/* Usage by resource */}
                     <section className="mt-8">
