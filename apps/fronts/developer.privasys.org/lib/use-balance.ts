@@ -49,7 +49,21 @@ export function useBalance(): BalanceState {
 
     useEffect(() => {
         load();
+        // Refresh when any part of the app reports a balance change (e.g. a
+        // promo-code redeem) so the nav pill never shows a stale value.
+        const onChange = () => load();
+        window.addEventListener(BALANCE_CHANGED_EVENT, onChange);
+        return () => window.removeEventListener(BALANCE_CHANGED_EVENT, onChange);
     }, [load]);
 
     return { ...state, reload: load };
+}
+
+const BALANCE_CHANGED_EVENT = 'privasys:balance-changed';
+
+/** Notify every `useBalance` consumer (e.g. the nav pill) to refetch. */
+export function notifyBalanceChanged(): void {
+    if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event(BALANCE_CHANGED_EVENT));
+    }
 }
