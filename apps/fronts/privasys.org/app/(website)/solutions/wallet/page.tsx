@@ -154,7 +154,7 @@ export default function Wallet() {
                         className='px-6 py-2.5 font-bold border rounded-full text-black dark:text-white hover:bg-black hover:text-white dark:border-white dark:hover:bg-white dark:hover:text-black transition-colors'>
                         How it works
                     </a>
-                    <a href='https://docs.privasys.org/solutions/wallet/overview' target='_blank' rel='noopener noreferrer'
+                    <a href='https://docs.privasys.org/solutions/privasys-id/wallet' target='_blank' rel='noopener noreferrer'
                         className='px-6 py-2.5 font-bold border rounded-full text-black dark:text-white hover:bg-black hover:text-white dark:border-white dark:hover:bg-white dark:hover:text-black transition-colors'>
                         Documentation
                     </a>

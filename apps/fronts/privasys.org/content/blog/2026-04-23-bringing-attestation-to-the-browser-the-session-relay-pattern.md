@@ -4,7 +4,7 @@ author: "B Foing"
 date: "2026-04-23"
 ---
 
-Confidential computing makes a strong promise. The hardware can prove, cryptographically, what code is running and what configuration it was given. A client that *can* check that proof — verify the quote, parse the OIDs, compare them against a policy — gets an end-to-end-confidential channel into a workload that even the cloud operator cannot inspect. Our [RA-TLS](https://docs.privasys.org/concepts/ra-tls) integration uses exactly that. A Go client, a Rust client, our own iOS and Android wallet — they all dial the enclave, verify the quote on the leaf certificate, and only then send a single byte.
+Confidential computing makes a strong promise. The hardware can prove, cryptographically, what code is running and what configuration it was given. A client that *can* check that proof — verify the quote, parse the OIDs, compare them against a policy — gets an end-to-end-confidential channel into a workload that even the cloud operator cannot inspect. Our [RA-TLS](https://docs.privasys.org/solutions/enclave-os/attestation/ra-tls) integration uses exactly that. A Go client, a Rust client, our own iOS and Android wallet — they all dial the enclave, verify the quote on the leaf certificate, and only then send a single byte.
 
 The browser cannot do any of that.
 
