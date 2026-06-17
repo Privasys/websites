@@ -167,8 +167,8 @@ export default function NewApplicationPage() {
     const [nameReason, setNameReason] = useState('');
     const checkTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    // Step 4: Configuration
-    const [containerPort, setContainerPort] = useState('8080');
+    // Step 4: Configuration (container port is platform-allocated; the app
+    // listens on $PORT — see the create handler / bug #43)
 
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -292,14 +292,6 @@ export default function NewApplicationPage() {
         if (sourceMode === 'package' && !containerImage.trim()) return;
         if (sourceMode === 'cloud_image' && (!cloudImageName || !cloudImageChannel)) return;
 
-        if (appType === 'container' || sourceMode === 'package' || sourceMode === 'cloud_image') {
-            const port = parseInt(containerPort, 10);
-            if (!port || port < 1 || port > 65535) {
-                setError('Container port must be between 1 and 65535');
-                return;
-            }
-        }
-
         setSubmitting(true);
         setError(null);
 
@@ -313,7 +305,6 @@ export default function NewApplicationPage() {
                 commit_url: sourceMode === 'github' ? commitUrl.trim() : undefined,
                 app_type: (sourceMode === 'package' || sourceMode === 'cloud_image') ? 'container' : appType,
                 container_image: sourceMode === 'package' ? containerImage.trim() : undefined,
-                container_port: (sourceMode === 'package' || sourceMode === 'cloud_image' || appType === 'container') && containerPort ? parseInt(containerPort, 10) : undefined,
                 cloud_image_name: sourceMode === 'cloud_image' ? cloudImageName : undefined,
                 cloud_image_channel: sourceMode === 'cloud_image' ? cloudImageChannel : undefined
             });
@@ -328,7 +319,7 @@ export default function NewApplicationPage() {
             setError(e instanceof Error ? e.message : 'Something went wrong');
             setSubmitting(false);
         }
-    }, [session?.accessToken, sourceMode, name, parsed, file, commitUrl, submitting, appType, containerPort, containerImage, cloudImageName, cloudImageChannel]);
+    }, [session?.accessToken, sourceMode, name, parsed, file, commitUrl, submitting, appType, containerImage, cloudImageName, cloudImageChannel]);
 
 
     // ── Wizard ──
@@ -639,15 +630,7 @@ export default function NewApplicationPage() {
                         {(appType === 'container' || sourceMode === 'package' || sourceMode === 'cloud_image') && (
                             <div>
                                 <label className="block text-xs font-medium text-black/60 dark:text-white/60 mb-1">Container port</label>
-                                <input
-                                    type="number"
-                                    placeholder="8080"
-                                    value={containerPort}
-                                    onChange={(e) => setContainerPort(e.target.value)}
-                                    disabled={submitting}
-                                    className="w-32 px-3 py-2 rounded-lg border border-black/10 dark:border-white/10 bg-transparent text-sm focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/20 disabled:opacity-50"
-                                />
-                                <p className="mt-1 text-xs text-black/40 dark:text-white/40">The port your container listens on.</p>
+                                <p className="text-xs text-black/40 dark:text-white/40">Assigned automatically. Your container must listen on the <code className="font-mono text-black/60 dark:text-white/60">PORT</code> environment variable (the Cloud Run / Heroku contract).</p>
                             </div>
                         )}
 
