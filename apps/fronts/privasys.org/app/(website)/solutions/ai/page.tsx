@@ -161,7 +161,7 @@ export default function AISolution() {
                     diff. The trust chain is only as strong as what you actually verify.
                 </p>
                 <div className='mt-10 flex flex-wrap gap-4'>
-                    <a href='/blog'
+                    <a href='/blog/'
                         className='px-6 py-2.5 font-bold border rounded-full text-black dark:text-white hover:bg-black hover:text-white dark:border-white dark:hover:bg-white dark:hover:text-black transition-colors'>
                         Read the engineering posts
                     </a>

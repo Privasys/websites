@@ -66,7 +66,7 @@ export default async function AppDetailPage({ params }: { params: Promise<{ coun
                 <section className='mt-24 lg:mt-40'>
                     <h1 className='text-4xl'>Application not found</h1>
                     <p className='mt-4'>
-                        <a href={`/${country}/apps`} className='underline'>Back to the App Store</a>
+                        <a href={`/${country}/apps/`} className='underline'>Back to the App Store</a>
                     </p>
                 </section>
             </PageShell>
@@ -77,7 +77,7 @@ export default async function AppDetailPage({ params }: { params: Promise<{ coun
         <PageShell activePage='apps'>
 
             <section className='mt-24 lg:mt-40'>
-                <a href={`/${country}/apps`} className='text-sm text-[#1d1d1f]/50 dark:text-[#f5f5f7]/50 hover:underline'>
+                <a href={`/${country}/apps/`} className='text-sm text-[#1d1d1f]/50 dark:text-[#f5f5f7]/50 hover:underline'>
                     &larr; Back to App Store
                 </a>
 

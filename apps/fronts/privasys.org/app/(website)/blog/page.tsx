@@ -27,7 +27,7 @@ export default function BlogPage() {
 
                     {posts.map((post) => (
                         <article key={post.slug} className='border-b border-gray-200 pb-8'>
-                            <Link href={`/blog/${post.slug}`}>
+                            <Link href={`/blog/${post.slug}/`}>
                                 <h2 className='text-2xl lg:text-3xl hover:opacity-70 transition-opacity'>
                                     {post.title}
                                 </h2>
@@ -45,7 +45,7 @@ export default function BlogPage() {
                             </div>
                             <p className='mt-3'>{post.excerpt}</p>
                             <Link
-                                href={`/blog/${post.slug}`}
+                                href={`/blog/${post.slug}/`}
                                 className='mt-2 inline-block link text-sm'
                             >
                                 Read more →

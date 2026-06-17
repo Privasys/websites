@@ -44,7 +44,7 @@ export default async function BlogPostPage({ params }: BlogPostPageProps) {
     return (
         <PageShell activePage='blog'>
                 <section className='mt-16 lg:mt-24'>
-                    <Link href='/blog' className='link text-sm'>← Back to Blog</Link>
+                    <Link href='/blog/' className='link text-sm'>← Back to Blog</Link>
 
                     <h1 className='mt-6 text-4xl lg:text-5xl'>{post.title}</h1>
                     <div className='mt-3 text-sm text-gray-500'>
