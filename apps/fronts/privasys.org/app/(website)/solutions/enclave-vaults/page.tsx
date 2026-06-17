@@ -171,11 +171,11 @@ export default function EnclaveVaults() {
                     We believe in being precise about the trade-offs.
                 </p>
                 <div className='mt-10 flex flex-wrap gap-4'>
-                    <a href='/blog/enclave-vaults-v0-19-typed-keys-and-policy-driven-operations'
+                    <a href='/blog/enclave-vaults-v0-19-typed-keys-and-policy-driven-operations/'
                         className='px-6 py-2.5 font-bold border rounded-full text-black dark:text-white hover:bg-black hover:text-white dark:border-white dark:hover:bg-white dark:hover:text-black transition-colors'>
                         What is new in v0.19
                     </a>
-                    <a href='/blog/enclave-vaults-rethinking-secrets-management-for-the-age-of-confidential-computing'
+                    <a href='/blog/enclave-vaults-rethinking-secrets-management-for-the-age-of-confidential-computing/'
                         className='px-6 py-2.5 font-bold border rounded-full text-black dark:text-white hover:bg-black hover:text-white dark:border-white dark:hover:bg-white dark:hover:text-black transition-colors'>
                         Read the deep-dive
                     </a>

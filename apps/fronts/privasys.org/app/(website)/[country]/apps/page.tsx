@@ -80,7 +80,7 @@ export default function AppStorePage({ params }: { params: Promise<{ country: st
                     {PLACEHOLDER_APPS.map((app) => (
                         <Link
                             key={app.slug}
-                            href={`/${country}/apps/${app.slug}`}
+                            href={`/${country}/apps/${app.slug}/`}
                             className='block p-6 rounded-xl border border-black/8 dark:border-white/10 hover:border-black/20 dark:hover:border-white/20 transition-colors'
                         >
                             <div className='flex items-start justify-between gap-4'>

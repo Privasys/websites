@@ -25,7 +25,7 @@ export default function Home() {
                     <div className='mt-20 grid grid-cols-1 lg:grid-cols-2 gap-16 lg:gap-x-32 lg:gap-y-20'>
                         <div>
                             <h3 className='text-xl lg:text-3xl'>
-                                <a href='/solutions/enclave-os' className='hover:underline'>Enclave OS&nbsp;&rsaquo;</a>
+                                <a href='/solutions/enclave-os/' className='hover:underline'>Enclave OS&nbsp;&rsaquo;</a>
                             </h3>
                             <p>
                                 <Balancer>
@@ -36,7 +36,7 @@ export default function Home() {
                         </div>
                         <div>
                             <h3 className='text-xl lg:text-3xl'>
-                                <a href='/solutions/enclave-vaults' className='hover:underline'>Enclave Vaults&nbsp;&rsaquo;</a>
+                                <a href='/solutions/enclave-vaults/' className='hover:underline'>Enclave Vaults&nbsp;&rsaquo;</a>
                             </h3>
                             <p>
                                 <Balancer>
@@ -48,7 +48,7 @@ export default function Home() {
                         </div>
                         <div>
                             <h3 className='text-xl lg:text-3xl'>
-                                <a href='/solutions/enclave-agent' className='hover:underline'>Enclave Agent&nbsp;&rsaquo;</a>
+                                <a href='/solutions/enclave-agent/' className='hover:underline'>Enclave Agent&nbsp;&rsaquo;</a>
                             </h3>
                             <p>
                                 <Balancer>
@@ -60,7 +60,7 @@ export default function Home() {
                         </div>
                         <div>
                             <h3 className='text-xl lg:text-3xl'>
-                                <a href='/solutions/platform' className='hover:underline'>Privasys Platform&nbsp;&rsaquo;</a>
+                                <a href='/solutions/platform/' className='hover:underline'>Privasys Platform&nbsp;&rsaquo;</a>
                             </h3>
                             <p>
                                 <Balancer>
@@ -72,7 +72,7 @@ export default function Home() {
                         </div>
                         <div>
                             <h3 className='text-xl lg:text-3xl'>
-                                <a href='/solutions/wallet' className='hover:underline'>Privasys Wallet&nbsp;&rsaquo;</a>
+                                <a href='/solutions/wallet/' className='hover:underline'>Privasys Wallet&nbsp;&rsaquo;</a>
                             </h3>
                             <p>
                                 <Balancer>
