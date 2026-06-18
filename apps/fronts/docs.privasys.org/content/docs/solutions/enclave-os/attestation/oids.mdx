@@ -42,6 +42,7 @@ Per-workload OIDs appear in certificates served via [SNI routing](/solutions/enc
 | `3.4` | Volume/Key Source | `"byok:<fingerprint>"` or `"generated"` |
 | `3.5` | Workload Configuration / Model Digest | SHA-256 of the workload's configuration metadata (Mini) or of the AI/ML model weights loaded in the container (Virtual, when reported) |
 | `3.5.<n>` | App-Defined Extensions | Sub-arc for workload-supplied extensions, installed at runtime via the SDK (`set-attestation-extension`) or pinned at deploy time (e.g. attested environment variables) |
+| `3.6` | Workload App Id | Platform-assigned app identity (`apps.id`, raw 16-byte UUID). Pins *which* app a workload is, so a vault key can be sealed to a specific app (MR_APP) and a same-code peer with a different app-id cannot unseal it. Omitted when no app-id is supplied (MR_ENCLAVE). Both. |
 
 ## OID Hierarchy
 
@@ -64,7 +65,8 @@ Per-workload OIDs appear in certificates served via [SNI routing](/solutions/enc
     +-- 3.3                          Container image ref (Virtual)
     +-- 3.4                          Volume/key source
     +-- 3.5                          Workload config hash / model digest
-        +-- 3.5.<n>                  App-defined extensions
+    |   +-- 3.5.<n>                  App-defined extensions
+    +-- 3.6                          Workload app id (MR_APP sealing)
 ```
 
 ## Verification Strategies
