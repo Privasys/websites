@@ -127,7 +127,7 @@ Both editions issue per-workload certificates so that each client only sees the 
 |--|------|--------|
 | **Workload type** | WASM app | OCI container |
 | **Hostname** | `<app>.enclave.example.com` | `<container>.<machine>.<hostname>` |
-| **Per-workload OIDs** | App code hash (`3.2`), config root (`3.1`), key source (`3.4`) | Image digest (`3.2`), image ref (`3.3`), config root (`3.1`), volume encryption (`3.4`) |
+| **Per-workload OIDs** | App code hash (`3.2`), config root (`3.1`), key source (`3.4`), app id (`3.6`) | Image digest (`3.2`), image ref (`3.3`), config root (`3.1`), volume encryption (`3.4`), app id (`3.6`) |
 | **Platform cert** | Enclave CA cert (or default leaf if no SNI) | Management hostname cert |
 | **TLS stack** | rustls `ResolvesServerCert` | Caddy certmagic per-hostname |
 
@@ -153,6 +153,7 @@ Root CA (operator-provisioned)
             |     |-- OID 1.3.6.1.4.1.65230.3.2  App Code Hash
             |     |-- OID 1.3.6.1.4.1.65230.3.1  App Config Merkle Root
             |     |-- OID 1.3.6.1.4.1.65230.3.4  App Key Source
+            |     |-- OID 1.3.6.1.4.1.65230.3.6  App Id (MR_APP sealing)
             |     +-- OID 1.3.6.1.4.1.65230.3.*   App-specific custom OIDs
             |
             ├── App Leaf: "analytics-api"
@@ -181,7 +182,8 @@ Root CA (operator-provisioned)
       |     |-- OID 1.3.6.1.4.1.65230.3.2  Image Digest
       |     |-- OID 1.3.6.1.4.1.65230.3.3  Image Ref
       |     |-- OID 1.3.6.1.4.1.65230.3.1  Container Config Root
-      |     +-- OID 1.3.6.1.4.1.65230.3.4  Volume Encryption
+      |     |-- OID 1.3.6.1.4.1.65230.3.4  Volume Encryption
+      |     +-- OID 1.3.6.1.4.1.65230.3.6  App Id (MR_APP sealing)
       |
       +-- Container Cert: "db"
             +-- ...
