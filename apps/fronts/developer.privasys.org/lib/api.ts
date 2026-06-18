@@ -777,6 +777,16 @@ export function updateContainerMcp(token: string, appId: string, mcp: Record<str
     });
 }
 
+// Re-run MCP-manifest detection against the app's current source (privasys.json
+// in the GitHub commit, or the org.privasys.manifest OCI label on a package
+// image) and store the result. Use this to surface AI Tools for a container app
+// whose manifest was added (or missed) after it was created.
+export function detectContainerMcp(token: string, appId: string): Promise<{ detected: boolean; app: App }> {
+    return request<{ detected: boolean; app: App }>(`/api/v1/apps/${encodeURIComponent(appId)}/mcp/detect`, token, {
+        method: 'POST'
+    });
+}
+
 export function adminStopDeployment(token: string, appId: string, deploymentId: string, force = false): Promise<AppDeployment> {
     const qs = force ? '?force=true' : '';
     return request<AppDeployment>(`/api/v1/admin/apps/${encodeURIComponent(appId)}/deployments/${encodeURIComponent(deploymentId)}/stop${qs}`, token, {

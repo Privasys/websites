@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { useAuth } from '~/lib/privasys-auth';
 import { useEffect, useState, useCallback } from 'react';
-import { getApp, listBuilds, listVersions, listDeployments, listCompatibleEnclaves, deleteApp, deployDirect, stopDeployment, getAppSchema, rpcCall, updateStoreListing, getAppMcp, updateContainerMcp, retryBuild, listAppOwners, addAppOwner, removeAppOwner } from '~/lib/api';
+import { getApp, listBuilds, listVersions, listDeployments, listCompatibleEnclaves, deleteApp, deployDirect, stopDeployment, getAppSchema, rpcCall, updateStoreListing, getAppMcp, updateContainerMcp, detectContainerMcp, retryBuild, listAppOwners, addAppOwner, removeAppOwner } from '~/lib/api';
 import type { AppSchema, FunctionSchema, WitType, McpManifest, AppTeam } from '~/lib/api';
 import { useSSE } from '~/lib/use-sse';
 import { useBalance } from '~/lib/use-balance';
@@ -243,7 +243,7 @@ export default function AppDetailPage() {
             {/* Tab content */}
             <div className="mt-6">
                 {tab === 'overview' && (
-                    <OverviewTab app={app} versions={versions} builds={builds} deployments={deployments} deleting={deleting} onDelete={handleDelete} retrying={retrying} onRetry={handleRetry} />
+                    <OverviewTab app={app} versions={versions} builds={builds} deployments={deployments} deleting={deleting} onDelete={handleDelete} retrying={retrying} onRetry={handleRetry} token={session?.accessToken} onAppUpdate={(updated) => setApp(updated)} />
                 )}
                 {tab === 'deployments' && session?.accessToken && (
                     <DeploymentsTab
@@ -281,10 +281,34 @@ export default function AppDetailPage() {
 }
 
 // ------- Overview Tab -------
-function OverviewTab({ app, builds, deployments, deleting, onDelete, retrying, onRetry }: { app: App; versions: AppVersion[]; builds: BuildJob[]; deployments: AppDeployment[]; deleting: boolean; onDelete: () => void; retrying: boolean; onRetry: () => void }) {
+function OverviewTab({ app, builds, deployments, deleting, onDelete, retrying, onRetry, token, onAppUpdate }: { app: App; versions: AppVersion[]; builds: BuildJob[]; deployments: AppDeployment[]; deleting: boolean; onDelete: () => void; retrying: boolean; onRetry: () => void; token?: string; onAppUpdate: (app: App) => void }) {
     const lastBuild = builds[0];
     const canRetry = !!lastBuild && (lastBuild.status === 'failed' || lastBuild.status === 'cancelled');
     const activeDeployments = deployments.filter(d => d.status === 'active');
+
+    // Container app, deployed, but no MCP manifest recorded — detection only runs
+    // at app-create time, so a privasys.json added (or missed) later never
+    // surfaces its AI Tools. Offer to re-detect from the current source.
+    const canDetectMcp = app.app_type === 'container' && activeDeployments.length > 0 && !app.container_mcp;
+    const [detecting, setDetecting] = useState(false);
+    const [detectMsg, setDetectMsg] = useState<string | null>(null);
+    const handleDetectMcp = useCallback(async () => {
+        if (!token || detecting) return;
+        setDetecting(true);
+        setDetectMsg(null);
+        try {
+            const res = await detectContainerMcp(token, app.id);
+            if (res.detected) {
+                onAppUpdate(res.app);
+            } else {
+                setDetectMsg('No privasys.json / org.privasys.manifest found in this app’s source. Add an MCP manifest to the repo or image, then deploy a new version.');
+            }
+        } catch {
+            setDetectMsg('Could not read the MCP manifest from the app’s source. Check that the repo/image is reachable.');
+        } finally {
+            setDetecting(false);
+        }
+    }, [token, detecting, app.id, onAppUpdate]);
 
     return (
         <div className="space-y-6">
@@ -459,6 +483,34 @@ function OverviewTab({ app, builds, deployments, deleting, onDelete, retrying, o
                     >
                         View AI Tools
                     </a>
+                </section>
+            )}
+
+            {/* Detect AI Tools — container app deployed but no MCP manifest recorded yet */}
+            {canDetectMcp && (
+                <section className="p-4 rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-900/10">
+                    <div className="flex items-center justify-between gap-3">
+                        <div>
+                            <p className="text-sm font-medium text-amber-800 dark:text-amber-300">
+                                No AI Tools detected for this app
+                            </p>
+                            <p className="text-xs text-amber-700/70 dark:text-amber-400/60 mt-0.5">
+                                If your source declares MCP tools (a <code>privasys.json</code>, or an
+                                <code> org.privasys.manifest</code> image label), re-detect it to enable the
+                                API Testing and AI Tools tabs.
+                            </p>
+                        </div>
+                        <button
+                            onClick={handleDetectMcp}
+                            disabled={detecting || !token}
+                            className="shrink-0 px-3 py-1.5 text-xs font-medium rounded-lg bg-amber-600 text-white hover:bg-amber-700 transition-colors disabled:opacity-50 whitespace-nowrap"
+                        >
+                            {detecting ? 'Detecting…' : 'Detect AI Tools'}
+                        </button>
+                    </div>
+                    {detectMsg && (
+                        <p className="text-xs text-amber-700/80 dark:text-amber-400/70 mt-2">{detectMsg}</p>
+                    )}
                 </section>
             )}
 
