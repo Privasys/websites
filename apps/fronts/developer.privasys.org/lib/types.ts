@@ -434,6 +434,69 @@ export type UpdateFleetBody = Partial<CreateFleetBody> & {
     clear_quota_rpm?: boolean;
 };
 
+// ---------------------------------------------------------------------------
+// Vault directory (constellations + member vaults)
+// ---------------------------------------------------------------------------
+
+export type VaultStatus = 'unknown' | 'healthy' | 'unreachable' | 'mrenclave_mismatch';
+
+// A constellation is the versioned unit: all its vaults share one mrenclave +
+// attestation server + OIDC config. A new vault build is a new constellation.
+export interface VaultConstellation {
+    id: string;
+    name: string;
+    environment: string;
+    mrenclave: string;
+    attestation_server: string;
+    oidc_issuer: string;
+    oidc_audience: string;
+    threshold?: number | null;
+    active: boolean;
+    vault_count?: number;
+    created_at?: string;
+    updated_at?: string;
+}
+
+export interface Vault {
+    id: string;
+    constellation_id: string;
+    name: string;
+    site: string;
+    host: string;
+    port: number;
+    enabled: boolean;
+    status: VaultStatus;
+    observed_mrenclave?: string | null;
+    last_error?: string | null;
+    last_checked_at?: string | null;
+    created_at?: string;
+    updated_at?: string;
+}
+
+export interface CreateConstellationBody {
+    name: string;
+    environment?: string;
+    mrenclave: string;
+    attestation_server: string;
+    oidc_issuer?: string;
+    oidc_audience?: string;
+    threshold?: number | null;
+}
+
+export type UpdateConstellationBody = Partial<CreateConstellationBody> & {
+    clear_threshold?: boolean;
+};
+
+export interface CreateVaultBody {
+    name?: string;
+    site?: string;
+    host: string;
+    port: number;
+    enabled?: boolean;
+}
+
+export type UpdateVaultBody = Partial<CreateVaultBody>;
+
 export interface AITool {
     id: string;
     fleet_id: string;

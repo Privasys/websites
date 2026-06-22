@@ -869,3 +869,91 @@ export function adminDeleteFleetTool(
         `/api/v1/admin/fleets/${encodeURIComponent(fleetId)}/tools/${encodeURIComponent(toolId)}`,
         token, { method: 'DELETE' });
 }
+
+// ---------------------------------------------------------------------------
+// Vault directory (constellations + member vaults) — manager role required
+// ---------------------------------------------------------------------------
+
+type VC = import('./types').VaultConstellation;
+type VaultRow = import('./types').Vault;
+
+export function listVaultConstellations(token: string): Promise<{ constellations: VC[] }> {
+    return request<{ constellations: VC[] }>('/api/v1/admin/vault-constellations', token);
+}
+
+export function getVaultConstellation(token: string, id: string): Promise<VC> {
+    return request<VC>(`/api/v1/admin/vault-constellations/${encodeURIComponent(id)}`, token);
+}
+
+export function adminCreateConstellation(
+    token: string, body: import('./types').CreateConstellationBody
+): Promise<VC> {
+    return request<VC>('/api/v1/admin/vault-constellations', token, {
+        method: 'POST',
+        body: JSON.stringify(body)
+    });
+}
+
+export function adminUpdateConstellation(
+    token: string, id: string, body: import('./types').UpdateConstellationBody
+): Promise<VC> {
+    return request<VC>(`/api/v1/admin/vault-constellations/${encodeURIComponent(id)}`, token, {
+        method: 'PATCH',
+        body: JSON.stringify(body)
+    });
+}
+
+export function adminDeleteConstellation(token: string, id: string): Promise<void> {
+    return request<void>(`/api/v1/admin/vault-constellations/${encodeURIComponent(id)}`, token, {
+        method: 'DELETE'
+    });
+}
+
+export function adminActivateConstellation(token: string, id: string): Promise<VC> {
+    return request<VC>(`/api/v1/admin/vault-constellations/${encodeURIComponent(id)}/activate`, token, {
+        method: 'POST'
+    });
+}
+
+export function adminCheckConstellation(token: string, id: string): Promise<{ vaults: VaultRow[] }> {
+    return request<{ vaults: VaultRow[] }>(
+        `/api/v1/admin/vault-constellations/${encodeURIComponent(id)}/check`, token, { method: 'POST' });
+}
+
+export function listVaults(token: string, constellationId: string): Promise<{ vaults: VaultRow[] }> {
+    return request<{ vaults: VaultRow[] }>(
+        `/api/v1/admin/vault-constellations/${encodeURIComponent(constellationId)}/vaults`, token);
+}
+
+export function adminCreateVault(
+    token: string, constellationId: string, body: import('./types').CreateVaultBody
+): Promise<VaultRow> {
+    return request<VaultRow>(
+        `/api/v1/admin/vault-constellations/${encodeURIComponent(constellationId)}/vaults`, token, {
+            method: 'POST',
+            body: JSON.stringify(body)
+        });
+}
+
+export function adminUpdateVault(
+    token: string, constellationId: string, vaultId: string, body: import('./types').UpdateVaultBody
+): Promise<VaultRow> {
+    return request<VaultRow>(
+        `/api/v1/admin/vault-constellations/${encodeURIComponent(constellationId)}/vaults/${encodeURIComponent(vaultId)}`,
+        token, {
+            method: 'PATCH',
+            body: JSON.stringify(body)
+        });
+}
+
+export function adminDeleteVault(token: string, constellationId: string, vaultId: string): Promise<void> {
+    return request<void>(
+        `/api/v1/admin/vault-constellations/${encodeURIComponent(constellationId)}/vaults/${encodeURIComponent(vaultId)}`,
+        token, { method: 'DELETE' });
+}
+
+export function adminCheckVault(token: string, constellationId: string, vaultId: string): Promise<VaultRow> {
+    return request<VaultRow>(
+        `/api/v1/admin/vault-constellations/${encodeURIComponent(constellationId)}/vaults/${encodeURIComponent(vaultId)}/check`,
+        token, { method: 'POST' });
+}
