@@ -44,8 +44,8 @@ The key changes:
 
 | Area | What the fork does |
 |------|-------------------|
-| **Modern Rust & LLVM** | Keeps the SGX sysroot building on the latest Rust nightly (currently 2025-12-01 / LLVM 21). This includes updating internal compiler attributes, stabilized APIs, and the custom target definition whenever Rust or LLVM introduces breaking changes. |
-| **Intel SGX SDK 2.27** | Updates SGX metadata layout and version constants to match the current SGX PSW and driver. |
+| **Modern Rust & LLVM** | Keeps the SGX sysroot building on the latest Rust nightly (currently 2026-06-21 / LLVM 22). This includes updating internal compiler attributes, stabilized APIs, and the custom target definition whenever Rust or LLVM introduces breaking changes. |
+| **Intel SGX SDK 2.29** | Updates SGX metadata layout and version constants to match the current SGX PSW and driver. |
 | **CMake sysroot build** | Provides an `sgx_sysroot` CMake target that uses `-Zbuild-std=core,alloc` to compile the trusted sysroot rlibs, replacing the upstream Makefile-based flow. |
 
 Some enclave-specific adaptations live in **Enclave OS itself**, not the Teaclave fork:
@@ -64,7 +64,7 @@ The enclave requires a custom Rust sysroot (`core` and `alloc` compiled from sou
 ```cmake
 # In the Teaclave fork's CMakeLists.txt
 add_custom_target(sgx_sysroot
-    COMMAND cargo +nightly-2025-12-01 build -Zbuild-std=core,alloc
+    COMMAND cargo +nightly-2026-06-21 build -Zbuild-std=core,alloc -Zjson-target-spec
             --target x86_64-unknown-linux-sgx.json
             --release
     ...
