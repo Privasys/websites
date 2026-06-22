@@ -36,12 +36,12 @@ function StatusBadge({ status }: { status: VaultStatus }) {
     );
 }
 
-type VaultForm = { name: string; site: string; host: string; port: string; enabled: boolean };
+type VaultForm = { site: string; host: string; port: string; enabled: boolean };
 
-const EMPTY_FORM: VaultForm = { name: '', site: '', host: '', port: '8443', enabled: true };
+const EMPTY_FORM: VaultForm = { site: '', host: '', port: '8443', enabled: true };
 
 function toForm(v: Vault): VaultForm {
-    return { name: v.name, site: v.site, host: v.host, port: String(v.port), enabled: v.enabled };
+    return { site: v.site, host: v.host, port: String(v.port), enabled: v.enabled };
 }
 
 export default function AdminConstellationVaultsPage({ params }: { params: Promise<{ id: string }> }) {
@@ -53,6 +53,14 @@ export default function AdminConstellationVaultsPage({ params }: { params: Promi
     const [error, setError] = useState<string | null>(null);
     const [editing, setEditing] = useState<Vault | 'new' | null>(null);
     const [checking, setChecking] = useState<string | null>(null);
+    const [copied, setCopied] = useState(false);
+
+    function copyMrenclave(text: string) {
+        navigator.clipboard?.writeText(text).then(() => {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1200);
+        }).catch(() => { });
+    }
 
     function reload() {
         if (!session?.accessToken) return;
@@ -113,8 +121,8 @@ export default function AdminConstellationVaultsPage({ params }: { params: Promi
                 ← Vault constellations
             </Link>
 
-            <div className="mt-3 flex items-center justify-between">
-                <div>
+            <div className="mt-3 flex items-start justify-between gap-4">
+                <div className="min-w-0">
                     <h1 className="text-2xl font-semibold flex items-center gap-3">
                         {con?.name ?? 'Constellation'}
                         {con?.active && (
@@ -122,23 +130,44 @@ export default function AdminConstellationVaultsPage({ params }: { params: Promi
                         )}
                     </h1>
                     {con && (
-                        <p className="mt-2 text-xs font-mono text-black/50 dark:text-white/50 break-all">
-                            {con.environment} · MRENCLAVE {con.mrenclave} · {con.attestation_server}
-                        </p>
+                        <div className="mt-2.5 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-black/60 dark:text-white/60">
+                            <span className="inline-flex items-center gap-1.5">
+                                <span className="text-black/40 dark:text-white/40">Environment</span>
+                                <span className="font-medium">{con.environment}</span>
+                            </span>
+                            <span className="inline-flex items-center gap-1.5">
+                                <span className="text-black/40 dark:text-white/40">MRENCLAVE</span>
+                                <code className="font-mono bg-black/5 dark:bg-white/10 rounded px-1.5 py-0.5" title={con.mrenclave}>
+                                    {con.mrenclave.length > 20 ? `${con.mrenclave.slice(0, 12)}…${con.mrenclave.slice(-6)}` : con.mrenclave}
+                                </code>
+                                <button
+                                    type="button"
+                                    onClick={() => copyMrenclave(con.mrenclave)}
+                                    className="text-[11px] text-black/40 dark:text-white/40 hover:text-black/70 dark:hover:text-white/70">
+                                    {copied ? 'copied' : 'copy'}
+                                </button>
+                            </span>
+                            <span className="inline-flex items-center gap-1.5 min-w-0">
+                                <span className="text-black/40 dark:text-white/40">Attestation</span>
+                                <a href={con.attestation_server} target="_blank" rel="noreferrer" className="truncate max-w-[18rem] hover:underline">
+                                    {con.attestation_server}
+                                </a>
+                            </span>
+                        </div>
                     )}
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 shrink-0">
                     <button
                         type="button"
                         disabled={checking === 'all' || vaults.length === 0}
                         onClick={checkAll}
-                        className="px-3 py-2 rounded-md text-sm font-medium border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50">
+                        className="px-3 py-2 rounded-md text-sm font-medium border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50 whitespace-nowrap">
                         {checking === 'all' ? 'Checking…' : 'Check all'}
                     </button>
                     <button
                         type="button"
                         onClick={() => setEditing('new')}
-                        className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-black text-white text-sm font-medium hover:bg-black/80 dark:bg-white dark:text-black dark:hover:bg-white/80">
+                        className="px-4 py-2 rounded-md bg-black text-white text-sm font-medium hover:bg-black/80 dark:bg-white dark:text-black dark:hover:bg-white/80 whitespace-nowrap">
                         + Add vault
                     </button>
                 </div>
@@ -176,10 +205,7 @@ export default function AdminConstellationVaultsPage({ params }: { params: Promi
                             )}
                             {vaults.map((v) => (
                                 <tr key={v.id} className="border-b border-black/5 dark:border-white/5 last:border-b-0 hover:bg-black/2 dark:hover:bg-white/2">
-                                    <td className="px-4 py-3">
-                                        <div className="font-medium">{v.site || '—'}</div>
-                                        {v.name && <div className="text-xs text-black/40 dark:text-white/40">{v.name}</div>}
-                                    </td>
+                                    <td className="px-4 py-3 font-medium">{v.site || '—'}</td>
                                     <td className="px-4 py-3 font-mono text-xs text-black/60 dark:text-white/60">{v.host}:{v.port}</td>
                                     <td className="px-4 py-3 text-black/60 dark:text-white/60">{v.enabled ? 'yes' : 'no'}</td>
                                     <td className="px-4 py-3">
@@ -267,7 +293,6 @@ function VaultEditor({
         try {
             if (vault) {
                 const body: UpdateVaultBody = {
-                    name: form.name.trim(),
                     site: form.site.trim(),
                     host: form.host.trim(),
                     port,
@@ -276,7 +301,6 @@ function VaultEditor({
                 await adminUpdateVault(token, constellationId, vault.id, body);
             } else {
                 const body: CreateVaultBody = {
-                    name: form.name.trim(),
                     site: form.site.trim(),
                     host: form.host.trim(),
                     port,
@@ -310,9 +334,6 @@ function VaultEditor({
                         </Field>
                         <Field label="Site" hint="paris | london | dev.">
                             <input value={form.site} onChange={(e) => set('site', e.target.value)} className={inputCls} />
-                        </Field>
-                        <Field label="Name" hint="Optional label, e.g. paris-8443.">
-                            <input value={form.name} onChange={(e) => set('name', e.target.value)} className={inputCls} />
                         </Field>
                         <Field label="Enabled" hint="Disabled vaults drop out of the directory + provisioner.">
                             <label className="inline-flex items-center gap-2 mt-2">
