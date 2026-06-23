@@ -33,7 +33,7 @@ function BuildStatusDot({ status }: { status: string }) {
     return <span className={`w-2 h-2 rounded-full inline-block ${color}`} />;
 }
 
-type Tab = 'overview' | 'versions' | 'deployments' | 'store' | 'attestation' | 'api' | 'mcp' | 'ui' | 'team';
+type Tab = 'overview' | 'deployments' | 'store' | 'attestation' | 'api' | 'mcp' | 'ui' | 'team';
 
 export default function AppDetailPage() {
     const { id } = useParams<{ id: string }>();
@@ -50,7 +50,9 @@ export default function AppDetailPage() {
     const [deleting, setDeleting] = useState(false);
     const [deployProgress, setDeployProgress] = useState<Record<string, { stage: string; totalBytes?: number; downloadedBytes?: number }>>({});
 
-    const tab = (searchParams.get('tab') as Tab) || 'overview';
+    // 'versions' was merged into 'deployments'; keep old links working.
+    const rawTab = searchParams.get('tab');
+    const tab: Tab = (rawTab === 'versions' ? 'deployments' : (rawTab as Tab)) || 'overview';
     const setTab = (t: Tab) => router.push(`/dashboard/apps/${id}?tab=${t}`);
 
     const load = useCallback(async () => {
@@ -174,7 +176,6 @@ export default function AppDetailPage() {
     const containerUI = app.container_mcp?.ui as { url: string; label?: string } | undefined;
     const TABS: { key: Tab; label: string; count?: number; danger?: boolean }[] = [
         { key: 'overview', label: 'Overview' },
-        { key: 'versions', label: 'Versions', count: versions.length },
         { key: 'deployments', label: 'Deployments', count: activeDeployments.length },
         { key: 'store', label: 'App Store' },
         ...(hasActiveDeployment ? [
@@ -248,25 +249,26 @@ export default function AppDetailPage() {
                 {tab === 'overview' && (
                     <OverviewTab app={app} versions={versions} builds={builds} deployments={deployments} deleting={deleting} onDelete={handleDelete} retrying={retrying} onRetry={handleRetry} token={session?.accessToken} onAppUpdate={(updated) => setApp(updated)} />
                 )}
-                {tab === 'versions' && session?.accessToken && (
-                    <VersionsTab
-                        app={app}
-                        versions={versions}
-                        enclaves={enclaves}
-                        token={session.accessToken}
-                        onRefresh={load}
-                    />
-                )}
                 {tab === 'deployments' && session?.accessToken && (
-                    <DeploymentsTab
-                        app={app}
-                        deployments={deployments}
-                        versions={versions}
-                        enclaves={enclaves}
-                        token={session.accessToken}
-                        onRefresh={load}
-                        deployProgress={deployProgress}
-                    />
+                    <div className="space-y-6">
+                        {/* Versions (ship + approve) and deployments are one tab. */}
+                        <VersionsTab
+                            app={app}
+                            versions={versions}
+                            enclaves={enclaves}
+                            token={session.accessToken}
+                            onRefresh={load}
+                        />
+                        <DeploymentsTab
+                            app={app}
+                            deployments={deployments}
+                            versions={versions}
+                            enclaves={enclaves}
+                            token={session.accessToken}
+                            onRefresh={load}
+                            deployProgress={deployProgress}
+                        />
+                    </div>
                 )}
                 {tab === 'store' && session?.accessToken && (
                     <AppStoreTab app={app} token={session.accessToken} deployments={activeDeployments} onSave={(updated) => setApp(updated)} />
@@ -1893,23 +1895,6 @@ function VersionsTab({ app, versions, enclaves, token, onRefresh }: {
                     )}
                 </section>
             )}
-
-            {/* Version history */}
-            <section>
-                <h2 className="text-sm font-semibold mb-3">Versions</h2>
-                {versions.length === 0 ? (
-                    <div className="text-center py-8 text-sm text-black/40 dark:text-white/40">No versions yet.</div>
-                ) : (
-                    <div className="divide-y divide-black/5 dark:divide-white/5 rounded-xl border border-black/10 dark:border-white/10">
-                        {versions.map(v => (
-                            <div key={v.id} className="flex items-center justify-between px-4 py-3">
-                                <span className="text-sm font-medium">{versionLabel(v)}</span>
-                                <StatusBadge status={v.status} labels={VERSION_STATUS_LABELS} colors={VERSION_STATUS_COLORS} />
-                            </div>
-                        ))}
-                    </div>
-                )}
-            </section>
         </div>
     );
 }
@@ -2024,7 +2009,7 @@ function DeploymentsTab({ app, deployments, versions, enclaves, token, onRefresh
                                     <option value="">Select version…</option>
                                     {readyVersions.map(v => (
                                         <option key={v.id} value={v.id}>
-                                            v{v.version_number} — {v.github_commit?.slice(0, 8) || 'upload'}
+                                            {versionLabel(v)}
                                         </option>
                                     ))}
                                 </select>
@@ -2097,7 +2082,7 @@ function DeploymentsTab({ app, deployments, versions, enclaves, token, onRefresh
                                         </span>
                                         {version && (
                                             <span className="text-xs text-black/40 dark:text-white/40">
-                                                v{version.version_number}
+                                                {versionLabel(version)}
                                             </span>
                                         )}
                                         {teeType && (
@@ -2209,6 +2194,23 @@ function DeploymentsTab({ app, deployments, versions, enclaves, token, onRefresh
                     })}
                 </div>
             )}
+
+            {/* Version history (every shipped version + build status) */}
+            <section>
+                <h2 className="text-sm font-semibold mb-3">Versions</h2>
+                {versions.length === 0 ? (
+                    <div className="text-center py-8 text-sm text-black/40 dark:text-white/40">No versions yet.</div>
+                ) : (
+                    <div className="divide-y divide-black/5 dark:divide-white/5 rounded-xl border border-black/10 dark:border-white/10">
+                        {versions.map(v => (
+                            <div key={v.id} className="flex items-center justify-between px-4 py-3">
+                                <span className="text-sm font-medium">{versionLabel(v)}</span>
+                                <StatusBadge status={v.status} labels={VERSION_STATUS_LABELS} colors={VERSION_STATUS_COLORS} />
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </section>
         </div>
     );
 }
