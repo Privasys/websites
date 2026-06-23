@@ -4,13 +4,15 @@ import Link from 'next/link';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { useAuth } from '~/lib/privasys-auth';
 import { useEffect, useState, useCallback } from 'react';
-import { getApp, listBuilds, listVersions, listDeployments, listCompatibleEnclaves, deleteApp, deployDirect, stopDeployment, getAppSchema, rpcCall, updateStoreListing, getAppMcp, updateContainerMcp, detectContainerMcp, retryBuild, listAppOwners, addAppOwner, removeAppOwner } from '~/lib/api';
+import { getApp, listBuilds, listVersions, listDeployments, listCompatibleEnclaves, deleteApp, deployDirect, stopDeployment, getAppSchema, rpcCall, updateStoreListing, getAppMcp, updateContainerMcp, detectContainerMcp, retryBuild, listAppOwners, addAppOwner, removeAppOwner, createVersion, stageProfile, listPending, promoteProfile } from '~/lib/api';
+import type { CreateVersionBody, VaultFanoutResult } from '~/lib/api';
+import { versionLabel } from '~/lib/version';
 import type { AppSchema, FunctionSchema, WitType, McpManifest, AppTeam } from '~/lib/api';
 import { useSSE } from '~/lib/use-sse';
 import { useBalance } from '~/lib/use-balance';
 import { getApiBaseUrl } from '~/lib/api-base-url';
 import type { App, BuildJob, AppVersion, AppDeployment, Enclave } from '~/lib/types';
-import { STATUS_LABELS, STATUS_COLORS, DEPLOYMENT_STATUS_LABELS, DEPLOYMENT_STATUS_COLORS, CONTAINER_STATE_LABELS, CONTAINER_STATE_COLORS } from '~/lib/types';
+import { STATUS_LABELS, STATUS_COLORS, DEPLOYMENT_STATUS_LABELS, DEPLOYMENT_STATUS_COLORS, CONTAINER_STATE_LABELS, CONTAINER_STATE_COLORS, VERSION_STATUS_LABELS, VERSION_STATUS_COLORS } from '~/lib/types';
 import { RtmrVerifier } from '~/components/rtmr-verifier';
 import { AttestationConnect, AttestationResultView, useAttestation } from '@privasys/attestation-view';
 
@@ -31,7 +33,7 @@ function BuildStatusDot({ status }: { status: string }) {
     return <span className={`w-2 h-2 rounded-full inline-block ${color}`} />;
 }
 
-type Tab = 'overview' | 'deployments' | 'store' | 'attestation' | 'api' | 'mcp' | 'ui' | 'team';
+type Tab = 'overview' | 'versions' | 'deployments' | 'store' | 'attestation' | 'api' | 'mcp' | 'ui' | 'team';
 
 export default function AppDetailPage() {
     const { id } = useParams<{ id: string }>();
@@ -172,6 +174,7 @@ export default function AppDetailPage() {
     const containerUI = app.container_mcp?.ui as { url: string; label?: string } | undefined;
     const TABS: { key: Tab; label: string; count?: number; danger?: boolean }[] = [
         { key: 'overview', label: 'Overview' },
+        { key: 'versions', label: 'Versions', count: versions.length },
         { key: 'deployments', label: 'Deployments', count: activeDeployments.length },
         { key: 'store', label: 'App Store' },
         ...(hasActiveDeployment ? [
@@ -244,6 +247,15 @@ export default function AppDetailPage() {
             <div className="mt-6">
                 {tab === 'overview' && (
                     <OverviewTab app={app} versions={versions} builds={builds} deployments={deployments} deleting={deleting} onDelete={handleDelete} retrying={retrying} onRetry={handleRetry} token={session?.accessToken} onAppUpdate={(updated) => setApp(updated)} />
+                )}
+                {tab === 'versions' && session?.accessToken && (
+                    <VersionsTab
+                        app={app}
+                        versions={versions}
+                        enclaves={enclaves}
+                        token={session.accessToken}
+                        onRefresh={load}
+                    />
                 )}
                 {tab === 'deployments' && session?.accessToken && (
                     <DeploymentsTab
@@ -1709,6 +1721,195 @@ function McpToolsTab({ appId, appName, appType, hostname, token }: { appId: stri
                     documentation
                 </a>.
             </div>
+        </div>
+    );
+}
+
+// ------- Versions Tab -------
+// Ship a new version (source-aware) and, for vault-backed apps, approve the
+// upgrade measurement (stage -> show -> promote) BEFORE the cutover. The deploy
+// itself stays on the Deployments tab; approval comes first (the enclave-upgrade
+// plan, C). One active deployment per app: deploying a version replaces the
+// running one (the server stops it first).
+function VersionsTab({ app, versions, enclaves, token, onRefresh }: {
+    app: App; versions: AppVersion[]; enclaves: Enclave[]; token: string; onRefresh: () => void;
+}) {
+    const compatibleTeeType = app.app_type === 'container' ? 'tdx' : 'sgx';
+    const activeEnclaves = enclaves.filter(e => e.status === 'active' && (!e.tee_type || e.tee_type === compatibleTeeType));
+    const readyVersions = versions.filter(v => v.status === 'ready');
+    // Approval only applies to an UPGRADE: the key handle is present once the app
+    // has been deployed with vault-backed storage. external apps gate elsewhere.
+    const needsApproval = app.key_provider !== 'external' && !!app.vault_key_handle;
+
+    // Ship-a-new-version form state.
+    const [src, setSrc] = useState('');
+    const [semver, setSemver] = useState('');
+    const [shipping, setShipping] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    // Approval state.
+    const [appVersion, setAppVersion] = useState('');
+    const [appEnclave, setAppEnclave] = useState('');
+    const [staging, setStaging] = useState(false);
+    const [pending, setPending] = useState<VaultFanoutResult | null>(null);
+    const [promoting, setPromoting] = useState(false);
+    const [approveMsg, setApproveMsg] = useState<string | null>(null);
+
+    const srcLabel = app.source_type === 'github' ? 'Commit URL'
+        : app.source_type === 'package' ? 'Image reference'
+            : app.source_type === 'cloud_image' ? 'Channel' : '';
+
+    async function handleShip() {
+        if (!src.trim()) return;
+        setShipping(true);
+        setError(null);
+        try {
+            const body: CreateVersionBody = {};
+            if (app.source_type === 'github') body.commit_url = src.trim();
+            else if (app.source_type === 'package') body.image = src.trim();
+            else if (app.source_type === 'cloud_image') body.channel = src.trim();
+            if (semver.trim()) body.version = semver.trim();
+            await createVersion(token, app.id, body);
+            setSrc('');
+            setSemver('');
+            onRefresh();
+        } catch (e) {
+            setError(e instanceof Error ? e.message : 'Failed to ship version');
+        } finally {
+            setShipping(false);
+        }
+    }
+
+    async function handleStage() {
+        if (!appVersion || !appEnclave) return;
+        setStaging(true);
+        setApproveMsg(null);
+        try {
+            await stageProfile(token, app.id, appVersion, appEnclave);
+            const p = await listPending(token, app.id, appVersion);
+            setPending(p);
+        } catch (e) {
+            setApproveMsg(e instanceof Error ? e.message : 'Stage failed');
+        } finally {
+            setStaging(false);
+        }
+    }
+
+    async function handlePromote() {
+        if (!appVersion) return;
+        setPromoting(true);
+        setApproveMsg(null);
+        try {
+            const res = await promoteProfile(token, app.id, appVersion, 0);
+            setApproveMsg(`Promoted on ${res.promoted ?? 0}/${res.quorum ?? 0} vaults. You can now deploy this version.`);
+            setPending(null);
+        } catch (e) {
+            setApproveMsg(e instanceof Error ? e.message : 'Promote failed');
+        } finally {
+            setPromoting(false);
+        }
+    }
+
+    const selectCls = 'w-full px-3 py-2 text-sm rounded-lg border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/20';
+
+    return (
+        <div className="space-y-6">
+            {error && (
+                <div className="p-3 rounded-lg bg-red-50 dark:bg-red-900/20 text-sm text-red-700 dark:text-red-300">{error}</div>
+            )}
+
+            {/* Ship a new version */}
+            {srcLabel && (
+                <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">
+                    <h2 className="text-sm font-semibold">Ship a new version</h2>
+                    <p className="text-xs text-black/40 dark:text-white/40 mt-2 mb-3">
+                        {app.source_type === 'github' && 'Record a new version from a GPG-signed commit (a build is triggered).'}
+                        {app.source_type === 'package' && 'Point the app at a new pre-built container image.'}
+                        {app.source_type === 'cloud_image' && 'Re-pin the latest cached disk for a channel.'}
+                    </p>
+                    <div className="grid grid-cols-3 gap-3">
+                        <div className="col-span-2">
+                            <label className="text-xs text-black/50 dark:text-white/50 block mb-1">{srcLabel}</label>
+                            <input value={src} onChange={e => setSrc(e.target.value)} className={selectCls}
+                                placeholder={app.source_type === 'package' ? 'ghcr.io/org/app:v2' : app.source_type === 'github' ? 'https://github.com/org/repo/commit/…' : 'stable'} />
+                        </div>
+                        <div>
+                            <label className="text-xs text-black/50 dark:text-white/50 block mb-1">Version (optional)</label>
+                            <input value={semver} onChange={e => setSemver(e.target.value)} className={selectCls} placeholder="v1.2.3" />
+                        </div>
+                    </div>
+                    <button onClick={handleShip} disabled={shipping || !src.trim()}
+                        className="mt-3 px-4 py-2 text-sm font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity">
+                        {shipping ? 'Shipping…' : 'Ship version'}
+                    </button>
+                </section>
+            )}
+
+            {/* Approve an upgrade (vault-backed apps) */}
+            {needsApproval && (
+                <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">
+                    <h2 className="text-sm font-semibold">Approve an upgrade</h2>
+                    <p className="text-xs text-black/40 dark:text-white/40 mt-2 mb-3">
+                        This app&rsquo;s data is sealed to its current measurement. Approve the new version&rsquo;s
+                        measurement here <span className="font-medium">before</span> deploying it, so the data key
+                        is released cleanly with no locked-data window.
+                    </p>
+                    <div className="grid grid-cols-2 gap-3">
+                        <div>
+                            <label className="text-xs text-black/50 dark:text-white/50 block mb-1">Version</label>
+                            <select value={appVersion} onChange={e => { setAppVersion(e.target.value); setPending(null); }} className={selectCls}>
+                                <option value="">Select version…</option>
+                                {readyVersions.map(v => (<option key={v.id} value={v.id}>{versionLabel(v)}</option>))}
+                            </select>
+                        </div>
+                        <div>
+                            <label className="text-xs text-black/50 dark:text-white/50 block mb-1">Location</label>
+                            <select value={appEnclave} onChange={e => setAppEnclave(e.target.value)} className={selectCls}>
+                                <option value="">Select location…</option>
+                                {activeEnclaves.map(e => (<option key={e.id} value={e.id}>{e.name} — {e.region || e.country || 'Unknown'}</option>))}
+                            </select>
+                        </div>
+                    </div>
+                    <div className="mt-3 flex items-center gap-2">
+                        <button onClick={handleStage} disabled={staging || !appVersion || !appEnclave}
+                            className="px-4 py-2 text-sm font-medium rounded-lg border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-40 disabled:cursor-not-allowed">
+                            {staging ? 'Staging…' : '1. Stage measurement'}
+                        </button>
+                        <button onClick={handlePromote} disabled={promoting || !pending}
+                            className="px-4 py-2 text-sm font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity">
+                            {promoting ? 'Promoting…' : '2. Promote (release data key)'}
+                        </button>
+                    </div>
+                    {pending && (
+                        <div className="mt-3">
+                            <div className="text-xs text-black/50 dark:text-white/50 mb-1">
+                                Staged on {(pending.vaults ?? []).filter(v => v.ok).length}/{(pending.vaults ?? []).length} vaults. Review the measurement, then promote.
+                            </div>
+                            <pre className="text-[11px] bg-black/5 dark:bg-white/5 rounded-lg p-3 overflow-auto max-h-60">{JSON.stringify(pending, null, 2)}</pre>
+                        </div>
+                    )}
+                    {approveMsg && (
+                        <div className="mt-3 p-3 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 text-xs text-emerald-700 dark:text-emerald-300">{approveMsg}</div>
+                    )}
+                </section>
+            )}
+
+            {/* Version history */}
+            <section>
+                <h2 className="text-sm font-semibold mb-3">Versions</h2>
+                {versions.length === 0 ? (
+                    <div className="text-center py-8 text-sm text-black/40 dark:text-white/40">No versions yet.</div>
+                ) : (
+                    <div className="divide-y divide-black/5 dark:divide-white/5 rounded-xl border border-black/10 dark:border-white/10">
+                        {versions.map(v => (
+                            <div key={v.id} className="flex items-center justify-between px-4 py-3">
+                                <span className="text-sm font-medium">{versionLabel(v)}</span>
+                                <StatusBadge status={v.status} labels={VERSION_STATUS_LABELS} colors={VERSION_STATUS_COLORS} />
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </section>
         </div>
     );
 }
