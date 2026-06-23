@@ -411,11 +411,82 @@ export function getVersion(token: string, appId: string, versionId: string): Pro
     return request<AppVersion>(`/api/v1/apps/${encodeURIComponent(appId)}/versions/${encodeURIComponent(versionId)}`, token);
 }
 
-export function createVersion(token: string, appId: string, commitUrl: string): Promise<AppVersion> {
+// Source-aware version create (the enclave-upgrade plan, A.1): the server
+// branches on the app's source_type — pass commit_url (github), image (package),
+// or channel (cloud_image), plus an optional version (vX.Y.Z semver).
+export interface CreateVersionBody {
+    commit_url?: string;
+    image?: string;
+    channel?: string;
+    version?: string;
+}
+
+export function createVersion(token: string, appId: string, body: CreateVersionBody): Promise<AppVersion> {
     return request<AppVersion>(`/api/v1/apps/${encodeURIComponent(appId)}/versions`, token, {
         method: 'POST',
-        body: JSON.stringify({ commit_url: commitUrl })
+        body: JSON.stringify(body)
     });
+}
+
+// Per-vault fan-out result for the upgrade control plane (stage/promote/revoke).
+export interface VaultFanoutResult {
+    staged?: number;
+    promoted?: number;
+    quorum?: number;
+    vaults?: Array<{
+        vault: string;
+        ok: boolean;
+        error?: string;
+        pending_id?: number;
+        policy_version?: number;
+        pending?: unknown[];
+    }>;
+}
+
+// stageProfile proposes the new measurement (enclave MRTD + image digest) that a
+// later promote authorises. Owner/team-approver only. enclaveId is the target.
+export function stageProfile(token: string, appId: string, versionId: string, enclaveId: string): Promise<VaultFanoutResult> {
+    return request<VaultFanoutResult>(
+        `/api/v1/apps/${encodeURIComponent(appId)}/versions/${encodeURIComponent(versionId)}/stage`,
+        token,
+        { method: 'POST', body: JSON.stringify({ enclave_id: enclaveId }) }
+    );
+}
+
+// listPending returns staged-but-unpromoted profiles + per-vault K-of-N progress.
+export function listPending(token: string, appId: string, versionId: string): Promise<VaultFanoutResult> {
+    return request<VaultFanoutResult>(
+        `/api/v1/apps/${encodeURIComponent(appId)}/versions/${encodeURIComponent(versionId)}/pending`,
+        token
+    );
+}
+
+// promoteProfile authorises the staged measurement so the vault releases the data
+// key to the new version. Owner/team-approver only.
+export function promoteProfile(token: string, appId: string, versionId: string, pendingId = 0): Promise<VaultFanoutResult> {
+    return request<VaultFanoutResult>(
+        `/api/v1/apps/${encodeURIComponent(appId)}/versions/${encodeURIComponent(versionId)}/promote`,
+        token,
+        { method: 'POST', body: JSON.stringify({ pending_id: pendingId }) }
+    );
+}
+
+// revokeProfile drops a staged-but-unpromoted profile.
+export function revokeProfile(token: string, appId: string, versionId: string, pendingId = 0): Promise<VaultFanoutResult> {
+    return request<VaultFanoutResult>(
+        `/api/v1/apps/${encodeURIComponent(appId)}/versions/${encodeURIComponent(versionId)}/revoke`,
+        token,
+        { method: 'POST', body: JSON.stringify({ pending_id: pendingId }) }
+    );
+}
+
+// rotateKey rotates the vault-backed volume KEK online (no data re-encryption).
+export function rotateKey(token: string, appId: string, versionId: string, enclaveId: string): Promise<Record<string, unknown>> {
+    return request<Record<string, unknown>>(
+        `/api/v1/apps/${encodeURIComponent(appId)}/versions/${encodeURIComponent(versionId)}/rotate-key`,
+        token,
+        { method: 'POST', body: JSON.stringify({ enclave_id: enclaveId }) }
+    );
 }
 
 export function adminReviewVersion(token: string, appId: string, versionId: string, decision: 'approve' | 'reject'): Promise<AppVersion> {

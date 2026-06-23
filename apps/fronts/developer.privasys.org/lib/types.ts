@@ -25,6 +25,12 @@ export interface App {
     container_mcp?: Record<string, unknown>;
     cloud_image_name?: string;
     cloud_image_channel?: string;
+    // Volume-key provenance (the enclave-upgrade design). enclave_generated
+    // (default) and vault are both vault-gated (upgrades need approval); external
+    // defers to a customer KMS. vault_key_handle is set once a vault-backed volume
+    // key has been reserved (i.e. the app has been deployed with storage).
+    key_provider?: string;
+    vault_key_handle?: string;
     status: string;
     review_note?: string;
     reviewer_sub?: string;
@@ -195,6 +201,8 @@ export interface AppVersion {
     id: string;
     app_id: string;
     version_number: number;
+    // User-facing, strictly-incrementing semver label ("vMAJOR.MINOR.PATCH").
+    semver?: string;
     commit_url?: string;
     github_commit?: string;
     gpg_key_id?: string;
