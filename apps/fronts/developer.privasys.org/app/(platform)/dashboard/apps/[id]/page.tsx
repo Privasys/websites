@@ -4,8 +4,9 @@ import Link from 'next/link';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { useAuth } from '~/lib/privasys-auth';
 import { useEffect, useState, useCallback } from 'react';
-import { getApp, listBuilds, listVersions, listDeployments, listCompatibleEnclaves, deleteApp, deployDirect, stopDeployment, getAppSchema, rpcCall, updateStoreListing, getAppMcp, updateContainerMcp, detectContainerMcp, retryBuild, listAppOwners, addAppOwner, removeAppOwner, createVersion, stageProfile, promoteProfile, listRegistryTags } from '~/lib/api';
+import { getApp, listBuilds, listVersions, listDeployments, listCompatibleEnclaves, deleteApp, deployDirect, stopDeployment, getAppSchema, rpcCall, updateStoreListing, getAppMcp, updateContainerMcp, detectContainerMcp, retryBuild, listAppOwners, addAppOwner, removeAppOwner, createVersion, stageProfile, promoteProfile, listRegistryTags, uploadAsset } from '~/lib/api';
 import type { CreateVersionBody } from '~/lib/api';
+import { isApiStatus } from '~/lib/api';
 import { versionLabel, versionSemverStr, isStrictlyNewer } from '~/lib/version';
 import type { AppSchema, FunctionSchema, WitType, McpManifest, AppTeam } from '~/lib/api';
 import { useSSE } from '~/lib/use-sse';
@@ -22,6 +23,16 @@ function StatusBadge({ status, labels, colors }: { status: string; labels: Recor
             {labels[status] ?? status}
         </span>
     );
+}
+
+// missingStoreFields returns the required-but-empty App Store fields that block
+// deploy (revamp item 3 / D4 = Description + Category). Mirrors the server check
+// in DeployVersion so the portal can gate the Deploy/Upgrade action client-side.
+function missingStoreFields(app: App): string[] {
+    const missing: string[] = [];
+    if (!app.store_description?.trim()) missing.push('Description');
+    if (!app.store_category?.trim()) missing.push('Category');
+    return missing;
 }
 
 function BuildStatusDot({ status }: { status: string }) {
@@ -51,9 +62,11 @@ export default function AppDetailPage() {
     const [deployProgress, setDeployProgress] = useState<Record<string, { stage: string; totalBytes?: number; downloadedBytes?: number }>>({});
 
     // 'versions' merged into 'deployments'; 'overview' was removed and its content
-    // redistributed (Team/Deployments/AI Tools/App Store). Keep old links working.
+    // redistributed. App Store is the first/default tab. Keep old links working.
     const rawTab = searchParams.get('tab');
-    const tab: Tab = (rawTab === 'versions' || rawTab === 'overview' ? 'deployments' : (rawTab as Tab)) || 'deployments';
+    const tab: Tab = rawTab === 'versions' ? 'deployments'
+        : rawTab === 'overview' ? 'store'
+            : (rawTab as Tab) || 'store';
     const setTab = (t: Tab) => router.push(`/dashboard/apps/${id}?tab=${t}`);
 
     const load = useCallback(async () => {
@@ -176,8 +189,8 @@ export default function AppDetailPage() {
     const hasContainerMcp = app.app_type === 'container' && app.container_mcp;
     const containerUI = app.container_mcp?.ui as { url: string; label?: string } | undefined;
     const TABS: { key: Tab; label: string; count?: number; danger?: boolean }[] = [
-        { key: 'deployments', label: 'Deployments', count: activeDeployments.length },
         { key: 'store', label: 'App Store' },
+        { key: 'deployments', label: 'Deployments', count: activeDeployments.length },
         ...(hasActiveDeployment ? [
             { key: 'attestation' as Tab, label: 'Attestation' },
             ...(app.app_type !== 'container' || hasContainerMcp ? [
@@ -992,6 +1005,10 @@ const STORE_CATEGORIES = [
     'Education', 'Entertainment', 'Business', 'Social', 'Utilities', 'Other'
 ];
 
+// Recommended App Store asset dimensions, surfaced to the user.
+const ICON_DIMS = '512 x 512 px square';
+const SHOT_DIMS = '1280 x 800 px (16:10 landscape)';
+
 function AppStoreTab({ app, token, deployments, onSave, deleting, onDelete }: { app: App; token: string; deployments: AppDeployment[]; onSave: (updated: App) => void; deleting: boolean; onDelete: () => void }) {
     const [saving, setSaving] = useState(false);
     const [saved, setSaved] = useState(false);
@@ -1007,10 +1024,63 @@ function AppStoreTab({ app, token, deployments, onSave, deleting, onDelete }: { 
     const [websiteURL, setWebsiteURL] = useState(app.store_website_url);
     const [supportEmail, setSupportEmail] = useState(app.store_support_email);
     const [keywords, setKeywords] = useState(app.store_keywords);
+
+    // Asset upload (drag-and-drop to GCS); falls back to URL entry when hosting off.
+    const [uploadingIcon, setUploadingIcon] = useState(false);
+    const [uploadingShot, setUploadingShot] = useState(false);
+    const [uploadError, setUploadError] = useState<string | null>(null);
     const [newScreenshot, setNewScreenshot] = useState('');
+
+    function addScreenshotUrl() {
+        const url = newScreenshot.trim();
+        if (url && screenshots.length < 8 && !screenshots.includes(url)) {
+            setScreenshots([...screenshots, url]);
+            setNewScreenshot('');
+        }
+    }
 
     const isDeployed = deployments.length > 0 || app.status === 'deployed';
     const liveHostname = deployments[0]?.hostname || app.hostname;
+    const descMissing = !description.trim();
+    const catMissing = !category.trim();
+
+    function uploadErrMsg(e: unknown): string {
+        if (isApiStatus(e, 501)) {
+            return 'Image hosting is not configured on this environment. Paste an image URL instead.';
+        }
+        return e instanceof Error ? e.message : 'Upload failed';
+    }
+
+    async function handleIconFile(f: File) {
+        if (!f.type.startsWith('image/')) return;
+        setUploadError(null);
+        setUploadingIcon(true);
+        try {
+            setIconURL(await uploadAsset(token, app.id, f, 'icon'));
+        } catch (e) {
+            setUploadError(uploadErrMsg(e));
+        } finally {
+            setUploadingIcon(false);
+        }
+    }
+
+    async function handleShotFiles(files: FileList | File[]) {
+        setUploadError(null);
+        setUploadingShot(true);
+        try {
+            const added: string[] = [];
+            for (const f of Array.from(files)) {
+                if (screenshots.length + added.length >= 8) break;
+                if (!f.type.startsWith('image/')) continue;
+                added.push(await uploadAsset(token, app.id, f, 'screenshot'));
+            }
+            if (added.length) setScreenshots(prev => [...prev, ...added].slice(0, 8));
+        } catch (e) {
+            setUploadError(uploadErrMsg(e));
+        } finally {
+            setUploadingShot(false);
+        }
+    }
 
     async function handleSave() {
         setSaving(true);
@@ -1039,90 +1109,96 @@ function AppStoreTab({ app, token, deployments, onSave, deleting, onDelete }: { 
         }
     }
 
-    function addScreenshot() {
-        const url = newScreenshot.trim();
-        if (url && !screenshots.includes(url)) {
-            setScreenshots([...screenshots, url]);
-            setNewScreenshot('');
-        }
-    }
-
     function removeScreenshot(idx: number) {
         setScreenshots(screenshots.filter((_, i) => i !== idx));
     }
 
     const labelClass = 'text-xs font-medium text-black/60 dark:text-white/60 block mb-1.5';
     const inputClass = 'w-full px-3 py-2 text-sm rounded-lg border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/20 placeholder:text-black/25 dark:placeholder:text-white/25';
+    const req = <span className="text-red-500">*</span>;
 
     return (
         <div className="space-y-6">
-            {/* Store visibility notice */}
-            {!isDeployed && (
+            {/* Store visibility / required-fields notice */}
+            {(descMissing || catMissing) ? (
                 <div className="flex items-center gap-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/15 border border-amber-200 dark:border-amber-800/30 text-xs text-amber-700 dark:text-amber-400">
                     <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
                     </svg>
-                    Your app must be deployed before it can appear on the App Store. You can fill in the listing details now and they will go live once deployed.
+                    A <strong>Description</strong> and <strong>Category</strong> are required before this app can be deployed. Fill them in and save.
                 </div>
-            )}
-
-            {isDeployed && liveHostname && (
+            ) : !isDeployed ? (
+                <div className="flex items-center gap-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/15 border border-amber-200 dark:border-amber-800/30 text-xs text-amber-700 dark:text-amber-400">
+                    <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+                    </svg>
+                    Your app appears on the App Store once deployed. You can fill in the listing now.
+                </div>
+            ) : liveHostname ? (
                 <div className="flex items-center gap-2 p-3 rounded-lg bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-200 dark:border-emerald-800/30 text-xs text-emerald-700 dark:text-emerald-400">
                     <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                     <span>Your app is live. &nbsp;</span>
-                    <a href={`https://${liveHostname}`} target="_blank" rel="noopener noreferrer" className="font-medium hover:underline">
-                        View on App Store &rarr;
-                    </a>
+                    <a href={`https://${liveHostname}`} target="_blank" rel="noopener noreferrer" className="font-medium hover:underline">View on App Store &rarr;</a>
                 </div>
-            )}
+            ) : null}
 
-            {error && (
-                <div className="p-3 rounded-lg bg-red-50 dark:bg-red-900/20 text-sm text-red-700 dark:text-red-300">{error}</div>
-            )}
+            {error && (<div className="p-3 rounded-lg bg-red-50 dark:bg-red-900/20 text-sm text-red-700 dark:text-red-300">{error}</div>)}
+            {uploadError && (<div className="p-3 rounded-lg bg-red-50 dark:bg-red-900/20 text-xs text-red-700 dark:text-red-300">{uploadError}</div>)}
 
-            {/* Icon & identity */}
-            <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">
-                <h2 className="text-sm font-semibold mb-4">App Identity</h2>
+            {/* Listing: icon + the required basics */}
+            <section className="p-5 rounded-xl border border-black/10 dark:border-white/10 space-y-4">
+                <h2 className="text-sm font-semibold">Listing</h2>
                 <div className="flex gap-6">
-                    {/* Icon preview */}
+                    {/* Icon dropzone */}
                     <div className="shrink-0">
-                        <label className={labelClass}>App Icon</label>
-                        <div className="w-24 h-24 rounded-2xl border-2 border-dashed border-black/10 dark:border-white/10 flex items-center justify-center overflow-hidden bg-black/[0.02] dark:bg-white/[0.02]">
-                            {iconURL ? (
+                        <label className={labelClass}>Icon</label>
+                        <label
+                            onDragOver={e => e.preventDefault()}
+                            onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) handleIconFile(f); }}
+                            className="w-24 h-24 rounded-2xl border-2 border-dashed border-black/15 dark:border-white/15 flex items-center justify-center overflow-hidden bg-black/[0.02] dark:bg-white/[0.02] cursor-pointer hover:border-black/30 dark:hover:border-white/30 transition-colors"
+                            title={`Drag an image or click. ${ICON_DIMS}.`}
+                        >
+                            <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleIconFile(f); }} />
+                            {uploadingIcon ? (
+                                <span className="text-[10px] text-black/40 dark:text-white/40">Uploading…</span>
+                            ) : iconURL ? (
                                 <img src={iconURL} alt="App icon" className="w-full h-full object-cover rounded-2xl" />
                             ) : (
-                                <svg className="w-8 h-8 text-black/15 dark:text-white/15" fill="none" stroke="currentColor" strokeWidth="1" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0022.5 18.75V5.25A2.25 2.25 0 0020.25 3H3.75A2.25 2.25 0 001.5 5.25v13.5A2.25 2.25 0 003.75 21z" />
-                                </svg>
+                                <span className="text-[10px] text-black/30 dark:text-white/30 text-center px-1">Drop / click</span>
                             )}
-                        </div>
+                        </label>
+                        <div className="mt-1 text-[10px] text-black/30 dark:text-white/30 text-center">{ICON_DIMS}</div>
+                        <input type="text" value={iconURL} onChange={e => setIconURL(e.target.value)} placeholder="or paste URL" className={`${inputClass} mt-1 !text-[11px] !py-1 w-24`} />
                     </div>
                     <div className="flex-1 space-y-3">
                         <div>
-                            <label className={labelClass}>Icon URL</label>
-                            <input type="text" value={iconURL} onChange={e => setIconURL(e.target.value)} placeholder="https://example.com/icon.png" className={inputClass} />
-                        </div>
-                        <div>
                             <label className={labelClass}>Tagline</label>
-                            <input type="text" value={tagline} onChange={e => setTagline(e.target.value)} placeholder="A short description of your app" maxLength={120} className={inputClass} />
-                            <div className="mt-1 text-[10px] text-black/30 dark:text-white/30 text-right">{tagline.length}/120</div>
+                            <input type="text" value={tagline} onChange={e => setTagline(e.target.value)} placeholder="A short, catchy one-liner" maxLength={120} className={inputClass} />
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                            <div>
+                                <label className={labelClass}>Category {req}</label>
+                                <select value={category} onChange={e => setCategory(e.target.value)} className={inputClass}>
+                                    <option value="">Select a category…</option>
+                                    {STORE_CATEGORIES.map(c => (<option key={c} value={c}>{c}</option>))}
+                                </select>
+                            </div>
+                            <div>
+                                <label className={labelClass}>Keywords</label>
+                                <input type="text" value={keywords} onChange={e => setKeywords(e.target.value)} placeholder="privacy, ai, health…" className={inputClass} />
+                            </div>
                         </div>
                     </div>
                 </div>
-            </section>
-
-            {/* Description */}
-            <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">
-                <h2 className="text-sm font-semibold mb-4">Description</h2>
                 <div>
-                    <label className={labelClass}>About this app</label>
+                    <label className={labelClass}>Description {req}</label>
                     <textarea
                         value={description}
                         onChange={e => setDescription(e.target.value)}
-                        placeholder="Tell users what your app does, what problems it solves, and why they should use it. Describe the key features and privacy guarantees…"
-                        rows={6}
+                        placeholder="What your app does, the problems it solves, key features and privacy guarantees…"
+                        rows={5}
                         maxLength={4000}
                         className={`${inputClass} resize-y`}
                     />
@@ -1130,89 +1206,66 @@ function AppStoreTab({ app, token, deployments, onSave, deleting, onDelete }: { 
                 </div>
             </section>
 
-            {/* Screenshots */}
+            {/* Screenshots (drag-and-drop) */}
             <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">
-                <h2 className="text-sm font-semibold mb-4">Screenshots</h2>
-                <p className="text-xs text-black/40 dark:text-white/40 mb-3">
-                    Add up to 8 screenshot URLs to showcase your app.
-                </p>
-
+                <div className="flex items-baseline justify-between mb-3">
+                    <h2 className="text-sm font-semibold">Screenshots</h2>
+                    <span className="text-[10px] text-black/40 dark:text-white/40">{SHOT_DIMS} · up to 8</span>
+                </div>
                 {screenshots.length > 0 && (
                     <div className="flex gap-3 overflow-x-auto pb-3 mb-3">
                         {screenshots.map((url, i) => (
                             <div key={i} className="group relative shrink-0 w-48 h-28 rounded-lg border border-black/10 dark:border-white/10 overflow-hidden bg-black/[0.02] dark:bg-white/[0.02]">
                                 <img src={url} alt={`Screenshot ${i + 1}`} className="w-full h-full object-cover" />
-                                <button
-                                    onClick={() => removeScreenshot(i)}
-                                    className="absolute top-1 right-1 w-5 h-5 flex items-center justify-center rounded-full bg-red-500 text-white text-xs opacity-0 group-hover:opacity-100 transition-opacity"
-                                >
-                                    &times;
-                                </button>
+                                <button onClick={() => removeScreenshot(i)} className="absolute top-1 right-1 w-5 h-5 flex items-center justify-center rounded-full bg-red-500 text-white text-xs opacity-0 group-hover:opacity-100 transition-opacity">&times;</button>
                             </div>
                         ))}
                     </div>
                 )}
-
                 {screenshots.length < 8 && (
-                    <div className="flex gap-2">
+                    <label
+                        onDragOver={e => e.preventDefault()}
+                        onDrop={e => { e.preventDefault(); if (e.dataTransfer.files?.length) handleShotFiles(e.dataTransfer.files); }}
+                        className="flex flex-col items-center justify-center gap-1 py-6 rounded-xl border-2 border-dashed border-black/15 dark:border-white/15 cursor-pointer hover:border-black/30 dark:hover:border-white/30 transition-colors text-center"
+                    >
+                        <input type="file" accept="image/png,image/jpeg,image/webp" multiple className="hidden" onChange={e => { if (e.target.files?.length) handleShotFiles(e.target.files); }} />
+                        <span className="text-xs text-black/50 dark:text-white/50">{uploadingShot ? 'Uploading…' : 'Drag images here or click to upload'}</span>
+                        <span className="text-[10px] text-black/30 dark:text-white/30">PNG, JPEG or WebP · {SHOT_DIMS}</span>
+                    </label>
+                )}
+                {screenshots.length < 8 && (
+                    <div className="flex gap-2 mt-2">
                         <input
                             type="text"
                             value={newScreenshot}
                             onChange={e => setNewScreenshot(e.target.value)}
-                            onKeyDown={e => e.key === 'Enter' && addScreenshot()}
-                            placeholder="https://example.com/screenshot.png"
-                            className={`flex-1 ${inputClass}`}
+                            onKeyDown={e => e.key === 'Enter' && addScreenshotUrl()}
+                            placeholder="or paste an image URL"
+                            className={`flex-1 ${inputClass} !text-xs !py-1.5`}
                         />
-                        <button
-                            onClick={addScreenshot}
-                            disabled={!newScreenshot.trim()}
-                            className="px-3 py-2 text-sm font-medium rounded-lg border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-30 transition-colors"
-                        >
-                            Add
-                        </button>
+                        <button onClick={addScreenshotUrl} disabled={!newScreenshot.trim()} className="px-3 text-xs font-medium rounded-lg border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-30 transition-colors">Add</button>
                     </div>
                 )}
             </section>
 
-            {/* Category & Keywords */}
+            {/* Links & support */}
             <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">
-                <h2 className="text-sm font-semibold mb-4">Categorization</h2>
-                <div className="grid grid-cols-2 gap-4">
-                    <div>
-                        <label className={labelClass}>Category</label>
-                        <select value={category} onChange={e => setCategory(e.target.value)} className={inputClass}>
-                            <option value="">Select a category…</option>
-                            {STORE_CATEGORIES.map(c => (
-                                <option key={c} value={c}>{c}</option>
-                            ))}
-                        </select>
-                    </div>
-                    <div>
-                        <label className={labelClass}>Keywords</label>
-                        <input type="text" value={keywords} onChange={e => setKeywords(e.target.value)} placeholder="privacy, encryption, ai, health…" className={inputClass} />
-                        <div className="mt-1 text-[10px] text-black/30 dark:text-white/30">Comma-separated tags to help users find your app</div>
-                    </div>
-                </div>
-            </section>
-
-            {/* Links & Contact */}
-            <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">
-                <h2 className="text-sm font-semibold mb-4">Links &amp; Support</h2>
+                <h2 className="text-sm font-semibold mb-4">Links &amp; support</h2>
                 <div className="grid grid-cols-2 gap-4">
                     <div>
                         <label className={labelClass}>Website</label>
                         <input type="url" value={websiteURL} onChange={e => setWebsiteURL(e.target.value)} placeholder="https://yourapp.com" className={inputClass} />
                     </div>
                     <div>
-                        <label className={labelClass}>Support Email</label>
+                        <label className={labelClass}>Support email</label>
                         <input type="email" value={supportEmail} onChange={e => setSupportEmail(e.target.value)} placeholder="support@yourapp.com" className={inputClass} />
                     </div>
                     <div>
-                        <label className={labelClass}>Privacy Policy</label>
+                        <label className={labelClass}>Privacy policy</label>
                         <input type="url" value={privacyURL} onChange={e => setPrivacyURL(e.target.value)} placeholder="https://yourapp.com/privacy" className={inputClass} />
                     </div>
                     <div>
-                        <label className={labelClass}>Terms of Service</label>
+                        <label className={labelClass}>Terms of service</label>
                         <input type="url" value={tosURL} onChange={e => setTosURL(e.target.value)} placeholder="https://yourapp.com/terms" className={inputClass} />
                     </div>
                 </div>
@@ -1508,6 +1561,8 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
     const { enabled: billingEnabled, frozen: balanceEmpty } = useBalance();
     // Only block when we know the balance is empty; "unknown" never gates a deploy.
     const deployBlockedByCredits = billingEnabled && balanceEmpty;
+    // App Store gate (item 3): required listing fields must be filled before deploy.
+    const storeMissing = missingStoreFields(app);
 
     // Upgrade / deploy modal.
     const [modalOpen, setModalOpen] = useState(false);
@@ -1907,6 +1962,12 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                                     <Link href="/dashboard/billing" className="underline font-medium">Top up or redeem a code</Link>{' '}to deploy.
                                 </div>
                             )}
+                            {storeMissing.length > 0 && (
+                                <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 text-xs text-amber-700 dark:text-amber-300">
+                                    Complete your App Store listing ({storeMissing.join(', ')}) before deploying.{' '}
+                                    <Link href={`/dashboard/apps/${app.id}?tab=store`} className="underline font-medium">Open App Store</Link>
+                                </div>
+                            )}
                             {workMsg && (<div className="text-xs text-black/50 dark:text-white/50">{workMsg}</div>)}
                         </div>
 
@@ -1916,7 +1977,7 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                             </button>
                             <button
                                 onClick={handleConfirm}
-                                disabled={working || !pickVersion || !pickEnclave || deployBlockedByCredits}
+                                disabled={working || !pickVersion || !pickEnclave || deployBlockedByCredits || storeMissing.length > 0}
                                 className="px-4 py-2 text-sm font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
                             >
                                 {working ? 'Working…' : currentDeployment ? 'Upgrade' : 'Deploy'}
