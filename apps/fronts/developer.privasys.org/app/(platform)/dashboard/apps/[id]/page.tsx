@@ -1564,8 +1564,7 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
     // App Store gate (item 3): required listing fields must be filled before deploy.
     const storeMissing = missingStoreFields(app);
 
-    // Upgrade / deploy modal.
-    const [modalOpen, setModalOpen] = useState(false);
+    // Inline upgrade / deploy (no modal).
     const [pickVersion, setPickVersion] = useState('');   // registry tag (package) or AppVersion id
     const [pickEnclave, setPickEnclave] = useState('');
     const [working, setWorking] = useState(false);
@@ -1597,8 +1596,21 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
         }
     }, [isPackage, token, app.id]);
 
-    // List versions on tab load (the modal also offers a refresh button).
+    // List versions on tab load (a Refresh button re-lists too).
     useEffect(() => { loadTags(); }, [loadTags]);
+
+    // Inline upgrade: prefill the version with the newest option and pin the
+    // location to the running instance (an upgrade does not move the app).
+    const upgradeTarget = isPackage ? (tagOptions[0] ?? '') : (versionOptions[0]?.id ?? '');
+    const currentEnclaveId = currentDeployment
+        ? (enclaveMap[`${currentDeployment.enclave_host}:${currentDeployment.enclave_port}`]?.id ?? '')
+        : '';
+    useEffect(() => {
+        if (currentDeployment) {
+            if (!pickVersion && upgradeTarget) setPickVersion(upgradeTarget);
+            if (currentEnclaveId && pickEnclave !== currentEnclaveId) setPickEnclave(currentEnclaveId);
+        }
+    }, [currentDeployment, upgradeTarget, currentEnclaveId, pickVersion, pickEnclave]);
 
     // The image repo without any tag or @digest, used to build the ref to ship.
     const imageRepoBase = (() => {
@@ -1614,17 +1626,21 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
     const selectCls = 'w-full px-3 py-2 text-sm rounded-lg border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/20';
     const enclaveLabel = (e: Enclave) => `${e.name} — ${e.region || e.country || 'Unknown'}${e.provider ? ` (${e.provider})` : ''}${e.tee_type ? ` [${e.tee_type.toUpperCase()}]` : ''}`;
 
-    function openModal() {
-        setError(null);
-        setWorkMsg(null);
-        setPickVersion('');
-        // Upgrade keeps the running location; first deploy starts blank.
-        setPickEnclave(currentDeployment
-            ? (enclaveMap[`${currentDeployment.enclave_host}:${currentDeployment.enclave_port}`]?.id ?? '')
-            : '');
-        setModalOpen(true);
-        if (isPackage && tags === null) loadTags();
-    }
+    // Package URL for the IMAGE link (repo without tag), best-effort per registry.
+    const packageUrl = (() => {
+        const b = imageRepoBase;
+        if (b.startsWith('ghcr.io/')) {
+            const parts = b.slice('ghcr.io/'.length).split('/');
+            if (parts.length >= 2) {
+                const owner = parts[0];
+                const name = parts[parts.length - 1];
+                return `https://github.com/${owner}/${name}/pkgs/container/${name}`;
+            }
+        }
+        const dh = b.replace(/^docker\.io\//, '');
+        if (b.startsWith('docker.io/') || !b.includes('/')) return `https://hub.docker.com/r/${dh}`;
+        return `https://${b}`;
+    })();
 
     async function handleConfirm() {
         if (!pickVersion || !pickEnclave) return;
@@ -1655,7 +1671,7 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
             }
             setWorkMsg('Deploying…');
             await deployDirect(token, app.id, versionId, pickEnclave);
-            setModalOpen(false);
+            if (!currentDeployment) setPickVersion('');
         } catch (e) {
             setError(e instanceof Error ? e.message : 'Deployment failed');
         } finally {
@@ -1734,136 +1750,189 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                 {currentDeployment ? (() => {
                     const dep = currentDeployment;
                     const enclave = enclaveMap[`${dep.enclave_host}:${dep.enclave_port}`];
-                    const teeType = enclave?.tee_type;
                     const version = versionMap[dep.version_id];
+                    const isLive = dep.status === 'active';
+                    const noNewer = isPackage ? tagOptions.length === 0 : versionOptions.length === 0;
                     return (
-                        <section className="p-5 rounded-xl border border-emerald-200 dark:border-emerald-800/40 bg-emerald-50/30 dark:bg-emerald-900/5">
-                            <div className="flex items-center justify-between mb-3">
-                                <div className="flex items-center gap-3">
-                                    <span className={`w-2 h-2 rounded-full ${
-                                        dep.status === 'active' ? 'bg-emerald-500' :
-                                            dep.status === 'deploying' ? 'bg-blue-500 animate-pulse' :
-                                                dep.status === 'starting' ? 'bg-indigo-500 animate-pulse' :
-                                                    'bg-yellow-500'
-                                    }`} />
-                                    <span className="text-sm font-medium">
-                                        {dep.hostname || `${dep.enclave_host}:${dep.enclave_port}`}
-                                    </span>
+                        <>
+                            <section className="p-5 rounded-xl border border-emerald-200 dark:border-emerald-800/40 bg-emerald-50/30 dark:bg-emerald-900/5">
+                                <div className="flex items-center justify-between gap-3 mb-3">
+                                    <div className="flex items-center gap-2.5 min-w-0">
+                                        <span className={`w-2 h-2 shrink-0 rounded-full ${
+                                            dep.status === 'active' ? 'bg-emerald-500' :
+                                                dep.status === 'deploying' ? 'bg-blue-500 animate-pulse' :
+                                                    dep.status === 'starting' ? 'bg-indigo-500 animate-pulse' :
+                                                        'bg-yellow-500'
+                                        }`} />
+                                        <span className="text-sm font-medium truncate">{dep.hostname || `${dep.enclave_host}:${dep.enclave_port}`}</span>
+                                    </div>
+                                    {/* One status, not three: container state when live, else the deploy phase. */}
+                                    {isLive
+                                        ? <StatusBadge status={dep.container_state || 'running'} labels={CONTAINER_STATE_LABELS} colors={CONTAINER_STATE_COLORS} />
+                                        : <StatusBadge status={dep.status} labels={DEPLOYMENT_STATUS_LABELS} colors={DEPLOYMENT_STATUS_COLORS} />}
+                                </div>
+                                {/* Pull progress bar */}
+                                {(() => {
+                                    const progress = deployProgress?.[dep.id];
+                                    if (!progress || dep.status === 'active') return null;
+                                    const { stage, totalBytes, downloadedBytes } = progress;
+                                    const pct = totalBytes && totalBytes > 0 ? Math.min(100, Math.round((downloadedBytes || 0) / totalBytes * 100)) : 0;
+                                    const formatBytes = (b: number) => b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : b >= 1e6 ? `${(b / 1e6).toFixed(0)} MB` : `${(b / 1e3).toFixed(0)} KB`;
+                                    return (
+                                        <div className="mb-3">
+                                            <div className="flex items-center justify-between text-xs text-black/50 dark:text-white/50 mb-1">
+                                                <span>{stage === 'pulling' ? 'Pulling image...' : stage === 'running' ? 'Starting container...' : stage}</span>
+                                                {totalBytes && totalBytes > 0 && (<span>{formatBytes(downloadedBytes || 0)} / {formatBytes(totalBytes)}</span>)}
+                                            </div>
+                                            <div className="w-full h-1.5 bg-black/5 dark:bg-white/10 rounded-full overflow-hidden">
+                                                {stage === 'running'
+                                                    ? <div className="h-full bg-indigo-500 rounded-full animate-pulse" style={{ width: '100%' }} />
+                                                    : <div className="h-full bg-indigo-500 rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />}
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
+                                <div className="grid grid-cols-3 gap-3 text-xs text-black/50 dark:text-white/50">
+                                    <div>
+                                        <div className="text-[10px] uppercase tracking-wider text-black/30 dark:text-white/30">Location</div>
+                                        <div className="mt-0.5">{enclave ? enclaveLabel(enclave) : `${dep.enclave_host}:${dep.enclave_port}`}</div>
+                                    </div>
                                     {version && (
-                                        <span className="text-xs text-black/40 dark:text-white/40">{versionLabel(version)}</span>
+                                        <div>
+                                            <div className="text-[10px] uppercase tracking-wider text-black/30 dark:text-white/30">Version</div>
+                                            <div className="mt-0.5">{versionLabel(version)}</div>
+                                        </div>
                                     )}
-                                    {teeType && (
-                                        <span className={`px-1.5 py-0.5 text-[10px] font-medium rounded ${
-                                            teeType === 'tdx'
-                                                ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
-                                                : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
-                                        }`}>
-                                            {teeType.toUpperCase()}
-                                        </span>
+                                    {app.app_type === 'container' && app.container_port != null && (
+                                        <div>
+                                            <div className="text-[10px] uppercase tracking-wider text-black/30 dark:text-white/30">Port</div>
+                                            <div className="mt-0.5">{app.container_port}</div>
+                                        </div>
+                                    )}
+                                    {dep.deployed_at && (
+                                        <div>
+                                            <div className="text-[10px] uppercase tracking-wider text-black/30 dark:text-white/30">Deployed</div>
+                                            <div className="mt-0.5">{new Date(dep.deployed_at).toLocaleString()}</div>
+                                        </div>
+                                    )}
+                                    {app.app_type === 'container' && imageRepoBase && (
+                                        <div className="col-span-3">
+                                            <div className="text-[10px] uppercase tracking-wider text-black/30 dark:text-white/30">Image</div>
+                                            <a href={packageUrl} target="_blank" rel="noopener noreferrer" className="mt-0.5 font-mono break-all text-blue-600 dark:text-blue-400 hover:underline">{imageRepoBase}</a>
+                                        </div>
                                     )}
                                 </div>
-                                <div className="flex items-center gap-3">
-                                    <StatusBadge status={dep.status} labels={DEPLOYMENT_STATUS_LABELS} colors={DEPLOYMENT_STATUS_COLORS} />
-                                    <StatusBadge status={dep.container_state || 'unknown'} labels={CONTAINER_STATE_LABELS} colors={CONTAINER_STATE_COLORS} />
-                                    <button
-                                        onClick={openModal}
-                                        disabled={working}
-                                        className="px-3 py-1 text-xs font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-80 disabled:opacity-40 transition-opacity"
-                                    >
-                                        Upgrade
-                                    </button>
-                                    <button
-                                        onClick={() => handleStop(dep.id)}
-                                        disabled={stopping === dep.id}
-                                        className="px-3 py-1 text-xs font-medium rounded-lg border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-40 transition-colors"
-                                    >
-                                        {stopping === dep.id ? 'Stopping…' : 'Stop'}
-                                    </button>
-                                    {stopErrors[dep.id] && (
+                                {dep.hostname && (
+                                    <div className="mt-3 pt-3 border-t border-black/5 dark:border-white/5">
+                                        <a href={`https://${dep.hostname}`} target="_blank" rel="noopener noreferrer" className="text-xs text-emerald-600 dark:text-emerald-400 hover:underline">https://{dep.hostname} &rarr;</a>
+                                    </div>
+                                )}
+                            </section>
+
+                            {/* Actions: only once the instance is live (item 1). */}
+                            {isLive && (
+                                <>
+                                    <section className="mt-4 p-4 rounded-xl border border-black/10 dark:border-white/10">
+                                        <div className="flex items-end gap-3">
+                                            <div className="flex-1">
+                                                <label className="text-xs text-black/50 dark:text-white/50 block mb-1">Upgrade to</label>
+                                                {isPackage ? (
+                                                    tagsError ? <div className="text-xs text-red-600 dark:text-red-400 py-2">{tagsError}</div>
+                                                        : tagsLoading && tags === null ? <div className="text-xs text-black/40 dark:text-white/40 py-2">Loading versions…</div>
+                                                            : noNewer ? <div className="text-xs text-black/40 dark:text-white/40 py-2">Already on the newest version.</div>
+                                                                : <select value={pickVersion} onChange={e => setPickVersion(e.target.value)} className={selectCls}>{tagOptions.map(t => (<option key={t} value={t}>{t}</option>))}</select>
+                                                ) : (
+                                                    noNewer ? <div className="text-xs text-black/40 dark:text-white/40 py-2">Already on the newest version.</div>
+                                                        : <select value={pickVersion} onChange={e => setPickVersion(e.target.value)} className={selectCls}>{versionOptions.map(v => (<option key={v.id} value={v.id}>{versionLabel(v)}</option>))}</select>
+                                                )}
+                                            </div>
+                                            <button
+                                                onClick={handleConfirm}
+                                                disabled={working || noNewer || !pickVersion || deployBlockedByCredits || storeMissing.length > 0}
+                                                className="px-4 py-2 text-sm font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
+                                            >
+                                                {working ? 'Upgrading…' : 'Upgrade'}
+                                            </button>
+                                            <button onClick={() => { onRefresh(); loadTags(); }} className="px-3 py-2 text-xs text-black/50 dark:text-white/50 hover:text-black dark:hover:text-white" title="Refresh versions">↻</button>
+                                        </div>
+                                        {storeMissing.length > 0 && (
+                                            <div className="mt-2 text-xs text-amber-700 dark:text-amber-400">
+                                                Complete your App Store listing ({storeMissing.join(', ')}) before upgrading. <Link href={`/dashboard/apps/${app.id}?tab=store`} className="underline font-medium">Open App Store</Link>
+                                            </div>
+                                        )}
+                                        {deployBlockedByCredits && (
+                                            <div className="mt-2 text-xs text-amber-700 dark:text-amber-400">Your credit balance is empty. <Link href="/dashboard/billing" className="underline font-medium">Top up or redeem a code</Link>.</div>
+                                        )}
+                                        {workMsg && (<div className="mt-2 text-xs text-black/50 dark:text-white/50">{workMsg}</div>)}
+                                    </section>
+
+                                    <div className="mt-3 flex items-center gap-3">
                                         <button
-                                            onClick={() => handleStop(dep.id, true)}
-                                            disabled={stopping === dep.id}
-                                            title="Mark this deployment stopped without contacting the enclave. Use when the enclave is gone or unreachable."
-                                            className="px-3 py-1 text-xs font-medium rounded-lg border border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-900/20 disabled:opacity-40 transition-colors"
+                                            onClick={() => handleStop(dep.id)}
+                                            disabled={stopping === dep.id || working}
+                                            className="px-3 py-1.5 text-xs font-medium rounded-lg border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-40 transition-colors"
                                         >
-                                            Force remove
+                                            {stopping === dep.id ? 'Stopping…' : 'Stop instance'}
                                         </button>
-                                    )}
-                                </div>
-                            </div>
-                            {stopErrors[dep.id] && (
-                                <div className="mt-2 mb-3 p-2 rounded-lg bg-amber-50 dark:bg-amber-900/20 text-xs text-amber-800 dark:text-amber-200">
-                                    Stop failed: {stopErrors[dep.id]}. The enclave may already be gone; use <strong>Force remove</strong> to clear the stale row.
-                                </div>
+                                        {stopErrors[dep.id] && (
+                                            <button
+                                                onClick={() => handleStop(dep.id, true)}
+                                                disabled={stopping === dep.id}
+                                                title="Mark this deployment stopped without contacting the enclave. Use when the enclave is gone or unreachable."
+                                                className="px-3 py-1.5 text-xs font-medium rounded-lg border border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-900/20 disabled:opacity-40 transition-colors"
+                                            >
+                                                Force remove
+                                            </button>
+                                        )}
+                                        {stopErrors[dep.id] && (
+                                            <span className="text-xs text-amber-700 dark:text-amber-300">Stop failed: {stopErrors[dep.id]}</span>
+                                        )}
+                                    </div>
+                                </>
                             )}
-                            {/* Pull progress bar */}
-                            {(() => {
-                                const progress = deployProgress?.[dep.id];
-                                if (!progress || dep.status === 'active') return null;
-                                const { stage, totalBytes, downloadedBytes } = progress;
-                                const pct = totalBytes && totalBytes > 0 ? Math.min(100, Math.round((downloadedBytes || 0) / totalBytes * 100)) : 0;
-                                const formatBytes = (b: number) => b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : b >= 1e6 ? `${(b / 1e6).toFixed(0)} MB` : `${(b / 1e3).toFixed(0)} KB`;
-                                return (
-                                    <div className="mb-3">
-                                        <div className="flex items-center justify-between text-xs text-black/50 dark:text-white/50 mb-1">
-                                            <span>{stage === 'pulling' ? 'Pulling image...' : stage === 'running' ? 'Starting container...' : stage}</span>
-                                            {totalBytes && totalBytes > 0 && (
-                                                <span>{formatBytes(downloadedBytes || 0)} / {formatBytes(totalBytes)}</span>
-                                            )}
-                                        </div>
-                                        <div className="w-full h-1.5 bg-black/5 dark:bg-white/10 rounded-full overflow-hidden">
-                                            {stage === 'running' ? (
-                                                <div className="h-full bg-indigo-500 rounded-full animate-pulse" style={{ width: '100%' }} />
-                                            ) : (
-                                                <div className="h-full bg-indigo-500 rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
-                                            )}
-                                        </div>
-                                    </div>
-                                );
-                            })()}
-                            <div className="grid grid-cols-3 gap-3 text-xs text-black/50 dark:text-white/50">
-                                <div>
-                                    <div className="text-[10px] uppercase tracking-wider text-black/30 dark:text-white/30">Location</div>
-                                    <div className="mt-0.5">{enclave ? enclaveLabel(enclave) : `${dep.enclave_host}:${dep.enclave_port}`}</div>
-                                </div>
-                                {app.app_type === 'container' && app.container_port != null && (
-                                    <div>
-                                        <div className="text-[10px] uppercase tracking-wider text-black/30 dark:text-white/30">Port</div>
-                                        <div className="mt-0.5">{app.container_port}</div>
-                                    </div>
-                                )}
-                                {dep.deployed_at && (
-                                    <div>
-                                        <div className="text-[10px] uppercase tracking-wider text-black/30 dark:text-white/30">Deployed</div>
-                                        <div className="mt-0.5">{new Date(dep.deployed_at).toLocaleString()}</div>
-                                    </div>
-                                )}
-                                {app.app_type === 'container' && app.container_image && (
-                                    <div className="col-span-3">
-                                        <div className="text-[10px] uppercase tracking-wider text-black/30 dark:text-white/30">Image</div>
-                                        <div className="mt-0.5 font-mono break-all">{app.container_image}</div>
-                                    </div>
-                                )}
-                            </div>
-                            {dep.hostname && (
-                                <div className="mt-3 pt-3 border-t border-black/5 dark:border-white/5">
-                                    <a href={`https://${dep.hostname}`} target="_blank" rel="noopener noreferrer" className="text-xs text-emerald-600 dark:text-emerald-400 hover:underline">
-                                        https://{dep.hostname} &rarr;
-                                    </a>
-                                </div>
-                            )}
-                        </section>
+                        </>
                     );
                 })() : (
-                    <div className="p-5 rounded-xl border border-black/10 dark:border-white/10 flex items-center justify-between gap-4">
+                    /* No current instance: deploy inline (no modal). */
+                    <section className="p-5 rounded-xl border border-black/10 dark:border-white/10 space-y-3">
                         <div className="text-sm text-black/50 dark:text-white/50">No active deployment.</div>
+                        <div className="grid grid-cols-2 gap-3">
+                            <div>
+                                <label className="text-xs text-black/50 dark:text-white/50 block mb-1">Version</label>
+                                {isPackage ? (
+                                    tagsError ? <div className="text-xs text-red-600 dark:text-red-400 py-2">{tagsError}</div>
+                                        : tagsLoading && tags === null ? <div className="text-xs text-black/40 dark:text-white/40 py-2">Loading…</div>
+                                            : tagOptions.length > 0
+                                                ? <select value={pickVersion} onChange={e => setPickVersion(e.target.value)} className={selectCls}><option value="">Select version…</option>{tagOptions.map(t => (<option key={t} value={t}>{t}</option>))}</select>
+                                                : <div className="text-xs text-black/40 dark:text-white/40 py-2">No versions found in the registry.</div>
+                                ) : (
+                                    versionOptions.length > 0
+                                        ? <select value={pickVersion} onChange={e => setPickVersion(e.target.value)} className={selectCls}><option value="">Select version…</option>{versionOptions.map(v => (<option key={v.id} value={v.id}>{versionLabel(v)}</option>))}</select>
+                                        : <div className="text-xs text-black/40 dark:text-white/40 py-2">No deployable versions yet.</div>
+                                )}
+                            </div>
+                            <div>
+                                <label className="text-xs text-black/50 dark:text-white/50 block mb-1">Location</label>
+                                {activeEnclaves.length > 0
+                                    ? <select value={pickEnclave} onChange={e => setPickEnclave(e.target.value)} className={selectCls}><option value="">Select location…</option>{activeEnclaves.map(e => (<option key={e.id} value={e.id}>{enclaveLabel(e)}</option>))}</select>
+                                    : <div className="text-xs text-black/40 dark:text-white/40 py-2">No active locations for this app type.</div>}
+                            </div>
+                        </div>
+                        {storeMissing.length > 0 && (
+                            <div className="text-xs text-amber-700 dark:text-amber-400">Complete your App Store listing ({storeMissing.join(', ')}) before deploying. <Link href={`/dashboard/apps/${app.id}?tab=store`} className="underline font-medium">Open App Store</Link></div>
+                        )}
+                        {deployBlockedByCredits && (
+                            <div className="text-xs text-amber-700 dark:text-amber-400">Your credit balance is empty. <Link href="/dashboard/billing" className="underline font-medium">Top up or redeem a code</Link>.</div>
+                        )}
+                        {workMsg && (<div className="text-xs text-black/50 dark:text-white/50">{workMsg}</div>)}
                         <button
-                            onClick={openModal}
-                            className="px-4 py-2 text-sm font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-80 transition-opacity whitespace-nowrap"
+                            onClick={handleConfirm}
+                            disabled={working || !pickVersion || !pickEnclave || deployBlockedByCredits || storeMissing.length > 0}
+                            className="px-4 py-2 text-sm font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
                         >
-                            Deploy a version
+                            {working ? 'Deploying…' : 'Deploy'}
                         </button>
-                    </div>
+                    </section>
                 )}
             </section>
 
@@ -1895,97 +1964,6 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                 </section>
             )}
 
-            {/* Upgrade / deploy modal */}
-            {modalOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => !working && setModalOpen(false)}>
-                    <div className="w-full max-w-lg rounded-xl bg-white dark:bg-neutral-900 border border-black/10 dark:border-white/10 p-5 shadow-xl" onClick={e => e.stopPropagation()}>
-                        <div className="flex items-center justify-between mb-1">
-                            <h2 className="text-sm font-semibold">{currentDeployment ? 'Upgrade' : 'Deploy'} {app.display_name || app.name}</h2>
-                            {isPackage && (
-                                <button onClick={loadTags} disabled={tagsLoading} className="text-xs text-black/50 dark:text-white/50 hover:text-black dark:hover:text-white disabled:opacity-40 transition-colors">
-                                    {tagsLoading ? 'Refreshing…' : '↻ Refresh'}
-                                </button>
-                            )}
-                        </div>
-                        <p className="text-xs text-black/40 dark:text-white/40 mb-4">
-                            {currentDeployment
-                                ? 'Pick the version to upgrade to. The running version is stopped and replaced (no overlap).'
-                                : 'Pick a version and a location to deploy.'}
-                            {needsApproval ? ' The new measurement is approved before the cutover so the data key is released cleanly.' : ''}
-                        </p>
-
-                        <div className="space-y-3">
-                            <div>
-                                <label className="text-xs text-black/50 dark:text-white/50 block mb-1">Version</label>
-                                {isPackage ? (
-                                    tagsError ? (
-                                        <div className="text-xs text-red-600 dark:text-red-400 py-2">{tagsError}</div>
-                                    ) : tagsLoading && tags === null ? (
-                                        <div className="text-xs text-black/40 dark:text-white/40 py-2">Loading versions…</div>
-                                    ) : (tagOptions.length > 0) ? (
-                                        <select value={pickVersion} onChange={e => setPickVersion(e.target.value)} className={selectCls}>
-                                            <option value="">Select version…</option>
-                                            {tagOptions.map(t => (<option key={t} value={t}>{t}</option>))}
-                                        </select>
-                                    ) : (
-                                        <div className="text-xs text-black/40 dark:text-white/40 py-2">{currentDeployment ? 'Already on the newest version.' : 'No versions found in the registry.'}</div>
-                                    )
-                                ) : (
-                                    versionOptions.length > 0 ? (
-                                        <select value={pickVersion} onChange={e => setPickVersion(e.target.value)} className={selectCls}>
-                                            <option value="">Select version…</option>
-                                            {versionOptions.map(v => (<option key={v.id} value={v.id}>{versionLabel(v)}</option>))}
-                                        </select>
-                                    ) : (
-                                        <div className="text-xs text-black/40 dark:text-white/40 py-2">{currentDeployment ? 'Already on the newest version.' : 'No deployable versions yet.'}</div>
-                                    )
-                                )}
-                            </div>
-                            {/* Location is only chosen on the FIRST deploy. An upgrade
-                                keeps the running location (item 1). */}
-                            {!currentDeployment && (
-                                <div>
-                                    <label className="text-xs text-black/50 dark:text-white/50 block mb-1">Location</label>
-                                    {activeEnclaves.length > 0 ? (
-                                        <select value={pickEnclave} onChange={e => setPickEnclave(e.target.value)} className={selectCls}>
-                                            <option value="">Select location…</option>
-                                            {activeEnclaves.map(e => (<option key={e.id} value={e.id}>{enclaveLabel(e)}</option>))}
-                                        </select>
-                                    ) : (
-                                        <div className="text-xs text-black/40 dark:text-white/40 py-2">No active locations available for this application type.</div>
-                                    )}
-                                </div>
-                            )}
-                            {deployBlockedByCredits && (
-                                <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 text-xs text-amber-700 dark:text-amber-300">
-                                    Your credit balance is empty.{' '}
-                                    <Link href="/dashboard/billing" className="underline font-medium">Top up or redeem a code</Link>{' '}to deploy.
-                                </div>
-                            )}
-                            {storeMissing.length > 0 && (
-                                <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 text-xs text-amber-700 dark:text-amber-300">
-                                    Complete your App Store listing ({storeMissing.join(', ')}) before deploying.{' '}
-                                    <Link href={`/dashboard/apps/${app.id}?tab=store`} className="underline font-medium">Open App Store</Link>
-                                </div>
-                            )}
-                            {workMsg && (<div className="text-xs text-black/50 dark:text-white/50">{workMsg}</div>)}
-                        </div>
-
-                        <div className="mt-5 flex items-center justify-end gap-2">
-                            <button onClick={() => setModalOpen(false)} disabled={working} className="px-4 py-2 text-sm font-medium rounded-lg border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-40">
-                                Cancel
-                            </button>
-                            <button
-                                onClick={handleConfirm}
-                                disabled={working || !pickVersion || !pickEnclave || deployBlockedByCredits || storeMissing.length > 0}
-                                className="px-4 py-2 text-sm font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
-                            >
-                                {working ? 'Working…' : currentDeployment ? 'Upgrade' : 'Deploy'}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
         </div>
     );
 }
