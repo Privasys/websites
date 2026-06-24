@@ -37,6 +37,44 @@ function shortDate(s?: string): string {
     return t.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
+// parseSemverParts accepts "v1.2.3" or "1.2.3" (case-insensitive leading v) and
+// returns [major, minor, patch], or null if it is not a strict 3-part semver.
+// Mirrors the Go parseSemver so the portal orders versions like the server.
+export function parseSemverParts(s: string): [number, number, number] | null {
+    const raw = s.trim().replace(/^v/i, '');
+    const parts = raw.split('.');
+    if (parts.length !== 3) return null;
+    const nums = parts.map(p => Number(p));
+    if (nums.some(n => !Number.isInteger(n) || n < 0)) return null;
+    return [nums[0], nums[1], nums[2]];
+}
+
+// cmpSemver returns >0 if a sorts after b, <0 before, 0 equal.
+export function cmpSemver(a: string, b: string): number {
+    const pa = parseSemverParts(a);
+    const pb = parseSemverParts(b);
+    if (pa && pb) {
+        for (let i = 0; i < 3; i++) if (pa[i] !== pb[i]) return pa[i] - pb[i];
+        return 0;
+    }
+    if (pa) return 1;
+    if (pb) return -1;
+    return a < b ? -1 : a > b ? 1 : 0;
+}
+
+// versionSemverStr returns the semver string for an AppVersion (semver, else vN).
+export function versionSemverStr(v: AppVersion): string {
+    return v.semver || (v.version_number ? `v${v.version_number}` : '');
+}
+
+// isStrictlyNewer reports whether candidate is a strict semver greater than
+// current. Non-semver candidates return false so they are hidden on upgrade.
+export function isStrictlyNewer(candidate: string, current: string): boolean {
+    if (!parseSemverParts(candidate)) return false;
+    if (!parseSemverParts(current)) return true; // current unknown: show all semver
+    return cmpSemver(candidate, current) > 0;
+}
+
 export function versionLabel(v: AppVersion): string {
     const sv = v.semver || (v.version_number ? `v${v.version_number}` : '');
     const [src, hash] = versionSrcHash(v);
