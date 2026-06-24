@@ -411,6 +411,14 @@ export function getVersion(token: string, appId: string, versionId: string): Pro
     return request<AppVersion>(`/api/v1/apps/${encodeURIComponent(appId)}/versions/${encodeURIComponent(versionId)}`, token);
 }
 
+// listRegistryTags returns the deployable tags of a package app's container image
+// repo (newest first), so the portal can offer upgrade targets without the user
+// typing image refs. Empty for non-package apps.
+export async function listRegistryTags(token: string, appId: string): Promise<string[]> {
+    const res = await request<{ tags: string[] }>(`/api/v1/apps/${encodeURIComponent(appId)}/registry-tags`, token);
+    return res.tags ?? [];
+}
+
 // Source-aware version create (the enclave-upgrade plan, A.1): the server
 // branches on the app's source_type — pass commit_url (github), image (package),
 // or channel (cloud_image), plus an optional version (vX.Y.Z semver).
