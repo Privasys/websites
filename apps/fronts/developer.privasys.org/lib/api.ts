@@ -92,6 +92,25 @@ export async function uploadCwasm(token: string, appId: string, file: File): Pro
     return res.json();
 }
 
+// uploadAsset uploads a public App Store image (icon or screenshot) and returns
+// its hosted URL. Throws ApiError with status 501 when asset hosting is not
+// configured, so the caller can fall back to pasting a URL.
+export async function uploadAsset(token: string, appId: string, file: File, kind: 'icon' | 'screenshot'): Promise<string> {
+    const form = new FormData();
+    form.append('file', file);
+    const res = await fetch(`${API_URL}/api/v1/apps/${encodeURIComponent(appId)}/assets?kind=${kind}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: form
+    });
+    if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: res.statusText }));
+        throw new ApiError(body.error || `Upload error ${res.status}`, res.status);
+    }
+    const body = await res.json();
+    return body.url as string;
+}
+
 // ---------------------------------------------------------------------------
 // Admin API (manager role required)
 // ---------------------------------------------------------------------------
