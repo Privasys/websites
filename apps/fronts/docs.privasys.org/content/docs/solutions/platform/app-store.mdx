@@ -59,3 +59,48 @@ Developers who have deployed a confidential application on the [Developer Platfo
 | **Verified** | The endpoint was verified within the last 24 hours |
 | **Stale** | The endpoint was verified more than 24 hours ago but less than 7 days |
 | **Unverified** | The endpoint failed verification or has never been verified |
+
+## Declaring your listing in `privasys.json`
+
+You can declare the App Store listing alongside your tools in `privasys.json`, so it
+travels with your code instead of being retyped in the portal. Add an optional
+`store` block:
+
+```json
+{
+  "tools": [ /* ... */ ],
+  "store": {
+    "tagline": "A one-line summary",
+    "description": "What your app does, the problems it solves, key features.",
+    "category": "Productivity",
+    "keywords": "privacy, ai, health",
+    "icon_url": "https://example.com/icon.png",
+    "screenshots": [
+      "https://example.com/shot-1.png",
+      "https://example.com/shot-2.png"
+    ],
+    "website_url": "https://yourapp.com",
+    "support_email": "support@yourapp.com",
+    "privacy_url": "https://yourapp.com/privacy",
+    "tos_url": "https://yourapp.com/terms"
+  }
+}
+```
+
+The platform ingests this **fill-if-empty**: each field seeds the listing only when
+it is not already set in the portal, so your manual edits are never overwritten by a
+later re-detect. `description` and `category` are required before an app can deploy,
+so declaring them here means a fresh app is deploy-ready without extra steps.
+
+For **package** (pre-built image) apps, `privasys.json` must be embedded as the
+`org.privasys.manifest` OCI image label so the platform can read it. Add it in your
+image build, for example:
+
+```bash
+LABELS="--label org.privasys.manifest=$(jq -c . privasys.json)"
+docker build $LABELS -t ghcr.io/org/app:tag .
+```
+
+For **GitHub-source** apps, the `privasys.json` at the built commit is read
+automatically. Use **Detect AI Tools** on the app's AI Tools tab to refresh both the
+tools and the listing from the current source at any time.
