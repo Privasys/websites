@@ -6,13 +6,13 @@ import { useAuth } from '~/lib/privasys-auth';
 import { useEffect, useState, useCallback } from 'react';
 import { getApp, listBuilds, listVersions, listDeployments, listCompatibleEnclaves, deleteApp, deployDirect, stopDeployment, getAppSchema, rpcCall, updateStoreListing, getAppMcp, updateContainerMcp, detectContainerMcp, retryBuild, listAppOwners, addAppOwner, removeAppOwner, createVersion, stageProfile, promoteProfile, listRegistryTags } from '~/lib/api';
 import type { CreateVersionBody } from '~/lib/api';
-import { versionLabel } from '~/lib/version';
+import { versionLabel, versionSemverStr, isStrictlyNewer } from '~/lib/version';
 import type { AppSchema, FunctionSchema, WitType, McpManifest, AppTeam } from '~/lib/api';
 import { useSSE } from '~/lib/use-sse';
 import { useBalance } from '~/lib/use-balance';
 import { getApiBaseUrl } from '~/lib/api-base-url';
 import type { App, BuildJob, AppVersion, AppDeployment, Enclave } from '~/lib/types';
-import { STATUS_LABELS, STATUS_COLORS, DEPLOYMENT_STATUS_LABELS, DEPLOYMENT_STATUS_COLORS, CONTAINER_STATE_LABELS, CONTAINER_STATE_COLORS } from '~/lib/types';
+import { DEPLOYMENT_STATUS_LABELS, DEPLOYMENT_STATUS_COLORS, CONTAINER_STATE_LABELS, CONTAINER_STATE_COLORS } from '~/lib/types';
 import { RtmrVerifier } from '~/components/rtmr-verifier';
 import { AttestationConnect, AttestationResultView, useAttestation } from '@privasys/attestation-view';
 
@@ -33,7 +33,7 @@ function BuildStatusDot({ status }: { status: string }) {
     return <span className={`w-2 h-2 rounded-full inline-block ${color}`} />;
 }
 
-type Tab = 'overview' | 'deployments' | 'store' | 'attestation' | 'api' | 'mcp' | 'ui' | 'team';
+type Tab = 'deployments' | 'store' | 'attestation' | 'api' | 'mcp' | 'ui' | 'team';
 
 export default function AppDetailPage() {
     const { id } = useParams<{ id: string }>();
@@ -50,9 +50,10 @@ export default function AppDetailPage() {
     const [deleting, setDeleting] = useState(false);
     const [deployProgress, setDeployProgress] = useState<Record<string, { stage: string; totalBytes?: number; downloadedBytes?: number }>>({});
 
-    // 'versions' was merged into 'deployments'; keep old links working.
+    // 'versions' merged into 'deployments'; 'overview' was removed and its content
+    // redistributed (Team/Deployments/AI Tools/App Store). Keep old links working.
     const rawTab = searchParams.get('tab');
-    const tab: Tab = (rawTab === 'versions' ? 'deployments' : (rawTab as Tab)) || 'overview';
+    const tab: Tab = (rawTab === 'versions' || rawTab === 'overview' ? 'deployments' : (rawTab as Tab)) || 'deployments';
     const setTab = (t: Tab) => router.push(`/dashboard/apps/${id}?tab=${t}`);
 
     const load = useCallback(async () => {
@@ -175,7 +176,6 @@ export default function AppDetailPage() {
     const hasContainerMcp = app.app_type === 'container' && app.container_mcp;
     const containerUI = app.container_mcp?.ui as { url: string; label?: string } | undefined;
     const TABS: { key: Tab; label: string; count?: number; danger?: boolean }[] = [
-        { key: 'overview', label: 'Overview' },
         { key: 'deployments', label: 'Deployments', count: activeDeployments.length },
         { key: 'store', label: 'App Store' },
         ...(hasActiveDeployment ? [
@@ -183,9 +183,9 @@ export default function AppDetailPage() {
             ...(app.app_type !== 'container' || hasContainerMcp ? [
                 { key: 'api' as Tab, label: 'API Testing' }
             ] : []),
-            ...(app.app_type !== 'container' || hasContainerMcp ? [
-                { key: 'mcp' as Tab, label: 'AI Tools' }
-            ] : []),
+            // AI Tools is shown for any deployed app: it hosts the MCP tool list
+            // AND the "Detect AI Tools" action for container apps with no manifest yet.
+            { key: 'mcp' as Tab, label: 'AI Tools' },
             ...(containerUI?.url ? [
                 { key: 'ui' as Tab, label: containerUI.label || 'App UI' }
             ] : [])
@@ -210,7 +210,15 @@ export default function AppDetailPage() {
                             MCP
                         </span>
                     )}
-                    <StatusBadge status={app.status} labels={STATUS_LABELS} colors={STATUS_COLORS} />
+                    {/* Type, not the app lifecycle status: "Built" is meaningless for a
+                        package/cloud app. Run/build state lives on the Deployments tab. */}
+                    <span className={`inline-flex items-center px-2.5 py-0.5 text-xs font-medium rounded-full ${
+                        app.app_type === 'container'
+                            ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
+                            : 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300'
+                    }`}>
+                        {app.app_type === 'container' ? 'Container' : 'WASM'}
+                    </span>
                 </div>
             </div>
 
@@ -246,22 +254,22 @@ export default function AppDetailPage() {
 
             {/* Tab content */}
             <div className="mt-6">
-                {tab === 'overview' && (
-                    <OverviewTab app={app} versions={versions} builds={builds} deployments={deployments} deleting={deleting} onDelete={handleDelete} retrying={retrying} onRetry={handleRetry} token={session?.accessToken} onAppUpdate={(updated) => setApp(updated)} />
-                )}
                 {tab === 'deployments' && session?.accessToken && (
                     <DeploymentsTab
                         app={app}
                         deployments={deployments}
                         versions={versions}
                         enclaves={enclaves}
+                        builds={builds}
                         token={session.accessToken}
                         onRefresh={load}
+                        retrying={retrying}
+                        onRetry={handleRetry}
                         deployProgress={deployProgress}
                     />
                 )}
                 {tab === 'store' && session?.accessToken && (
-                    <AppStoreTab app={app} token={session.accessToken} deployments={activeDeployments} onSave={(updated) => setApp(updated)} />
+                    <AppStoreTab app={app} token={session.accessToken} deployments={activeDeployments} onSave={(updated) => setApp(updated)} deleting={deleting} onDelete={handleDelete} />
                 )}
                 {tab === 'attestation' && session?.accessToken && (
                     <AttestationTab appId={app.id} token={session.accessToken} deployments={activeDeployments} versions={versions} />
@@ -270,7 +278,7 @@ export default function AppDetailPage() {
                     <ApiTestingTab appId={app.id} token={session.accessToken} deployments={activeDeployments} versions={versions} />
                 )}
                 {tab === 'mcp' && session?.accessToken && (
-                    <McpToolsTab appId={app.id} appName={app.name} appType={app.app_type} hostname={activeDeployments[0]?.hostname} token={session.accessToken} />
+                    <McpToolsTab app={app} hostname={activeDeployments[0]?.hostname} token={session.accessToken} deployed={hasActiveDeployment} onAppUpdate={(updated) => setApp(updated)} />
                 )}
                 {tab === 'ui' && session?.accessToken && containerUI?.url && (
                     <AppUITab appId={app.id} appName={app.name} hostname={activeDeployments[0]?.hostname} token={session.accessToken} containerMcp={app.container_mcp as Record<string, unknown>} onMcpUpdate={(updated) => setApp(updated)} />
@@ -280,318 +288,6 @@ export default function AppDetailPage() {
                 )}
 
             </div>
-        </div>
-    );
-}
-
-// ------- Overview Tab -------
-function OverviewTab({ app, builds, deployments, deleting, onDelete, retrying, onRetry, token, onAppUpdate }: { app: App; versions: AppVersion[]; builds: BuildJob[]; deployments: AppDeployment[]; deleting: boolean; onDelete: () => void; retrying: boolean; onRetry: () => void; token?: string; onAppUpdate: (app: App) => void }) {
-    const lastBuild = builds[0];
-    const canRetry = !!lastBuild && (lastBuild.status === 'failed' || lastBuild.status === 'cancelled');
-    const activeDeployments = deployments.filter(d => d.status === 'active');
-
-    // Container app, deployed, but no MCP manifest recorded — detection only runs
-    // at app-create time, so a privasys.json added (or missed) later never
-    // surfaces its AI Tools. Offer to re-detect from the current source.
-    const canDetectMcp = app.app_type === 'container' && activeDeployments.length > 0 && !app.container_mcp;
-    const [detecting, setDetecting] = useState(false);
-    const [detectMsg, setDetectMsg] = useState<string | null>(null);
-    const handleDetectMcp = useCallback(async () => {
-        if (!token || detecting) return;
-        setDetecting(true);
-        setDetectMsg(null);
-        try {
-            const res = await detectContainerMcp(token, app.id);
-            if (res.detected) {
-                onAppUpdate(res.app);
-            } else {
-                setDetectMsg('No privasys.json / org.privasys.manifest found in this app’s source. Add an MCP manifest to the repo or image, then deploy a new version.');
-            }
-        } catch {
-            setDetectMsg('Could not read the MCP manifest from the app’s source. Check that the repo/image is reachable.');
-        } finally {
-            setDetecting(false);
-        }
-    }, [token, detecting, app.id, onAppUpdate]);
-
-    return (
-        <div className="space-y-6">
-            {/* Details card */}
-            <section className="p-5 rounded-xl border border-black/10 dark:border-white/10 space-y-3">
-                <h2 className="text-sm font-semibold">Details</h2>
-                <div className="grid grid-cols-2 gap-y-3 gap-x-8 text-sm">
-                    <div>
-                        <div className="text-xs text-black/50 dark:text-white/50">Owner</div>
-                        <div className="mt-0.5">{app.owner_name || app.owner_email}</div>
-                    </div>
-                    <div>
-                        <div className="text-xs text-black/50 dark:text-white/50">Created</div>
-                        <div className="mt-0.5">{new Date(app.created_at).toLocaleDateString()}</div>
-                    </div>
-                    <div>
-                        <div className="text-xs text-black/50 dark:text-white/50">Type</div>
-                        <div className="mt-0.5">
-                            <span className={`inline-block px-2 py-0.5 text-xs font-medium rounded-full ${
-                                app.app_type === 'container'
-                                    ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
-                                    : 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300'
-                            }`}>
-                                {app.app_type === 'container' ? 'Container' : 'WASM'}
-                            </span>
-                        </div>
-                    </div>
-                    {app.description && (
-                        <div className="col-span-2">
-                            <div className="text-xs text-black/50 dark:text-white/50">Description</div>
-                            <div className="mt-0.5">{app.description}</div>
-                        </div>
-                    )}
-                    {app.github_commit && app.commit_url &&(
-                        <>
-                            <div>
-                                <div className="text-xs text-black/50 dark:text-white/50">Commit</div>
-                                <a
-                                    href={app.commit_url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="mt-0.5 text-blue-600 dark:text-blue-400 hover:underline break-all text-xs"
-                                >
-                                    {app.github_commit.slice(0, 12)}
-                                </a>
-                            </div>
-                            <div>
-                                <div className="text-xs text-black/50 dark:text-white/50">GPG</div>
-                                <div className="mt-0.5 flex items-center gap-1.5">
-                                    <span className={`w-2 h-2 rounded-full ${app.gpg_verified ? 'bg-emerald-500' : 'bg-red-500'}`} />
-                                    <span className={`text-xs ${app.gpg_verified ? 'text-emerald-700 dark:text-emerald-300' : 'text-red-700 dark:text-red-300'}`}>
-                                        {app.gpg_verified ? 'Verified' : 'Not verified'}
-                                    </span>
-                                </div>
-                            </div>
-                        </>
-                    )}
-                    {app.app_type === 'container' ? (
-                        <>
-                            {app.source_type === 'cloud_image' ? (
-                                <>
-                                    {app.cloud_image_name && (
-                                        <div>
-                                            <div className="text-xs text-black/50 dark:text-white/50">Cloud image</div>
-                                            <code className="text-xs bg-black/5 dark:bg-white/5 px-2 py-1 rounded break-all block mt-1 font-mono">{app.cloud_image_name}</code>
-                                        </div>
-                                    )}
-                                    {app.cloud_image_channel && (
-                                        <div>
-                                            <div className="text-xs text-black/50 dark:text-white/50">Channel</div>
-                                            <div className="mt-0.5">
-                                                <span className="inline-block px-2 py-0.5 text-xs font-medium rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
-                                                    {app.cloud_image_channel}
-                                                </span>
-                                            </div>
-                                        </div>
-                                    )}
-                                </>
-                            ) : app.container_image && (
-                                <div className="col-span-2">
-                                    <div className="text-xs text-black/50 dark:text-white/50">Container image</div>
-                                    <code className="text-xs bg-black/5 dark:bg-white/5 px-2 py-1 rounded break-all block mt-1 font-mono">{app.container_image}</code>
-                                </div>
-                            )}
-                            {app.container_port != null && (
-                                <div>
-                                    <div className="text-xs text-black/50 dark:text-white/50">Container port</div>
-                                    <div className="mt-0.5">{app.container_port}</div>
-                                </div>
-                            )}
-                            {app.container_storage && (
-                                <div>
-                                    <div className="text-xs text-black/50 dark:text-white/50">Encrypted storage</div>
-                                    <div className="mt-0.5 flex items-center gap-1.5">
-                                        <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                                        <span className="text-xs text-emerald-700 dark:text-emerald-300">Enabled</span>
-                                    </div>
-                                </div>
-                            )}
-                        </>
-                    ) : (
-                        <>
-                            {app.cwasm_hash && (
-                                <div className="col-span-2">
-                                    <div className="text-xs text-black/50 dark:text-white/50">WASM module SHA-256</div>
-                                    <code className="text-xs bg-black/5 dark:bg-white/5 px-2 py-1 rounded break-all block mt-1 font-mono">{app.cwasm_hash}</code>
-                                </div>
-                            )}
-                            {app.cwasm_size != null && (
-                                <div>
-                                    <div className="text-xs text-black/50 dark:text-white/50">Module size</div>
-                                    <div className="mt-0.5">{(app.cwasm_size / 1024).toFixed(1)} KB</div>
-                                </div>
-                            )}
-                        </>
-                    )}
-                </div>
-            </section>
-
-            {/* Active deployments */}
-            {activeDeployments.length > 0 && (
-                <section className="p-5 rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50/50 dark:bg-emerald-900/10">
-                    <h2 className="text-sm font-semibold text-emerald-800 dark:text-emerald-300 mb-3">
-                        Live deployments ({activeDeployments.length})
-                    </h2>
-                    <div className="space-y-2">
-                        {activeDeployments.map((dep) => (
-                            <div key={dep.id} className="flex items-center justify-between py-2 text-sm">
-                                <div className="flex items-center gap-3">
-                                    <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                                    {dep.hostname ? (
-                                        <a
-                                            href={`https://${dep.hostname}`}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="text-emerald-700 dark:text-emerald-300 hover:underline"
-                                        >
-                                            {dep.hostname}
-                                        </a>
-                                    ) : (
-                                        <span>{dep.enclave_host}:{dep.enclave_port}</span>
-                                    )}
-                                </div>
-                                {dep.deployed_at && (
-                                    <span className="text-xs text-emerald-600/60 dark:text-emerald-400/60">
-                                        {new Date(dep.deployed_at).toLocaleString()}
-                                    </span>
-                                )}
-                            </div>
-                        ))}
-                    </div>
-                </section>
-            )}
-
-            {/* MCP tools banner — shown for deployed apps with MCP tools */}
-            {activeDeployments.length > 0 && (app.app_type !== 'container' || (app.container_mcp)) && (
-                <section className="p-4 rounded-xl border border-violet-200 dark:border-violet-800 bg-violet-50/50 dark:bg-violet-900/10 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                        <svg className="w-5 h-5 text-violet-600 dark:text-violet-400 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                        <div>
-                            <p className="text-sm font-medium text-violet-800 dark:text-violet-300">
-                                This app is an MCP tool server
-                            </p>
-                            <p className="text-xs text-violet-600/70 dark:text-violet-400/60 mt-0.5">
-                                AI agents can discover and call your exported functions with hardware attestation.
-                            </p>
-                        </div>
-                    </div>
-                    <a
-                        href={`/dashboard/apps/${app.id}?tab=mcp`}
-                        className="px-3 py-1.5 text-xs font-medium rounded-lg bg-violet-600 text-white hover:bg-violet-700 transition-colors whitespace-nowrap"
-                    >
-                        View AI Tools
-                    </a>
-                </section>
-            )}
-
-            {/* Detect AI Tools — container app deployed but no MCP manifest recorded yet */}
-            {canDetectMcp && (
-                <section className="p-4 rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-900/10">
-                    <div className="flex items-center justify-between gap-3">
-                        <div>
-                            <p className="text-sm font-medium text-amber-800 dark:text-amber-300">
-                                No AI Tools detected for this app
-                            </p>
-                            <p className="text-xs text-amber-700/70 dark:text-amber-400/60 mt-0.5">
-                                If your source declares MCP tools (a <code>privasys.json</code>, or an
-                                <code> org.privasys.manifest</code> image label), re-detect it to enable the
-                                API Testing and AI Tools tabs.
-                            </p>
-                        </div>
-                        <button
-                            onClick={handleDetectMcp}
-                            disabled={detecting || !token}
-                            className="shrink-0 px-3 py-1.5 text-xs font-medium rounded-lg bg-amber-600 text-white hover:bg-amber-700 transition-colors disabled:opacity-50 whitespace-nowrap"
-                        >
-                            {detecting ? 'Detecting…' : 'Detect AI Tools'}
-                        </button>
-                    </div>
-                    {detectMsg && (
-                        <p className="text-xs text-amber-700/80 dark:text-amber-400/70 mt-2">{detectMsg}</p>
-                    )}
-                </section>
-            )}
-
-            {/* Legacy deployment info (for apps without the versioning model) */}
-            {app.status === 'deployed' && activeDeployments.length === 0 && app.hostname && (
-                <section className="p-5 rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50/50 dark:bg-emerald-900/10 space-y-2">
-                    <h2 className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">Live deployment</h2>
-                    <div className="grid grid-cols-2 gap-y-2 gap-x-8 text-sm">
-                        <div>
-                            <div className="text-xs text-emerald-600/70 dark:text-emerald-400/70">Hostname</div>
-                            <a
-                                href={`https://${app.hostname}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-xs mt-0.5 block text-emerald-700 dark:text-emerald-300 hover:underline"
-                            >
-                                {app.hostname}
-                            </a>
-                        </div>
-                        {app.deployed_at && (
-                            <div>
-                                <div className="text-xs text-emerald-600/70 dark:text-emerald-400/70">Deployed at</div>
-                                <div className="mt-0.5">{new Date(app.deployed_at).toLocaleString()}</div>
-                            </div>
-                        )}
-                    </div>
-                </section>
-            )}
-
-            {/* Recent builds */}
-            {builds.length > 0 && (
-                <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">
-                    <div className="flex items-center justify-between mb-3">
-                        <h2 className="text-sm font-semibold">{builds.length === 1 && (builds[0].status === 'pending' ||
-                            builds[0].status === 'dispatched' || builds[0].status === 'running') ? 'Building' : 'Recent builds'}</h2>
-                        {canRetry && (
-                            <button
-                                onClick={onRetry}
-                                disabled={retrying}
-                                className="px-3 py-1 text-xs font-medium rounded-md border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50 disabled:cursor-not-allowed"
-                                title="Re-dispatch the GitHub Actions build for this commit"
-                            >
-                                {retrying ? 'Retrying…' : 'Retry build'}
-                            </button>
-                        )}
-                    </div>
-                    <div className="space-y-2">
-                        {builds.slice(0, 5).map((build) => (
-                            <div key={build.id} className="py-2 border-b border-black/5 dark:border-white/5 last:border-0">
-                                <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-3">
-                                        <BuildStatusDot status={build.status} />
-                                        <span className="text-sm font-medium capitalize">{build.status}</span>
-                                        <code className="text-xs text-black/40 dark:text-white/40 font-mono">{build.github_commit.slice(0, 8)}</code>
-                                        {build.run_url && (
-                                            <a href={build.run_url} target="_blank" rel="noopener noreferrer"
-                                                className="text-xs text-blue-600 dark:text-blue-400 hover:underline">
-                                                View run &rarr;
-                                            </a>
-                                        )}
-                                    </div>
-                                    <span className="text-xs text-black/40 dark:text-white/40">
-                                        {new Date(build.created_at).toLocaleString()}
-                                    </span>
-                                </div>
-                                {build.status === 'failed' && build.error_message && (
-                                    <div className="mt-1.5 ml-5 text-xs text-red-600 dark:text-red-400 break-words">
-                                        {build.error_message}
-                                    </div>
-                                )}
-                            </div>
-                        ))}
-                    </div>
-                </section>
-            )}
-            {/* Danger zone */}
-            <DangerZone app={app} deleting={deleting} onDelete={onDelete} />
         </div>
     );
 }
@@ -1296,7 +992,7 @@ const STORE_CATEGORIES = [
     'Education', 'Entertainment', 'Business', 'Social', 'Utilities', 'Other'
 ];
 
-function AppStoreTab({ app, token, deployments, onSave }: { app: App; token: string; deployments: AppDeployment[]; onSave: (updated: App) => void }) {
+function AppStoreTab({ app, token, deployments, onSave, deleting, onDelete }: { app: App; token: string; deployments: AppDeployment[]; onSave: (updated: App) => void; deleting: boolean; onDelete: () => void }) {
     const [saving, setSaving] = useState(false);
     const [saved, setSaved] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -1540,16 +1236,46 @@ function AppStoreTab({ app, token, deployments, onSave }: { app: App; token: str
                     </span>
                 )}
             </div>
+
+            {/* Danger zone (moved here from the removed Overview tab) */}
+            <DangerZone app={app} deleting={deleting} onDelete={onDelete} />
         </div>
     );
 }
 
 // ------- MCP Tools Tab -------
-function McpToolsTab({ appId, appName, appType, hostname, token }: { appId: string; appName: string; appType?: string; hostname?: string; token: string }) {
+function McpToolsTab({ app, hostname, token, deployed, onAppUpdate }: { app: App; hostname?: string; token: string; deployed: boolean; onAppUpdate: (app: App) => void }) {
+    const appId = app.id;
+    const appName = app.name;
+    const appType = app.app_type;
     const [manifest, setManifest] = useState<McpManifest | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [copied, setCopied] = useState<string | null>(null);
+
+    // Detect AI Tools: a container app can ship a privasys.json / org.privasys.manifest
+    // that was added (or missed) after create. Re-detect from the current source.
+    // (Moved here from the old Overview tab.)
+    const canDetectMcp = appType === 'container' && deployed && !app.container_mcp;
+    const [detecting, setDetecting] = useState(false);
+    const [detectMsg, setDetectMsg] = useState<string | null>(null);
+    const handleDetectMcp = useCallback(async () => {
+        if (!token || detecting) return;
+        setDetecting(true);
+        setDetectMsg(null);
+        try {
+            const res = await detectContainerMcp(token, appId);
+            if (res.detected) {
+                onAppUpdate(res.app);
+            } else {
+                setDetectMsg('No privasys.json / org.privasys.manifest found in this app’s source. Add an MCP manifest to the repo or image, then deploy a new version.');
+            }
+        } catch {
+            setDetectMsg('Could not read the MCP manifest from the app’s source. Check that the repo/image is reachable.');
+        } finally {
+            setDetecting(false);
+        }
+    }, [token, detecting, appId, onAppUpdate]);
 
     useEffect(() => {
         let cancelled = false;
@@ -1578,7 +1304,9 @@ function McpToolsTab({ appId, appName, appType, hostname, token }: { appId: stri
         );
     }
 
-    if (error) {
+    // A container app with no manifest yet is not an error here: we show the
+    // "Detect AI Tools" prompt instead of a hard failure.
+    if (error && !canDetectMcp) {
         return (
             <div className="p-4 rounded-lg bg-red-50 dark:bg-red-900/20 text-sm text-red-700 dark:text-red-300">
                 {error}
@@ -1590,6 +1318,29 @@ function McpToolsTab({ appId, appName, appType, hostname, token }: { appId: stri
 
     return (
         <div className="space-y-6">
+            {/* Detect AI Tools — container app deployed but no MCP manifest recorded yet */}
+            {canDetectMcp && (
+                <section className="p-4 rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-900/10">
+                    <div className="flex items-center justify-between gap-3">
+                        <div>
+                            <p className="text-sm font-medium text-amber-800 dark:text-amber-300">No AI Tools detected for this app</p>
+                            <p className="text-xs text-amber-700/70 dark:text-amber-400/60 mt-0.5">
+                                If your source declares MCP tools (a <code>privasys.json</code>, or an
+                                <code> org.privasys.manifest</code> image label), re-detect it to enable the API Testing and AI Tools.
+                            </p>
+                        </div>
+                        <button
+                            onClick={handleDetectMcp}
+                            disabled={detecting || !token}
+                            className="shrink-0 px-3 py-1.5 text-xs font-medium rounded-lg bg-amber-600 text-white hover:bg-amber-700 transition-colors disabled:opacity-50 whitespace-nowrap"
+                        >
+                            {detecting ? 'Detecting…' : 'Detect AI Tools'}
+                        </button>
+                    </div>
+                    {detectMsg && (<p className="text-xs text-amber-700/80 dark:text-amber-400/70 mt-2">{detectMsg}</p>)}
+                </section>
+            )}
+
             {/* Intro */}
             <section className="p-5 rounded-xl border border-violet-200 dark:border-violet-800 bg-violet-50/30 dark:bg-violet-900/10">
                 <div className="flex items-center gap-2 mb-2">
@@ -1724,8 +1475,9 @@ function McpToolsTab({ appId, appName, appType, hostname, token }: { appId: stri
 // image refs. One active deployment per app: deploying replaces the running one
 // (the server stops it first). Vault-backed upgrades stage + promote the new
 // measurement before the cutover.
-function DeploymentsTab({ app, deployments, versions, enclaves, token, onRefresh, deployProgress }: {
-    app: App; deployments: AppDeployment[]; versions: AppVersion[]; enclaves: Enclave[]; token: string; onRefresh: () => void;
+function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, onRefresh, retrying, onRetry, deployProgress }: {
+    app: App; deployments: AppDeployment[]; versions: AppVersion[]; enclaves: Enclave[]; builds: BuildJob[]; token: string; onRefresh: () => void;
+    retrying: boolean; onRetry: () => void;
     deployProgress?: Record<string, { stage: string; totalBytes?: number; downloadedBytes?: number }>;
 }) {
     const versionMap = Object.fromEntries(versions.map(v => [v.id, v]));
@@ -1741,6 +1493,14 @@ function DeploymentsTab({ app, deployments, versions, enclaves, token, onRefresh
     const isActiveStatus = (s: string) => s === 'active' || s === 'deploying' || s === 'starting';
     const currentDeployment = deployments.find(d => isActiveStatus(d.status));
     const pastDeployments = deployments.filter(d => !isActiveStatus(d.status));
+
+    // Compact build status (moved from the removed Overview tab): a github app's
+    // ship triggers a build; surface in-progress / failed here so the user is not
+    // left wondering why a new version is not yet deployable.
+    const lastBuild = builds[0];
+    const buildInProgress = !!lastBuild && (lastBuild.status === 'pending' || lastBuild.status === 'dispatched' || lastBuild.status === 'running');
+    const buildFailed = !!lastBuild && (lastBuild.status === 'failed' || lastBuild.status === 'cancelled');
+    const buildCanRetry = buildFailed && app.source_type === 'github';
 
     const [stopping, setStopping] = useState<string | null>(null);
     const [stopErrors, setStopErrors] = useState<Record<string, string>>({});
@@ -1760,6 +1520,14 @@ function DeploymentsTab({ app, deployments, versions, enclaves, token, onRefresh
     const [tags, setTags] = useState<string[] | null>(null);
     const [tagsLoading, setTagsLoading] = useState(false);
     const [tagsError, setTagsError] = useState<string | null>(null);
+
+    // Upgrade offers only versions NEWER than the running one (item 1); first
+    // deploy (no current instance) offers all. Non-semver candidates are hidden on
+    // upgrade so the list cannot be polluted by moving tags like "latest".
+    const currentVersion = currentDeployment ? versionMap[currentDeployment.version_id] : undefined;
+    const currentSemver = currentVersion ? versionSemverStr(currentVersion) : '';
+    const tagOptions = (tags ?? []).filter(t => !currentDeployment || isStrictlyNewer(t, currentSemver));
+    const versionOptions = readyVersions.filter(v => !currentDeployment || isStrictlyNewer(versionSemverStr(v), currentSemver));
 
     const loadTags = useCallback(async () => {
         if (!isPackage) return;
@@ -1866,6 +1634,33 @@ function DeploymentsTab({ app, deployments, versions, enclaves, token, onRefresh
             {error && (
                 <div className="p-3 rounded-lg bg-red-50 dark:bg-red-900/20 text-sm text-red-700 dark:text-red-300">
                     {error}
+                </div>
+            )}
+
+            {/* Build status (github apps): a shipped version builds before it is
+                deployable. Surfaced here instead of the removed Overview tab. */}
+            {(buildInProgress || buildFailed) && (
+                <div className={`flex items-center justify-between gap-3 p-3 rounded-lg text-xs border ${
+                    buildInProgress
+                        ? 'bg-blue-50 dark:bg-blue-900/15 border-blue-200 dark:border-blue-800/30 text-blue-700 dark:text-blue-300'
+                        : 'bg-red-50 dark:bg-red-900/15 border-red-200 dark:border-red-800/30 text-red-700 dark:text-red-300'
+                }`}>
+                    <div className="flex items-center gap-2 min-w-0">
+                        <BuildStatusDot status={lastBuild.status} />
+                        <span className="font-medium capitalize">{buildInProgress ? 'Building' : lastBuild.status}</span>
+                        <code className="font-mono opacity-70">{lastBuild.github_commit.slice(0, 8)}</code>
+                        {buildFailed && lastBuild.error_message && (
+                            <span className="truncate opacity-80">{lastBuild.error_message}</span>
+                        )}
+                        {lastBuild.run_url && (
+                            <a href={lastBuild.run_url} target="_blank" rel="noopener noreferrer" className="underline shrink-0">View run &rarr;</a>
+                        )}
+                    </div>
+                    {buildCanRetry && (
+                        <button onClick={onRetry} disabled={retrying} className="shrink-0 px-2.5 py-1 rounded-md border border-current/30 hover:bg-current/10 disabled:opacity-50">
+                            {retrying ? 'Retrying…' : 'Retry build'}
+                        </button>
+                    )}
                 </div>
             )}
 
@@ -1976,16 +1771,22 @@ function DeploymentsTab({ app, deployments, versions, enclaves, token, onRefresh
                                     <div className="text-[10px] uppercase tracking-wider text-black/30 dark:text-white/30">Location</div>
                                     <div className="mt-0.5">{enclave ? enclaveLabel(enclave) : `${dep.enclave_host}:${dep.enclave_port}`}</div>
                                 </div>
-                                {app.app_type === 'container' && app.container_image && (
+                                {app.app_type === 'container' && app.container_port != null && (
                                     <div>
-                                        <div className="text-[10px] uppercase tracking-wider text-black/30 dark:text-white/30">Image</div>
-                                        <div className="mt-0.5 font-mono" style={{ overflowWrap: 'break-word' }}>{app.container_image}</div>
+                                        <div className="text-[10px] uppercase tracking-wider text-black/30 dark:text-white/30">Port</div>
+                                        <div className="mt-0.5">{app.container_port}</div>
                                     </div>
                                 )}
                                 {dep.deployed_at && (
                                     <div>
                                         <div className="text-[10px] uppercase tracking-wider text-black/30 dark:text-white/30">Deployed</div>
                                         <div className="mt-0.5">{new Date(dep.deployed_at).toLocaleString()}</div>
+                                    </div>
+                                )}
+                                {app.app_type === 'container' && app.container_image && (
+                                    <div className="col-span-3">
+                                        <div className="text-[10px] uppercase tracking-wider text-black/30 dark:text-white/30">Image</div>
+                                        <div className="mt-0.5 font-mono break-all">{app.container_image}</div>
                                     </div>
                                 )}
                             </div>
@@ -2066,36 +1867,40 @@ function DeploymentsTab({ app, deployments, versions, enclaves, token, onRefresh
                                         <div className="text-xs text-red-600 dark:text-red-400 py-2">{tagsError}</div>
                                     ) : tagsLoading && tags === null ? (
                                         <div className="text-xs text-black/40 dark:text-white/40 py-2">Loading versions…</div>
-                                    ) : (tags && tags.length > 0) ? (
+                                    ) : (tagOptions.length > 0) ? (
                                         <select value={pickVersion} onChange={e => setPickVersion(e.target.value)} className={selectCls}>
                                             <option value="">Select version…</option>
-                                            {tags.map(t => (<option key={t} value={t}>{t}</option>))}
+                                            {tagOptions.map(t => (<option key={t} value={t}>{t}</option>))}
                                         </select>
                                     ) : (
-                                        <div className="text-xs text-black/40 dark:text-white/40 py-2">No versions found in the registry.</div>
+                                        <div className="text-xs text-black/40 dark:text-white/40 py-2">{currentDeployment ? 'Already on the newest version.' : 'No versions found in the registry.'}</div>
                                     )
                                 ) : (
-                                    readyVersions.length > 0 ? (
+                                    versionOptions.length > 0 ? (
                                         <select value={pickVersion} onChange={e => setPickVersion(e.target.value)} className={selectCls}>
                                             <option value="">Select version…</option>
-                                            {readyVersions.map(v => (<option key={v.id} value={v.id}>{versionLabel(v)}</option>))}
+                                            {versionOptions.map(v => (<option key={v.id} value={v.id}>{versionLabel(v)}</option>))}
                                         </select>
                                     ) : (
-                                        <div className="text-xs text-black/40 dark:text-white/40 py-2">No deployable versions yet.</div>
+                                        <div className="text-xs text-black/40 dark:text-white/40 py-2">{currentDeployment ? 'Already on the newest version.' : 'No deployable versions yet.'}</div>
                                     )
                                 )}
                             </div>
-                            <div>
-                                <label className="text-xs text-black/50 dark:text-white/50 block mb-1">Location</label>
-                                {activeEnclaves.length > 0 ? (
-                                    <select value={pickEnclave} onChange={e => setPickEnclave(e.target.value)} className={selectCls}>
-                                        <option value="">Select location…</option>
-                                        {activeEnclaves.map(e => (<option key={e.id} value={e.id}>{enclaveLabel(e)}</option>))}
-                                    </select>
-                                ) : (
-                                    <div className="text-xs text-black/40 dark:text-white/40 py-2">No active locations available for this application type.</div>
-                                )}
-                            </div>
+                            {/* Location is only chosen on the FIRST deploy. An upgrade
+                                keeps the running location (item 1). */}
+                            {!currentDeployment && (
+                                <div>
+                                    <label className="text-xs text-black/50 dark:text-white/50 block mb-1">Location</label>
+                                    {activeEnclaves.length > 0 ? (
+                                        <select value={pickEnclave} onChange={e => setPickEnclave(e.target.value)} className={selectCls}>
+                                            <option value="">Select location…</option>
+                                            {activeEnclaves.map(e => (<option key={e.id} value={e.id}>{enclaveLabel(e)}</option>))}
+                                        </select>
+                                    ) : (
+                                        <div className="text-xs text-black/40 dark:text-white/40 py-2">No active locations available for this application type.</div>
+                                    )}
+                                </div>
+                            )}
                             {deployBlockedByCredits && (
                                 <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 text-xs text-amber-700 dark:text-amber-300">
                                     Your credit balance is empty.{' '}
