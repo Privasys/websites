@@ -3,7 +3,7 @@
 import { useAuth, hasManagerRole } from '~/lib/privasys-auth';
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { adminEnclaveHealth, adminInspectEnclave, adminListEnclaves, adminCreateEnclave, adminUpdateEnclave, adminDeleteEnclave } from '~/lib/api';
-import { useSSE } from '~/lib/use-sse';
+import { useSSE } from '~/lib/sse-context';
 import { COUNTRIES, regionForCountry, countryName } from '~/lib/countries';
 import type { Enclave, CreateEnclaveRequest, TeeType } from '~/lib/types';
 
@@ -61,7 +61,7 @@ export default function AdminEnclavePage() {
     useEffect(() => { load(); }, [load]);
 
     // SSE: refresh enclave list on any enclave update
-    useSSE(session?.accessToken, useCallback(() => { load(); }, [load]));
+    useSSE(useCallback(() => { load(); }, [load]));
 
     async function checkHealth(enc: Enclave) {
         if (!session?.accessToken) return;

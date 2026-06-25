@@ -7,7 +7,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { Navbar, Footer } from '@privasys/ui';
 import { useAuth, hasAdminRole, hasManagerRole } from '~/lib/privasys-auth';
 import { listApps } from '~/lib/api';
-import { useSSE } from '~/lib/use-sse';
+import { SSEProvider, useSSE } from '~/lib/sse-context';
 import type { App } from '~/lib/types';
 import { UserMenu } from '~/components/user-menu';
 import { CreditBalance } from '~/components/credit-balance';
@@ -54,7 +54,7 @@ function Sidebar() {
     }, [session?.accessToken]);
 
     useEffect(() => { loadApps(); }, [loadApps]);
-    useSSE(session?.accessToken, useCallback(() => { loadApps(); }, [loadApps]));
+    useSSE(useCallback(() => { loadApps(); }, [loadApps]));
 
     useEffect(() => {
         const handler = () => { loadApps(); };
@@ -289,7 +289,7 @@ export default function PlatformLayout({ children }: { children: ReactNode }) {
     }
 
     return (
-        <>
+        <SSEProvider>
             <Navbar brandSuffix="Developer" items={NAVBAR_ITEMS} fullWidth trailing={<div className="flex items-center gap-3"><CreditBalance /><UserMenu /></div>} />
             <div className="flex flex-1 pt-14">
                 <Sidebar />
@@ -303,6 +303,6 @@ export default function PlatformLayout({ children }: { children: ReactNode }) {
                 version={buildVersionString()}
                 className="!mt-0"
             />
-        </>
+        </SSEProvider>
     );
 }
