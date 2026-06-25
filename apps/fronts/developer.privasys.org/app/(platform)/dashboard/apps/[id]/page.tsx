@@ -1388,8 +1388,11 @@ function AppStoreTab({ app, token, deployed, hostname, onSave, deleting, onDelet
             {deployed && hostname ? (
                 <StoreSection title="MCP server">
                     <p className="text-sm text-black/70 dark:text-white/70">This app is available as an attested MCP server.</p>
-                    <code className="mt-2 block text-xs bg-black/5 dark:bg-white/5 px-3 py-2 rounded-lg break-all font-mono">https://{hostname}</code>
-                    <p className="mt-2 text-xs text-black/45 dark:text-white/45">Endpoint, copy-paste client config and the tool list are on the <strong>AI Tools</strong> tab.</p>
+                    <div className="mt-3 text-[10px] uppercase tracking-wide text-black/40 dark:text-white/40">Endpoint</div>
+                    <code className="mt-1 block text-xs bg-black/5 dark:bg-white/5 px-3 py-2 rounded-lg break-all font-mono">https://{hostname}</code>
+                    <div className="mt-3 text-[10px] uppercase tracking-wide text-black/40 dark:text-white/40">MCP config snippet</div>
+                    <pre className="mt-1 text-xs bg-black/5 dark:bg-white/5 px-3 py-2 rounded-lg font-mono overflow-x-auto">{JSON.stringify({ mcpServers: { [app.name]: { url: `https://${hostname}`, transport: 'sse' } } }, null, 2)}</pre>
+                    <p className="mt-2 text-xs text-black/45 dark:text-white/45">The full tool list and verification live on the <strong>AI Tools</strong> tab.</p>
                 </StoreSection>
             ) : (
                 <section className="p-5 rounded-xl border border-dashed border-black/20 dark:border-white/20">
