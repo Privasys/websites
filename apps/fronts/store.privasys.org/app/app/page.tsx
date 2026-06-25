@@ -6,18 +6,14 @@ import Link from 'next/link';
 import {
     AttestationConnect,
     AttestationResultView,
-    makePrivasysReleaseResolver,
     useAttestation
 } from '@privasys/attestation-view';
 import {
-    API_BASE,
     attestUrlFor,
     getStoreApp,
     resolveAsset,
     type StoreAppDetail
 } from '~/lib/store-api';
-
-const RELEASE_RESOLVER = makePrivasysReleaseResolver(API_BASE);
 
 function ReproRow({ label, children }: { label: string; children: React.ReactNode }) {
     return (
@@ -68,7 +64,6 @@ function LiveAttestation({ app }: { app: StoreAppDetail }) {
                 <AttestationResultView
                     result={state.result}
                     quoteVerify={state.quoteVerify}
-                    resolveRelease={RELEASE_RESOLVER}
                     onRefresh={() => void actions.inspect()}
                 />
             )}

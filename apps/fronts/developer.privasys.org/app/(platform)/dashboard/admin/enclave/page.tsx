@@ -8,7 +8,7 @@ import { COUNTRIES, regionForCountry, countryName } from '~/lib/countries';
 import type { Enclave, CreateEnclaveRequest, TeeType } from '~/lib/types';
 
 const EMPTY_FORM: CreateEnclaveRequest = {
-    name: '', port: 8445, gateway_host: '', tee_type: 'sgx', mr_enclave: '', country: '', region: '', zone: '', provider: '', owner: '', max_apps: 10,
+    name: '', port: 8445, gateway_host: '', tee_type: 'sgx', mr_enclave: '', country: '', region: '', zone: '', provider: '', owner: '', max_apps: 10, os_release_url: '',
 };
 
 const ENC_STATUS_COLORS: Record<string, string> = {
@@ -112,7 +112,7 @@ export default function AdminEnclavePage() {
         setForm({
             name: enc.name, port: enc.port, gateway_host: enc.gateway_host ?? '', tee_type: enc.tee_type || 'sgx', mr_enclave: enc.mr_enclave,
             country: enc.country, region: enc.region, zone: enc.zone ?? '', gps_lat: enc.gps_lat, gps_lon: enc.gps_lon,
-            provider: enc.provider, owner: enc.owner, max_apps: enc.max_apps,
+            provider: enc.provider, owner: enc.owner, max_apps: enc.max_apps, os_release_url: enc.os_release_url ?? '',
         });
         setEditingId(enc.id);
         setShowForm(true);
@@ -273,6 +273,17 @@ export default function AdminEnclavePage() {
                                 </div>
                             </div>
                         )}
+                        <div className="col-span-3">
+                            <label className="block text-xs font-medium mb-1">Enclave OS release</label>
+                            <input value={form.os_release_url ?? ''} onChange={e => setForm(f => ({ ...f, os_release_url: e.target.value }))}
+                                placeholder="https://github.com/Privasys/enclave-os-mini/releases/tag/v0.20.3"
+                                className={`${INPUT_CLS} font-mono text-xs`} />
+                            <p className="mt-1 text-xs text-black/40 dark:text-white/40">
+                                Link to the official GitHub release this enclave runs. Checked on save and stamped
+                                onto every attestation so users can verify the running Enclave OS instantly. Use
+                                enclave-os-mini for SGX/WASM, enclave-os-virtual for TDX/containers.
+                            </p>
+                        </div>
                         <div>
                             <label className="block text-xs font-medium mb-1">Country</label>
                             <select value={form.country ?? ''} onChange={e => setForm(f => ({ ...f, country: e.target.value }))}
@@ -471,6 +482,17 @@ export default function AdminEnclavePage() {
                                                                 <code className="text-xs mt-0.5 bg-black/5 dark:bg-white/5 px-2 py-1 rounded break-all block">{enc.mr_enclave}</code>
                                                             </div>
                                                         )}
+                                                        <div className="col-span-3">
+                                                            <div className="text-xs text-black/50 dark:text-white/50">Enclave OS release</div>
+                                                            {enc.os_release_url ? (
+                                                                <a href={enc.os_release_url} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}
+                                                                    className="text-xs mt-0.5 inline-flex items-center gap-1 text-blue-600 dark:text-blue-400 hover:underline break-all">
+                                                                    {enc.os_release_tag || enc.os_release_url} ↗
+                                                                </a>
+                                                            ) : (
+                                                                <div className="mt-0.5 text-xs text-amber-600 dark:text-amber-400">Not set — edit the enclave to link its GitHub release</div>
+                                                            )}
+                                                        </div>
                                                         {enc.gateway_host && (
                                                             <div className="col-span-3">
                                                                 <div className="text-xs text-black/50 dark:text-white/50">IP address</div>
