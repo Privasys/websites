@@ -6,6 +6,7 @@ import type {
     AttestationExtension,
     AttestationResult,
     QuoteVerifyResult,
+    ReleaseField
 } from '../types';
 import { PRIVASYS_OID, TEXT_OIDS } from '../types';
 import { hexToPrintableText } from '../internal/use-copy';
@@ -36,19 +37,19 @@ const OID_DESCRIPTIONS: Record<string, string> = {
     'Combined Workloads Hash':
         'Aggregate hash of all loaded WASM workloads. Proves which code is running.',
     'DEK Origin':
-        "Data Encryption Key origin - indicates how the enclave's encryption key was derived.",
+        'Data Encryption Key origin - indicates how the enclave\'s encryption key was derived.',
     'Attestation Servers Hash':
         'Hash of the attestation server list the enclave trusts for quote verification.',
     'Workload Config Merkle Root':
-        "Merkle root of this specific workload's configuration.",
+        'Merkle root of this specific workload\'s configuration.',
     'Workload Code Hash':
         'SHA-256 hash of the compiled WASM bytecode for this workload.',
     'Workload Image Ref':
         'Container image reference from which the workload was loaded.',
     'Workload Key Source':
-        "Indicates how the workload's encryption keys are sourced and managed.",
+        'Indicates how the workload\'s encryption keys are sourced and managed.',
     'Workload Permissions Hash':
-        'Hash of the security permissions granted to this workload.',
+        'Hash of the security permissions granted to this workload.'
 };
 
 export function AttestationResultView({
@@ -65,6 +66,7 @@ export function AttestationResultView({
     onRegenerateChallenge,
     loading,
     verifyQuoteUrl,
+    resolveReleaseUrl
 }: {
     result: AttestationResult;
     quoteVerify?: QuoteVerifyResult | null;
@@ -101,6 +103,12 @@ export function AttestationResultView({
      *  targets this URL. When omitted the snippet renders a clear
      *  placeholder so users know what to substitute. */
     verifyQuoteUrl?: string;
+    /** Optional resolver that maps a measurement field + value to a URL where
+     *  its published/predicted value can be checked — typically the matching
+     *  Enclave OS GitHub release. When it returns a URL, the quote section
+     *  renders a "release ↗" link next to that measurement. Kept as a callback
+     *  so this lib stays free of hard-coded org URLs. */
+    resolveReleaseUrl?: (field: ReleaseField, value: string) => string | undefined;
 }) {
     const reportDataCheck = useReportDataCheck(result);
     const showChallengeEditor = challenge != null && (onChallengeChange || onRegenerateChallenge);
@@ -180,6 +188,7 @@ export function AttestationResultView({
                     quoteVerifyError={quoteVerifyError}
                     reportDataCheck={reportDataCheck}
                     challengeMode={result.challenge_mode}
+                    resolveReleaseUrl={resolveReleaseUrl}
                 />
             )}
 
@@ -268,7 +277,7 @@ function useReportDataCheck(result: AttestationResult): ReportDataCheck {
         verifyReportData({
             pubKeySha256Hex: pubKey,
             challengeHex: challenge,
-            reportDataHex: reportData,
+            reportDataHex: reportData
         }).then((r) => {
             if (cancelled) return;
             if (r.status === 'match') {
@@ -289,7 +298,7 @@ function useReportDataCheck(result: AttestationResult): ReportDataCheck {
 
 function ChallengeBanner({
     result,
-    reportDataCheck,
+    reportDataCheck
 }: {
     result: AttestationResult;
     reportDataCheck: ReportDataCheck;
@@ -363,7 +372,7 @@ function ChallengeEditor({
     challenge,
     onChange,
     onRegenerate,
-    disabled,
+    disabled
 }: {
     challenge: string;
     onChange?: (next: string) => void;
@@ -406,6 +415,7 @@ function QuoteSection({
     quoteVerifyError,
     reportDataCheck,
     challengeMode,
+    resolveReleaseUrl
 }: {
     quote: NonNullable<AttestationResult['quote']>;
     quoteVerify?: QuoteVerifyResult | null;
@@ -413,32 +423,35 @@ function QuoteSection({
     quoteVerifyError?: string | null;
     reportDataCheck: ReportDataCheck;
     challengeMode: boolean;
+    resolveReleaseUrl?: (field: ReleaseField, value: string) => string | undefined;
 }) {
     const fields = useMemo(() => {
-        const rows: Array<{ label: string; value: string; description?: string }> = [
-            { label: 'Quote Type', value: quote.type, description: 'Attestation quote format embedded in the certificate.' },
+        const rel = (field: ReleaseField, value: string) =>
+            resolveReleaseUrl ? resolveReleaseUrl(field, value) : undefined;
+        const rows: Array<{ label: string; value: string; description?: string; releaseUrl?: string }> = [
+            { label: 'Quote Type', value: quote.type, description: 'Attestation quote format embedded in the certificate.' }
         ];
         if (quote.format) rows.push({ label: 'Format', value: quote.format });
         if (quote.version != null) rows.push({ label: 'Version', value: String(quote.version) });
-        if (quote.mr_enclave) rows.push({ label: 'MRENCLAVE', value: quote.mr_enclave, description: 'Hash of the enclave code and initial data.' });
-        if (quote.mr_signer) rows.push({ label: 'MRSIGNER', value: quote.mr_signer, description: "Hash of the enclave signer's public key." });
-        if (quote.mr_td) rows.push({ label: 'MR_TD', value: quote.mr_td, description: 'Measurement of the Trust Domain (TDX VM image and configuration).' });
-        if (quote.rtmr0) rows.push({ label: 'RTMR[0]', value: quote.rtmr0, description: 'TD firmware (TDVF) and its configuration.' });
-        if (quote.rtmr1) rows.push({ label: 'RTMR[1]', value: quote.rtmr1, description: 'EFI boot path: shim and GRUB binaries.' });
-        if (quote.rtmr2) rows.push({ label: 'RTMR[2]', value: quote.rtmr2, description: 'OS boot: kernel, initrd and kernel command line (including dm-verity root hash).' });
-        if (quote.rtmr3) rows.push({ label: 'RTMR[3]', value: quote.rtmr3, description: 'Application-defined measurements.' });
+        if (quote.mr_enclave) rows.push({ label: 'MRENCLAVE', value: quote.mr_enclave, description: 'Hash of the enclave code and initial data.', releaseUrl: rel('mr_enclave', quote.mr_enclave) });
+        if (quote.mr_signer) rows.push({ label: 'MRSIGNER', value: quote.mr_signer, description: 'Hash of the enclave signer\'s public key.', releaseUrl: rel('mr_signer', quote.mr_signer) });
+        if (quote.mr_td) rows.push({ label: 'MR_TD', value: quote.mr_td, description: 'Measurement of the Trust Domain (TDX VM image and configuration).', releaseUrl: rel('mr_td', quote.mr_td) });
+        if (quote.rtmr0) rows.push({ label: 'RTMR[0]', value: quote.rtmr0, description: 'TD firmware (TDVF) and its configuration.', releaseUrl: rel('rtmr0', quote.rtmr0) });
+        if (quote.rtmr1) rows.push({ label: 'RTMR[1]', value: quote.rtmr1, description: 'EFI boot path: shim and GRUB binaries.', releaseUrl: rel('rtmr1', quote.rtmr1) });
+        if (quote.rtmr2) rows.push({ label: 'RTMR[2]', value: quote.rtmr2, description: 'OS boot: kernel, initrd and kernel command line (including dm-verity root hash).', releaseUrl: rel('rtmr2', quote.rtmr2) });
+        if (quote.rtmr3) rows.push({ label: 'RTMR[3]', value: quote.rtmr3, description: 'Application-defined measurements.', releaseUrl: rel('rtmr3', quote.rtmr3) });
         if (quote.report_data) {
             rows.push({
                 label: 'Report Data',
                 value: quote.report_data,
                 description: challengeMode
                     ? 'SHA-512( SHA-256(public_key_DER) || challenge_nonce ).'
-                    : "SHA-512( SHA-256(public_key_DER) || timestamp ). Deterministic mode - the certificate's NotBefore is the nonce.",
+                    : 'SHA-512( SHA-256(public_key_DER) || timestamp ). Deterministic mode - the certificate\'s NotBefore is the nonce.'
             });
         }
         rows.push({ label: 'OID', value: quote.oid, description: 'Object Identifier of the x.509 extension containing the quote.' });
         return rows;
-    }, [quote, challengeMode]);
+    }, [quote, challengeMode, resolveReleaseUrl]);
 
     return (
         <Section
@@ -471,15 +484,18 @@ function QuoteSection({
                         value={f.value}
                         description={f.description}
                         badge={
-                            f.label === 'Report Data' && reportDataCheck.state === 'match'
-                                ? <Badge tone='ok'>✓ Verified</Badge>
-                                : f.label === 'Report Data' && reportDataCheck.state === 'mismatch'
-                                    ? <Badge tone='err'>✗ Mismatch</Badge>
-                                    : f.label === 'Report Data' && reportDataCheck.state === 'verifying'
-                                        ? <Badge tone='neutral'>Verifying...</Badge>
-                                        : /^RTMR\[\d\]$/.test(f.label) && quoteVerify?.success
-                                            ? <Badge tone='ok'>✓</Badge>
-                                            : null
+                            <>
+                                {f.label === 'Report Data' && reportDataCheck.state === 'match'
+                                    ? <Badge tone='ok'>✓ Verified</Badge>
+                                    : f.label === 'Report Data' && reportDataCheck.state === 'mismatch'
+                                        ? <Badge tone='err'>✗ Mismatch</Badge>
+                                        : f.label === 'Report Data' && reportDataCheck.state === 'verifying'
+                                            ? <Badge tone='neutral'>Verifying...</Badge>
+                                            : /^RTMR\[\d\]$/.test(f.label) && quoteVerify?.success
+                                                ? <Badge tone='ok'>✓</Badge>
+                                                : null}
+                                {f.releaseUrl && <ReleaseLink href={f.releaseUrl} />}
+                            </>
                         }
                     >
                         {f.label === 'Report Data' && reportDataCheck.state === 'mismatch' && (
@@ -502,7 +518,7 @@ function ExtensionsSection({
     extensions,
     accent = false,
     expectations,
-    cwasmHash,
+    cwasmHash
 }: {
     title: string;
     description: string;
@@ -554,7 +570,7 @@ function ExtensionsSection({
 function checkExpectation(
     ext: AttestationExtension,
     expectations?: AttestationExpectations,
-    cwasmHash?: string,
+    cwasmHash?: string
 ): React.ReactNode {
     const norm = (s?: string) => (s || '').replace(/^sha256:/i, '').toLowerCase();
     const actual = norm(ext.value_hex);
@@ -583,7 +599,7 @@ function checkExpectation(
 function Section({
     title,
     badge,
-    children,
+    children
 }: {
     title: string;
     badge?: React.ReactNode;
@@ -611,7 +627,7 @@ function Stat({ label, value }: { label: string; value: string }) {
 
 function Badge({
     tone,
-    children,
+    children
 }: {
     tone: 'ok' | 'warn' | 'err' | 'neutral';
     children: React.ReactNode;
@@ -620,12 +636,26 @@ function Badge({
         ok: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
         warn: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300',
         err: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
-        neutral: 'bg-black/5 text-black/50 dark:bg-white/5 dark:text-white/50',
+        neutral: 'bg-black/5 text-black/50 dark:bg-white/5 dark:text-white/50'
     }[tone];
     return (
         <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${cls}`}>
             {children}
         </span>
+    );
+}
+
+function ReleaseLink({ href }: { href: string }) {
+    return (
+        <a
+            href={href}
+            target='_blank'
+            rel='noreferrer'
+            title='Compare against the published Enclave OS release measurements'
+            className='inline-flex items-center gap-1 rounded-full bg-black/5 px-2 py-0.5 text-[10px] font-medium text-black/60 hover:text-black/90 dark:bg-white/10 dark:text-white/60 dark:hover:text-white/90'
+        >
+            release ↗
+        </a>
     );
 }
 
@@ -682,7 +712,7 @@ function PemSection({
     pem,
     copyKey,
     downloadName,
-    accent = false,
+    accent = false
 }: {
     title: string;
     pem: string;
@@ -729,7 +759,7 @@ function PemSection({
 function VerificationCodeSection({
     pubKeySha256,
     challenge,
-    reportData,
+    reportData
 }: {
     pubKeySha256: string;
     challenge: string;
@@ -742,17 +772,17 @@ function VerificationCodeSection({
         `const reportData  = "${reportData}";`,
         '',
         'const hex2buf = h => new Uint8Array(h.match(/.{2}/g).map(b => parseInt(b, 16)));',
-        "const buf2hex = b => [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join('');",
+        'const buf2hex = b => [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, \'0\')).join(\'\');',
         '',
         '(async () => {',
         '  const input = new Uint8Array([...hex2buf(pubkeySha256), ...hex2buf(challenge)]);',
-        "  const hash  = await crypto.subtle.digest('SHA-512', input);",
+        '  const hash  = await crypto.subtle.digest(\'SHA-512\', input);',
         '  const computed = buf2hex(hash);',
         '  const actual   = reportData.toLowerCase();',
         '  console.log("computed:   ", computed);',
         '  console.log("report_data:", actual);',
         '  console.log(computed === actual ? "\\u2713 MATCH" : "\\u2717 MISMATCH");',
-        '})();',
+        '})();'
     ].join('\n');
     return (
         <section className='rounded-xl border border-black/10 p-5 dark:border-white/10'>
@@ -773,7 +803,7 @@ function VerificationCodeSection({
 
 function QuoteVerificationCodeSection({
     rawBase64,
-    verifyQuoteUrl,
+    verifyQuoteUrl
 }: {
     rawBase64: string;
     verifyQuoteUrl?: string;
@@ -802,7 +832,7 @@ function QuoteVerificationCodeSection({
         `const quoteBase64 = "${rawBase64}";`,
         '',
         'async function getToken() {',
-        "  // 1. Hosted Privasys Auth SDK (chat.privasys.org, developer-portal, explorer\u2026):",
+        '  // 1. Hosted Privasys Auth SDK (chat.privasys.org, developer-portal, explorer\u2026):',
         '  const sdk = window.PrivasysAuth || window.privasysAuth;',
         '  if (sdk && typeof sdk.getTokenForAudience === "function") {',
         '    return await sdk.getTokenForAudience("attestation-server");',
@@ -822,7 +852,7 @@ function QuoteVerificationCodeSection({
         '  });',
         '  const r = await resp.json();',
         '  console.log(r.success ? "\\u2713 VERIFIED" : "\\u2717 FAILED", r);',
-        '})();',
+        '})();'
     ].join('\n');
     return (
         <section className='rounded-xl border border-black/10 p-5 dark:border-white/10'>

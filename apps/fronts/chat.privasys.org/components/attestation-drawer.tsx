@@ -1,6 +1,6 @@
 'use client';
 
-import { AttestationConnect, AttestationResultView, useAttestation } from '@privasys/attestation-view';
+import { AttestationConnect, AttestationResultView, privasysReleaseResolver, useAttestation } from '@privasys/attestation-view';
 import type { Instance } from '~/lib/types';
 
 // Attestation drawer. Triggers a fresh attestation handshake
@@ -45,6 +45,7 @@ export function AttestationDrawer({
                     <AttestationResultView
                         result={state.result}
                         quoteVerify={state.quoteVerify}
+                        resolveReleaseUrl={privasysReleaseResolver}
                         onRefresh={() => void actions.inspect()}
                         onReset={() => {
                             actions.reset();

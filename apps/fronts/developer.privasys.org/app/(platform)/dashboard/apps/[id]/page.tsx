@@ -15,7 +15,7 @@ import { getApiBaseUrl } from '~/lib/api-base-url';
 import type { App, BuildJob, AppVersion, AppDeployment, Enclave, CachedImage } from '~/lib/types';
 import { DEPLOYMENT_STATUS_LABELS, DEPLOYMENT_STATUS_COLORS, CONTAINER_STATE_LABELS, CONTAINER_STATE_COLORS } from '~/lib/types';
 import { RtmrVerifier } from '~/components/rtmr-verifier';
-import { AttestationConnect, AttestationResultView, useAttestation } from '@privasys/attestation-view';
+import { AttestationConnect, AttestationResultView, privasysReleaseResolver, useAttestation } from '@privasys/attestation-view';
 
 function StatusBadge({ status, labels, colors }: { status: string; labels: Record<string, string>; colors: Record<string, string> }) {
     return (
@@ -418,6 +418,7 @@ function AttestationTab({ appId, token, deployments, versions }: { appId: string
                 <AttestationResultView
                     result={state.result}
                     quoteVerify={state.quoteVerify}
+                    resolveReleaseUrl={privasysReleaseResolver}
                     onRefresh={() => void actions.inspect()}
                     onReset={() => {
                         actions.reset();
@@ -2304,7 +2305,7 @@ function TeamTab({ appId, token }: { appId: string; token: string }) {
                             type="text"
                             value={newSub}
                             onChange={(e) => setNewSub(e.target.value)}
-                            placeholder="e.g. r2C7Km0L2j0TbNuIPWd2JaxsayWawjP7jvRtMlBzVPw"
+                            placeholder="e.g. c59A0b0909bAb1e8R1964cE1e52caKbe086cTeMdTbN"
                             required
                             className="mt-1 w-full px-3 py-2 text-sm font-mono rounded-lg border border-black/15 dark:border-white/15 bg-transparent focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/20"
                         />

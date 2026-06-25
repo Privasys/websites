@@ -44,6 +44,18 @@ export interface AttestationExtension {
     value_hex: string;
 }
 
+// Hardware measurement fields a consumer can resolve to an external reference
+// (typically the matching Enclave OS GitHub release that publishes its
+// predicted value). Used by AttestationResultView's resolveReleaseUrl prop.
+export type ReleaseField =
+    | 'mr_enclave'
+    | 'mr_signer'
+    | 'mr_td'
+    | 'rtmr0'
+    | 'rtmr1'
+    | 'rtmr2'
+    | 'rtmr3';
+
 export interface AttestationTLS {
     version: string;
     cipher_suite: string;
@@ -111,13 +123,13 @@ export const PRIVASYS_OID = {
     APP_EVENTS: '1.3.6.1.4.1.65230.3.4',
     MODEL_DIGEST: '1.3.6.1.4.1.65230.3.5',
     MULTIMODAL_DIGEST: '1.3.6.1.4.1.65230.3.6',
-    TOOLS_DIGEST: '1.3.6.1.4.1.65230.3.7',
+    TOOLS_DIGEST: '1.3.6.1.4.1.65230.3.7'
 } as const;
 
 // OIDs whose value bytes are UTF-8 strings, not raw hashes.
 export const TEXT_OIDS: ReadonlySet<string> = new Set([
     PRIVASYS_OID.EVENT_LOG,
-    PRIVASYS_OID.APP_EVENTS,
+    PRIVASYS_OID.APP_EVENTS
 ]);
 
 // Optional expected values that the consumer can supply so the

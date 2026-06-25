@@ -4,6 +4,7 @@ import * as React from 'react';
 import {
     AttestationResultView,
     CompositeAttestationView,
+    privasysReleaseResolver,
     useAttestation
 } from '@privasys/attestation-view';
 import type {
@@ -116,7 +117,7 @@ export function SecurityView({ instance, onStatus }: { instance: Instance; onSta
                                     enabled MCP tool enclaves are listed below.
                                 </div>
                             )}
-                            <CompositeAttestationView targets={targets} verifyQuoteAuth={verifyQuoteAuth} onAggregateStatus={onStatus} />
+                            <CompositeAttestationView targets={targets} verifyQuoteAuth={verifyQuoteAuth} onAggregateStatus={onStatus} resolveReleaseUrl={privasysReleaseResolver} />
                         </>
                     )}
                 </div>
@@ -209,6 +210,7 @@ function SingleAttestation({
                         quoteVerifying={state.verifying}
                         quoteVerifyError={state.quoteVerifyError}
                         expectations={expectations}
+                        resolveReleaseUrl={privasysReleaseResolver}
                         loading={state.loading}
                         challenge={state.challenge}
                         onChallengeChange={actions.setChallenge}
