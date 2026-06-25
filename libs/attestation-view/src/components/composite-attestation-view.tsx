@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AttestationResultView } from './attestation-result-view';
 import { useAttestation } from '../use-attestation';
-import type { AttestationExpectations, ReleaseField, ReleaseMatch } from '../types';
+import type { AttestationExpectations } from '../types';
 
 // One target the composite view should attest. Mirrors the inputs to
 // useAttestation, plus a human label and an optional kind hint used for
@@ -43,10 +43,6 @@ export interface CompositeAttestationViewProps {
      *  every row's quote AND digest checks pass; 'failed' otherwise. */
 
     onAggregateStatus?: (_status: AggregateAttestationStatus) => void;
-    /** Forwarded to each row's AttestationResultView so MRENCLAVE / RTMR rows
-     *  resolve to (and verify against) the published Enclave OS release. */
-
-    resolveRelease?: (_field: ReleaseField, _value: string) => Promise<ReleaseMatch | null>;
 }
 
 interface RowSummary {
@@ -56,7 +52,7 @@ interface RowSummary {
     error?: string;
 }
 
-export function CompositeAttestationView({ targets, autoInspect = true, attestToken, verifyQuoteAuth, onAggregateStatus, resolveRelease }: CompositeAttestationViewProps) {
+export function CompositeAttestationView({ targets, autoInspect = true, attestToken, verifyQuoteAuth, onAggregateStatus }: CompositeAttestationViewProps) {
     const [rows, setRows] = useState<Record<string, RowSummary>>({});
 
     const onRowSummary = useCallback((id: string, summary: RowSummary) => {
@@ -104,7 +100,6 @@ export function CompositeAttestationView({ targets, autoInspect = true, attestTo
                     autoInspect={autoInspect}
                     attestToken={attestToken}
                     verifyQuoteAuth={verifyQuoteAuth}
-                    resolveRelease={resolveRelease}
                     onSummary={s => onRowSummary(t.id, s)}
                 />
             ))}
@@ -148,16 +143,12 @@ function AttestationRow({
     autoInspect,
     attestToken,
     verifyQuoteAuth,
-    resolveRelease,
     onSummary
 }: {
     target: AttestationTargetConfig;
     autoInspect: boolean;
     attestToken?: string | (() => Promise<string>);
     verifyQuoteAuth?: () => Promise<string>;
-
-    resolveRelease?: (_field: ReleaseField, _value: string) => Promise<ReleaseMatch | null>;
-
     onSummary: (_summary: RowSummary) => void;
 }) {
     const [state, actions] = useAttestation({
@@ -242,7 +233,6 @@ function AttestationRow({
                                 void actions.inspect();
                             }}
                             verifyQuoteUrl={target.verifyQuoteUrl}
-                            resolveRelease={resolveRelease}
                         />
                     )}
                 </div>

@@ -178,6 +178,8 @@ export interface Enclave {
     status: 'active' | 'maintenance' | 'retired';
     max_apps: number;
     app_count: number;
+    os_release_url?: string;
+    os_release_tag?: string;
     created_at: string;
     updated_at: string;
 }
@@ -196,6 +198,7 @@ export interface CreateEnclaveRequest {
     provider?: string;
     owner?: string;
     max_apps?: number;
+    os_release_url?: string;
 }
 
 // App version (each commit submission)

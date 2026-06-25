@@ -5,9 +5,8 @@ import type {
     AttestationExpectations,
     AttestationExtension,
     AttestationResult,
-    QuoteVerifyResult,
-    ReleaseField,
-    ReleaseMatch
+    OsRelease,
+    QuoteVerifyResult
 } from '../types';
 import { PRIVASYS_OID, TEXT_OIDS } from '../types';
 import { hexToPrintableText } from '../internal/use-copy';
@@ -66,8 +65,7 @@ export function AttestationResultView({
     onChallengeChange,
     onRegenerateChallenge,
     loading,
-    verifyQuoteUrl,
-    resolveRelease
+    verifyQuoteUrl
 }: {
     result: AttestationResult;
     quoteVerify?: QuoteVerifyResult | null;
@@ -104,13 +102,6 @@ export function AttestationResultView({
      *  targets this URL. When omitted the snippet renders a clear
      *  placeholder so users know what to substitute. */
     verifyQuoteUrl?: string;
-    /** Optional async resolver that maps a measurement field + value to the
-     *  Enclave OS release that published it. On a match the quote section shows
-     *  a green "Verified - <tag>" link to the exact release; on a non-match for a
-     *  resolvable field it shows a muted "no matching release" pointer. Kept as a
-     *  callback so this lib stays free of hard-coded org URLs / API hosts. */
-
-    resolveRelease?: (field: ReleaseField, value: string) => Promise<ReleaseMatch | null>;
 }) {
     const reportDataCheck = useReportDataCheck(result);
     const showChallengeEditor = challenge != null && (onChallengeChange || onRegenerateChallenge);
@@ -190,7 +181,7 @@ export function AttestationResultView({
                     quoteVerifyError={quoteVerifyError}
                     reportDataCheck={reportDataCheck}
                     challengeMode={result.challenge_mode}
-                    resolveRelease={resolveRelease}
+                    osRelease={result.os_release}
                 />
             )}
 
@@ -417,7 +408,7 @@ function QuoteSection({
     quoteVerifyError,
     reportDataCheck,
     challengeMode,
-    resolveRelease
+    osRelease
 }: {
     quote: NonNullable<AttestationResult['quote']>;
     quoteVerify?: QuoteVerifyResult | null;
@@ -425,22 +416,21 @@ function QuoteSection({
     quoteVerifyError?: string | null;
     reportDataCheck: ReportDataCheck;
     challengeMode: boolean;
-
-    resolveRelease?: (field: ReleaseField, value: string) => Promise<ReleaseMatch | null>;
+    osRelease?: OsRelease;
 }) {
     const fields = useMemo(() => {
-        const rows: Array<{ label: string; value: string; description?: string; field?: ReleaseField }> = [
+        const rows: Array<{ label: string; value: string; description?: string }> = [
             { label: 'Quote Type', value: quote.type, description: 'Attestation quote format embedded in the certificate.' }
         ];
         if (quote.format) rows.push({ label: 'Format', value: quote.format });
         if (quote.version != null) rows.push({ label: 'Version', value: String(quote.version) });
-        if (quote.mr_enclave) rows.push({ label: 'MRENCLAVE', value: quote.mr_enclave, description: 'Hash of the enclave code and initial data.', field: 'mr_enclave' });
-        if (quote.mr_signer) rows.push({ label: 'MRSIGNER', value: quote.mr_signer, description: 'Hash of the enclave signer\'s public key.', field: 'mr_signer' });
-        if (quote.mr_td) rows.push({ label: 'MR_TD', value: quote.mr_td, description: 'Measurement of the Trust Domain (TDX VM image and configuration).', field: 'mr_td' });
-        if (quote.rtmr0) rows.push({ label: 'RTMR[0]', value: quote.rtmr0, description: 'TD firmware (TDVF) and its configuration.', field: 'rtmr0' });
-        if (quote.rtmr1) rows.push({ label: 'RTMR[1]', value: quote.rtmr1, description: 'EFI boot path: shim and GRUB binaries.', field: 'rtmr1' });
-        if (quote.rtmr2) rows.push({ label: 'RTMR[2]', value: quote.rtmr2, description: 'OS boot: kernel, initrd and kernel command line (including dm-verity root hash).', field: 'rtmr2' });
-        if (quote.rtmr3) rows.push({ label: 'RTMR[3]', value: quote.rtmr3, description: 'Application-defined measurements.', field: 'rtmr3' });
+        if (quote.mr_enclave) rows.push({ label: 'MRENCLAVE', value: quote.mr_enclave, description: 'Hash of the enclave code and initial data.' });
+        if (quote.mr_signer) rows.push({ label: 'MRSIGNER', value: quote.mr_signer, description: 'Hash of the enclave signer\'s public key.' });
+        if (quote.mr_td) rows.push({ label: 'MR_TD', value: quote.mr_td, description: 'Measurement of the Trust Domain (TDX VM image and configuration).' });
+        if (quote.rtmr0) rows.push({ label: 'RTMR[0]', value: quote.rtmr0, description: 'TD firmware (TDVF) and its configuration.' });
+        if (quote.rtmr1) rows.push({ label: 'RTMR[1]', value: quote.rtmr1, description: 'EFI boot path: shim and GRUB binaries.' });
+        if (quote.rtmr2) rows.push({ label: 'RTMR[2]', value: quote.rtmr2, description: 'OS boot: kernel, initrd and kernel command line (including dm-verity root hash).' });
+        if (quote.rtmr3) rows.push({ label: 'RTMR[3]', value: quote.rtmr3, description: 'Application-defined measurements.' });
         if (quote.report_data) {
             rows.push({
                 label: 'Report Data',
@@ -474,6 +464,17 @@ function QuoteSection({
                     {quoteVerifyError && (
                         <Badge tone='warn'>{`\u26a0 ${quoteVerifyError}`}</Badge>
                     )}
+                    {osRelease?.url && (
+                        <a
+                            href={osRelease.url}
+                            target='_blank'
+                            rel='noreferrer'
+                            title='The official Enclave OS release this enclave runs (verified at registration)'
+                            className='inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400'
+                        >
+                            {`\u2713 Enclave OS ${osRelease.tag || 'release'} \u2197`}
+                        </a>
+                    )}
                 </>
             }
         >
@@ -495,7 +496,6 @@ function QuoteSection({
                                             : /^RTMR\[\d\]$/.test(f.label) && quoteVerify?.success
                                                 ? <Badge tone='ok'>✓</Badge>
                                                 : null}
-                                {f.field && resolveRelease && <ReleaseBadge field={f.field} value={f.value} resolve={resolveRelease} />}
                             </>
                         }
                     >
@@ -644,58 +644,6 @@ function Badge({
             {children}
         </span>
     );
-}
-
-// ReleaseBadge resolves a measurement to its published Enclave OS release and
-// renders a green "Verified - <tag>" link to that exact release ONLY when the
-// live value matches a published one. For a resolvable field that does not match
-// (e.g. a dev enclave built outside CI), it shows a muted "no matching release"
-// pointer to the releases index so the discrepancy is visible.
-function ReleaseBadge({
-    field,
-    value,
-    resolve
-}: {
-    field: ReleaseField;
-    value: string;
-
-    resolve: (field: ReleaseField, value: string) => Promise<ReleaseMatch | null>;
-}) {
-    const [match, setMatch] = useState<ReleaseMatch | null>(null);
-    useEffect(() => {
-        let cancelled = false;
-        resolve(field, value).then((m) => { if (!cancelled) setMatch(m); }).catch(() => {});
-        return () => { cancelled = true; };
-    }, [field, value, resolve]);
-
-    if (!match) return null;
-    if (match.matched && match.url) {
-        return (
-            <a
-                href={match.url}
-                target='_blank'
-                rel='noreferrer'
-                title='This measurement matches a value published in this Enclave OS release'
-                className='inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400'
-            >
-                {`✓ Verified${match.tag ? ` - ${match.tag}` : ''} ↗`}
-            </a>
-        );
-    }
-    if (match.releasesUrl) {
-        return (
-            <a
-                href={match.releasesUrl}
-                target='_blank'
-                rel='noreferrer'
-                title='No published release matches this measurement (e.g. a dev build outside CI)'
-                className='inline-flex items-center gap-1 rounded-full bg-black/5 px-2 py-0.5 text-[10px] font-medium text-black/45 hover:text-black/70 dark:bg-white/10 dark:text-white/45 dark:hover:text-white/70'
-            >
-                no matching release ↗
-            </a>
-        );
-    }
-    return null;
 }
 
 function DebugLine({ label, value }: { label: string; value: string }) {
