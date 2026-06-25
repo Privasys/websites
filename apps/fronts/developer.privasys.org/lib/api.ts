@@ -438,6 +438,40 @@ export async function listRegistryTags(token: string, appId: string): Promise<st
     return res.tags ?? [];
 }
 
+// AppCommit is a recent github commit offered as an upgrade target.
+export interface AppCommit {
+    sha: string;
+    message: string;
+    author: string;
+    date: string;
+    verified: boolean; // GPG-signed (only signed commits are deployable)
+}
+
+// listAppCommits returns github commits newer than the app's deployed one, plus
+// the repo (owner/repo) for building the commit URL. Empty for non-github apps.
+export async function listAppCommits(token: string, appId: string): Promise<{ commits: AppCommit[]; ownerRepo: string }> {
+    const res = await request<{ commits: AppCommit[]; current: string; owner_repo: string }>(`/api/v1/apps/${encodeURIComponent(appId)}/commits`, token);
+    return { commits: res.commits ?? [], ownerRepo: res.owner_repo ?? '' };
+}
+
+// uploadVersionCwasm uploads a new .cwasm and creates a ready version (the upgrade
+// path for upload-source WASM apps). Returns the created version.
+export async function uploadVersionCwasm(token: string, appId: string, file: File, version?: string): Promise<AppVersion> {
+    const form = new FormData();
+    form.append('file', file);
+    if (version) form.append('version', version);
+    const res = await fetch(`${API_URL}/api/v1/apps/${encodeURIComponent(appId)}/versions/upload`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: form
+    });
+    if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: res.statusText }));
+        throw new ApiError(body.error || `Upload error ${res.status}`, res.status);
+    }
+    return res.json();
+}
+
 // Source-aware version create (the enclave-upgrade plan, A.1): the server
 // branches on the app's source_type — pass commit_url (github), image (package),
 // or channel (cloud_image), plus an optional version (vX.Y.Z semver).

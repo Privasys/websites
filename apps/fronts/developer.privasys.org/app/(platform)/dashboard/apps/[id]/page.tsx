@@ -4,15 +4,15 @@ import Link from 'next/link';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { useAuth } from '~/lib/privasys-auth';
 import { useEffect, useState, useCallback } from 'react';
-import { getApp, listBuilds, listVersions, listDeployments, listCompatibleEnclaves, deleteApp, deployDirect, stopDeployment, getAppSchema, rpcCall, updateStoreListing, getAppMcp, updateContainerMcp, detectContainerMcp, retryBuild, listAppOwners, addAppOwner, removeAppOwner, createVersion, stageProfile, promoteProfile, listRegistryTags, uploadAsset } from '~/lib/api';
+import { getApp, listBuilds, listVersions, listDeployments, listCompatibleEnclaves, deleteApp, deployDirect, stopDeployment, getAppSchema, rpcCall, updateStoreListing, getAppMcp, updateContainerMcp, detectContainerMcp, retryBuild, listAppOwners, addAppOwner, removeAppOwner, createVersion, stageProfile, promoteProfile, listRegistryTags, uploadAsset, listAppCommits, uploadVersionCwasm, getVersion, listCachedImages } from '~/lib/api';
 import type { CreateVersionBody } from '~/lib/api';
 import { isApiStatus } from '~/lib/api';
 import { versionLabel, versionSemverStr, isStrictlyNewer } from '~/lib/version';
-import type { AppSchema, FunctionSchema, WitType, McpManifest, AppTeam } from '~/lib/api';
+import type { AppSchema, FunctionSchema, WitType, McpManifest, AppTeam, AppCommit } from '~/lib/api';
 import { useSSE } from '~/lib/use-sse';
 import { useBalance } from '~/lib/use-balance';
 import { getApiBaseUrl } from '~/lib/api-base-url';
-import type { App, BuildJob, AppVersion, AppDeployment, Enclave } from '~/lib/types';
+import type { App, BuildJob, AppVersion, AppDeployment, Enclave, CachedImage } from '~/lib/types';
 import { DEPLOYMENT_STATUS_LABELS, DEPLOYMENT_STATUS_COLORS, CONTAINER_STATE_LABELS, CONTAINER_STATE_COLORS } from '~/lib/types';
 import { RtmrVerifier } from '~/components/rtmr-verifier';
 import { AttestationConnect, AttestationResultView, useAttestation } from '@privasys/attestation-view';
@@ -1539,7 +1539,8 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
     const readyVersions = versions.filter(v => v.status === 'ready');
     const compatibleTeeType = app.app_type === 'container' ? 'tdx' : 'sgx';
     const activeEnclaves = enclaves.filter(e => e.status === 'active' && (!e.tee_type || e.tee_type === compatibleTeeType));
-    const isPackage = app.source_type === 'package';
+    const source = app.source_type; // package | github | cloud_image | upload
+    const isUpload = source === 'upload';
     // Approval applies only to a vault-backed upgrade (the key handle is present).
     const needsApproval = app.key_provider !== 'external' && !!app.vault_key_handle;
 
@@ -1564,44 +1565,60 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
     // App Store gate (item 3): required listing fields must be filled before deploy.
     const storeMissing = missingStoreFields(app);
 
-    // Inline upgrade / deploy (no modal).
-    const [pickVersion, setPickVersion] = useState('');   // registry tag (package) or AppVersion id
+    // Inline upgrade / deploy (no modal). pickVersion holds the source-specific
+    // identifier: registry tag (package), commit sha (github), channel (cloud_image),
+    // or an AppVersion id (fallback). Upload apps use cwasmFile instead.
+    const [pickVersion, setPickVersion] = useState('');
     const [pickEnclave, setPickEnclave] = useState('');
+    const [cwasmFile, setCwasmFile] = useState<File | null>(null);
     const [working, setWorking] = useState(false);
     const [workMsg, setWorkMsg] = useState<string | null>(null);
 
-    // Registry tags for package apps — the version menu, listed automatically.
-    const [tags, setTags] = useState<string[] | null>(null);
-    const [tagsLoading, setTagsLoading] = useState(false);
-    const [tagsError, setTagsError] = useState<string | null>(null);
+    // Source-specific upgrade options, listed automatically.
+    const [tags, setTags] = useState<string[] | null>(null);            // package
+    const [commits, setCommits] = useState<AppCommit[] | null>(null);   // github
+    const [ownerRepo, setOwnerRepo] = useState('');
+    const [images, setImages] = useState<CachedImage[] | null>(null);   // cloud_image
+    const [optLoading, setOptLoading] = useState(false);
+    const [optError, setOptError] = useState<string | null>(null);
 
-    // Upgrade offers only versions NEWER than the running one (item 1); first
-    // deploy (no current instance) offers all. Non-semver candidates are hidden on
-    // upgrade so the list cannot be polluted by moving tags like "latest".
+    // Upgrade offers only versions NEWER than the running one (item 1). Package tags
+    // are semver-filtered; github commits are already newer-only from the server;
+    // cloud-image channels and uploads are not semver-ordered (shown as-is).
     const currentVersion = currentDeployment ? versionMap[currentDeployment.version_id] : undefined;
     const currentSemver = currentVersion ? versionSemverStr(currentVersion) : '';
     const tagOptions = (tags ?? []).filter(t => !currentDeployment || isStrictlyNewer(t, currentSemver));
     const versionOptions = readyVersions.filter(v => !currentDeployment || isStrictlyNewer(versionSemverStr(v), currentSemver));
+    const imageChannels = Array.from(new Set((images ?? []).filter(i => i.name === app.cloud_image_name).map(i => i.channel)));
 
-    const loadTags = useCallback(async () => {
-        if (!isPackage) return;
-        setTagsLoading(true);
-        setTagsError(null);
+    // Unified dropdown choices (value + label) per source; upload uses a dropzone.
+    const choices: { value: string; label: string; disabled?: boolean }[] =
+        source === 'package' ? tagOptions.map(t => ({ value: t, label: t }))
+            : source === 'github' ? (commits ?? []).map(c => ({ value: c.sha, label: `${c.sha.slice(0, 7)} · ${c.message}${c.verified ? '' : ' (unsigned — not deployable)'}`, disabled: !c.verified }))
+                : source === 'cloud_image' ? imageChannels.map(ch => ({ value: ch, label: ch }))
+                    : versionOptions.map(v => ({ value: v.id, label: versionLabel(v) }));
+    const loaded = source === 'package' ? tags !== null : source === 'github' ? commits !== null : source === 'cloud_image' ? images !== null : true;
+
+    const loadOptions = useCallback(async () => {
+        setOptError(null);
+        setOptLoading(true);
         try {
-            setTags(await listRegistryTags(token, app.id));
+            if (source === 'package') setTags(await listRegistryTags(token, app.id));
+            else if (source === 'github') { const r = await listAppCommits(token, app.id); setCommits(r.commits); setOwnerRepo(r.ownerRepo); }
+            else if (source === 'cloud_image') setImages(await listCachedImages(token));
         } catch (e) {
-            setTagsError(e instanceof Error ? e.message : 'Failed to list registry versions');
+            setOptError(e instanceof Error ? e.message : 'Failed to list versions');
         } finally {
-            setTagsLoading(false);
+            setOptLoading(false);
         }
-    }, [isPackage, token, app.id]);
+    }, [source, token, app.id]);
 
     // List versions on tab load (a Refresh button re-lists too).
-    useEffect(() => { loadTags(); }, [loadTags]);
+    useEffect(() => { loadOptions(); }, [loadOptions]);
 
     // Inline upgrade: prefill the version with the newest option and pin the
     // location to the running instance (an upgrade does not move the app).
-    const upgradeTarget = isPackage ? (tagOptions[0] ?? '') : (versionOptions[0]?.id ?? '');
+    const upgradeTarget = choices[0]?.value ?? '';
     const currentEnclaveId = currentDeployment
         ? (enclaveMap[`${currentDeployment.enclave_host}:${currentDeployment.enclave_port}`]?.id ?? '')
         : '';
@@ -1642,8 +1659,21 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
         return `https://${b}`;
     })();
 
+    // Poll a freshly-shipped version until it builds (github apps), then return it.
+    async function waitForReady(versionId: string): Promise<string> {
+        for (let i = 0; i < 160; i++) { // ~13 min at 5s
+            const v = await getVersion(token, app.id, versionId);
+            if (v.status === 'ready') return versionId;
+            if (v.status === 'failed') throw new Error('Build failed');
+            setWorkMsg(`Building (${v.status})… this can take a few minutes`);
+            await new Promise(r => setTimeout(r, 5000));
+        }
+        throw new Error('Build is taking longer than expected; it will finish in the background — deploy it once ready');
+    }
+
     async function handleConfirm() {
-        if (!pickVersion || !pickEnclave) return;
+        if (!pickEnclave) return;
+        if (isUpload ? !cwasmFile : !pickVersion) return;
         if (deployBlockedByCredits) {
             setError('Your credit balance is empty. Top up credits or redeem a code on the Billing page to deploy.');
             return;
@@ -1651,15 +1681,26 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
         setWorking(true);
         setError(null);
         try {
-            // Resolve the version to deploy. For a package app the picker holds a
-            // registry tag, so ship it first (pins the digest, creates the version).
-            let versionId = pickVersion;
-            if (isPackage) {
+            // Resolve the version to deploy, by source. Package/cloud-image/upload are
+            // immediately ready; a github commit must build first.
+            let versionId = '';
+            if (isUpload) {
+                setWorkMsg('Uploading module…');
+                versionId = (await uploadVersionCwasm(token, app.id, cwasmFile as File)).id;
+            } else if (source === 'package') {
                 setWorkMsg(`Shipping ${pickVersion}…`);
                 const body: CreateVersionBody = { image: `${imageRepoBase}:${pickVersion}` };
                 if (/^v?\d+\.\d+\.\d+$/i.test(pickVersion)) body.version = pickVersion;
-                const v = await createVersion(token, app.id, body);
-                versionId = v.id;
+                versionId = (await createVersion(token, app.id, body)).id;
+            } else if (source === 'github') {
+                setWorkMsg('Shipping commit…');
+                const v = await createVersion(token, app.id, { commit_url: `https://github.com/${ownerRepo}/commit/${pickVersion}` });
+                versionId = await waitForReady(v.id);
+            } else if (source === 'cloud_image') {
+                setWorkMsg(`Shipping ${pickVersion}…`);
+                versionId = (await createVersion(token, app.id, { channel: pickVersion })).id;
+            } else {
+                versionId = pickVersion; // fallback: an existing version id
             }
             // Vault-backed: approve the new measurement before the cutover so the
             // data key is released cleanly with no locked-data window.
@@ -1671,7 +1712,7 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
             }
             setWorkMsg('Deploying…');
             await deployDirect(token, app.id, versionId, pickEnclave);
-            if (!currentDeployment) setPickVersion('');
+            if (!currentDeployment) { setPickVersion(''); setCwasmFile(null); }
         } catch (e) {
             setError(e instanceof Error ? e.message : 'Deployment failed');
         } finally {
@@ -1680,6 +1721,34 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
             onRefresh();
         }
     }
+
+    // The source-aware version control: a dropzone for upload apps, else a select
+    // of the source's choices (registry tags / github commits / cloud-image channels).
+    function renderVersionPicker(withBlank: boolean) {
+        if (isUpload) {
+            return (
+                <label
+                    onDragOver={e => e.preventDefault()}
+                    onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) setCwasmFile(f); }}
+                    className="flex items-center justify-center gap-2 px-3 py-2 rounded-lg border-2 border-dashed border-black/15 dark:border-white/15 cursor-pointer hover:border-black/30 dark:hover:border-white/30 transition-colors text-xs text-black/50 dark:text-white/50"
+                >
+                    <input type="file" accept=".cwasm" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) setCwasmFile(f); }} />
+                    {cwasmFile ? cwasmFile.name : 'Drop a .cwasm module or click to upload'}
+                </label>
+            );
+        }
+        if (optError) return <div className="text-xs text-red-600 dark:text-red-400 py-2">{optError}</div>;
+        if (optLoading && !loaded) return <div className="text-xs text-black/40 dark:text-white/40 py-2">Loading versions…</div>;
+        if (choices.length === 0) return <div className="text-xs text-black/40 dark:text-white/40 py-2">{currentDeployment ? 'Already on the newest version.' : 'No versions available yet.'}</div>;
+        return (
+            <select value={pickVersion} onChange={e => setPickVersion(e.target.value)} className={selectCls}>
+                {withBlank && <option value="">Select version…</option>}
+                {choices.map(c => (<option key={c.value} value={c.value} disabled={c.disabled}>{c.label}</option>))}
+            </select>
+        );
+    }
+    const nothingToDeploy = !isUpload && !optLoading && choices.length === 0;
+    const confirmDisabled = working || deployBlockedByCredits || storeMissing.length > 0 || (isUpload ? !cwasmFile : (!pickVersion || nothingToDeploy));
 
     async function handleStop(depId: string, force = false) {
         setStopping(depId);
@@ -1740,7 +1809,7 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                 <div className="flex items-center justify-between mb-3">
                     <h2 className="text-sm font-semibold">Current instance</h2>
                     <button
-                        onClick={() => { onRefresh(); loadTags(); }}
+                        onClick={() => { onRefresh(); loadOptions(); }}
                         className="text-xs text-black/50 dark:text-white/50 hover:text-black dark:hover:text-white transition-colors"
                     >
                         ↻ Refresh
@@ -1752,7 +1821,6 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                     const enclave = enclaveMap[`${dep.enclave_host}:${dep.enclave_port}`];
                     const version = versionMap[dep.version_id];
                     const isLive = dep.status === 'active';
-                    const noNewer = isPackage ? tagOptions.length === 0 : versionOptions.length === 0;
                     return (
                         <>
                             <section className="p-5 rounded-xl border border-emerald-200 dark:border-emerald-800/40 bg-emerald-50/30 dark:bg-emerald-900/5">
@@ -1836,24 +1904,16 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                                         <div className="flex items-end gap-3">
                                             <div className="flex-1">
                                                 <label className="text-xs text-black/50 dark:text-white/50 block mb-1">Upgrade to</label>
-                                                {isPackage ? (
-                                                    tagsError ? <div className="text-xs text-red-600 dark:text-red-400 py-2">{tagsError}</div>
-                                                        : tagsLoading && tags === null ? <div className="text-xs text-black/40 dark:text-white/40 py-2">Loading versions…</div>
-                                                            : noNewer ? <div className="text-xs text-black/40 dark:text-white/40 py-2">Already on the newest version.</div>
-                                                                : <select value={pickVersion} onChange={e => setPickVersion(e.target.value)} className={selectCls}>{tagOptions.map(t => (<option key={t} value={t}>{t}</option>))}</select>
-                                                ) : (
-                                                    noNewer ? <div className="text-xs text-black/40 dark:text-white/40 py-2">Already on the newest version.</div>
-                                                        : <select value={pickVersion} onChange={e => setPickVersion(e.target.value)} className={selectCls}>{versionOptions.map(v => (<option key={v.id} value={v.id}>{versionLabel(v)}</option>))}</select>
-                                                )}
+                                                {renderVersionPicker(false)}
                                             </div>
                                             <button
                                                 onClick={handleConfirm}
-                                                disabled={working || noNewer || !pickVersion || deployBlockedByCredits || storeMissing.length > 0}
+                                                disabled={confirmDisabled}
                                                 className="px-4 py-2 text-sm font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
                                             >
                                                 {working ? 'Upgrading…' : 'Upgrade'}
                                             </button>
-                                            <button onClick={() => { onRefresh(); loadTags(); }} className="px-3 py-2 text-xs text-black/50 dark:text-white/50 hover:text-black dark:hover:text-white" title="Refresh versions">↻</button>
+                                            <button onClick={() => { onRefresh(); loadOptions(); }} className="px-3 py-2 text-xs text-black/50 dark:text-white/50 hover:text-black dark:hover:text-white" title="Refresh versions">↻</button>
                                         </div>
                                         {storeMissing.length > 0 && (
                                             <div className="mt-2 text-xs text-amber-700 dark:text-amber-400">
@@ -1899,17 +1959,7 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                         <div className="grid grid-cols-2 gap-3">
                             <div>
                                 <label className="text-xs text-black/50 dark:text-white/50 block mb-1">Version</label>
-                                {isPackage ? (
-                                    tagsError ? <div className="text-xs text-red-600 dark:text-red-400 py-2">{tagsError}</div>
-                                        : tagsLoading && tags === null ? <div className="text-xs text-black/40 dark:text-white/40 py-2">Loading…</div>
-                                            : tagOptions.length > 0
-                                                ? <select value={pickVersion} onChange={e => setPickVersion(e.target.value)} className={selectCls}><option value="">Select version…</option>{tagOptions.map(t => (<option key={t} value={t}>{t}</option>))}</select>
-                                                : <div className="text-xs text-black/40 dark:text-white/40 py-2">No versions found in the registry.</div>
-                                ) : (
-                                    versionOptions.length > 0
-                                        ? <select value={pickVersion} onChange={e => setPickVersion(e.target.value)} className={selectCls}><option value="">Select version…</option>{versionOptions.map(v => (<option key={v.id} value={v.id}>{versionLabel(v)}</option>))}</select>
-                                        : <div className="text-xs text-black/40 dark:text-white/40 py-2">No deployable versions yet.</div>
-                                )}
+                                {renderVersionPicker(true)}
                             </div>
                             <div>
                                 <label className="text-xs text-black/50 dark:text-white/50 block mb-1">Location</label>
@@ -1927,7 +1977,7 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                         {workMsg && (<div className="text-xs text-black/50 dark:text-white/50">{workMsg}</div>)}
                         <button
                             onClick={handleConfirm}
-                            disabled={working || !pickVersion || !pickEnclave || deployBlockedByCredits || storeMissing.length > 0}
+                            disabled={confirmDisabled || !pickEnclave}
                             className="px-4 py-2 text-sm font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
                         >
                             {working ? 'Deploying…' : 'Deploy'}
