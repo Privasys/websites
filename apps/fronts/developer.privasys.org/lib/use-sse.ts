@@ -18,8 +18,20 @@ export function useSSE(token: string | undefined, handler: SSEHandler) {
     const handlerRef = useRef(handler);
     handlerRef.current = handler;
 
+    // Hold the token in a ref so a silent renewal (the SDK hands back a fresh
+    // access-token string every few minutes) does NOT re-run the effect and
+    // tear down the live stream. Keying the effect on the token *value* made
+    // every renewal abort and re-open the SSE connection — and re-run every
+    // consumer's loader — which is a big part of the "constant polling" you
+    // see in the network tab. We key only on whether a token exists; each
+    // (re)connect reads the freshest token from the ref, and a long-lived
+    // stream naturally picks up the new token when the server closes it.
+    const tokenRef = useRef(token);
+    tokenRef.current = token;
+    const hasToken = !!token;
+
     useEffect(() => {
-        if (!token) return;
+        if (!hasToken) return;
 
         let cancelled = false;
         let retryDelay = 1000;
@@ -31,7 +43,7 @@ export function useSSE(token: string | undefined, handler: SSEHandler) {
                 try {
                     const resp = await fetch(`${API_URL}/api/v1/events`, {
                         headers: {
-                            Authorization: `Bearer ${token}`,
+                            Authorization: `Bearer ${tokenRef.current}`,
                             Accept: 'text/event-stream'
                         },
                         signal: controller.signal
@@ -75,6 +87,16 @@ export function useSSE(token: string | undefined, handler: SSEHandler) {
                             }
                         }
                     }
+
+                    // The stream closed cleanly (done === true) — e.g. a proxy
+                    // idle-closed it or the server-side token expired. Pause
+                    // before reopening (same backoff as the error path) so a
+                    // proxy that drops the stream immediately can't drive a
+                    // tight reconnect loop that looks just like polling.
+                    if (!cancelled) {
+                        await new Promise(resolve => setTimeout(resolve, retryDelay));
+                        retryDelay = Math.min(retryDelay * 2, 30000);
+                    }
                 } catch (_e) {
                     if (_e instanceof DOMException && _e.name === 'AbortError') {
                         if (cancelled) return;
@@ -94,5 +116,5 @@ export function useSSE(token: string | undefined, handler: SSEHandler) {
             cancelled = true;
             controller?.abort();
         };
-    }, [token]);
+    }, [hasToken]);
 }
