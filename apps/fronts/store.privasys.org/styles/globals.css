@@ -1,4 +1,5 @@
 @import 'tailwindcss';
+@import '@privasys/ui/styles.css';
 
 /* Generate the utility classes used by the shared attestation-view lib. */
 @source '../../../../libs/attestation-view/src';
