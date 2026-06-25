@@ -285,7 +285,7 @@ export default function AppDetailPage() {
                     />
                 )}
                 {tab === 'store' && session?.accessToken && (
-                    <AppStoreTab app={app} token={session.accessToken} onSave={(updated) => setApp(updated)} deleting={deleting} onDelete={handleDelete} />
+                    <AppStoreTab app={app} token={session.accessToken} deployed={hasActiveDeployment} hostname={activeDeployments[0]?.hostname} onSave={(updated) => setApp(updated)} deleting={deleting} onDelete={handleDelete} />
                 )}
                 {tab === 'attestation' && session?.accessToken && (
                     <AttestationTab appId={app.id} token={session.accessToken} deployments={activeDeployments} versions={versions} />
@@ -1013,7 +1013,7 @@ const STORE_CATEGORIES = [
 const ICON_DIMS = '512 x 512 px square';
 const SHOT_DIMS = '1280 x 800 px (16:10 landscape)';
 
-function AppStoreTab({ app, token, onSave, deleting, onDelete }: { app: App; token: string; onSave: (updated: App) => void; deleting: boolean; onDelete: () => void }) {
+function AppStoreTab({ app, token, deployed, hostname, onSave, deleting, onDelete }: { app: App; token: string; deployed: boolean; hostname?: string; onSave: (updated: App) => void; deleting: boolean; onDelete: () => void }) {
     const [saving, setSaving] = useState(false);
     const [saved, setSaved] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -1183,6 +1183,37 @@ function AppStoreTab({ app, token, onSave, deleting, onDelete }: { app: App; tok
             {error && (<div className="p-3 rounded-lg bg-red-50 dark:bg-red-900/20 text-sm text-red-700 dark:text-red-300">{error}</div>)}
             {uploadError && (<div className="p-3 rounded-lg bg-red-50 dark:bg-red-900/20 text-xs text-red-700 dark:text-red-300">{uploadError}</div>)}
 
+            {/* Publish control — first, so it is the primary action */}
+            <section className="p-4 rounded-xl border border-black/10 dark:border-white/10 flex items-center gap-4">
+                <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold">Public store</span>
+                        {published ? (
+                            <span className="px-2 py-0.5 text-[10px] font-medium rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">Published</span>
+                        ) : (
+                            <span className="px-2 py-0.5 text-[10px] font-medium rounded-full bg-black/5 text-black/50 dark:bg-white/10 dark:text-white/50">Not published</span>
+                        )}
+                    </div>
+                    <p className="text-xs text-black/45 dark:text-white/45 mt-0.5">
+                        {published ? (
+                            <>Live at <a href={storeUrl} target="_blank" rel="noopener noreferrer" className="font-medium hover:underline">{storeUrl.replace('https://', '')} &rarr;</a></>
+                        ) : (descMissing || catMissing)
+                            ? 'Add a Description and Category (and save) to publish.'
+                            : 'Publish to list this app on store.privasys.org for anyone to browse and verify.'}
+                    </p>
+                    {publishError && <p className="text-xs text-red-600 dark:text-red-400 mt-1">{publishError}</p>}
+                </div>
+                <button
+                    onClick={() => handlePublish(!published)}
+                    disabled={publishing || (!published && (descMissing || catMissing))}
+                    className={`shrink-0 px-4 py-2 text-sm font-medium rounded-lg transition-opacity disabled:opacity-40 ${published
+                        ? 'border border-black/15 dark:border-white/15 hover:bg-black/5 dark:hover:bg-white/5'
+                        : 'bg-black text-white dark:bg-white dark:text-black hover:opacity-80'}`}
+                >
+                    {publishing ? 'Saving…' : published ? 'Unpublish' : 'Publish to store'}
+                </button>
+            </section>
+
             {/* Identity — the store hero, edited in place */}
             <StoreSection title="Listing" onEdit={editing === 'identity' ? undefined : () => setEditing('identity')}>
                 {editing === 'identity' ? (
@@ -1239,9 +1270,7 @@ function AppStoreTab({ app, token, onSave, deleting, onDelete }: { app: App; tok
                             <div className="text-xs text-black/50 dark:text-white/50 mt-0.5">
                                 {app.owner_name || 'You'}{category ? <> &middot; {category}</> : <> &middot; <span className="text-amber-600 dark:text-amber-400">add a category</span></>}
                             </div>
-                            <p className="text-sm text-black/70 dark:text-white/70 mt-1.5">
-                                {tagline || <span className="italic text-black/30 dark:text-white/30">Add a tagline</span>}
-                            </p>
+                            {tagline && <p className="text-sm text-black/70 dark:text-white/70 mt-1.5">{tagline}</p>}
                         </div>
                     </div>
                 )}
@@ -1356,36 +1385,22 @@ function AppStoreTab({ app, token, onSave, deleting, onDelete }: { app: App; tok
                 <EmptySection label="Add links and support" hint="Website, support email, privacy policy and terms." onAdd={() => setEditing('links')} />
             )}
 
-            {/* Publish control */}
-            <section className="p-4 rounded-xl border border-black/10 dark:border-white/10 flex items-center gap-4">
-                <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                        <span className="text-sm font-semibold">Public store</span>
-                        {published ? (
-                            <span className="px-2 py-0.5 text-[10px] font-medium rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">Published</span>
-                        ) : (
-                            <span className="px-2 py-0.5 text-[10px] font-medium rounded-full bg-black/5 text-black/50 dark:bg-white/10 dark:text-white/50">Not published</span>
-                        )}
-                    </div>
-                    <p className="text-xs text-black/45 dark:text-white/45 mt-0.5">
-                        {published ? (
-                            <>Live at <a href={storeUrl} target="_blank" rel="noopener noreferrer" className="font-medium hover:underline">{storeUrl.replace('https://', '')} &rarr;</a></>
-                        ) : (descMissing || catMissing)
-                            ? 'Add a Description and Category (and save) to publish.'
-                            : 'Publish to list this app on store.privasys.org for anyone to browse and verify.'}
+            {/* MCP server — usage hint; the full config lives on the AI Tools tab once deployed */}
+            {deployed && hostname ? (
+                <StoreSection title="MCP server">
+                    <p className="text-sm text-black/70 dark:text-white/70">This app is available as an attested MCP server.</p>
+                    <code className="mt-2 block text-xs bg-black/5 dark:bg-white/5 px-3 py-2 rounded-lg break-all font-mono">https://{hostname}</code>
+                    <p className="mt-2 text-xs text-black/45 dark:text-white/45">Endpoint, copy-paste client config and the tool list are on the <strong>AI Tools</strong> tab.</p>
+                </StoreSection>
+            ) : (
+                <section className="p-5 rounded-xl border border-dashed border-black/20 dark:border-white/20">
+                    <h2 className="text-sm font-semibold mb-1">MCP server</h2>
+                    <p className="text-sm text-black/45 dark:text-white/45">
+                        Once this app is deployed it can be used as an attested MCP server. Its endpoint and
+                        a copy-paste client config will appear here and on the <strong>AI Tools</strong> tab.
                     </p>
-                    {publishError && <p className="text-xs text-red-600 dark:text-red-400 mt-1">{publishError}</p>}
-                </div>
-                <button
-                    onClick={() => handlePublish(!published)}
-                    disabled={publishing || (!published && (descMissing || catMissing))}
-                    className={`shrink-0 px-4 py-2 text-sm font-medium rounded-lg transition-opacity disabled:opacity-40 ${published
-                        ? 'border border-black/15 dark:border-white/15 hover:bg-black/5 dark:hover:bg-white/5'
-                        : 'bg-black text-white dark:bg-white dark:text-black hover:opacity-80'}`}
-                >
-                    {publishing ? 'Saving…' : published ? 'Unpublish' : 'Publish to store'}
-                </button>
-            </section>
+                </section>
+            )}
 
             {/* Danger zone (moved here from the removed Overview tab) */}
             <DangerZone app={app} deleting={deleting} onDelete={onDelete} />
