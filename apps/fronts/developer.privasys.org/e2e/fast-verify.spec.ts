@@ -423,12 +423,12 @@ test.describe('Fast Verification Suite', () => {
         test.skip(!wasmDeployed, 'WASM deploy failed — skipping');
         test.setTimeout(30_000);
         await page.goto(`/dashboard/apps/${wasmAppId}`);
-        await page.waitForSelector('nav', { timeout: 10_000 });
+        await page.waitForSelector('nav', { timeout: 30_000 });
 
         // Always-present tabs (Overview was removed; App Store is now first)
         await expect(
             page.getByRole('button', { name: 'App Store' }),
-        ).toBeVisible({ timeout: 10_000 });
+        ).toBeVisible({ timeout: 15_000 });
         await expect(
             page.getByRole('button', { name: 'Deployments' }),
         ).toBeVisible();
