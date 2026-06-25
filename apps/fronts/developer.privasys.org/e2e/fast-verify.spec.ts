@@ -411,15 +411,15 @@ test.describe('Fast Verification Suite', () => {
         await page.goto(`/dashboard/apps/${wasmAppId}`);
         await page.waitForSelector('nav', { timeout: 10_000 });
 
-        // Always-present tabs
+        // Always-present tabs (Overview was removed; App Store is now first)
         await expect(
-            page.getByRole('button', { name: 'Overview' }),
+            page.getByRole('button', { name: 'App Store' }),
         ).toBeVisible({ timeout: 10_000 });
         await expect(
             page.getByRole('button', { name: 'Deployments' }),
         ).toBeVisible();
         await expect(
-            page.getByRole('button', { name: 'App Store' }),
+            page.getByRole('button', { name: 'Team' }),
         ).toBeVisible();
         // Deployment-conditional tabs — wait for Attestation as the signal
         // the active-deployment data has loaded, then check siblings.
@@ -564,7 +564,7 @@ test.describe('Fast Verification Suite', () => {
         await page.waitForSelector('nav', { timeout: 10_000 });
 
         await expect(
-            page.getByRole('button', { name: 'Overview' }),
+            page.getByRole('button', { name: 'App Store' }),
         ).toBeVisible({ timeout: 10_000 });
         await expect(
             page.getByRole('button', { name: 'Deployments' }),

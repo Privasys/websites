@@ -189,14 +189,11 @@ test.describe('WASM App Tutorial', () => {
             await page.waitForURL('**/dashboard/apps/**', { timeout: 10_000 });
         }
 
-        // Wait for build to complete — Overview tab appears when done
-        const overviewTab = page.getByRole('button', { name: 'Overview' });
-        await expect(overviewTab).toBeVisible({ timeout: 240_000 });
-        await overviewTab.click();
+        // Wait for build to complete — the tabbed view (App Store first) appears when done
+        const storeTab = page.getByRole('button', { name: 'App Store' });
+        await expect(storeTab).toBeVisible({ timeout: 240_000 });
+        await page.getByRole('button', { name: 'Deployments' }).click();
         await settle(page, 2000);
-
-        // The overview shows the WASM module SHA-256
-        await expect(page.getByText('WASM module SHA-256')).toBeVisible({ timeout: 5_000 });
 
         await page.screenshot({ path: shot('wasm-04-overview-built'), fullPage: true });
     });
@@ -506,14 +503,14 @@ test.describe('Container App Tutorial', () => {
             await page.waitForURL('**/dashboard/apps/**', { timeout: 10_000 });
         }
 
-        // Wait for build to complete
-        const overviewTab = page.getByRole('button', { name: 'Overview' });
-        await expect(overviewTab).toBeVisible({ timeout: 240_000 });
-        await overviewTab.click();
+        // Wait for build to complete — tabbed view (App Store first) appears when done
+        const storeTab = page.getByRole('button', { name: 'App Store' });
+        await expect(storeTab).toBeVisible({ timeout: 240_000 });
+        await storeTab.click();
         await settle(page, 2000);
 
-        // Container badge
-        await expect(page.getByText('Container', { exact: true })).toBeVisible({ timeout: 5_000 });
+        // Container type chip is shown in the header / store preview
+        await expect(page.getByText('Container', { exact: true }).first()).toBeVisible({ timeout: 5_000 });
 
         await page.screenshot({ path: shot('container-04-overview'), fullPage: true });
     });
