@@ -19263,6 +19263,12 @@ __metadata:
   languageName: node
   linkType: hard
 
+"store.privasys.org@workspace:apps/fronts/store.privasys.org":
+  version: 0.0.0-use.local
+  resolution: "store.privasys.org@workspace:apps/fronts/store.privasys.org"
+  languageName: unknown
+  linkType: soft
+
 "streamroller@npm:^3.1.5":
   version: 3.1.5
   resolution: "streamroller@npm:3.1.5"
