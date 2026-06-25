@@ -337,7 +337,7 @@ test.describe('Confidential AI Deployment', () => {
         await page.waitForSelector('nav', { timeout: 10_000 });
 
         await expect(
-            page.getByRole('button', { name: 'Overview' }),
+            page.getByRole('button', { name: 'App Store' }),
         ).toBeVisible({ timeout: 10_000 });
         await expect(
             page.getByRole('button', { name: 'Deployments' }),

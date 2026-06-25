@@ -13,7 +13,7 @@ test.describe('Developer Portal', () => {
         await setupAuth(page);
     });
 
-    test('App Store tab shows live banner for deployed app', async ({ page }) => {
+    test('App Store tab shows listing, publish control and MCP server for deployed app', async ({ page }) => {
         test.setTimeout(120_000);
 
         await page.goto('/dashboard/');
@@ -32,9 +32,10 @@ test.describe('Developer Portal', () => {
             await page.locator('nav a[href*="/dashboard/apps/"]').nth(i).click();
             await page.waitForURL('**/dashboard/apps/**');
 
-            // Wait for page to fully load — either tabbed or pipeline view
+            // Wait for the tabbed (built) view — App Store is the first tab and is
+            // always present once an app is built.
             try {
-                await page.getByRole('button', { name: 'Overview' }).waitFor({ state: 'visible', timeout: 10_000 });
+                await page.getByRole('button', { name: 'App Store' }).waitFor({ state: 'visible', timeout: 10_000 });
             } catch {
                 continue; // pipeline view or still loading
             }
@@ -48,16 +49,18 @@ test.describe('Developer Portal', () => {
 
             foundDeployed = true;
 
-            // Click App Store tab
+            // Open the App Store tab (redesigned: store-preview sections + publish control)
             await page.getByRole('button', { name: 'App Store' }).click();
             await page.waitForTimeout(500);
 
-            // Should show the green "live" banner, NOT the amber "must be deployed" warning
-            const mustDeploy = page.getByText('must be deployed');
-            const showsMustDeploy = await mustDeploy.isVisible().catch(() => false);
-            expect(showsMustDeploy).toBeFalsy();
-
-            await expect(page.getByText('Your app is live')).toBeVisible({ timeout: 5_000 });
+            // Publish control is the primary action at the top.
+            await expect(page.getByText('Public store', { exact: true })).toBeVisible({ timeout: 5_000 });
+            await expect(page.getByRole('button', { name: /Publish to store|Unpublish/ })).toBeVisible();
+            // Store-preview "Listing" section.
+            await expect(page.getByRole('heading', { name: 'Listing' })).toBeVisible();
+            // A deployed app exposes its MCP server endpoint + config snippet.
+            await expect(page.getByRole('heading', { name: 'MCP server' })).toBeVisible();
+            await expect(page.getByText('mcpServers')).toBeVisible();
 
             await page.screenshot({ path: screenshot('store-tab-live'), fullPage: true });
             break;
@@ -84,7 +87,7 @@ test.describe('Developer Portal', () => {
             await page.waitForURL('**/dashboard/apps/**');
 
             try {
-                await page.getByRole('button', { name: 'Overview' }).waitFor({ state: 'visible', timeout: 10_000 });
+                await page.getByRole('button', { name: 'App Store' }).waitFor({ state: 'visible', timeout: 10_000 });
             } catch { continue; }
 
             try {
@@ -137,7 +140,7 @@ test.describe('Developer Portal', () => {
             await page.waitForURL('**/dashboard/apps/**');
 
             try {
-                await page.getByRole('button', { name: 'Overview' }).waitFor({ state: 'visible', timeout: 10_000 });
+                await page.getByRole('button', { name: 'App Store' }).waitFor({ state: 'visible', timeout: 10_000 });
             } catch { continue; }
 
             try {
@@ -179,7 +182,6 @@ test.describe('Developer Portal', () => {
 
     test('dashboard loads with sidebar and nav elements', async ({ page }) => {
         await page.goto('/dashboard/');
-        await expect(page.locator('text=Overview')).toBeVisible();
         await expect(page.getByText('Applications', { exact: true })).toBeVisible();
         await expect(page.getByRole('link', { name: 'Settings' })).toBeVisible();
         // Header shows branding
@@ -216,7 +218,7 @@ test.describe('Developer Portal', () => {
         let isTabbed = false;
         let isPipeline = false;
         try {
-            await page.getByRole('button', { name: 'Overview' }).waitFor({ state: 'visible', timeout: 10_000 });
+            await page.getByRole('button', { name: 'App Store' }).waitFor({ state: 'visible', timeout: 10_000 });
             isTabbed = true;
         } catch {
             isPipeline = await page.locator('text=Application submitted').isVisible().catch(() => false);
@@ -247,10 +249,10 @@ test.describe('Developer Portal', () => {
             test.skip(true, 'App is not in tabbed view');
         }
 
-        // Verify core tabs
-        await expect(page.getByRole('button', { name: 'Overview' })).toBeVisible();
-        await expect(page.getByRole('button', { name: 'Deployments' })).toBeVisible();
+        // Verify core tabs (Overview was removed; App Store is now the first tab)
         await expect(page.getByRole('button', { name: 'App Store' })).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Deployments' })).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Team' })).toBeVisible();
 
         // Click Deployments tab
         await page.getByRole('button', { name: 'Deployments' }).click();
@@ -261,7 +263,7 @@ test.describe('Developer Portal', () => {
         await page.screenshot({ path: screenshot('store-tab'), fullPage: true });
     });
 
-    test('overview tab has delete option', async ({ page }) => {
+    test('App Store tab has the danger-zone delete option', async ({ page }) => {
         await page.goto('/dashboard/');
         await page.waitForSelector('nav', { timeout: 5_000 });
         await page.waitForTimeout(2_000);
@@ -273,15 +275,15 @@ test.describe('Developer Portal', () => {
         await appLinks.first().click();
         await page.waitForURL('**/dashboard/apps/**');
 
-        // If tabbed view, check Overview has delete section
-        const overviewTab = page.getByRole('button', { name: 'Overview' });
+        // If tabbed view, the Danger Zone delete now lives at the bottom of the App Store tab.
+        const storeTab = page.getByRole('button', { name: 'App Store' });
         try {
-            await overviewTab.waitFor({ state: 'visible', timeout: 10_000 });
-            await overviewTab.click();
+            await storeTab.waitFor({ state: 'visible', timeout: 10_000 });
+            await storeTab.click();
             await expect(page.getByText('Delete this application')).toBeVisible();
             await expect(page.getByRole('button', { name: /delete/i })).toBeVisible();
         } catch { /* pipeline view */ }
-        await page.screenshot({ path: screenshot('overview-danger'), fullPage: true });
+        await page.screenshot({ path: screenshot('store-tab-danger'), fullPage: true });
     });
 
     test('pipeline view always has a delete action button', async ({ page }) => {
@@ -312,10 +314,10 @@ test.describe('Developer Portal', () => {
                 await expect(deleteBtn).toBeVisible({ timeout: 3_000 });
                 await page.screenshot({ path: screenshot(`pipeline-action-${appName}`), fullPage: true });
             } else {
-                // Tabbed view — Danger Zone delete is in the Overview tab
-                const overviewTab = page.getByRole('button', { name: 'Overview' });
-                if (await overviewTab.isVisible({ timeout: 2_000 }).catch(() => false)) {
-                    await overviewTab.click();
+                // Tabbed view — Danger Zone delete is in the App Store tab
+                const storeTab = page.getByRole('button', { name: 'App Store' });
+                if (await storeTab.isVisible({ timeout: 2_000 }).catch(() => false)) {
+                    await storeTab.click();
                 }
                 const deleteBtn = page.getByRole('button', { name: /delete/i });
                 await expect(deleteBtn).toBeVisible({ timeout: 3_000 });
@@ -363,7 +365,7 @@ test.describe('Developer Portal', () => {
         await page.screenshot({ path: screenshot('app-type-selector-wasm'), fullPage: true });
     });
 
-    test('selecting container type shows container-specific fields', async ({ page }) => {
+    test('container wizard reaches the Listing step (port is platform-allocated)', async ({ page }) => {
         await page.goto('/dashboard/new/');
         await expect(page.locator('h1')).toContainText(/new application/i);
 
@@ -386,18 +388,16 @@ test.describe('Developer Portal', () => {
         await nameInput.fill(`e2e-port-test-${Date.now()}`);
         await expect(page.getByText(/\.apps\.privasys\.org is available/i)).toBeVisible({ timeout: 10_000 });
 
-        // Click Next to go to step 4 (configuration)
+        // Click Next to go to step 4 (Listing — replaced the old Configuration step;
+        // container port is now platform-allocated as $PORT, no port field).
         await page.getByRole('button', { name: 'Next' }).click();
 
-        // Container-specific fields should appear
-        await expect(page.getByText('Container port')).toBeVisible({ timeout: 5_000 });
-        const portInput = page.locator('input[type="number"][placeholder="8080"]');
-        await expect(portInput).toBeVisible();
-        await portInput.fill('8080');
+        // The Listing step requires Description + Category (the App Store deploy gate).
+        await expect(page.getByPlaceholder(/What your app does/i)).toBeVisible({ timeout: 5_000 });
+        await expect(page.getByText('Category').first()).toBeVisible();
 
-        // Storage checkbox should NOT exist
-        const storageCheckbox = page.locator('#storage');
-        expect(await storageCheckbox.isVisible().catch(() => false)).toBe(false);
+        // The old container-port field no longer exists (platform-allocated).
+        expect(await page.locator('input[type="number"][placeholder="8080"]').isVisible().catch(() => false)).toBe(false);
 
         await page.screenshot({ path: screenshot('container-fields'), fullPage: true });
     });
