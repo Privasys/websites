@@ -15,7 +15,7 @@ import {
     adminStopDeployment,
     adminDeleteApp,
 } from '~/lib/api';
-import { useSSE } from '~/lib/use-sse';
+import { useSSE } from '~/lib/sse-context';
 import type { App, BuildJob, AppVersion, AppDeployment, Enclave } from '~/lib/types';
 import { STATUS_LABELS, STATUS_COLORS, VERSION_STATUS_LABELS, VERSION_STATUS_COLORS, DEPLOYMENT_STATUS_LABELS, DEPLOYMENT_STATUS_COLORS, CONTAINER_STATE_LABELS, CONTAINER_STATE_COLORS } from '~/lib/types';
 
@@ -125,7 +125,7 @@ export default function AdminAppDetailPage() {
         return () => clearInterval(interval);
     }, [app?.status, load]);
 
-    useSSE(session?.accessToken, useCallback((ev) => {
+    useSSE(useCallback((ev) => {
         if (ev.data.app_id === id) load();
     }, [id, load]));
 

@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '~/lib/privasys-auth';
 import { useEffect, useState, useCallback } from 'react';
 import { isApiStatus, listApps } from '~/lib/api';
-import { useSSE } from '~/lib/use-sse';
+import { useSSE } from '~/lib/sse-context';
 import { useBalance } from '~/lib/use-balance';
 import type { App, AppStatus } from '~/lib/types';
 import { STATUS_LABELS, STATUS_COLORS } from '~/lib/types';
@@ -178,7 +178,7 @@ export default function DashboardPage() {
 
     useEffect(() => { loadApps(); }, [loadApps]);
 
-    useSSE(session?.accessToken, useCallback(() => { loadApps(); }, [loadApps]));
+    useSSE(useCallback(() => { loadApps(); }, [loadApps]));
 
     if (loading) {
         return (

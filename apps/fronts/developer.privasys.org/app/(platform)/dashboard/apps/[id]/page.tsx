@@ -12,7 +12,7 @@ import type { CreateVersionBody } from '~/lib/api';
 import { isApiStatus } from '~/lib/api';
 import { versionLabel, versionSemverStr, isStrictlyNewer } from '~/lib/version';
 import type { AppSchema, FunctionSchema, WitType, McpManifest, AppTeam, AppCommit } from '~/lib/api';
-import { useSSE } from '~/lib/use-sse';
+import { useSSE } from '~/lib/sse-context';
 import { useBalance } from '~/lib/use-balance';
 import { getApiBaseUrl } from '~/lib/api-base-url';
 import type { App, BuildJob, AppVersion, AppDeployment, Enclave, CachedImage } from '~/lib/types';
@@ -108,7 +108,7 @@ export default function AppDetailPage() {
         return () => clearInterval(interval);
     }, [app?.status, deployments, load]);
 
-    useSSE(session?.accessToken, useCallback((ev) => {
+    useSSE(useCallback((ev) => {
         if (ev.data.app_id !== id) return;
         if (ev.event === 'deployment_progress') {
             const depId = ev.data.deployment_id;
