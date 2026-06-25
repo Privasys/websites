@@ -1,33 +1,35 @@
-import type { ReleaseField } from './types';
+import type { ReleaseField, ReleaseMatch } from './types';
 
-// Opt-in resolver mapping a hardware measurement to the official Privasys
-// Enclave OS GitHub release page that publishes its predicted value. Consumers
-// pass this to AttestationResultView's `resolveReleaseUrl` prop to render a
-// "release ↗" link next to MRENCLAVE / MR_TD / RTMR rows, letting anyone
-// compare the live measurement against the published one.
+// makePrivasysReleaseResolver builds an async resolver that asks the
+// management-service whether a measurement matches a published Enclave OS
+// release. The component uses the result to render a "Verified · <tag>" link to
+// the exact release (on match) or a muted "no matching release" hint (for a
+// resolvable field that did not match — e.g. a dev enclave built outside CI).
 //
-// Routing is by measurement type, which maps cleanly onto the two product
-// lines: SGX measurements (MRENCLAVE / MRSIGNER) come from Enclave OS Mini;
-// TDX measurements (MR_TD / RTMRs) come from Enclave OS Virtual.
+// Only MRENCLAVE (SGX) and predicted RTMR[1]/RTMR[2] (TDX) are published
+// per-release, so we short-circuit the other fields to avoid a pointless call.
 //
-// This is intentionally NOT the component's default — the core view stays free
-// of hard-coded URLs — but it lives in the lib so every Privasys front renders
-// the same links without duplicating them.
-const MINI_RELEASES = 'https://github.com/Privasys/enclave-os-mini/releases';
-const VIRTUAL_RELEASES = 'https://github.com/Privasys/enclave-os-virtual/releases';
+// `apiBase` is the management-service origin (no trailing /api/v1), e.g.
+// `https://api-test.developer.privasys.org`.
+const RESOLVABLE: ReadonlySet<ReleaseField> = new Set(['mr_enclave', 'rtmr1', 'rtmr2']);
 
-export function privasysReleaseResolver(field: ReleaseField): string | undefined {
-    switch (field) {
-        case 'mr_enclave':
-        case 'mr_signer':
-            return MINI_RELEASES;
-        case 'mr_td':
-        case 'rtmr0':
-        case 'rtmr1':
-        case 'rtmr2':
-        case 'rtmr3':
-            return VIRTUAL_RELEASES;
-        default:
-            return undefined;
-    }
+export function makePrivasysReleaseResolver(apiBase: string) {
+    const base = apiBase.replace(/\/$/, '');
+    return async function resolveRelease(field: ReleaseField, value: string): Promise<ReleaseMatch | null> {
+        if (!RESOLVABLE.has(field) || !value) return null;
+        try {
+            const url = `${base}/api/v1/measurements/release?field=${encodeURIComponent(field)}&value=${encodeURIComponent(value)}`;
+            const res = await fetch(url);
+            if (!res.ok) return null;
+            const data = await res.json();
+            return {
+                matched: Boolean(data.matched),
+                tag: data.tag || undefined,
+                url: data.url || undefined,
+                releasesUrl: data.releases_url || undefined
+            };
+        } catch {
+            return null;
+        }
+    };
 }

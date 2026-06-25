@@ -46,7 +46,7 @@ export interface AttestationExtension {
 
 // Hardware measurement fields a consumer can resolve to an external reference
 // (typically the matching Enclave OS GitHub release that publishes its
-// predicted value). Used by AttestationResultView's resolveReleaseUrl prop.
+// predicted value). Used by AttestationResultView's resolveRelease prop.
 export type ReleaseField =
     | 'mr_enclave'
     | 'mr_signer'
@@ -55,6 +55,18 @@ export type ReleaseField =
     | 'rtmr1'
     | 'rtmr2'
     | 'rtmr3';
+
+// Result of resolving a measurement to an Enclave OS release. `matched` is true
+// only when the live value equals a value published in a release's artifacts;
+// in that case `tag`/`url` point at the exact release. `releasesUrl` (when set)
+// is the releases index, offered even on a non-match for resolvable fields so a
+// dev enclave that doesn't match anything still links somewhere useful.
+export interface ReleaseMatch {
+    matched: boolean;
+    tag?: string;
+    url?: string;
+    releasesUrl?: string;
+}
 
 export interface AttestationTLS {
     version: string;

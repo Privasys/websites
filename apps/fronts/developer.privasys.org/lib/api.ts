@@ -1,7 +1,12 @@
 import type { App, CreateAppRequest, ReviewRequest, DeploymentLog, BuildJob, Enclave, CreateEnclaveRequest, AppVersion, AppDeployment, AttestationResult, TeeType, CachedImage } from './types';
 import { getApiBaseUrl } from './api-base-url';
+import { makePrivasysReleaseResolver } from '@privasys/attestation-view';
 
 const API_URL = getApiBaseUrl();
+
+// Resolves a hardware measurement to its published Enclave OS release (for the
+// attestation view's verified release link).
+export const releaseResolver = makePrivasysReleaseResolver(API_URL);
 
 class ApiError extends Error {
     status: number;
