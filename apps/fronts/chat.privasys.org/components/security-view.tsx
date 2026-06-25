@@ -4,7 +4,7 @@ import * as React from 'react';
 import {
     AttestationResultView,
     CompositeAttestationView,
-    privasysReleaseResolver,
+    makePrivasysReleaseResolver,
     useAttestation
 } from '@privasys/attestation-view';
 import type {
@@ -17,6 +17,9 @@ import { useAuth } from '~/lib/privasys-auth';
 
 const API_BASE_URL =
     process.env.NEXT_PUBLIC_API_BASE_URL ?? 'https://api.developer.privasys.org';
+
+// Verified release-link resolver for the attestation views.
+const RELEASE_RESOLVER = makePrivasysReleaseResolver(API_BASE_URL);
 
 // Full-pane Security view rendered inside the chat shell when the user
 // clicks "Secure enclaves attestations" in the sidebar.
@@ -117,7 +120,7 @@ export function SecurityView({ instance, onStatus }: { instance: Instance; onSta
                                     enabled MCP tool enclaves are listed below.
                                 </div>
                             )}
-                            <CompositeAttestationView targets={targets} verifyQuoteAuth={verifyQuoteAuth} onAggregateStatus={onStatus} resolveReleaseUrl={privasysReleaseResolver} />
+                            <CompositeAttestationView targets={targets} verifyQuoteAuth={verifyQuoteAuth} onAggregateStatus={onStatus} resolveRelease={RELEASE_RESOLVER} />
                         </>
                     )}
                 </div>
@@ -210,7 +213,7 @@ function SingleAttestation({
                         quoteVerifying={state.verifying}
                         quoteVerifyError={state.quoteVerifyError}
                         expectations={expectations}
-                        resolveReleaseUrl={privasysReleaseResolver}
+                        resolveRelease={RELEASE_RESOLVER}
                         loading={state.loading}
                         challenge={state.challenge}
                         onChallengeChange={actions.setChallenge}

@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { useAuth } from '~/lib/privasys-auth';
 import { useEffect, useState, useCallback } from 'react';
-import { getApp, listBuilds, listVersions, listDeployments, listCompatibleEnclaves, deleteApp, deployDirect, stopDeployment, getAppSchema, rpcCall, updateStoreListing, publishApp, identiconUrl, getAppMcp, updateContainerMcp, detectContainerMcp, retryBuild, listAppOwners, addAppOwner, removeAppOwner, createVersion, stageProfile, promoteProfile, listRegistryTags, uploadAsset, listAppCommits, uploadVersionCwasm, getVersion, listCachedImages } from '~/lib/api';
+import { getApp, listBuilds, listVersions, listDeployments, listCompatibleEnclaves, deleteApp, deployDirect, stopDeployment, getAppSchema, rpcCall, updateStoreListing, publishApp, identiconUrl, releaseResolver, getAppMcp, updateContainerMcp, detectContainerMcp, retryBuild, listAppOwners, addAppOwner, removeAppOwner, createVersion, stageProfile, promoteProfile, listRegistryTags, uploadAsset, listAppCommits, uploadVersionCwasm, getVersion, listCachedImages } from '~/lib/api';
 
 // Public store base — where a published app is browsable.
 const STORE_BASE_URL = 'https://store.privasys.org';
@@ -18,7 +18,7 @@ import { getApiBaseUrl } from '~/lib/api-base-url';
 import type { App, BuildJob, AppVersion, AppDeployment, Enclave, CachedImage } from '~/lib/types';
 import { DEPLOYMENT_STATUS_LABELS, DEPLOYMENT_STATUS_COLORS, CONTAINER_STATE_LABELS, CONTAINER_STATE_COLORS } from '~/lib/types';
 import { RtmrVerifier } from '~/components/rtmr-verifier';
-import { AttestationConnect, AttestationResultView, privasysReleaseResolver, useAttestation } from '@privasys/attestation-view';
+import { AttestationConnect, AttestationResultView, useAttestation } from '@privasys/attestation-view';
 
 function StatusBadge({ status, labels, colors }: { status: string; labels: Record<string, string>; colors: Record<string, string> }) {
     return (
@@ -421,7 +421,7 @@ function AttestationTab({ appId, token, deployments, versions }: { appId: string
                 <AttestationResultView
                     result={state.result}
                     quoteVerify={state.quoteVerify}
-                    resolveReleaseUrl={privasysReleaseResolver}
+                    resolveRelease={releaseResolver}
                     onRefresh={() => void actions.inspect()}
                     onReset={() => {
                         actions.reset();
@@ -1130,6 +1130,7 @@ function AppStoreTab({ app, token, onSave, deleting, onDelete }: { app: App; tok
                 store_keywords: keywords
             });
             onSave(updated);
+            setEditing(null);
             setSaved(true);
             setTimeout(() => setSaved(false), 3000);
         } catch (e) {
@@ -1143,35 +1144,217 @@ function AppStoreTab({ app, token, onSave, deleting, onDelete }: { app: App; tok
         setScreenshots(screenshots.filter((_, i) => i !== idx));
     }
 
+    // LinkedIn-style inline editing: one section open at a time. The store
+    // presentation IS the section; the pencil flips it into an editor.
+    const [editing, setEditing] = useState<null | 'identity' | 'about' | 'media' | 'links'>(null);
+    function resetFields() {
+        setTagline(app.store_tagline);
+        setDescription(app.store_description);
+        setCategory(app.store_category);
+        setIconURL(app.store_icon_url);
+        setScreenshots(app.store_screenshots || []);
+        setPrivacyURL(app.store_privacy_url);
+        setTosURL(app.store_tos_url);
+        setWebsiteURL(app.store_website_url);
+        setSupportEmail(app.store_support_email);
+        setKeywords(app.store_keywords);
+    }
+    function cancelEdit() {
+        resetFields();
+        setEditing(null);
+        setUploadError(null);
+    }
+    const hasLinks = Boolean(websiteURL || supportEmail || privacyURL || tosURL);
+
     const labelClass = 'text-xs font-medium text-black/60 dark:text-white/60 block mb-1.5';
     const inputClass = 'w-full px-3 py-2 text-sm rounded-lg border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/20 placeholder:text-black/25 dark:placeholder:text-white/25';
     const req = <span className="text-red-500">*</span>;
 
+    const editFooter = (
+        <div className="flex items-center gap-2 mt-4">
+            <button onClick={handleSave} disabled={saving} className="px-4 py-1.5 text-sm font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-80 disabled:opacity-40 transition-opacity">{saving ? 'Saving…' : 'Save'}</button>
+            <button onClick={cancelEdit} disabled={saving} className="px-4 py-1.5 text-sm rounded-lg border border-black/15 dark:border-white/15 hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-40 transition-colors">Cancel</button>
+            {saved && <span className="text-xs text-emerald-600 dark:text-emerald-400">Saved</span>}
+        </div>
+    );
+
     return (
-        <div className="space-y-6">
-            {/* Store preview — how this app appears on store.privasys.org */}
-            <section className="p-5 rounded-xl border border-black/10 dark:border-white/10 bg-black/[0.015] dark:bg-white/[0.015]">
-                <div className="flex items-baseline justify-between mb-3">
-                    <h2 className="text-sm font-semibold">Store preview</h2>
-                    <span className="text-[10px] uppercase tracking-wide text-black/35 dark:text-white/35">how it appears on the store</span>
-                </div>
-                <div className="flex gap-4 items-start">
-                    <img src={previewIcon} alt="" className="w-16 h-16 rounded-2xl object-cover shrink-0 border border-black/10 dark:border-white/10 bg-white dark:bg-white/5" />
-                    <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-base font-semibold truncate">{app.display_name || app.name}</span>
-                            <span className="px-1.5 py-0.5 text-[10px] font-medium rounded-full border border-black/10 dark:border-white/10">{teeLabel}</span>
-                            <span className="px-1.5 py-0.5 text-[10px] font-medium rounded-full border border-black/10 dark:border-white/10">{targetLabel}</span>
+        <div className="space-y-4">
+            {error && (<div className="p-3 rounded-lg bg-red-50 dark:bg-red-900/20 text-sm text-red-700 dark:text-red-300">{error}</div>)}
+            {uploadError && (<div className="p-3 rounded-lg bg-red-50 dark:bg-red-900/20 text-xs text-red-700 dark:text-red-300">{uploadError}</div>)}
+
+            {/* Identity — the store hero, edited in place */}
+            <StoreSection title="Listing" onEdit={editing === 'identity' ? undefined : () => setEditing('identity')}>
+                {editing === 'identity' ? (
+                    <div className="space-y-4">
+                        <div className="flex gap-6">
+                            <div className="shrink-0">
+                                <label
+                                    onDragOver={e => e.preventDefault()}
+                                    onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) handleIconFile(f); }}
+                                    className="w-24 h-24 rounded-2xl border-2 border-dashed border-black/15 dark:border-white/15 flex items-center justify-center overflow-hidden bg-black/[0.02] dark:bg-white/[0.02] cursor-pointer hover:border-black/30 dark:hover:border-white/30 transition-colors"
+                                    title={`Drag an image or click. ${ICON_DIMS}.`}
+                                >
+                                    <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleIconFile(f); }} />
+                                    {uploadingIcon ? (
+                                        <span className="text-[10px] text-black/40 dark:text-white/40">Uploading…</span>
+                                    ) : (
+                                        <img src={iconURL.trim() || identiconUrl(app.id)} alt="App icon" className="w-full h-full object-cover rounded-2xl" />
+                                    )}
+                                </label>
+                                <div className="mt-1 text-[10px] text-black/30 dark:text-white/30 text-center w-24">{iconURL.trim() ? ICON_DIMS : 'auto identicon'}</div>
+                                <input type="text" value={iconURL} onChange={e => setIconURL(e.target.value)} placeholder="or paste URL" className={`${inputClass} mt-1 !text-[11px] !py-1 w-24`} />
+                            </div>
+                            <div className="flex-1 space-y-3">
+                                <div>
+                                    <label className={labelClass}>Tagline</label>
+                                    <input type="text" value={tagline} onChange={e => setTagline(e.target.value)} placeholder="A short, catchy one-liner" maxLength={120} className={inputClass} />
+                                </div>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label className={labelClass}>Category {req}</label>
+                                        <select value={category} onChange={e => setCategory(e.target.value)} className={inputClass}>
+                                            <option value="">Select a category…</option>
+                                            {STORE_CATEGORIES.map(c => (<option key={c} value={c}>{c}</option>))}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className={labelClass}>Keywords</label>
+                                        <input type="text" value={keywords} onChange={e => setKeywords(e.target.value)} placeholder="privacy, ai, health…" className={inputClass} />
+                                    </div>
+                                </div>
+                            </div>
                         </div>
-                        <div className="text-xs text-black/50 dark:text-white/50 mt-0.5">
-                            {app.owner_name || 'You'}{category ? <> &middot; {category}</> : null}
-                        </div>
-                        <p className="text-sm text-black/70 dark:text-white/70 mt-1.5 line-clamp-2">
-                            {tagline || description || <span className="italic text-black/30 dark:text-white/30">Add a tagline and description below.</span>}
-                        </p>
+                        {editFooter}
                     </div>
-                </div>
-            </section>
+                ) : (
+                    <div className="flex gap-4 items-start">
+                        <img src={previewIcon} alt="" className="w-16 h-16 rounded-2xl object-cover shrink-0 border border-black/10 dark:border-white/10 bg-white dark:bg-white/5" />
+                        <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-base font-semibold truncate">{app.display_name || app.name}</span>
+                                <span className="px-1.5 py-0.5 text-[10px] font-medium rounded-full border border-black/10 dark:border-white/10">{teeLabel}</span>
+                                <span className="px-1.5 py-0.5 text-[10px] font-medium rounded-full border border-black/10 dark:border-white/10">{targetLabel}</span>
+                            </div>
+                            <div className="text-xs text-black/50 dark:text-white/50 mt-0.5">
+                                {app.owner_name || 'You'}{category ? <> &middot; {category}</> : <> &middot; <span className="text-amber-600 dark:text-amber-400">add a category</span></>}
+                            </div>
+                            <p className="text-sm text-black/70 dark:text-white/70 mt-1.5">
+                                {tagline || <span className="italic text-black/30 dark:text-white/30">Add a tagline</span>}
+                            </p>
+                        </div>
+                    </div>
+                )}
+            </StoreSection>
+
+            {/* About / description */}
+            {editing === 'about' ? (
+                <StoreSection title="About">
+                    <textarea
+                        value={description}
+                        onChange={e => setDescription(e.target.value)}
+                        placeholder="What your app does, the problems it solves, key features and privacy guarantees…"
+                        rows={6}
+                        maxLength={4000}
+                        className={`${inputClass} resize-y`}
+                    />
+                    <div className="mt-1 text-[10px] text-black/30 dark:text-white/30 text-right">{description.length}/4000</div>
+                    {editFooter}
+                </StoreSection>
+            ) : description.trim() ? (
+                <StoreSection title="About" onEdit={() => setEditing('about')}>
+                    <p className="text-sm text-black/70 dark:text-white/70 whitespace-pre-line">{description}</p>
+                </StoreSection>
+            ) : (
+                <EmptySection label="Add a description" hint="Required before publishing — what your app does and how it protects data." onAdd={() => setEditing('about')} />
+            )}
+
+            {/* Screenshots & media */}
+            {editing === 'media' ? (
+                <StoreSection title="Screenshots & images">
+                    {screenshots.length > 0 && (
+                        <div className="flex gap-3 overflow-x-auto pb-3 mb-3">
+                            {screenshots.map((url, i) => (
+                                <div key={i} className="group relative shrink-0 w-48 h-28 rounded-lg border border-black/10 dark:border-white/10 overflow-hidden bg-black/[0.02] dark:bg-white/[0.02]">
+                                    <img src={url} alt={`Screenshot ${i + 1}`} className="w-full h-full object-cover" />
+                                    <button onClick={() => removeScreenshot(i)} className="absolute top-1 right-1 w-5 h-5 flex items-center justify-center rounded-full bg-red-500 text-white text-xs opacity-0 group-hover:opacity-100 transition-opacity">&times;</button>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                    {screenshots.length < 8 && (
+                        <label
+                            onDragOver={e => e.preventDefault()}
+                            onDrop={e => { e.preventDefault(); if (e.dataTransfer.files?.length) handleShotFiles(e.dataTransfer.files); }}
+                            className="flex flex-col items-center justify-center gap-1 py-6 rounded-xl border-2 border-dashed border-black/15 dark:border-white/15 cursor-pointer hover:border-black/30 dark:hover:border-white/30 transition-colors text-center"
+                        >
+                            <input type="file" accept="image/png,image/jpeg,image/webp" multiple className="hidden" onChange={e => { if (e.target.files?.length) handleShotFiles(e.target.files); }} />
+                            <span className="text-xs text-black/50 dark:text-white/50">{uploadingShot ? 'Uploading…' : 'Drag images here or click to upload'}</span>
+                            <span className="text-[10px] text-black/30 dark:text-white/30">PNG, JPEG or WebP · {SHOT_DIMS}</span>
+                        </label>
+                    )}
+                    {screenshots.length < 8 && (
+                        <div className="flex gap-2 mt-2">
+                            <input
+                                type="text"
+                                value={newScreenshot}
+                                onChange={e => setNewScreenshot(e.target.value)}
+                                onKeyDown={e => e.key === 'Enter' && addScreenshotUrl()}
+                                placeholder="or paste an image URL"
+                                className={`flex-1 ${inputClass} !text-xs !py-1.5`}
+                            />
+                            <button onClick={addScreenshotUrl} disabled={!newScreenshot.trim()} className="px-3 text-xs font-medium rounded-lg border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-30 transition-colors">Add</button>
+                        </div>
+                    )}
+                    {editFooter}
+                </StoreSection>
+            ) : screenshots.length > 0 ? (
+                <StoreSection title="Screenshots & images" onEdit={() => setEditing('media')}>
+                    <div className="flex gap-3 overflow-x-auto pb-1">
+                        {screenshots.map((url, i) => (
+                            <img key={i} src={url} alt={`Screenshot ${i + 1}`} className="shrink-0 w-48 h-28 rounded-lg border border-black/10 dark:border-white/10 object-cover bg-black/[0.02] dark:bg-white/[0.02]" />
+                        ))}
+                    </div>
+                </StoreSection>
+            ) : (
+                <EmptySection label="Add screenshots and images" hint={`Show your app in action. ${SHOT_DIMS}, up to 8.`} onAdd={() => setEditing('media')} />
+            )}
+
+            {/* Links & support */}
+            {editing === 'links' ? (
+                <StoreSection title="Links & support">
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className={labelClass}>Website</label>
+                            <input type="url" value={websiteURL} onChange={e => setWebsiteURL(e.target.value)} placeholder="https://yourapp.com" className={inputClass} />
+                        </div>
+                        <div>
+                            <label className={labelClass}>Support email</label>
+                            <input type="email" value={supportEmail} onChange={e => setSupportEmail(e.target.value)} placeholder="support@yourapp.com" className={inputClass} />
+                        </div>
+                        <div>
+                            <label className={labelClass}>Privacy policy</label>
+                            <input type="url" value={privacyURL} onChange={e => setPrivacyURL(e.target.value)} placeholder="https://yourapp.com/privacy" className={inputClass} />
+                        </div>
+                        <div>
+                            <label className={labelClass}>Terms of service</label>
+                            <input type="url" value={tosURL} onChange={e => setTosURL(e.target.value)} placeholder="https://yourapp.com/terms" className={inputClass} />
+                        </div>
+                    </div>
+                    {editFooter}
+                </StoreSection>
+            ) : hasLinks ? (
+                <StoreSection title="Links & support" onEdit={() => setEditing('links')}>
+                    <div className="flex flex-wrap gap-x-6 gap-y-1.5 text-sm">
+                        {websiteURL && <a href={websiteURL} target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline">Website</a>}
+                        {supportEmail && <a href={`mailto:${supportEmail}`} className="text-blue-600 dark:text-blue-400 hover:underline">Support</a>}
+                        {privacyURL && <a href={privacyURL} target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline">Privacy policy</a>}
+                        {tosURL && <a href={tosURL} target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline">Terms of service</a>}
+                    </div>
+                </StoreSection>
+            ) : (
+                <EmptySection label="Add links and support" hint="Website, support email, privacy policy and terms." onAdd={() => setEditing('links')} />
+            )}
 
             {/* Publish control */}
             <section className="p-4 rounded-xl border border-black/10 dark:border-white/10 flex items-center gap-4">
@@ -1204,155 +1387,38 @@ function AppStoreTab({ app, token, onSave, deleting, onDelete }: { app: App; tok
                 </button>
             </section>
 
-            {error && (<div className="p-3 rounded-lg bg-red-50 dark:bg-red-900/20 text-sm text-red-700 dark:text-red-300">{error}</div>)}
-            {uploadError && (<div className="p-3 rounded-lg bg-red-50 dark:bg-red-900/20 text-xs text-red-700 dark:text-red-300">{uploadError}</div>)}
-
-            {/* Listing: icon + the required basics */}
-            <section className="p-5 rounded-xl border border-black/10 dark:border-white/10 space-y-4">
-                <h2 className="text-sm font-semibold">Listing</h2>
-                <div className="flex gap-6">
-                    {/* Icon dropzone */}
-                    <div className="shrink-0">
-                        <label className={labelClass}>Icon</label>
-                        <label
-                            onDragOver={e => e.preventDefault()}
-                            onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) handleIconFile(f); }}
-                            className="w-24 h-24 rounded-2xl border-2 border-dashed border-black/15 dark:border-white/15 flex items-center justify-center overflow-hidden bg-black/[0.02] dark:bg-white/[0.02] cursor-pointer hover:border-black/30 dark:hover:border-white/30 transition-colors"
-                            title={`Drag an image or click. ${ICON_DIMS}.`}
-                        >
-                            <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleIconFile(f); }} />
-                            {uploadingIcon ? (
-                                <span className="text-[10px] text-black/40 dark:text-white/40">Uploading…</span>
-                            ) : (
-                                // Always show an icon: the custom one if set, else the
-                                // deterministic identicon the store will use by default.
-                                <img src={iconURL.trim() || identiconUrl(app.id)} alt="App icon" className="w-full h-full object-cover rounded-2xl" />
-                            )}
-                        </label>
-                        <div className="mt-1 text-[10px] text-black/30 dark:text-white/30 text-center">{iconURL.trim() ? ICON_DIMS : 'auto identicon · drop to replace'}</div>
-                        <input type="text" value={iconURL} onChange={e => setIconURL(e.target.value)} placeholder="or paste URL" className={`${inputClass} mt-1 !text-[11px] !py-1 w-24`} />
-                    </div>
-                    <div className="flex-1 space-y-3">
-                        <div>
-                            <label className={labelClass}>Tagline</label>
-                            <input type="text" value={tagline} onChange={e => setTagline(e.target.value)} placeholder="A short, catchy one-liner" maxLength={120} className={inputClass} />
-                        </div>
-                        <div className="grid grid-cols-2 gap-3">
-                            <div>
-                                <label className={labelClass}>Category {req}</label>
-                                <select value={category} onChange={e => setCategory(e.target.value)} className={inputClass}>
-                                    <option value="">Select a category…</option>
-                                    {STORE_CATEGORIES.map(c => (<option key={c} value={c}>{c}</option>))}
-                                </select>
-                            </div>
-                            <div>
-                                <label className={labelClass}>Keywords</label>
-                                <input type="text" value={keywords} onChange={e => setKeywords(e.target.value)} placeholder="privacy, ai, health…" className={inputClass} />
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div>
-                    <label className={labelClass}>Description {req}</label>
-                    <textarea
-                        value={description}
-                        onChange={e => setDescription(e.target.value)}
-                        placeholder="What your app does, the problems it solves, key features and privacy guarantees…"
-                        rows={5}
-                        maxLength={4000}
-                        className={`${inputClass} resize-y`}
-                    />
-                    <div className="mt-1 text-[10px] text-black/30 dark:text-white/30 text-right">{description.length}/4000</div>
-                </div>
-            </section>
-
-            {/* Screenshots (drag-and-drop) */}
-            <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">
-                <div className="flex items-baseline justify-between mb-3">
-                    <h2 className="text-sm font-semibold">Screenshots</h2>
-                    <span className="text-[10px] text-black/40 dark:text-white/40">{SHOT_DIMS} · up to 8</span>
-                </div>
-                {screenshots.length > 0 && (
-                    <div className="flex gap-3 overflow-x-auto pb-3 mb-3">
-                        {screenshots.map((url, i) => (
-                            <div key={i} className="group relative shrink-0 w-48 h-28 rounded-lg border border-black/10 dark:border-white/10 overflow-hidden bg-black/[0.02] dark:bg-white/[0.02]">
-                                <img src={url} alt={`Screenshot ${i + 1}`} className="w-full h-full object-cover" />
-                                <button onClick={() => removeScreenshot(i)} className="absolute top-1 right-1 w-5 h-5 flex items-center justify-center rounded-full bg-red-500 text-white text-xs opacity-0 group-hover:opacity-100 transition-opacity">&times;</button>
-                            </div>
-                        ))}
-                    </div>
-                )}
-                {screenshots.length < 8 && (
-                    <label
-                        onDragOver={e => e.preventDefault()}
-                        onDrop={e => { e.preventDefault(); if (e.dataTransfer.files?.length) handleShotFiles(e.dataTransfer.files); }}
-                        className="flex flex-col items-center justify-center gap-1 py-6 rounded-xl border-2 border-dashed border-black/15 dark:border-white/15 cursor-pointer hover:border-black/30 dark:hover:border-white/30 transition-colors text-center"
-                    >
-                        <input type="file" accept="image/png,image/jpeg,image/webp" multiple className="hidden" onChange={e => { if (e.target.files?.length) handleShotFiles(e.target.files); }} />
-                        <span className="text-xs text-black/50 dark:text-white/50">{uploadingShot ? 'Uploading…' : 'Drag images here or click to upload'}</span>
-                        <span className="text-[10px] text-black/30 dark:text-white/30">PNG, JPEG or WebP · {SHOT_DIMS}</span>
-                    </label>
-                )}
-                {screenshots.length < 8 && (
-                    <div className="flex gap-2 mt-2">
-                        <input
-                            type="text"
-                            value={newScreenshot}
-                            onChange={e => setNewScreenshot(e.target.value)}
-                            onKeyDown={e => e.key === 'Enter' && addScreenshotUrl()}
-                            placeholder="or paste an image URL"
-                            className={`flex-1 ${inputClass} !text-xs !py-1.5`}
-                        />
-                        <button onClick={addScreenshotUrl} disabled={!newScreenshot.trim()} className="px-3 text-xs font-medium rounded-lg border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-30 transition-colors">Add</button>
-                    </div>
-                )}
-            </section>
-
-            {/* Links & support */}
-            <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">
-                <h2 className="text-sm font-semibold mb-4">Links &amp; support</h2>
-                <div className="grid grid-cols-2 gap-4">
-                    <div>
-                        <label className={labelClass}>Website</label>
-                        <input type="url" value={websiteURL} onChange={e => setWebsiteURL(e.target.value)} placeholder="https://yourapp.com" className={inputClass} />
-                    </div>
-                    <div>
-                        <label className={labelClass}>Support email</label>
-                        <input type="email" value={supportEmail} onChange={e => setSupportEmail(e.target.value)} placeholder="support@yourapp.com" className={inputClass} />
-                    </div>
-                    <div>
-                        <label className={labelClass}>Privacy policy</label>
-                        <input type="url" value={privacyURL} onChange={e => setPrivacyURL(e.target.value)} placeholder="https://yourapp.com/privacy" className={inputClass} />
-                    </div>
-                    <div>
-                        <label className={labelClass}>Terms of service</label>
-                        <input type="url" value={tosURL} onChange={e => setTosURL(e.target.value)} placeholder="https://yourapp.com/terms" className={inputClass} />
-                    </div>
-                </div>
-            </section>
-
-            {/* Save */}
-            <div className="flex items-center gap-3">
-                <button
-                    onClick={handleSave}
-                    disabled={saving}
-                    className="px-5 py-2 text-sm font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-80 disabled:opacity-40 transition-opacity"
-                >
-                    {saving ? 'Saving…' : 'Save Listing'}
-                </button>
-                {saved && (
-                    <span className="text-sm text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                        </svg>
-                        Saved
-                    </span>
-                )}
-            </div>
-
             {/* Danger zone (moved here from the removed Overview tab) */}
             <DangerZone app={app} deleting={deleting} onDelete={onDelete} />
         </div>
+    );
+}
+
+// A filled App Store section: title, content, and an optional edit pencil in the
+// top-right corner (LinkedIn-style inline editing).
+function StoreSection({ title, onEdit, children }: { title: string; onEdit?: () => void; children: React.ReactNode }) {
+    return (
+        <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">
+            <div className="flex items-start justify-between gap-3 mb-3">
+                <h2 className="text-sm font-semibold">{title}</h2>
+                {onEdit && (
+                    <button onClick={onEdit} aria-label={`Edit ${title}`} title={`Edit ${title}`} className="shrink-0 -mt-1 -mr-1 w-8 h-8 flex items-center justify-center rounded-full text-black/50 dark:text-white/50 hover:bg-black/5 dark:hover:bg-white/5">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z" /></svg>
+                    </button>
+                )}
+            </div>
+            {children}
+        </section>
+    );
+}
+
+// An unfilled App Store section: dashed border + an "Add …" call to action,
+// shown only when the section has no content yet.
+function EmptySection({ label, hint, onAdd }: { label: string; hint: string; onAdd: () => void }) {
+    return (
+        <section className="p-5 rounded-xl border border-dashed border-black/20 dark:border-white/20">
+            <p className="text-sm text-black/45 dark:text-white/45 mb-3">{hint}</p>
+            <button onClick={onAdd} className="px-4 py-1.5 text-sm font-medium rounded-full border border-blue-600/60 text-blue-600 dark:text-blue-400 dark:border-blue-400/50 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors">{label}</button>
+        </section>
     );
 }
 

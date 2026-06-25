@@ -1,7 +1,11 @@
 'use client';
 
-import { AttestationConnect, AttestationResultView, privasysReleaseResolver, useAttestation } from '@privasys/attestation-view';
+import { AttestationConnect, AttestationResultView, makePrivasysReleaseResolver, useAttestation } from '@privasys/attestation-view';
 import type { Instance } from '~/lib/types';
+
+const RELEASE_RESOLVER = makePrivasysReleaseResolver(
+    process.env.NEXT_PUBLIC_API_BASE_URL ?? 'https://api.developer.privasys.org'
+);
 
 // Attestation drawer. Triggers a fresh attestation handshake
 // against `instance.endpoint` and renders the unified result view from
@@ -45,7 +49,7 @@ export function AttestationDrawer({
                     <AttestationResultView
                         result={state.result}
                         quoteVerify={state.quoteVerify}
-                        resolveReleaseUrl={privasysReleaseResolver}
+                        resolveRelease={RELEASE_RESOLVER}
                         onRefresh={() => void actions.inspect()}
                         onReset={() => {
                             actions.reset();

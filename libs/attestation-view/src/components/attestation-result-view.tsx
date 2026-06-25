@@ -6,7 +6,8 @@ import type {
     AttestationExtension,
     AttestationResult,
     QuoteVerifyResult,
-    ReleaseField
+    ReleaseField,
+    ReleaseMatch
 } from '../types';
 import { PRIVASYS_OID, TEXT_OIDS } from '../types';
 import { hexToPrintableText } from '../internal/use-copy';
@@ -66,7 +67,7 @@ export function AttestationResultView({
     onRegenerateChallenge,
     loading,
     verifyQuoteUrl,
-    resolveReleaseUrl
+    resolveRelease
 }: {
     result: AttestationResult;
     quoteVerify?: QuoteVerifyResult | null;
@@ -103,12 +104,13 @@ export function AttestationResultView({
      *  targets this URL. When omitted the snippet renders a clear
      *  placeholder so users know what to substitute. */
     verifyQuoteUrl?: string;
-    /** Optional resolver that maps a measurement field + value to a URL where
-     *  its published/predicted value can be checked — typically the matching
-     *  Enclave OS GitHub release. When it returns a URL, the quote section
-     *  renders a "release ↗" link next to that measurement. Kept as a callback
-     *  so this lib stays free of hard-coded org URLs. */
-    resolveReleaseUrl?: (field: ReleaseField, value: string) => string | undefined;
+    /** Optional async resolver that maps a measurement field + value to the
+     *  Enclave OS release that published it. On a match the quote section shows
+     *  a green "Verified - <tag>" link to the exact release; on a non-match for a
+     *  resolvable field it shows a muted "no matching release" pointer. Kept as a
+     *  callback so this lib stays free of hard-coded org URLs / API hosts. */
+
+    resolveRelease?: (field: ReleaseField, value: string) => Promise<ReleaseMatch | null>;
 }) {
     const reportDataCheck = useReportDataCheck(result);
     const showChallengeEditor = challenge != null && (onChallengeChange || onRegenerateChallenge);
@@ -188,7 +190,7 @@ export function AttestationResultView({
                     quoteVerifyError={quoteVerifyError}
                     reportDataCheck={reportDataCheck}
                     challengeMode={result.challenge_mode}
-                    resolveReleaseUrl={resolveReleaseUrl}
+                    resolveRelease={resolveRelease}
                 />
             )}
 
@@ -415,7 +417,7 @@ function QuoteSection({
     quoteVerifyError,
     reportDataCheck,
     challengeMode,
-    resolveReleaseUrl
+    resolveRelease
 }: {
     quote: NonNullable<AttestationResult['quote']>;
     quoteVerify?: QuoteVerifyResult | null;
@@ -423,23 +425,22 @@ function QuoteSection({
     quoteVerifyError?: string | null;
     reportDataCheck: ReportDataCheck;
     challengeMode: boolean;
-    resolveReleaseUrl?: (field: ReleaseField, value: string) => string | undefined;
+
+    resolveRelease?: (field: ReleaseField, value: string) => Promise<ReleaseMatch | null>;
 }) {
     const fields = useMemo(() => {
-        const rel = (field: ReleaseField, value: string) =>
-            resolveReleaseUrl ? resolveReleaseUrl(field, value) : undefined;
-        const rows: Array<{ label: string; value: string; description?: string; releaseUrl?: string }> = [
+        const rows: Array<{ label: string; value: string; description?: string; field?: ReleaseField }> = [
             { label: 'Quote Type', value: quote.type, description: 'Attestation quote format embedded in the certificate.' }
         ];
         if (quote.format) rows.push({ label: 'Format', value: quote.format });
         if (quote.version != null) rows.push({ label: 'Version', value: String(quote.version) });
-        if (quote.mr_enclave) rows.push({ label: 'MRENCLAVE', value: quote.mr_enclave, description: 'Hash of the enclave code and initial data.', releaseUrl: rel('mr_enclave', quote.mr_enclave) });
-        if (quote.mr_signer) rows.push({ label: 'MRSIGNER', value: quote.mr_signer, description: 'Hash of the enclave signer\'s public key.', releaseUrl: rel('mr_signer', quote.mr_signer) });
-        if (quote.mr_td) rows.push({ label: 'MR_TD', value: quote.mr_td, description: 'Measurement of the Trust Domain (TDX VM image and configuration).', releaseUrl: rel('mr_td', quote.mr_td) });
-        if (quote.rtmr0) rows.push({ label: 'RTMR[0]', value: quote.rtmr0, description: 'TD firmware (TDVF) and its configuration.', releaseUrl: rel('rtmr0', quote.rtmr0) });
-        if (quote.rtmr1) rows.push({ label: 'RTMR[1]', value: quote.rtmr1, description: 'EFI boot path: shim and GRUB binaries.', releaseUrl: rel('rtmr1', quote.rtmr1) });
-        if (quote.rtmr2) rows.push({ label: 'RTMR[2]', value: quote.rtmr2, description: 'OS boot: kernel, initrd and kernel command line (including dm-verity root hash).', releaseUrl: rel('rtmr2', quote.rtmr2) });
-        if (quote.rtmr3) rows.push({ label: 'RTMR[3]', value: quote.rtmr3, description: 'Application-defined measurements.', releaseUrl: rel('rtmr3', quote.rtmr3) });
+        if (quote.mr_enclave) rows.push({ label: 'MRENCLAVE', value: quote.mr_enclave, description: 'Hash of the enclave code and initial data.', field: 'mr_enclave' });
+        if (quote.mr_signer) rows.push({ label: 'MRSIGNER', value: quote.mr_signer, description: 'Hash of the enclave signer\'s public key.', field: 'mr_signer' });
+        if (quote.mr_td) rows.push({ label: 'MR_TD', value: quote.mr_td, description: 'Measurement of the Trust Domain (TDX VM image and configuration).', field: 'mr_td' });
+        if (quote.rtmr0) rows.push({ label: 'RTMR[0]', value: quote.rtmr0, description: 'TD firmware (TDVF) and its configuration.', field: 'rtmr0' });
+        if (quote.rtmr1) rows.push({ label: 'RTMR[1]', value: quote.rtmr1, description: 'EFI boot path: shim and GRUB binaries.', field: 'rtmr1' });
+        if (quote.rtmr2) rows.push({ label: 'RTMR[2]', value: quote.rtmr2, description: 'OS boot: kernel, initrd and kernel command line (including dm-verity root hash).', field: 'rtmr2' });
+        if (quote.rtmr3) rows.push({ label: 'RTMR[3]', value: quote.rtmr3, description: 'Application-defined measurements.', field: 'rtmr3' });
         if (quote.report_data) {
             rows.push({
                 label: 'Report Data',
@@ -451,7 +452,7 @@ function QuoteSection({
         }
         rows.push({ label: 'OID', value: quote.oid, description: 'Object Identifier of the x.509 extension containing the quote.' });
         return rows;
-    }, [quote, challengeMode, resolveReleaseUrl]);
+    }, [quote, challengeMode]);
 
     return (
         <Section
@@ -494,7 +495,7 @@ function QuoteSection({
                                             : /^RTMR\[\d\]$/.test(f.label) && quoteVerify?.success
                                                 ? <Badge tone='ok'>✓</Badge>
                                                 : null}
-                                {f.releaseUrl && <ReleaseLink href={f.releaseUrl} />}
+                                {f.field && resolveRelease && <ReleaseBadge field={f.field} value={f.value} resolve={resolveRelease} />}
                             </>
                         }
                     >
@@ -645,18 +646,56 @@ function Badge({
     );
 }
 
-function ReleaseLink({ href }: { href: string }) {
-    return (
-        <a
-            href={href}
-            target='_blank'
-            rel='noreferrer'
-            title='Compare against the published Enclave OS release measurements'
-            className='inline-flex items-center gap-1 rounded-full bg-black/5 px-2 py-0.5 text-[10px] font-medium text-black/60 hover:text-black/90 dark:bg-white/10 dark:text-white/60 dark:hover:text-white/90'
-        >
-            release ↗
-        </a>
-    );
+// ReleaseBadge resolves a measurement to its published Enclave OS release and
+// renders a green "Verified - <tag>" link to that exact release ONLY when the
+// live value matches a published one. For a resolvable field that does not match
+// (e.g. a dev enclave built outside CI), it shows a muted "no matching release"
+// pointer to the releases index so the discrepancy is visible.
+function ReleaseBadge({
+    field,
+    value,
+    resolve
+}: {
+    field: ReleaseField;
+    value: string;
+
+    resolve: (field: ReleaseField, value: string) => Promise<ReleaseMatch | null>;
+}) {
+    const [match, setMatch] = useState<ReleaseMatch | null>(null);
+    useEffect(() => {
+        let cancelled = false;
+        resolve(field, value).then((m) => { if (!cancelled) setMatch(m); }).catch(() => {});
+        return () => { cancelled = true; };
+    }, [field, value, resolve]);
+
+    if (!match) return null;
+    if (match.matched && match.url) {
+        return (
+            <a
+                href={match.url}
+                target='_blank'
+                rel='noreferrer'
+                title='This measurement matches a value published in this Enclave OS release'
+                className='inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400'
+            >
+                {`✓ Verified${match.tag ? ` - ${match.tag}` : ''} ↗`}
+            </a>
+        );
+    }
+    if (match.releasesUrl) {
+        return (
+            <a
+                href={match.releasesUrl}
+                target='_blank'
+                rel='noreferrer'
+                title='No published release matches this measurement (e.g. a dev build outside CI)'
+                className='inline-flex items-center gap-1 rounded-full bg-black/5 px-2 py-0.5 text-[10px] font-medium text-black/45 hover:text-black/70 dark:bg-white/10 dark:text-white/45 dark:hover:text-white/70'
+            >
+                no matching release ↗
+            </a>
+        );
+    }
+    return null;
 }
 
 function DebugLine({ label, value }: { label: string; value: string }) {

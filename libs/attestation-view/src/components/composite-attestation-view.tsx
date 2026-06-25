@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AttestationResultView } from './attestation-result-view';
 import { useAttestation } from '../use-attestation';
-import type { AttestationExpectations, ReleaseField } from '../types';
+import type { AttestationExpectations, ReleaseField, ReleaseMatch } from '../types';
 
 // One target the composite view should attest. Mirrors the inputs to
 // useAttestation, plus a human label and an optional kind hint used for
@@ -43,10 +43,10 @@ export interface CompositeAttestationViewProps {
      *  every row's quote AND digest checks pass; 'failed' otherwise. */
 
     onAggregateStatus?: (_status: AggregateAttestationStatus) => void;
-    /** Forwarded to each row's AttestationResultView so MRENCLAVE / MR_TD /
-     *  RTMR rows render a link to the published release measurement. */
+    /** Forwarded to each row's AttestationResultView so MRENCLAVE / RTMR rows
+     *  resolve to (and verify against) the published Enclave OS release. */
 
-    resolveReleaseUrl?: (_field: ReleaseField, _value: string) => string | undefined;
+    resolveRelease?: (_field: ReleaseField, _value: string) => Promise<ReleaseMatch | null>;
 }
 
 interface RowSummary {
@@ -56,7 +56,7 @@ interface RowSummary {
     error?: string;
 }
 
-export function CompositeAttestationView({ targets, autoInspect = true, attestToken, verifyQuoteAuth, onAggregateStatus, resolveReleaseUrl }: CompositeAttestationViewProps) {
+export function CompositeAttestationView({ targets, autoInspect = true, attestToken, verifyQuoteAuth, onAggregateStatus, resolveRelease }: CompositeAttestationViewProps) {
     const [rows, setRows] = useState<Record<string, RowSummary>>({});
 
     const onRowSummary = useCallback((id: string, summary: RowSummary) => {
@@ -104,7 +104,7 @@ export function CompositeAttestationView({ targets, autoInspect = true, attestTo
                     autoInspect={autoInspect}
                     attestToken={attestToken}
                     verifyQuoteAuth={verifyQuoteAuth}
-                    resolveReleaseUrl={resolveReleaseUrl}
+                    resolveRelease={resolveRelease}
                     onSummary={s => onRowSummary(t.id, s)}
                 />
             ))}
@@ -148,7 +148,7 @@ function AttestationRow({
     autoInspect,
     attestToken,
     verifyQuoteAuth,
-    resolveReleaseUrl,
+    resolveRelease,
     onSummary
 }: {
     target: AttestationTargetConfig;
@@ -156,7 +156,7 @@ function AttestationRow({
     attestToken?: string | (() => Promise<string>);
     verifyQuoteAuth?: () => Promise<string>;
 
-    resolveReleaseUrl?: (_field: ReleaseField, _value: string) => string | undefined;
+    resolveRelease?: (_field: ReleaseField, _value: string) => Promise<ReleaseMatch | null>;
 
     onSummary: (_summary: RowSummary) => void;
 }) {
@@ -242,7 +242,7 @@ function AttestationRow({
                                 void actions.inspect();
                             }}
                             verifyQuoteUrl={target.verifyQuoteUrl}
-                            resolveReleaseUrl={resolveReleaseUrl}
+                            resolveRelease={resolveRelease}
                         />
                     )}
                 </div>
