@@ -438,6 +438,32 @@ export async function listRegistryTags(token: string, appId: string): Promise<st
     return res.tags ?? [];
 }
 
+// ManifestStore is the optional "store" block of a privasys.json / manifest,
+// used to pre-fill the create-flow Listing step.
+export interface ManifestStore {
+    tagline?: string;
+    description?: string;
+    category?: string;
+    keywords?: string;
+    icon_url?: string;
+    screenshots?: string[];
+    website_url?: string;
+    support_email?: string;
+    privacy_url?: string;
+    tos_url?: string;
+}
+
+// previewManifest fetches the prospective source's privasys.json / org.privasys.manifest
+// (before the app exists) and returns its App Store store block + tool count, so the
+// create wizard can pre-fill the listing. Best-effort: empty when no manifest.
+export async function previewManifest(token: string, body: { source_type: string; commit_url?: string; image?: string }): Promise<{ store: ManifestStore | null; toolCount: number }> {
+    const res = await request<{ store: ManifestStore | null; tool_count: number }>('/api/v1/manifest-preview', token, {
+        method: 'POST',
+        body: JSON.stringify(body)
+    });
+    return { store: res.store, toolCount: res.tool_count ?? 0 };
+}
+
 // AppCommit is a recent github commit offered as an upgrade target.
 export interface AppCommit {
     sha: string;
