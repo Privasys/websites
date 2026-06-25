@@ -217,6 +217,18 @@ test.describe('Owners Team + @config-api Freeze Gate', () => {
         expect(sgx, 'no active SGX enclave found').toBeTruthy();
         console.log(`Deploying to: ${sgx!.name} (${sgx!.id})`);
 
+        // The deploy gate requires a minimal App Store listing (Description +
+        // Category) before an app can be deployed.
+        const listingResp = await page.request.put(`${API}/api/v1/apps/${appId}/store`, {
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+            data: {
+                store_tagline: '', store_description: 'E2E configure-then-freeze app.', store_category: 'Developer Tools',
+                store_icon_url: '', store_screenshots: [], store_privacy_url: '', store_tos_url: '',
+                store_website_url: '', store_support_email: '', store_keywords: 'e2e'
+            },
+        });
+        expect(listingResp.ok(), 'set store listing').toBeTruthy();
+
         // Server-side deploy: mgmt-service SA loads the wasm into the
         // enclave (no portal sealed-relay involved).
         const deploy = await page.request.post(

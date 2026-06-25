@@ -25,7 +25,7 @@ const WASM_COMMIT_URL =
 const WASM_APP_NAME = 'e2e-wasm-verify';
 
 const CONTAINER_COMMIT_URL =
-    'https://github.com/Privasys/container-app-example/commit/a84ce17d5b25af3431333feb17a2c04e3e4b665f';
+    'https://github.com/Privasys/container-app-example/commit/ad18cb1e5f4eaff65f0fd68f83fc4cfcd5cd379d';
 const CONTAINER_APP_NAME = 'e2e-container-verify';
 const CONTAINER_PORT = 8080;
 
@@ -135,6 +135,20 @@ test.describe('Fast Verification Suite', () => {
         expect(ctrBody.container_mcp).toBeTruthy();
         containerAppId = ctrBody.id;
         console.log(`Created container app: ${CONTAINER_APP_NAME} (${containerAppId})`);
+
+        // The deploy gate requires a minimal App Store listing (Description +
+        // Category) before an app can be deployed. Set it for both apps.
+        for (const id of [wasmAppId, containerAppId]) {
+            const r = await page.request.put(`${API}/api/v1/apps/${id}/store`, {
+                headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+                data: {
+                    store_tagline: '', store_description: 'E2E fast-verify app.', store_category: 'Developer Tools',
+                    store_icon_url: '', store_screenshots: [], store_privacy_url: '', store_tos_url: '',
+                    store_website_url: '', store_support_email: '', store_keywords: 'e2e'
+                },
+            });
+            expect(r.ok(), 'set store listing').toBeTruthy();
+        }
     });
 
     // ── Phase 2: Wait for both builds (parallel on GH Actions) ─────
