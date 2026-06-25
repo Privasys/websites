@@ -29,10 +29,11 @@ import { setupAuth, getToken as getE2eToken } from './e2e-auth';
 const screenshot = (name: string) => path.join(__dirname, 'test-results', `${name}.png`);
 const API = process.env.NEXT_PUBLIC_API_URL || 'https://api-test.developer.privasys.org';
 
-// Same wasm app as fast-verify — has @config-api configure +
-// protected-call exports.
+// The configure-then-freeze variant — exports @config-api configure +
+// protected-call (the simple wasm-app-example dropped these after the repo
+// split, so this test uses wasm-app-example-with-config).
 const WASM_COMMIT_URL =
-    'https://github.com/Privasys/wasm-app-example/commit/a80164ac87d517e672d161d881dfb880d122c754';
+    'https://github.com/Privasys/wasm-app-example-with-config/commit/da08e12e231a03ddf1c24af3b02b8cd67e20c567';
 const APP_NAME = 'e2e-team-configure';
 
 let token: string;

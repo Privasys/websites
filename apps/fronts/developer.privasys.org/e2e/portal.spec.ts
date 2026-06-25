@@ -4,7 +4,7 @@ import { setupAuth, getToken } from './e2e-auth';
 
 const screenshot = (name: string) => path.join(__dirname, 'test-results', `${name}.png`);
 
-const COMMIT_URL = 'https://github.com/Privasys/wasm-app-example/commit/a6acb6da7a1e01b0a01dbb1bd6fcbd2054b6d345';
+const COMMIT_URL = 'https://github.com/Privasys/wasm-app-example/commit/2f082dfbe354c074c6784d185094bbbadd043ad6';
 
 test.describe('Developer Portal', () => {
     test.describe.configure({ mode: 'serial' });
