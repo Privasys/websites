@@ -6,6 +6,7 @@
 
 export * from './types';
 export * from './use-attestation';
+export { privasysReleaseResolver } from './release-resolver';
 export { AttestationConnect } from './components/attestation-connect';
 export { AttestationResultView } from './components/attestation-result-view';
 export { CompositeAttestationView } from './components/composite-attestation-view';

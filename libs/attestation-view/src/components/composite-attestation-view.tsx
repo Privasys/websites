@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AttestationResultView } from './attestation-result-view';
 import { useAttestation } from '../use-attestation';
-import type { AttestationExpectations } from '../types';
+import type { AttestationExpectations, ReleaseField } from '../types';
 
 // One target the composite view should attest. Mirrors the inputs to
 // useAttestation, plus a human label and an optional kind hint used for
@@ -41,8 +41,12 @@ export interface CompositeAttestationViewProps {
     /** Called whenever the aggregate verification status changes.
      *  'verifying' while any row is still in flight; 'verified' when
      *  every row's quote AND digest checks pass; 'failed' otherwise. */
-    // eslint-disable-next-line no-unused-vars
+
     onAggregateStatus?: (_status: AggregateAttestationStatus) => void;
+    /** Forwarded to each row's AttestationResultView so MRENCLAVE / MR_TD /
+     *  RTMR rows render a link to the published release measurement. */
+
+    resolveReleaseUrl?: (_field: ReleaseField, _value: string) => string | undefined;
 }
 
 interface RowSummary {
@@ -52,7 +56,7 @@ interface RowSummary {
     error?: string;
 }
 
-export function CompositeAttestationView({ targets, autoInspect = true, attestToken, verifyQuoteAuth, onAggregateStatus }: CompositeAttestationViewProps) {
+export function CompositeAttestationView({ targets, autoInspect = true, attestToken, verifyQuoteAuth, onAggregateStatus, resolveReleaseUrl }: CompositeAttestationViewProps) {
     const [rows, setRows] = useState<Record<string, RowSummary>>({});
 
     const onRowSummary = useCallback((id: string, summary: RowSummary) => {
@@ -100,6 +104,7 @@ export function CompositeAttestationView({ targets, autoInspect = true, attestTo
                     autoInspect={autoInspect}
                     attestToken={attestToken}
                     verifyQuoteAuth={verifyQuoteAuth}
+                    resolveReleaseUrl={resolveReleaseUrl}
                     onSummary={s => onRowSummary(t.id, s)}
                 />
             ))}
@@ -143,13 +148,16 @@ function AttestationRow({
     autoInspect,
     attestToken,
     verifyQuoteAuth,
+    resolveReleaseUrl,
     onSummary
 }: {
     target: AttestationTargetConfig;
     autoInspect: boolean;
     attestToken?: string | (() => Promise<string>);
     verifyQuoteAuth?: () => Promise<string>;
-    // eslint-disable-next-line no-unused-vars
+
+    resolveReleaseUrl?: (_field: ReleaseField, _value: string) => string | undefined;
+
     onSummary: (_summary: RowSummary) => void;
 }) {
     const [state, actions] = useAttestation({
@@ -199,44 +207,45 @@ function AttestationRow({
                 <RowStatus summary={summary} />
             </button>
             {open && (
-            <div id={panelId} className='p-4'>
-                {!target.attestUrl ? (
-                    <div className='text-sm text-black/60 dark:text-white/60'>
-                        No attest URL configured for this component.
-                    </div>
-                ) : state.error && !state.result ? (
-                    <div className='space-y-3 text-sm text-red-700 dark:text-red-300'>
-                        <div>{state.error}</div>
-                        <button
-                            type='button'
-                            onClick={() => void actions.inspect()}
-                            className='rounded-lg border border-black/10 px-3 py-1.5 text-xs font-medium hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/5'
-                        >
-                            Retry
-                        </button>
-                    </div>
-                ) : !state.result ? (
-                    <div className='text-sm text-black/60 dark:text-white/60'>Inspecting...</div>
-                ) : (
-                    <AttestationResultView
-                        result={state.result}
-                        quoteVerify={state.quoteVerify}
-                        quoteVerifying={state.verifying}
-                        quoteVerifyError={state.quoteVerifyError}
-                        expectations={target.expectations}
-                        loading={state.loading}
-                        challenge={state.challenge}
-                        onChallengeChange={actions.setChallenge}
-                        onRegenerateChallenge={actions.regenerateChallenge}
-                        onRefresh={() => void actions.inspect()}
-                        onReset={() => {
-                            actions.regenerateChallenge();
-                            void actions.inspect();
-                        }}
-                        verifyQuoteUrl={target.verifyQuoteUrl}
-                    />
-                )}
-            </div>
+                <div id={panelId} className='p-4'>
+                    {!target.attestUrl ? (
+                        <div className='text-sm text-black/60 dark:text-white/60'>
+                            No attest URL configured for this component.
+                        </div>
+                    ) : state.error && !state.result ? (
+                        <div className='space-y-3 text-sm text-red-700 dark:text-red-300'>
+                            <div>{state.error}</div>
+                            <button
+                                type='button'
+                                onClick={() => void actions.inspect()}
+                                className='rounded-lg border border-black/10 px-3 py-1.5 text-xs font-medium hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/5'
+                            >
+                                Retry
+                            </button>
+                        </div>
+                    ) : !state.result ? (
+                        <div className='text-sm text-black/60 dark:text-white/60'>Inspecting...</div>
+                    ) : (
+                        <AttestationResultView
+                            result={state.result}
+                            quoteVerify={state.quoteVerify}
+                            quoteVerifying={state.verifying}
+                            quoteVerifyError={state.quoteVerifyError}
+                            expectations={target.expectations}
+                            loading={state.loading}
+                            challenge={state.challenge}
+                            onChallengeChange={actions.setChallenge}
+                            onRegenerateChallenge={actions.regenerateChallenge}
+                            onRefresh={() => void actions.inspect()}
+                            onReset={() => {
+                                actions.regenerateChallenge();
+                                void actions.inspect();
+                            }}
+                            verifyQuoteUrl={target.verifyQuoteUrl}
+                            resolveReleaseUrl={resolveReleaseUrl}
+                        />
+                    )}
+                </div>
             )}
         </section>
     );
