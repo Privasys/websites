@@ -928,6 +928,23 @@ export function updateStoreListing(token: string, appId: string, listing: StoreL
     });
 }
 
+// publishApp flips whether the app appears on the public store (store.privasys.org).
+// Publishing requires a complete listing (Description + Category); the server
+// rejects otherwise with 409.
+export function publishApp(token: string, appId: string, published: boolean): Promise<App> {
+    return request<App>(`/api/v1/apps/${encodeURIComponent(appId)}/store/publish`, token, {
+        method: 'PUT',
+        body: JSON.stringify({ published })
+    });
+}
+
+// identiconUrl is the public, deterministic default avatar for an app or user
+// (served by management-service). Used as the icon fallback when no custom
+// store icon is set.
+export function identiconUrl(seed: string): string {
+    return `${API_URL}/api/v1/identicon/${encodeURIComponent(seed)}`;
+}
+
 export function updateContainerMcp(token: string, appId: string, mcp: Record<string, unknown>): Promise<App> {
     return request<App>(`/api/v1/apps/${encodeURIComponent(appId)}/mcp`, token, {
         method: 'PATCH',

@@ -4,7 +4,10 @@ import Link from 'next/link';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { useAuth } from '~/lib/privasys-auth';
 import { useEffect, useState, useCallback } from 'react';
-import { getApp, listBuilds, listVersions, listDeployments, listCompatibleEnclaves, deleteApp, deployDirect, stopDeployment, getAppSchema, rpcCall, updateStoreListing, getAppMcp, updateContainerMcp, detectContainerMcp, retryBuild, listAppOwners, addAppOwner, removeAppOwner, createVersion, stageProfile, promoteProfile, listRegistryTags, uploadAsset, listAppCommits, uploadVersionCwasm, getVersion, listCachedImages } from '~/lib/api';
+import { getApp, listBuilds, listVersions, listDeployments, listCompatibleEnclaves, deleteApp, deployDirect, stopDeployment, getAppSchema, rpcCall, updateStoreListing, publishApp, identiconUrl, getAppMcp, updateContainerMcp, detectContainerMcp, retryBuild, listAppOwners, addAppOwner, removeAppOwner, createVersion, stageProfile, promoteProfile, listRegistryTags, uploadAsset, listAppCommits, uploadVersionCwasm, getVersion, listCachedImages } from '~/lib/api';
+
+// Public store base — where a published app is browsable.
+const STORE_BASE_URL = 'https://store.privasys.org';
 import type { CreateVersionBody } from '~/lib/api';
 import { isApiStatus } from '~/lib/api';
 import { versionLabel, versionSemverStr, isStrictlyNewer } from '~/lib/version';
@@ -282,7 +285,7 @@ export default function AppDetailPage() {
                     />
                 )}
                 {tab === 'store' && session?.accessToken && (
-                    <AppStoreTab app={app} token={session.accessToken} deployments={activeDeployments} onSave={(updated) => setApp(updated)} deleting={deleting} onDelete={handleDelete} />
+                    <AppStoreTab app={app} token={session.accessToken} onSave={(updated) => setApp(updated)} deleting={deleting} onDelete={handleDelete} />
                 )}
                 {tab === 'attestation' && session?.accessToken && (
                     <AttestationTab appId={app.id} token={session.accessToken} deployments={activeDeployments} versions={versions} />
@@ -1010,7 +1013,7 @@ const STORE_CATEGORIES = [
 const ICON_DIMS = '512 x 512 px square';
 const SHOT_DIMS = '1280 x 800 px (16:10 landscape)';
 
-function AppStoreTab({ app, token, deployments, onSave, deleting, onDelete }: { app: App; token: string; deployments: AppDeployment[]; onSave: (updated: App) => void; deleting: boolean; onDelete: () => void }) {
+function AppStoreTab({ app, token, onSave, deleting, onDelete }: { app: App; token: string; onSave: (updated: App) => void; deleting: boolean; onDelete: () => void }) {
     const [saving, setSaving] = useState(false);
     const [saved, setSaved] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -1032,6 +1035,34 @@ function AppStoreTab({ app, token, deployments, onSave, deleting, onDelete }: { 
     const [uploadError, setUploadError] = useState<string | null>(null);
     const [newScreenshot, setNewScreenshot] = useState('');
 
+    // Publish-to-store state (D1). Published apps appear on store.privasys.org.
+    const [published, setPublished] = useState(app.published);
+    const [publishing, setPublishing] = useState(false);
+    const [publishError, setPublishError] = useState<string | null>(null);
+
+    // Every app has an icon: the custom store icon if set, else its deterministic
+    // identicon. previewIcon is what the store will actually show.
+    const previewIcon = iconURL.trim() || identiconUrl(app.id);
+    const storeUrl = `${STORE_BASE_URL}/apps/${encodeURIComponent(app.name)}`;
+    const teeLabel = app.app_type === 'container' ? 'TDX' : 'SGX';
+    const targetLabel = app.app_type === 'container' ? 'Container' : 'WASM';
+
+    async function handlePublish(next: boolean) {
+        setPublishing(true);
+        setPublishError(null);
+        try {
+            const updated = await publishApp(token, app.id, next);
+            setPublished(updated.published);
+            onSave(updated);
+        } catch (e) {
+            setPublishError(isApiStatus(e, 409)
+                ? 'Add a Description and Category (and save) before publishing.'
+                : (e instanceof Error ? e.message : 'Failed to update publish state'));
+        } finally {
+            setPublishing(false);
+        }
+    }
+
     function addScreenshotUrl() {
         const url = newScreenshot.trim();
         if (url && screenshots.length < 8 && !screenshots.includes(url)) {
@@ -1040,8 +1071,6 @@ function AppStoreTab({ app, token, deployments, onSave, deleting, onDelete }: { 
         }
     }
 
-    const isDeployed = deployments.length > 0 || app.status === 'deployed';
-    const liveHostname = deployments[0]?.hostname || app.hostname;
     const descMissing = !description.trim();
     const catMissing = !category.trim();
 
@@ -1120,30 +1149,60 @@ function AppStoreTab({ app, token, deployments, onSave, deleting, onDelete }: { 
 
     return (
         <div className="space-y-6">
-            {/* Store visibility / required-fields notice */}
-            {(descMissing || catMissing) ? (
-                <div className="flex items-center gap-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/15 border border-amber-200 dark:border-amber-800/30 text-xs text-amber-700 dark:text-amber-400">
-                    <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
-                    </svg>
-                    A <strong>Description</strong> and <strong>Category</strong> are required before this app can be deployed. Fill them in and save.
+            {/* Store preview — how this app appears on store.privasys.org */}
+            <section className="p-5 rounded-xl border border-black/10 dark:border-white/10 bg-black/[0.015] dark:bg-white/[0.015]">
+                <div className="flex items-baseline justify-between mb-3">
+                    <h2 className="text-sm font-semibold">Store preview</h2>
+                    <span className="text-[10px] uppercase tracking-wide text-black/35 dark:text-white/35">how it appears on the store</span>
                 </div>
-            ) : !isDeployed ? (
-                <div className="flex items-center gap-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/15 border border-amber-200 dark:border-amber-800/30 text-xs text-amber-700 dark:text-amber-400">
-                    <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
-                    </svg>
-                    Your app appears on the App Store once deployed. You can fill in the listing now.
+                <div className="flex gap-4 items-start">
+                    <img src={previewIcon} alt="" className="w-16 h-16 rounded-2xl object-cover shrink-0 border border-black/10 dark:border-white/10 bg-white dark:bg-white/5" />
+                    <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-base font-semibold truncate">{app.display_name || app.name}</span>
+                            <span className="px-1.5 py-0.5 text-[10px] font-medium rounded-full border border-black/10 dark:border-white/10">{teeLabel}</span>
+                            <span className="px-1.5 py-0.5 text-[10px] font-medium rounded-full border border-black/10 dark:border-white/10">{targetLabel}</span>
+                        </div>
+                        <div className="text-xs text-black/50 dark:text-white/50 mt-0.5">
+                            {app.owner_name || 'You'}{category ? <> &middot; {category}</> : null}
+                        </div>
+                        <p className="text-sm text-black/70 dark:text-white/70 mt-1.5 line-clamp-2">
+                            {tagline || description || <span className="italic text-black/30 dark:text-white/30">Add a tagline and description below.</span>}
+                        </p>
+                    </div>
                 </div>
-            ) : liveHostname ? (
-                <div className="flex items-center gap-2 p-3 rounded-lg bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-200 dark:border-emerald-800/30 text-xs text-emerald-700 dark:text-emerald-400">
-                    <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    <span>Your app is live. &nbsp;</span>
-                    <a href={`https://${liveHostname}`} target="_blank" rel="noopener noreferrer" className="font-medium hover:underline">View on App Store &rarr;</a>
+            </section>
+
+            {/* Publish control */}
+            <section className="p-4 rounded-xl border border-black/10 dark:border-white/10 flex items-center gap-4">
+                <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold">Public store</span>
+                        {published ? (
+                            <span className="px-2 py-0.5 text-[10px] font-medium rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">Published</span>
+                        ) : (
+                            <span className="px-2 py-0.5 text-[10px] font-medium rounded-full bg-black/5 text-black/50 dark:bg-white/10 dark:text-white/50">Not published</span>
+                        )}
+                    </div>
+                    <p className="text-xs text-black/45 dark:text-white/45 mt-0.5">
+                        {published ? (
+                            <>Live at <a href={storeUrl} target="_blank" rel="noopener noreferrer" className="font-medium hover:underline">{storeUrl.replace('https://', '')} &rarr;</a></>
+                        ) : (descMissing || catMissing)
+                            ? 'Add a Description and Category (and save) to publish.'
+                            : 'Publish to list this app on store.privasys.org for anyone to browse and verify.'}
+                    </p>
+                    {publishError && <p className="text-xs text-red-600 dark:text-red-400 mt-1">{publishError}</p>}
                 </div>
-            ) : null}
+                <button
+                    onClick={() => handlePublish(!published)}
+                    disabled={publishing || (!published && (descMissing || catMissing))}
+                    className={`shrink-0 px-4 py-2 text-sm font-medium rounded-lg transition-opacity disabled:opacity-40 ${published
+                        ? 'border border-black/15 dark:border-white/15 hover:bg-black/5 dark:hover:bg-white/5'
+                        : 'bg-black text-white dark:bg-white dark:text-black hover:opacity-80'}`}
+                >
+                    {publishing ? 'Saving…' : published ? 'Unpublish' : 'Publish to store'}
+                </button>
+            </section>
 
             {error && (<div className="p-3 rounded-lg bg-red-50 dark:bg-red-900/20 text-sm text-red-700 dark:text-red-300">{error}</div>)}
             {uploadError && (<div className="p-3 rounded-lg bg-red-50 dark:bg-red-900/20 text-xs text-red-700 dark:text-red-300">{uploadError}</div>)}
@@ -1164,13 +1223,13 @@ function AppStoreTab({ app, token, deployments, onSave, deleting, onDelete }: { 
                             <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleIconFile(f); }} />
                             {uploadingIcon ? (
                                 <span className="text-[10px] text-black/40 dark:text-white/40">Uploading…</span>
-                            ) : iconURL ? (
-                                <img src={iconURL} alt="App icon" className="w-full h-full object-cover rounded-2xl" />
                             ) : (
-                                <span className="text-[10px] text-black/30 dark:text-white/30 text-center px-1">Drop / click</span>
+                                // Always show an icon: the custom one if set, else the
+                                // deterministic identicon the store will use by default.
+                                <img src={iconURL.trim() || identiconUrl(app.id)} alt="App icon" className="w-full h-full object-cover rounded-2xl" />
                             )}
                         </label>
-                        <div className="mt-1 text-[10px] text-black/30 dark:text-white/30 text-center">{ICON_DIMS}</div>
+                        <div className="mt-1 text-[10px] text-black/30 dark:text-white/30 text-center">{iconURL.trim() ? ICON_DIMS : 'auto identicon · drop to replace'}</div>
                         <input type="text" value={iconURL} onChange={e => setIconURL(e.target.value)} placeholder="or paste URL" className={`${inputClass} mt-1 !text-[11px] !py-1 w-24`} />
                     </div>
                     <div className="flex-1 space-y-3">
@@ -1407,10 +1466,16 @@ function McpToolsTab({ app, hostname, token, deployed, onAppUpdate }: { app: App
                 </p>
             </section>
 
-            {/* Connection info */}
-            {connectionUrl && (
+            {/* Use as an MCP server (item 5) — endpoint + client snippet */}
+            {connectionUrl ? (
                 <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">
-                    <h2 className="text-sm font-semibold mb-3">Connection</h2>
+                    <h2 className="text-sm font-semibold mb-1">Use as an MCP server</h2>
+                    <p className="text-xs text-black/50 dark:text-white/50 mb-3">
+                        Point any MCP client (Claude Desktop, the Privasys CLI, your own agent) at the
+                        endpoint below. The connection is RA-TLS attested on every request, and
+                        authenticated endpoints take a bearer token from{' '}
+                        <a href="https://privasys.id" target="_blank" rel="noopener noreferrer" className="underline">privasys.id</a>.
+                    </p>
                     <div className="space-y-3">
                         <div>
                             <div className="text-xs text-black/50 dark:text-white/50 mb-1">Endpoint</div>
@@ -1444,6 +1509,14 @@ function McpToolsTab({ app, hostname, token, deployed, onAppUpdate }: { app: App
                             </div>
                         </div>
                     </div>
+                </section>
+            ) : (
+                <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">
+                    <h2 className="text-sm font-semibold mb-1">Use as an MCP server</h2>
+                    <p className="text-xs text-black/50 dark:text-white/50">
+                        Once this app is deployed, its attested MCP endpoint and a copy-paste client
+                        config appear here, so any MCP client or agent can connect to it.
+                    </p>
                 </section>
             )}
 

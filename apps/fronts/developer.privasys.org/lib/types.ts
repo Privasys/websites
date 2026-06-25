@@ -54,6 +54,8 @@ export interface App {
     store_website_url: string;
     store_support_email: string;
     store_keywords: string;
+    // Whether the app is published to the public store (store.privasys.org).
+    published: boolean;
     created_at: string;
     updated_at: string;
 }
