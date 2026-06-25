@@ -297,6 +297,17 @@ test.describe('Owners Team + @config-api Freeze Gate', () => {
         expect(resp.ok()).toBeTruthy();
         const body = await resp.json();
         expect(body.status).toBe('ok');
+        // A 200 from the RPC layer only means transport succeeded — the WIT
+        // function itself can still return Err. `configure` is
+        // `result<_, string>`, so a failure surfaces as a record carrying
+        // `err`. Assert the WIT result is Ok, otherwise a broken host import
+        // (e.g. crypto::digest) silently leaves the app frozen and every
+        // later call returns "awaiting initial configuration".
+        const cfgResult = body.returns?.[0]?.value;
+        expect(
+            cfgResult?.err,
+            `configure returned a WIT error: ${JSON.stringify(cfgResult)}`,
+        ).toBeUndefined();
         console.log(`configure ok: ${JSON.stringify(body).substring(0, 160)}…`);
     });
 
