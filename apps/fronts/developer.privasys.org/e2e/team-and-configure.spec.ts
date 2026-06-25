@@ -330,7 +330,11 @@ test.describe('Owners Team + @config-api Freeze Gate', () => {
         expect(resp.ok()).toBeTruthy();
         const body = await resp.json();
         expect(body.status).toBe('ok');
-        const payload = body.returns?.[0]?.value;
+        // protected-call is `result<string, string>`, so the RPC layer wraps
+        // the success value as a record `{ ok: "..." }` (cf. configure's
+        // `{ ok: null }`). Unwrap before matching.
+        const raw = body.returns?.[0]?.value;
+        const payload = raw && typeof raw === 'object' && 'ok' in raw ? raw.ok : raw;
         expect(String(payload).toLowerCase()).toMatch(/api[_-]?key length = \d+/);
         console.log(`protected-call canary: ${payload}`);
 
