@@ -3,11 +3,19 @@
 import { useRouter } from 'next/navigation';
 import { useAuth } from '~/lib/privasys-auth';
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { createApp, uploadCwasm, checkAppName, detectAppType, listCachedImages } from '~/lib/api';
+import { createApp, uploadCwasm, checkAppName, detectAppType, listCachedImages, previewManifest, updateStoreListing } from '~/lib/api';
 import type { AppType, CachedImage } from '~/lib/types';
+import type { ManifestStore } from '~/lib/api';
 
 type SourceMode = 'github' | 'upload' | 'package' | 'cloud_image';
 type NameStatus = 'idle' | 'checking' | 'available' | 'taken';
+
+// App Store categories (mirrors the detail page's list).
+const STORE_CATEGORIES = [
+    'Productivity', 'Finance', 'Healthcare', 'AI & Machine Learning',
+    'Security & Privacy', 'Communication', 'Developer Tools', 'Data Analytics',
+    'Education', 'Entertainment', 'Business', 'Social', 'Utilities', 'Other'
+];
 
 // ── Helpers ──
 
@@ -167,8 +175,17 @@ export default function NewApplicationPage() {
     const [nameReason, setNameReason] = useState('');
     const checkTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    // Step 4: Configuration (container port is platform-allocated; the app
-    // listens on $PORT — see the create handler / bug #43)
+    // Step 4: Listing (required so the app is deploy-ready; the App Store deploy
+    // gate needs description + category). Pre-filled from the source's privasys.json
+    // "store" block when present. Container port is platform-allocated ($PORT).
+    const [description, setDescription] = useState('');
+    const [category, setCategory] = useState('');
+    const [tagline, setTagline] = useState('');
+    // Other listing fields the manifest may provide, retained so a later
+    // updateStoreListing does not wipe them (the wizard only edits the three above).
+    const [storeExtra, setStoreExtra] = useState<ManifestStore | null>(null);
+    const [prefilled, setPrefilled] = useState(false);
+    const [previewing, setPreviewing] = useState(false);
 
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -188,10 +205,9 @@ export default function NewApplicationPage() {
                     : false;
 
     const isNameComplete = name.trim().length >= 3 && nameStatus === 'available';
+    const isListingComplete = description.trim().length > 0 && category.trim().length > 0;
 
-    const canSubmit = appType !== null && isSourceComplete && isNameComplete && !submitting;
-
-    const needsConfigStep = appType === 'container' || sourceMode === 'package' || sourceMode === 'cloud_image';
+    const canSubmit = appType !== null && isSourceComplete && isNameComplete && isListingComplete && !submitting;
 
     // ── Summaries for collapsed steps ──
 
@@ -279,6 +295,36 @@ export default function NewApplicationPage() {
         return () => { if (checkTimer.current) clearTimeout(checkTimer.current); };
     }, [name, session?.accessToken]);
 
+    // Pre-fill the Listing step from the source's privasys.json "store" block, when
+    // present (github commit / package image). Only fills fields the user has not
+    // typed; retains the other store fields so they are not lost on save.
+    useEffect(() => {
+        if (!session?.accessToken) return;
+        let body: { source_type: string; commit_url?: string; image?: string } | null = null;
+        if (sourceMode === 'github' && parsed) body = { source_type: 'github', commit_url: commitUrl.trim() };
+        else if (sourceMode === 'package' && containerImage.trim()) body = { source_type: 'package', image: containerImage.trim() };
+        if (!body) { setStoreExtra(null); setPrefilled(false); return; }
+        let cancelled = false;
+        setPreviewing(true);
+        previewManifest(session.accessToken, body)
+            .then(({ store }) => {
+                if (cancelled) return;
+                if (store) {
+                    setStoreExtra(store);
+                    setDescription(d => d || store.description || '');
+                    setCategory(c => c || store.category || '');
+                    setTagline(t => t || store.tagline || '');
+                    setPrefilled(!!(store.description || store.category || store.tagline));
+                } else {
+                    setStoreExtra(null);
+                    setPrefilled(false);
+                }
+            })
+            .catch(() => { if (!cancelled) { setStoreExtra(null); setPrefilled(false); } })
+            .finally(() => { if (!cancelled) setPreviewing(false); });
+        return () => { cancelled = true; };
+    }, [sourceMode, parsed?.owner, parsed?.repo, parsed?.commit, containerImage, session?.accessToken]);
+
     // ── Submit ──
 
     const handleSubmit = useCallback(async () => {
@@ -313,13 +359,29 @@ export default function NewApplicationPage() {
                 await uploadCwasm(session.accessToken, app.id, file);
             }
 
+            // Persist the App Store listing so the app is deploy-ready. We send the
+            // user-edited Description/Category/Tagline plus any other fields the
+            // manifest supplied (retained in storeExtra) so nothing is lost.
+            await updateStoreListing(session.accessToken, app.id, {
+                store_tagline: tagline.trim() || storeExtra?.tagline || '',
+                store_description: description.trim(),
+                store_category: category.trim(),
+                store_icon_url: storeExtra?.icon_url || '',
+                store_screenshots: storeExtra?.screenshots || [],
+                store_privacy_url: storeExtra?.privacy_url || '',
+                store_tos_url: storeExtra?.tos_url || '',
+                store_website_url: storeExtra?.website_url || '',
+                store_support_email: storeExtra?.support_email || '',
+                store_keywords: storeExtra?.keywords || ''
+            });
+
             window.dispatchEvent(new Event('apps:changed'));
-            router.push(`/dashboard/apps/${app.id}`);
+            router.push(`/dashboard/apps/${app.id}?tab=store`);
         } catch (e) {
             setError(e instanceof Error ? e.message : 'Something went wrong');
             setSubmitting(false);
         }
-    }, [session?.accessToken, sourceMode, name, parsed, file, commitUrl, submitting, appType, containerImage, cloudImageName, cloudImageChannel]);
+    }, [session?.accessToken, sourceMode, name, parsed, file, commitUrl, submitting, appType, containerImage, cloudImageName, cloudImageChannel, description, category, tagline, storeExtra]);
 
 
     // ── Wizard ──
@@ -592,7 +654,7 @@ export default function NewApplicationPage() {
                 <CollapsibleStep
                     step={3} label="Application name" summary={nameSummary}
                     active={currentStep === 3} done={currentStep > 3 && isNameComplete}
-                    onEdit={() => setCurrentStep(3)} last={!needsConfigStep}
+                    onEdit={() => setCurrentStep(3)}
                 >
                     <div className="space-y-3">
                         <NameInput
@@ -600,39 +662,67 @@ export default function NewApplicationPage() {
                             nameStatus={nameStatus} nameReason={nameReason}
                             disabled={submitting}
                         />
-                        {needsConfigStep ? (
-                            <button
-                                type="button"
-                                onClick={() => setCurrentStep(4)}
-                                disabled={!isNameComplete}
-                                className="px-4 py-2 text-sm font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-80 disabled:opacity-40 transition-opacity"
-                            >
-                                Next
-                            </button>
-                        ) : (
-                            <button
-                                type="button"
-                                onClick={handleSubmit}
-                                disabled={!canSubmit}
-                                className="px-5 py-2 text-sm font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-80 disabled:opacity-40 transition-opacity"
-                            >
-                                {submitting ? 'Creating...' : 'Create application'}
-                            </button>
-                        )}
+                        <button
+                            type="button"
+                            onClick={() => setCurrentStep(4)}
+                            disabled={!isNameComplete}
+                            className="px-4 py-2 text-sm font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-80 disabled:opacity-40 transition-opacity"
+                        >
+                            Next
+                        </button>
                     </div>
                 </CollapsibleStep>
 
-                {/* ── Step 4: Configuration & Submit (containers only) ── */}
-                {needsConfigStep && <CollapsibleStep
-                    step={4} label="Configuration" active={currentStep === 4} done={false} last
+                {/* ── Step 4: App Store listing & create ── */}
+                <CollapsibleStep
+                    step={4} label="App Store listing" summary={currentStep > 4 ? category : ''}
+                    active={currentStep === 4} done={false} last
                 >
                     <div className="space-y-4">
-                        {(appType === 'container' || sourceMode === 'package' || sourceMode === 'cloud_image') && (
+                        <p className="text-xs text-black/40 dark:text-white/40">
+                            A short listing is required before the app can be deployed.
+                            {previewing && ' Checking your privasys.json…'}
+                            {prefilled && !previewing && ' Pre-filled from your privasys.json — edit if you like.'}
+                        </p>
+                        <div>
+                            <label className="block text-xs font-medium text-black/60 dark:text-white/60 mb-1">Description<span className="text-red-500"> *</span></label>
+                            <textarea
+                                value={description}
+                                onChange={e => setDescription(e.target.value)}
+                                rows={4}
+                                maxLength={4000}
+                                placeholder="What your app does, the problems it solves, key features and privacy guarantees…"
+                                className="w-full px-3 py-2.5 rounded-lg border border-black/10 dark:border-white/10 bg-transparent text-sm focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/20 placeholder:text-black/30 dark:placeholder:text-white/30 resize-y"
+                            />
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
                             <div>
-                                <label className="block text-xs font-medium text-black/60 dark:text-white/60 mb-1">Container port</label>
-                                <p className="text-xs text-black/40 dark:text-white/40">Assigned automatically. Your container must listen on the <code className="font-mono text-black/60 dark:text-white/60">PORT</code> environment variable (the Cloud Run / Heroku contract).</p>
+                                <label className="block text-xs font-medium text-black/60 dark:text-white/60 mb-1">Category<span className="text-red-500"> *</span></label>
+                                <select
+                                    value={category}
+                                    onChange={e => setCategory(e.target.value)}
+                                    className="w-full px-3 py-2.5 rounded-lg border border-black/10 dark:border-white/10 bg-transparent text-sm focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/20"
+                                >
+                                    <option value="">Select a category…</option>
+                                    {STORE_CATEGORIES.map(c => (<option key={c} value={c}>{c}</option>))}
+                                </select>
                             </div>
-                        )}
+                            <div>
+                                <label className="block text-xs font-medium text-black/60 dark:text-white/60 mb-1">Tagline</label>
+                                <input
+                                    type="text"
+                                    value={tagline}
+                                    onChange={e => setTagline(e.target.value)}
+                                    maxLength={120}
+                                    placeholder="A short, catchy one-liner"
+                                    className="w-full px-3 py-2.5 rounded-lg border border-black/10 dark:border-white/10 bg-transparent text-sm focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/20 placeholder:text-black/30 dark:placeholder:text-white/30"
+                                />
+                            </div>
+                        </div>
+                        <p className="text-xs text-black/40 dark:text-white/40">
+                            You can add an icon, screenshots and links on the App Store tab after creating.
+                            {(appType === 'container' || sourceMode === 'package' || sourceMode === 'cloud_image') && <> The container port is assigned automatically; your container must listen on <code className="font-mono text-black/60 dark:text-white/60">PORT</code>.</>}
+                        </p>
 
                         <button
                             type="button"
@@ -643,7 +733,7 @@ export default function NewApplicationPage() {
                             {submitting ? 'Creating...' : 'Create application'}
                         </button>
                     </div>
-                </CollapsibleStep>}
+                </CollapsibleStep>
             </div>
 
             {/* Status message */}
