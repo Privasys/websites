@@ -1573,6 +1573,9 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
     const [cwasmFile, setCwasmFile] = useState<File | null>(null);
     const [working, setWorking] = useState(false);
     const [workMsg, setWorkMsg] = useState<string | null>(null);
+    // Live build info while a github commit builds during an upgrade (status + the
+    // GitHub Actions run link), so the user can watch the reproducible build.
+    const [buildLink, setBuildLink] = useState<{ status: string; url?: string; error?: string } | null>(null);
 
     // Source-specific upgrade options, listed automatically.
     const [tags, setTags] = useState<string[] | null>(null);            // package
@@ -1660,15 +1663,22 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
     })();
 
     // Poll a freshly-shipped version until it builds (github apps), then return it.
+    // Surfaces the live build status + GitHub Actions run link so the user can
+    // watch the reproducible build instead of an opaque "Building…".
     async function waitForReady(versionId: string): Promise<string> {
         for (let i = 0; i < 160; i++) { // ~13 min at 5s
             const v = await getVersion(token, app.id, versionId);
+            // Find this version's build to surface its run link + status.
+            try {
+                const b = (await listBuilds(token, app.id)).find(x => x.version_id === versionId);
+                if (b) setBuildLink({ status: b.status, url: b.run_url, error: b.error_message });
+            } catch { /* keep last known build info */ }
             if (v.status === 'ready') return versionId;
             if (v.status === 'failed') throw new Error('Build failed');
-            setWorkMsg(`Building (${v.status})… this can take a few minutes`);
+            setWorkMsg(v.status === 'building' ? 'Building the reproducible image…' : 'Waiting for the build to start…');
             await new Promise(r => setTimeout(r, 5000));
         }
-        throw new Error('Build is taking longer than expected; it will finish in the background — deploy it once ready');
+        throw new Error('Build is taking longer than expected; it will finish in the background — deploy it from Versions once ready');
     }
 
     async function handleConfirm() {
@@ -1680,6 +1690,7 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
         }
         setWorking(true);
         setError(null);
+        setBuildLink(null);
         try {
             // Resolve the version to deploy, by source. Package/cloud-image/upload are
             // immediately ready; a github commit must build first.
@@ -1718,9 +1729,29 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
         } finally {
             setWorking(false);
             setWorkMsg(null);
+            setBuildLink(null);
             onRefresh();
         }
     }
+
+    // Build status + GitHub Actions run link, shown while a github commit builds.
+    const buildStatusLine = (working && (workMsg || buildLink)) ? (
+        <div className="mt-2 text-xs text-black/50 dark:text-white/50 flex items-center flex-wrap gap-x-2 gap-y-1">
+            <span className="inline-flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
+                {workMsg}
+            </span>
+            {buildLink && (
+                <span className="capitalize text-black/40 dark:text-white/40">· build {buildLink.status}</span>
+            )}
+            {buildLink?.url && (
+                <a href={buildLink.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline">View build run &rarr;</a>
+            )}
+            {buildLink?.error && (
+                <span className="text-red-600 dark:text-red-400">{buildLink.error}</span>
+            )}
+        </div>
+    ) : null;
 
     // The source-aware version control: a dropzone for upload apps, else a select
     // of the source's choices (registry tags / github commits / cloud-image channels).
@@ -1923,7 +1954,7 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                                         {deployBlockedByCredits && (
                                             <div className="mt-2 text-xs text-amber-700 dark:text-amber-400">Your credit balance is empty. <Link href="/dashboard/billing" className="underline font-medium">Top up or redeem a code</Link>.</div>
                                         )}
-                                        {workMsg && (<div className="mt-2 text-xs text-black/50 dark:text-white/50">{workMsg}</div>)}
+                                        {buildStatusLine}
                                     </section>
 
                                     <div className="mt-3 flex items-center gap-3">
@@ -1974,7 +2005,7 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                         {deployBlockedByCredits && (
                             <div className="text-xs text-amber-700 dark:text-amber-400">Your credit balance is empty. <Link href="/dashboard/billing" className="underline font-medium">Top up or redeem a code</Link>.</div>
                         )}
-                        {workMsg && (<div className="text-xs text-black/50 dark:text-white/50">{workMsg}</div>)}
+                        {buildStatusLine}
                         <button
                             onClick={handleConfirm}
                             disabled={confirmDisabled || !pickEnclave}
