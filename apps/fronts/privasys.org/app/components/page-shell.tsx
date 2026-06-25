@@ -51,7 +51,7 @@ const NAV_ITEMS = [
             { label: 'Documentation', href: 'https://docs.privasys.org', external: true }
         ]
     },
-    { label: 'App Store', href: '/uk/apps/' },
+    { label: 'App Store', href: 'https://store.privasys.org', external: true },
     { label: 'Docs', href: 'https://docs.privasys.org', external: true },
     { label: 'Blog', href: '/blog/' },
     { label: 'Contact Us', href: 'mailto:contact@privasys.org?subject=Privasys%20website%20contact', external: true }
@@ -62,7 +62,7 @@ const FOOTER_LINKS = [
     { label: 'Privacy', href: '/legal/privacy/' },
     { label: 'Terms', href: '/legal/terms/' },
     { label: 'Modern Slavery', href: '/legal/modern-slavery/' },
-    { label: 'GitHub', href: 'https://github.com/Privasys', external: true }
+    { label: 'App Store', href: 'https://store.privasys.org', external: true }
 ];
 
 export function PageShell({ children }: { activePage?: string; children: ReactNode }) {
