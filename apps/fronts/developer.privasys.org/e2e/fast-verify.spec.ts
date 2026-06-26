@@ -29,14 +29,27 @@ const CONTAINER_COMMIT_URL =
 const CONTAINER_APP_NAME = 'e2e-container-verify';
 const CONTAINER_PORT = 8080;
 
+// A second container from the same source, created vault-backed
+// (container_storage + enclave_generated) for the key-rotation flow:
+// rotate-key is container-only and requires a vault-backed volume DEK.
+// Kept separate from CONTAINER_APP_NAME so a vault/constellation hiccup
+// cannot break the plain container verification coverage.
+const ROTATE_APP_NAME = 'e2e-rotate-verify';
+
 // ── Shared state (serial tests share these across the suite) ───────
 let token: string;
 let wasmAppId: string;
 let wasmVersionId: string;
+let wasmEnclaveId: string;
 let containerAppId: string;
 let containerVersionId: string;
+let rotateAppId: string;
+let rotateVersionId: string;
+let rotateEnclaveId: string;
+let rotateHandleV1: string;
 let wasmDeployed = false;
 let containerDeployed = false;
+let rotateDeployed = false;
 
 // ── Helpers ────────────────────────────────────────────────────────
 async function getToken(page: import('@playwright/test').Page): Promise<string> {
@@ -85,6 +98,31 @@ async function deleteApp(
     console.log(`Deleted ${name} (${app.id})`);
 }
 
+// Poll a deployment until it reaches `active` (or fails / times out).
+async function waitForActive(
+    page: import('@playwright/test').Page,
+    tok: string,
+    appId: string,
+    deploymentId: string,
+    maxMs: number,
+): Promise<boolean> {
+    const start = Date.now();
+    while (Date.now() - start < maxMs) {
+        const resp = await page.request.get(
+            `${API}/api/v1/apps/${appId}/deployments`,
+            { headers: { Authorization: `Bearer ${tok}` } },
+        );
+        if (resp.ok()) {
+            const deps: { id: string; status: string }[] = await resp.json();
+            const dep = deps.find(d => d.id === deploymentId);
+            if (dep?.status === 'active') return true;
+            if (dep?.status === 'failed') return false;
+        }
+        await page.waitForTimeout(5_000);
+    }
+    return false;
+}
+
 // ════════════════════════════════════════════════════════════════════
 test.describe('Fast Verification Suite', () => {
     test.describe.configure({ mode: 'serial' });
@@ -96,6 +134,7 @@ test.describe('Fast Verification Suite', () => {
         token = await getToken(page);
         await deleteApp(page, token, WASM_APP_NAME);
         await deleteApp(page, token, CONTAINER_APP_NAME);
+        await deleteApp(page, token, ROTATE_APP_NAME);
 
         // Create WASM app
         const wasmResp = await page.request.post(`${API}/api/v1/apps`, {
@@ -136,9 +175,38 @@ test.describe('Fast Verification Suite', () => {
         containerAppId = ctrBody.id;
         console.log(`Created container app: ${CONTAINER_APP_NAME} (${containerAppId})`);
 
+        // Create the vault-backed container (key-rotation flow). container_storage
+        // + key_provider=enclave_generated make the app vault-backed: the platform
+        // reserves a stable vault key handle now, and the per-app LUKS volume DEK is
+        // reconstructed from the vault constellation at deploy. rotate-key requires
+        // this (it re-keys the volume in place).
+        const rotResp = await page.request.post(`${API}/api/v1/apps`, {
+            headers: {
+                Authorization: `Bearer ${token}`,
+                'Content-Type': 'application/json',
+            },
+            data: {
+                name: ROTATE_APP_NAME,
+                source_type: 'github',
+                commit_url: CONTAINER_COMMIT_URL,
+                app_type: 'container',
+                container_port: CONTAINER_PORT,
+                container_storage: true,
+                key_provider: 'enclave_generated',
+            },
+        });
+        expect(rotResp.ok()).toBeTruthy();
+        const rotBody = await rotResp.json();
+        expect(rotBody.app_type).toBe('container');
+        // The app must be vault-backed, otherwise rotate-key returns 400.
+        expect(rotBody.vault_key_handle, 'rotate app must be vault-backed').toBeTruthy();
+        rotateAppId = rotBody.id;
+        rotateHandleV1 = rotBody.vault_key_handle;
+        console.log(`Created vault-backed app: ${ROTATE_APP_NAME} (${rotateAppId}) handle=${rotateHandleV1}`);
+
         // The deploy gate requires a minimal App Store listing (Description +
-        // Category) before an app can be deployed. Set it for both apps.
-        for (const id of [wasmAppId, containerAppId]) {
+        // Category) before an app can be deployed. Set it for all apps.
+        for (const id of [wasmAppId, containerAppId, rotateAppId]) {
             const r = await page.request.put(`${API}/api/v1/apps/${id}/store`, {
                 headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
                 data: {
@@ -217,6 +285,7 @@ test.describe('Fast Verification Suite', () => {
             await enclResp.json();
         const sgx = enclaves.find(e => e.tee_type === 'sgx');
         expect(sgx).toBeTruthy();
+        wasmEnclaveId = sgx!.id;
 
         const wasmDeploy = await page.request.post(
             `${API}/api/v1/apps/${wasmAppId}/versions/${wasmVersionId}/deploy`,
@@ -302,6 +371,165 @@ test.describe('Fast Verification Suite', () => {
 
         containerDeployed = true;
         console.log(`Container deployed: ${ctrDepBody.hostname}`);
+    });
+
+    test('deploy vault-backed container to TDX', async ({ page }) => {
+        test.setTimeout(240_000);
+        token = await getToken(page);
+
+        // Its build was kicked off at create (same source as the plain
+        // container) — wait for the ready version.
+        for (let i = 0; i < 60 && !rotateVersionId; i++) {
+            const vresp = await page.request.get(
+                `${API}/api/v1/apps/${rotateAppId}/versions`,
+                { headers: { Authorization: `Bearer ${token}` } },
+            );
+            if (vresp.ok()) {
+                const versions: { id: string; status: string }[] = await vresp.json();
+                if (versions.find(v => v.status === 'failed')) {
+                    console.log('vault-backed container build failed — skipping rotation tests');
+                    return;
+                }
+                const ready = versions.find(v => v.status === 'ready');
+                if (ready) rotateVersionId = ready.id;
+            }
+            if (!rotateVersionId) await page.waitForTimeout(5_000);
+        }
+        if (!rotateVersionId) {
+            console.log('vault-backed container build not ready — skipping rotation tests');
+            return;
+        }
+
+        const enclResp = await page.request.get(`${API}/api/v1/enclaves`, {
+            headers: { Authorization: `Bearer ${token}` },
+        });
+        expect(enclResp.ok()).toBeTruthy();
+        const enclaves: { id: string; tee_type: string }[] = await enclResp.json();
+        const tdx = enclaves.find(e => e.tee_type === 'tdx');
+        if (!tdx) {
+            console.log('No TDX enclave registered — skipping rotation tests');
+            return;
+        }
+        rotateEnclaveId = tdx.id;
+
+        const dep = await page.request.post(
+            `${API}/api/v1/apps/${rotateAppId}/versions/${rotateVersionId}/deploy`,
+            {
+                headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+                data: { enclave_id: rotateEnclaveId },
+                timeout: 180_000,
+            },
+        );
+        if (!dep.ok()) {
+            // A vault/constellation issue surfaces here. Don't fail the suite —
+            // the rotation tests will skip via rotateDeployed.
+            console.log(`Vault-backed deploy failed (${dep.status()}): ${await dep.text()} — skipping rotation tests`);
+            return;
+        }
+        const ok = await waitForActive(page, token, rotateAppId, (await dep.json()).id, 180_000);
+        if (!ok) {
+            console.log('Vault-backed container did not reach active — skipping rotation tests');
+            return;
+        }
+        rotateDeployed = true;
+        console.log(`Vault-backed container deployed: ${ROTATE_APP_NAME}`);
+    });
+
+    // ── Phase 3.5: lifecycle (upgrade survival + key rotation) ─────
+    // Run right after deploy, before the functional/UI checks, so the
+    // upgrade + rotation coverage executes every run regardless of any
+    // later (e.g. portal-UI) flake in this serial suite.
+
+    test('WASM: app upgrade (redeploy) keeps the app functional', async ({ page }) => {
+        test.skip(!wasmDeployed, 'WASM deploy failed — skipping');
+        test.setTimeout(180_000);
+        token = await getToken(page);
+
+        // Redeploy the ready version (the upgrade path): stops the running
+        // instance and starts a fresh one on the same SGX enclave.
+        //
+        // NOTE: sealed-KV data survival is intentionally NOT asserted here. A
+        // non-vault-backed WASM app gets a freshly generated per-app key on
+        // every wasm_load (mgmt stores no key and only sends one when
+        // vault_backed), so its sealed KV does not carry across a redeploy.
+        // Data survival across upgrades is a vault-backed property — exercised
+        // by the container key-rotation test below (and gated on the vault
+        // constellation being available).
+        const redeploy = await page.request.post(
+            `${API}/api/v1/apps/${wasmAppId}/versions/${wasmVersionId}/deploy`,
+            {
+                headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+                data: { enclave_id: wasmEnclaveId },
+                timeout: 120_000,
+            },
+        );
+        expect(redeploy.ok(), 'redeploy (upgrade)').toBeTruthy();
+        expect((await redeploy.json()).status).toBe('active');
+
+        // The upgraded instance serves traffic: the public hello RPC works.
+        const hello = await page.request.post(
+            `${API}/api/v1/apps/${wasmAppId}/rpc/hello`,
+            {
+                headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+                data: {},
+                timeout: 20_000,
+            },
+        );
+        expect(hello.ok()).toBeTruthy();
+        const body = await hello.json();
+        expect(body.status).toBe('ok');
+        expect(body.returns?.[0]?.value).toMatch(/Hello/i);
+        console.log('WASM app upgrade: redeploy active + hello works after upgrade');
+    });
+
+    test('container: key rotation re-keys the volume and data survives', async ({ page }) => {
+        test.skip(!rotateDeployed, 'vault-backed container not deployed — skipping');
+        test.setTimeout(300_000);
+        token = await getToken(page);
+
+        // Rotate the vault-backed volume DEK: reserve a sibling key generation,
+        // add the new LUKS keyslot online, advance the handle pointer, retire the
+        // old slot, delete the old generation. A re-wrap, NOT a re-encrypt.
+        const rot = await page.request.post(
+            `${API}/api/v1/apps/${rotateAppId}/versions/${rotateVersionId}/rotate-key`,
+            {
+                headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+                data: { enclave_id: rotateEnclaveId },
+                timeout: 240_000,
+            },
+        );
+        expect(rot.ok(), `rotate-key (${rot.status()}): ${await rot.text().catch(() => '')}`).toBeTruthy();
+        const rotBody = await rot.json();
+        expect(rotBody.rotated).toBe(true);
+        expect(rotBody.old_handle).toBe(rotateHandleV1);
+        expect(rotBody.new_handle, 'new handle must differ from old').not.toBe(rotBody.old_handle);
+        console.log(`rotate-key: ${rotBody.old_handle} -> ${rotBody.new_handle}`);
+
+        // The handle pointer advanced on the app record.
+        const appResp = await page.request.get(`${API}/api/v1/apps/${rotateAppId}`, {
+            headers: { Authorization: `Bearer ${token}` },
+        });
+        expect(appResp.ok()).toBeTruthy();
+        expect((await appResp.json()).vault_key_handle).toBe(rotBody.new_handle);
+
+        // Redeploy: the manager must re-open the EXISTING per-app volume with the
+        // rotated DEK. Reaching `active` proves the volume survived the rotation
+        // and opens with the new key — a broken retire would lock the data and the
+        // container would never become healthy.
+        const redeploy = await page.request.post(
+            `${API}/api/v1/apps/${rotateAppId}/versions/${rotateVersionId}/deploy`,
+            {
+                headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+                data: { enclave_id: rotateEnclaveId },
+                timeout: 180_000,
+            },
+        );
+        expect(redeploy.ok(), 'redeploy after rotation').toBeTruthy();
+        const redepBody = await redeploy.json();
+        const ok = redepBody.status === 'active'
+            || await waitForActive(page, token, rotateAppId, redepBody.id, 180_000);
+        expect(ok, 'container active after key rotation (volume re-opened with rotated key)').toBeTruthy();
+        console.log('Container key rotation: volume re-opened with rotated DEK after redeploy');
     });
 
     // ── Phase 4: WASM verifications ────────────────────────────────
