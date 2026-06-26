@@ -27,9 +27,11 @@ test('register TDX dev enclave', async ({ page }) => {
     console.log(`List enclaves response: ${listResp.status()} ${await listResp.text()}`);
     test.skip(listResp.status() === 403, 'User lacks admin/manager role — cannot manage enclaves');
     expect(listResp.ok()).toBeTruthy();
-    const enclaves: { id: string; name: string; host: string }[] = await listResp.json();
+    const enclaves: { id: string; name: string }[] = await listResp.json();
 
-    const existing = enclaves.find(e => e.host === 'v-fr-dev.privasys.org');
+    // The platform connects to enclaves by gateway_host (IP) — there is no DNS
+    // hostname any more — so match the existing row by its stable name.
+    const existing = enclaves.find(e => e.name === 'DEV---virtual-eu-paris-1');
     if (existing) {
         console.log(`Enclave already exists: ${existing.id} (${existing.name})`);
         return;
@@ -43,7 +45,6 @@ test('register TDX dev enclave', async ({ page }) => {
         },
         data: {
             name: 'DEV---virtual-eu-paris-1',
-            host: 'v-fr-dev.privasys.org',
             port: 443,
             tee_type: 'tdx',
             country: 'FR',
@@ -52,7 +53,9 @@ test('register TDX dev enclave', async ({ page }) => {
             owner: 'Privasys',
             status: 'active',
             max_apps: 10,
-            gateway_host: '34.155.116.130',
+            // gateway_host is the IP the platform dials; the manager refreshes
+            // it on every boot via check-in, so this is only the initial seed.
+            gateway_host: '34.155.123.37',
         },
     });
 
