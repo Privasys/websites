@@ -146,7 +146,9 @@ test.describe('Fast Verification Suite', () => {
     // ── Phase 1: Create both apps ──────────────────────────────────
 
     test('create WASM + container apps', async ({ page }) => {
-        test.setTimeout(60_000);
+        // Four apps to pre-clean, each waiting on deployment stop + enclave-side
+        // cleanup (~15s); a prior run leaves all four deployed, so 60s is too tight.
+        test.setTimeout(180_000);
         token = await getToken(page);
         await deleteApp(page, token, WASM_APP_NAME);
         await deleteApp(page, token, CONTAINER_APP_NAME);
