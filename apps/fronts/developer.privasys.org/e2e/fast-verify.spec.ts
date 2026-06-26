@@ -25,7 +25,7 @@ const WASM_COMMIT_URL =
 const WASM_APP_NAME = 'e2e-wasm-verify';
 
 const CONTAINER_COMMIT_URL =
-    'https://github.com/Privasys/container-app-example/commit/147c1fa40aa3d77e38116760948e76ccb9795638';
+    'https://github.com/Privasys/container-app-example/commit/b1fb9c0b551ddcbb62abe32b1954ec04059182a5';
 const CONTAINER_APP_NAME = 'e2e-container-verify';
 const CONTAINER_PORT = 8080;
 
