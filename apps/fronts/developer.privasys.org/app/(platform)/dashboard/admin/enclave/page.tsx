@@ -2,10 +2,10 @@
 
 import { useAuth, hasManagerRole } from '~/lib/privasys-auth';
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { adminEnclaveHealth, adminInspectEnclave, adminListEnclaves, adminCreateEnclave, adminUpdateEnclave, adminDeleteEnclave } from '~/lib/api';
+import { adminEnclaveHealth, adminInspectEnclave, adminEnclaveMeasurements, adminListEnclaves, adminCreateEnclave, adminUpdateEnclave, adminDeleteEnclave } from '~/lib/api';
 import { useSSE } from '~/lib/sse-context';
 import { COUNTRIES, regionForCountry, countryName } from '~/lib/countries';
-import type { Enclave, CreateEnclaveRequest, TeeType } from '~/lib/types';
+import type { Enclave, CreateEnclaveRequest, TeeType, EnclaveMeasurements } from '~/lib/types';
 
 const EMPTY_FORM: CreateEnclaveRequest = {
     name: '', port: 8445, gateway_host: '', tee_type: 'sgx', mr_enclave: '', country: '', region: '', zone: '', provider: '', owner: '', max_apps: 10, os_release_url: '',
@@ -33,6 +33,8 @@ export default function AdminEnclavePage() {
     const [fetchingMr, setFetchingMr] = useState(false);
     const [expandedId, setExpandedId] = useState<string | null>(null);
     const [enclaveHealth, setEnclaveHealth] = useState<Record<string, { status: string; error?: string } | null>>({});
+    // null = loading, undefined-key = not fetched yet
+    const [measurements, setMeasurements] = useState<Record<string, EnclaveMeasurements | null>>({});
 
     // Filters
     const [search, setSearch] = useState('');
@@ -72,6 +74,25 @@ export default function AdminEnclavePage() {
         } catch {
             setEnclaveHealth(prev => ({ ...prev, [enc.id]: { status: 'unreachable', error: 'Could not reach enclave' } }));
         }
+    }
+
+    // Load the attested measurements an enclave has reported (TDX MRTD/RTMRs;
+    // SGX MRENCLAVE). Cached per enclave; fetched when a row is first expanded.
+    const loadMeasurements = useCallback(async (id: string) => {
+        if (!session?.accessToken) return;
+        setMeasurements(prev => ({ ...prev, [id]: null })); // loading
+        try {
+            const m = await adminEnclaveMeasurements(session.accessToken, id);
+            setMeasurements(prev => ({ ...prev, [id]: m }));
+        } catch {
+            setMeasurements(prev => ({ ...prev, [id]: { tee_type: 'sgx' } }));
+        }
+    }, [session?.accessToken]);
+
+    function toggleExpand(id: string) {
+        const opening = expandedId !== id;
+        setExpandedId(opening ? id : null);
+        if (opening && !(id in measurements)) loadMeasurements(id);
     }
 
     // Derive unique filter options from data
@@ -412,7 +433,7 @@ export default function AdminEnclavePage() {
                                         <tr
                                             key={enc.id}
                                             className="border-b border-black/5 dark:border-white/5 last:border-b-0 hover:bg-black/[0.02] dark:hover:bg-white/[0.02] cursor-pointer transition-colors"
-                                            onClick={() => setExpandedId(expandedId === enc.id ? null : enc.id)}
+                                            onClick={() => toggleExpand(enc.id)}
                                         >
                                             <td className="px-4 py-3">
                                                 <div className="font-medium">{enc.name}</div>
@@ -476,12 +497,41 @@ export default function AdminEnclavePage() {
                                                                 )
                                                             )}
                                                         </div>
-                                                        {enc.mr_enclave && (
-                                                            <div className="col-span-3">
-                                                                <div className="text-xs text-black/50 dark:text-white/50">MR_ENCLAVE</div>
-                                                                <code className="text-xs mt-0.5 bg-black/5 dark:bg-white/5 px-2 py-1 rounded break-all block">{enc.mr_enclave}</code>
-                                                            </div>
-                                                        )}
+                                                        {/* Attested measurements: MRENCLAVE (SGX) or MRTD + RTMR0-3 (TDX, reported on boot). */}
+                                                        {(() => {
+                                                            const m = measurements[enc.id];
+                                                            const hexRow = (label: string, val: string) => (
+                                                                <div className="col-span-3">
+                                                                    <div className="text-xs text-black/50 dark:text-white/50">{label}</div>
+                                                                    <code className="text-xs mt-0.5 bg-black/5 dark:bg-white/5 px-2 py-1 rounded break-all block">{val}</code>
+                                                                </div>
+                                                            );
+                                                            if (enc.tee_type !== 'tdx') {
+                                                                const mrenclave = enc.mr_enclave || m?.mrenclave;
+                                                                return mrenclave
+                                                                    ? hexRow('MRENCLAVE', mrenclave)
+                                                                    : <div className="col-span-3 text-xs text-amber-600 dark:text-amber-400">No MRENCLAVE recorded</div>;
+                                                            }
+                                                            if (m === null) {
+                                                                return <div className="col-span-3 text-xs text-black/40 dark:text-white/40 animate-pulse">Loading measurements…</div>;
+                                                            }
+                                                            if (!m || !m.latest) {
+                                                                return <div className="col-span-3 text-xs text-amber-600 dark:text-amber-400">No measurements reported yet — the manager posts its TDX quote on boot</div>;
+                                                            }
+                                                            return (
+                                                                <>
+                                                                    {hexRow('MRTD', m.latest.mrtd)}
+                                                                    {hexRow('RTMR0', m.latest.rtmr0)}
+                                                                    {hexRow('RTMR1', m.latest.rtmr1)}
+                                                                    {hexRow('RTMR2', m.latest.rtmr2)}
+                                                                    {hexRow('RTMR3', m.latest.rtmr3)}
+                                                                    <div className="col-span-3 text-xs text-black/40 dark:text-white/40">
+                                                                        Reported {new Date(m.latest.recorded_at).toLocaleString()} ({m.latest.source})
+                                                                        {typeof m.recorded_count === 'number' ? ` · ${m.recorded_count} set(s) logged` : ''}
+                                                                    </div>
+                                                                </>
+                                                            );
+                                                        })()}
                                                         <div className="col-span-3">
                                                             <div className="text-xs text-black/50 dark:text-white/50">Enclave OS release</div>
                                                             {enc.os_release_url ? (
