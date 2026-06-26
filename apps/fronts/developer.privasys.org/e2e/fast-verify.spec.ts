@@ -36,6 +36,17 @@ const CONTAINER_PORT = 8080;
 // cannot break the plain container verification coverage.
 const ROTATE_APP_NAME = 'e2e-rotate-verify';
 
+// A vault-backed WASM app (key_provider=vault) for the WASM key-rotation and
+// upgrade-survival flows. Like the container rotate app it is kept separate from
+// the plain WASM verification app so a vault/constellation hiccup cannot break
+// the core WASM coverage. The wasm-app-example exposes kv-store / kv-read against
+// the per-app sealed KV (whose DEK is wrapped by the vault KEK), so survival is
+// asserted by reading the value back — not merely by reaching `active`.
+const WASM_ROTATE_APP_NAME = 'e2e-wasm-rotate';
+// A unique value written before rotation/upgrade and read back after.
+const WASM_KV_KEY = 'e2e-survival';
+const wasmKvValue = `survives-${Date.now()}`;
+
 // ── Shared state (serial tests share these across the suite) ───────
 let token: string;
 let wasmAppId: string;
@@ -47,9 +58,14 @@ let rotateAppId: string;
 let rotateVersionId: string;
 let rotateEnclaveId: string;
 let rotateHandleV1: string;
+let wasmRotateAppId: string;
+let wasmRotateVersionId: string;
+let wasmRotateEnclaveId: string;
+let wasmRotateHandleV1: string;
 let wasmDeployed = false;
 let containerDeployed = false;
 let rotateDeployed = false;
+let wasmRotateDeployed = false;
 
 // ── Helpers ────────────────────────────────────────────────────────
 async function getToken(page: import('@playwright/test').Page): Promise<string> {
@@ -135,6 +151,7 @@ test.describe('Fast Verification Suite', () => {
         await deleteApp(page, token, WASM_APP_NAME);
         await deleteApp(page, token, CONTAINER_APP_NAME);
         await deleteApp(page, token, ROTATE_APP_NAME);
+        await deleteApp(page, token, WASM_ROTATE_APP_NAME);
 
         // Create WASM app
         const wasmResp = await page.request.post(`${API}/api/v1/apps`, {
@@ -204,9 +221,30 @@ test.describe('Fast Verification Suite', () => {
         rotateHandleV1 = rotBody.vault_key_handle;
         console.log(`Created vault-backed app: ${ROTATE_APP_NAME} (${rotateAppId}) handle=${rotateHandleV1}`);
 
+        // Create the vault-backed WASM app (key_provider=vault). Unlike the
+        // container, the WASM handle is reserved at first deploy (not create), so
+        // vault_key_handle is empty here and asserted after deploy.
+        const wasmRotResp = await page.request.post(`${API}/api/v1/apps`, {
+            headers: {
+                Authorization: `Bearer ${token}`,
+                'Content-Type': 'application/json',
+            },
+            data: {
+                name: WASM_ROTATE_APP_NAME,
+                source_type: 'github',
+                commit_url: WASM_COMMIT_URL,
+                key_provider: 'vault',
+            },
+        });
+        expect(wasmRotResp.ok()).toBeTruthy();
+        const wasmRotBody = await wasmRotResp.json();
+        expect(wasmRotBody.app_type).toBe('wasm');
+        wasmRotateAppId = wasmRotBody.id;
+        console.log(`Created vault-backed WASM app: ${WASM_ROTATE_APP_NAME} (${wasmRotateAppId})`);
+
         // The deploy gate requires a minimal App Store listing (Description +
         // Category) before an app can be deployed. Set it for all apps.
-        for (const id of [wasmAppId, containerAppId, rotateAppId]) {
+        for (const id of [wasmAppId, containerAppId, rotateAppId, wasmRotateAppId]) {
             const r = await page.request.put(`${API}/api/v1/apps/${id}/store`, {
                 headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
                 data: {
@@ -435,6 +473,83 @@ test.describe('Fast Verification Suite', () => {
         console.log(`Vault-backed container deployed: ${ROTATE_APP_NAME}`);
     });
 
+    test('deploy vault-backed WASM to SGX', async ({ page }) => {
+        test.setTimeout(240_000);
+        token = await getToken(page);
+
+        // Its build was kicked off at create (same source as the plain WASM app).
+        for (let i = 0; i < 60 && !wasmRotateVersionId; i++) {
+            const vresp = await page.request.get(
+                `${API}/api/v1/apps/${wasmRotateAppId}/versions`,
+                { headers: { Authorization: `Bearer ${token}` } },
+            );
+            if (vresp.ok()) {
+                const versions: { id: string; status: string }[] = await vresp.json();
+                if (versions.find(v => v.status === 'failed')) {
+                    console.log('vault-backed WASM build failed — skipping WASM rotation tests');
+                    return;
+                }
+                const ready = versions.find(v => v.status === 'ready');
+                if (ready) wasmRotateVersionId = ready.id;
+            }
+            if (!wasmRotateVersionId) await page.waitForTimeout(5_000);
+        }
+        if (!wasmRotateVersionId) {
+            console.log('vault-backed WASM build not ready — skipping WASM rotation tests');
+            return;
+        }
+
+        const enclResp = await page.request.get(`${API}/api/v1/enclaves`, {
+            headers: { Authorization: `Bearer ${token}` },
+        });
+        expect(enclResp.ok()).toBeTruthy();
+        const enclaves: { id: string; tee_type: string }[] = await enclResp.json();
+        const sgx = enclaves.find(e => e.tee_type === 'sgx');
+        if (!sgx) {
+            console.log('No SGX enclave registered — skipping WASM rotation tests');
+            return;
+        }
+        wasmRotateEnclaveId = sgx.id;
+
+        const dep = await page.request.post(
+            `${API}/api/v1/apps/${wasmRotateAppId}/versions/${wasmRotateVersionId}/deploy`,
+            {
+                headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+                data: { enclave_id: wasmRotateEnclaveId },
+                timeout: 180_000,
+            },
+        );
+        if (!dep.ok()) {
+            // A vault/constellation issue surfaces here. Don't fail the suite —
+            // the WASM rotation tests will skip via wasmRotateDeployed.
+            console.log(`Vault-backed WASM deploy failed (${dep.status()}): ${await dep.text()} — skipping WASM rotation tests`);
+            return;
+        }
+        expect((await dep.json()).status).toBe('active');
+
+        // The handle was reserved on first deploy; capture v1.
+        const appResp = await page.request.get(`${API}/api/v1/apps/${wasmRotateAppId}`, {
+            headers: { Authorization: `Bearer ${token}` },
+        });
+        expect(appResp.ok()).toBeTruthy();
+        wasmRotateHandleV1 = (await appResp.json()).vault_key_handle;
+        expect(wasmRotateHandleV1, 'vault-backed WASM must have a reserved handle').toBeTruthy();
+
+        // Write a known value to the per-app sealed KV (DEK wrapped by the vault
+        // KEK). This is the value we assert survives rotation and upgrade.
+        const store = await page.request.post(
+            `${API}/api/v1/apps/${wasmRotateAppId}/rpc/kv-store`,
+            {
+                headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+                data: { key: WASM_KV_KEY, value: wasmKvValue },
+                timeout: 20_000,
+            },
+        );
+        expect(store.ok(), `kv-store (${store.status()})`).toBeTruthy();
+        wasmRotateDeployed = true;
+        console.log(`Vault-backed WASM deployed: ${WASM_ROTATE_APP_NAME} handle=${wasmRotateHandleV1}, stored ${WASM_KV_KEY}=${wasmKvValue}`);
+    });
+
     // ── Phase 3.5: lifecycle (upgrade survival + key rotation) ─────
     // Run right after deploy, before the functional/UI checks, so the
     // upgrade + rotation coverage executes every run regardless of any
@@ -530,6 +645,136 @@ test.describe('Fast Verification Suite', () => {
             || await waitForActive(page, token, rotateAppId, redepBody.id, 180_000);
         expect(ok, 'container active after key rotation (volume re-opened with rotated key)').toBeTruthy();
         console.log('Container key rotation: volume re-opened with rotated DEK after redeploy');
+    });
+
+    test('container: upgrade (redeploy) keeps the vault-backed volume', async ({ page }) => {
+        test.skip(!rotateDeployed, 'vault-backed container not deployed — skipping');
+        test.setTimeout(240_000);
+        token = await getToken(page);
+
+        // The upgrade path: redeploy the vault-backed container. The manager must
+        // reconstruct the volume DEK from the constellation and re-open the SAME
+        // per-app LUKS volume. Reaching `active` is the survival proof: a DEK that
+        // could not be reconstructed (or a measurement the vault refuses to
+        // re-authorise) would fail to open the volume and never go healthy.
+        const redeploy = await page.request.post(
+            `${API}/api/v1/apps/${rotateAppId}/versions/${rotateVersionId}/deploy`,
+            {
+                headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+                data: { enclave_id: rotateEnclaveId },
+                timeout: 180_000,
+            },
+        );
+        expect(redeploy.ok(), 'redeploy (upgrade)').toBeTruthy();
+        const body = await redeploy.json();
+        const ok = body.status === 'active'
+            || await waitForActive(page, token, rotateAppId, body.id, 180_000);
+        expect(ok, 'container active after upgrade (volume re-opened from the vault)').toBeTruthy();
+        console.log('Container upgrade: vault-backed volume re-opened after redeploy');
+    });
+
+    test('WASM: key rotation re-wraps the KEK and sealed KV survives', async ({ page }) => {
+        test.skip(!wasmRotateDeployed, 'vault-backed WASM not deployed — skipping');
+        test.setTimeout(300_000);
+        token = await getToken(page);
+
+        // Rotate the storage KEK to a new generation. A cheap re-wrap: the enclave
+        // exports the old KEK, creates the new one, unwraps the DEK under the old
+        // and re-wraps it under the new handle — the sealed KV (encrypted with the
+        // unchanged DEK) is never touched.
+        const rot = await page.request.post(
+            `${API}/api/v1/apps/${wasmRotateAppId}/versions/${wasmRotateVersionId}/rotate-key`,
+            {
+                headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+                data: { enclave_id: wasmRotateEnclaveId },
+                timeout: 240_000,
+            },
+        );
+        expect(rot.ok(), `rotate-key (${rot.status()}): ${await rot.text().catch(() => '')}`).toBeTruthy();
+        const rotBody = await rot.json();
+        expect(rotBody.rotated).toBe(true);
+        expect(rotBody.old_handle).toBe(wasmRotateHandleV1);
+        expect(rotBody.new_handle, 'new handle must differ from old').not.toBe(rotBody.old_handle);
+        console.log(`WASM rotate-key: ${rotBody.old_handle} -> ${rotBody.new_handle}`);
+
+        // The handle pointer advanced on the app record.
+        const appResp = await page.request.get(`${API}/api/v1/apps/${wasmRotateAppId}`, {
+            headers: { Authorization: `Bearer ${token}` },
+        });
+        expect(appResp.ok()).toBeTruthy();
+        expect((await appResp.json()).vault_key_handle).toBe(rotBody.new_handle);
+
+        // The running instance still reads the pre-rotation value (the DEK is
+        // unchanged; only its wrap advanced).
+        const readNow = await page.request.post(
+            `${API}/api/v1/apps/${wasmRotateAppId}/rpc/kv-read`,
+            {
+                headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+                data: { key: WASM_KV_KEY },
+                timeout: 20_000,
+            },
+        );
+        expect(readNow.ok()).toBeTruthy();
+        expect((await readNow.json()).returns?.[0]?.value).toBe(wasmKvValue);
+
+        // Redeploy (upgrade) on the rotated generation: mgmt ships the advanced
+        // handle on wasm_load, the enclave reconstructs the new KEK and unwraps the
+        // DEK, and the value still reads back — the strongest survival proof.
+        const redeploy = await page.request.post(
+            `${API}/api/v1/apps/${wasmRotateAppId}/versions/${wasmRotateVersionId}/deploy`,
+            {
+                headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+                data: { enclave_id: wasmRotateEnclaveId },
+                timeout: 120_000,
+            },
+        );
+        expect(redeploy.ok(), 'redeploy after rotation').toBeTruthy();
+        expect((await redeploy.json()).status).toBe('active');
+
+        const readAfter = await page.request.post(
+            `${API}/api/v1/apps/${wasmRotateAppId}/rpc/kv-read`,
+            {
+                headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+                data: { key: WASM_KV_KEY },
+                timeout: 20_000,
+            },
+        );
+        expect(readAfter.ok()).toBeTruthy();
+        expect((await readAfter.json()).returns?.[0]?.value, 'sealed KV survives rotation + redeploy').toBe(wasmKvValue);
+        console.log('WASM key rotation: sealed KV survived re-wrap + redeploy on the new generation');
+    });
+
+    test('WASM: upgrade (redeploy) keeps the vault-backed sealed KV', async ({ page }) => {
+        test.skip(!wasmRotateDeployed, 'vault-backed WASM not deployed — skipping');
+        test.setTimeout(180_000);
+        token = await getToken(page);
+
+        // The upgrade path for a vault-backed WASM app: redeploy re-runs wasm_load,
+        // which reconstructs the KEK from the constellation and unwraps the DEK from
+        // the host-side blob (instead of generating a fresh key as a non-vault app
+        // would). The previously stored value must read back.
+        const redeploy = await page.request.post(
+            `${API}/api/v1/apps/${wasmRotateAppId}/versions/${wasmRotateVersionId}/deploy`,
+            {
+                headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+                data: { enclave_id: wasmRotateEnclaveId },
+                timeout: 120_000,
+            },
+        );
+        expect(redeploy.ok(), 'redeploy (upgrade)').toBeTruthy();
+        expect((await redeploy.json()).status).toBe('active');
+
+        const read = await page.request.post(
+            `${API}/api/v1/apps/${wasmRotateAppId}/rpc/kv-read`,
+            {
+                headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+                data: { key: WASM_KV_KEY },
+                timeout: 20_000,
+            },
+        );
+        expect(read.ok()).toBeTruthy();
+        expect((await read.json()).returns?.[0]?.value, 'sealed KV survives upgrade').toBe(wasmKvValue);
+        console.log('WASM upgrade: vault-backed sealed KV survived redeploy');
     });
 
     // ── Phase 4: WASM verifications ────────────────────────────────
