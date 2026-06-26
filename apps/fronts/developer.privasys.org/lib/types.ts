@@ -184,6 +184,26 @@ export interface Enclave {
     updated_at: string;
 }
 
+// A single TDX measurement set an enclave reported on boot.
+export interface EnclaveMeasurementSet {
+    mrtd: string;
+    rtmr0: string;
+    rtmr1: string;
+    rtmr2: string;
+    rtmr3: string;
+    source: string;
+    recorded_at: string;
+}
+
+// Attested measurements for an enclave: MRENCLAVE for SGX, the latest MRTD +
+// RTMR0-3 set for TDX (plus how many distinct sets have been logged).
+export interface EnclaveMeasurements {
+    tee_type: TeeType;
+    mrenclave?: string;
+    latest?: EnclaveMeasurementSet;
+    recorded_count?: number;
+}
+
 export interface CreateEnclaveRequest {
     name: string;
     port: number;

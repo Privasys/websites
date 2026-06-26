@@ -1,4 +1,4 @@
-import type { App, CreateAppRequest, ReviewRequest, DeploymentLog, BuildJob, Enclave, CreateEnclaveRequest, AppVersion, AppDeployment, AttestationResult, TeeType, CachedImage } from './types';
+import type { App, CreateAppRequest, ReviewRequest, DeploymentLog, BuildJob, Enclave, CreateEnclaveRequest, EnclaveMeasurements, AppVersion, AppDeployment, AttestationResult, TeeType, CachedImage } from './types';
 import { getApiBaseUrl } from './api-base-url';
 
 const API_URL = getApiBaseUrl();
@@ -368,6 +368,10 @@ export function adminListEnclaves(token: string): Promise<Enclave[]> {
 
 export function adminGetEnclave(token: string, id: string): Promise<Enclave> {
     return request<Enclave>(`/api/v1/admin/enclaves/${encodeURIComponent(id)}`, token);
+}
+
+export function adminEnclaveMeasurements(token: string, id: string): Promise<EnclaveMeasurements> {
+    return request<EnclaveMeasurements>(`/api/v1/admin/enclaves/${encodeURIComponent(id)}/measurements`, token);
 }
 
 export function adminCreateEnclave(token: string, body: CreateEnclaveRequest): Promise<Enclave> {
