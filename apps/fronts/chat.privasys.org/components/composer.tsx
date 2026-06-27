@@ -24,6 +24,8 @@ export function Composer({
     onModelChange,
     sampling,
     onSamplingChange,
+    enabledTools,
+    onToggleTool,
     placeholder,
     autoFocus,
     disabledReason
@@ -41,6 +43,12 @@ export function Composer({
      *  toggle that opens an inline editor. */
     sampling?: SamplingParams;
     onSamplingChange?: (next: SamplingParams) => void;
+    /** Set of currently enabled tool names. When provided alongside
+     *  onToggleTool (and the instance advertises tools), the composer
+     *  renders a Tools button next to the prompt — Confer/Claude style —
+     *  that opens a popover of per-tool switches. */
+    enabledTools?: Set<string>;
+    onToggleTool?: (name: string, on: boolean) => void;
     placeholder?: string;
     autoFocus?: boolean;
     /**
@@ -51,8 +59,15 @@ export function Composer({
 }) {
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const [showAdvanced, setShowAdvanced] = useState(false);
+    const [showTools, setShowTools] = useState(false);
     const disabled = !!disabledReason;
     const advancedAvailable = !!sampling && !!onSamplingChange;
+    const availableTools = instance.available_tools ?? [];
+    const toolsAvailable = availableTools.length > 0 && !!onToggleTool;
+    const enabledCount = availableTools.reduce(
+        (n, t) => (enabledTools?.has(t.name) ? n + 1 : n),
+        0
+    );
 
     // Auto-resize textarea up to ~10 lines.
     useEffect(() => {
@@ -104,6 +119,69 @@ export function Composer({
                             onSelect={onModelChange}
                         />
                     </div>
+
+                    {toolsAvailable && (
+                        <div className="relative ml-1">
+                            <button
+                                type="button"
+                                onClick={() => setShowTools((s) => !s)}
+                                aria-expanded={showTools}
+                                title="AI tools"
+                                className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ${showTools || enabledCount > 0 ? 'text-[var(--color-text-primary)]' : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]'}`}
+                            >
+                                <ToolsIcon />
+                                <span className="hidden sm:inline">Tools</span>
+                                {enabledCount > 0 && (
+                                    <span className="grid h-4 min-w-4 place-items-center rounded-full bg-[var(--color-primary-blue)] px-1 text-[10px] font-semibold text-white">
+                                        {enabledCount}
+                                    </span>
+                                )}
+                            </button>
+
+                            {showTools && (
+                                <>
+                                    <button
+                                        type="button"
+                                        aria-hidden="true"
+                                        tabIndex={-1}
+                                        onClick={() => setShowTools(false)}
+                                        className="fixed inset-0 z-10 cursor-default"
+                                    />
+                                    <div className="absolute bottom-full left-0 z-20 mb-2 w-72 overflow-hidden rounded-xl border border-[var(--color-border-dark)] bg-[var(--color-surface-1)] shadow-xl shadow-black/30">
+                                        <p className="border-b border-[var(--color-border-dark)] px-3 py-2 text-[11px] font-medium tracking-wider text-[var(--color-text-muted)] uppercase">
+                                            AI Tools
+                                        </p>
+                                        <ul className="max-h-72 overflow-y-auto py-1">
+                                            {availableTools.map((t) => {
+                                                const on = enabledTools?.has(t.name) ?? false;
+                                                return (
+                                                    <li key={t.name}>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => onToggleTool?.(t.name, !on)}
+                                                            className="flex w-full items-start gap-2 px-3 py-2 text-left hover:bg-[var(--color-surface-2)]/60"
+                                                        >
+                                                            <span className="min-w-0 flex-1">
+                                                                <span className="block truncate text-sm text-[var(--color-text-primary)]">
+                                                                    {t.label}
+                                                                </span>
+                                                                {t.description && (
+                                                                    <span className="block truncate text-[11px] text-[var(--color-text-muted)]">
+                                                                        {t.description}
+                                                                    </span>
+                                                                )}
+                                                            </span>
+                                                            <Switch on={on} />
+                                                        </button>
+                                                    </li>
+                                                );
+                                            })}
+                                        </ul>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    )}
 
                     {advancedAvailable && (
                         <button
@@ -178,6 +256,37 @@ function StopIcon() {
         <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
             <rect x="6" y="6" width="12" height="12" rx="2" />
         </svg>
+    );
+}
+
+function ToolsIcon() {
+    return (
+        <svg
+            width="15"
+            height="15"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+        >
+            <path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4 2.5-2.5Z" />
+        </svg>
+    );
+}
+
+// Compact on/off pill switch (Confer-style) used in the Tools popover.
+function Switch({ on }: { on: boolean }) {
+    return (
+        <span
+            aria-hidden="true"
+            className={`mt-0.5 inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors ${on ? 'bg-[var(--color-primary-blue)]' : 'bg-[var(--color-surface-2)] ring-1 ring-[var(--color-border-dark)] ring-inset'}`}
+        >
+            <span
+                className={`h-3 w-3 rounded-full bg-white shadow-sm transition-transform ${on ? 'translate-x-3.5' : 'translate-x-0.5'}`}
+            />
+        </span>
     );
 }
 
