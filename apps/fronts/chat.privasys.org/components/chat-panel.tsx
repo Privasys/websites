@@ -9,9 +9,11 @@ import {
 import { DEFAULT_SAMPLING, type SamplingParams } from '~/lib/sampling';
 import { modelLabel } from '~/lib/model-label';
 import type { PersistedMessage, Rating, ToolInvocation } from '~/lib/conversations';
+import type { AddUserToolInput, UserTool } from '~/lib/chat-service-api';
 import type { SealedSession } from '@privasys/auth';
 import { clearFeedback, recordFeedback } from '~/lib/pending-feedback';
 import { waitForModelReady } from '~/lib/instance-api';
+import { fetchToolGrant } from '~/lib/chat-service-api';
 import { Composer } from './composer';
 import { Markdown } from './markdown';
 import { MetadataDialog } from './metadata-dialog';
@@ -58,7 +60,12 @@ export function ChatPanel({
     onBranchFromMessage,
     enabledTools,
     enabledToolNames,
-    onToggleTool
+    onToggleTool,
+    userTools,
+    onToggleUserTool,
+    onAddTool,
+    onRemoveUserTool,
+    toolPolicy
 }: {
     instance: Instance;
     model: AvailableModel | null;
@@ -92,6 +99,13 @@ export function ChatPanel({
     enabledToolNames?: Set<string>;
     /** Toggle a tool on/off from the composer's Tools popover. */
     onToggleTool?: (name: string, on: boolean) => void;
+    /** The user's persistent tools (from chat-service). */
+    userTools?: UserTool[];
+    onToggleUserTool?: (id: string, enabled: boolean) => void | Promise<void>;
+    onAddTool?: (input: AddUserToolInput) => Promise<void>;
+    onRemoveUserTool?: (id: string) => void | Promise<void>;
+    /** Fleet governance mode, gates the add-tool affordance. */
+    toolPolicy?: string;
 }) {
     const [messages, setMessages] = useState<DisplayMessage[]>(
         () => initialMessages.map((m) => ({ ...m }))
@@ -189,6 +203,14 @@ export function ChatPanel({
         const ctrl = new AbortController();
         abortRef.current = ctrl;
 
+        // Mint a fresh tool-grant for this turn so the enclave can admit the
+        // user's own MCP tools. Best-effort: a missing grant just means only
+        // the fleet's admin tools are available.
+        let toolGrant: string | undefined;
+        if (token && enabledTools && enabledTools.length > 0) {
+            toolGrant = (await fetchToolGrant(token, instance.id, ctrl.signal)) ?? undefined;
+        }
+
         // Pace assistant text into the UI on requestAnimationFrame so
         // bursty SSE arrivals (sealed-relay frame coalescing, vLLM
         // detokeniser hiccups) render as a steady typewriter instead
@@ -231,6 +253,7 @@ export function ChatPanel({
                 sealedRequired: !!instance.session_relay?.enabled,
                 signal: ctrl.signal,
                 enabledTools,
+                toolGrant,
                 onDelta: (delta) => {
                     smoother.push(delta);
                 },
@@ -458,6 +481,11 @@ export function ChatPanel({
             onSamplingChange={setSampling}
             enabledTools={enabledToolNames}
             onToggleTool={onToggleTool}
+            userTools={userTools}
+            onToggleUserTool={onToggleUserTool}
+            onAddTool={onAddTool}
+            onRemoveUserTool={onRemoveUserTool}
+            toolPolicy={toolPolicy}
             placeholder={
                 model
                     ? `Message ${modelLabel(model)}\u2026`

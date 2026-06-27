@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import type { AvailableModel, Instance } from '~/lib/types';
 import type { SamplingParams } from '~/lib/sampling';
+import type { AddUserToolInput, UserTool } from '~/lib/chat-service-api';
 import { ModelPicker } from './model-picker';
 import { SamplingEditor } from './sampling-editor';
 
@@ -26,6 +27,11 @@ export function Composer({
     onSamplingChange,
     enabledTools,
     onToggleTool,
+    userTools,
+    onToggleUserTool,
+    onAddTool,
+    onRemoveUserTool,
+    toolPolicy,
     placeholder,
     autoFocus,
     disabledReason
@@ -43,12 +49,19 @@ export function Composer({
      *  toggle that opens an inline editor. */
     sampling?: SamplingParams;
     onSamplingChange?: (next: SamplingParams) => void;
-    /** Set of currently enabled tool names. When provided alongside
+    /** Set of currently enabled (admin) tool names. When provided alongside
      *  onToggleTool (and the instance advertises tools), the composer
      *  renders a Tools button next to the prompt — Confer/Claude style —
      *  that opens a popover of per-tool switches. */
     enabledTools?: Set<string>;
     onToggleTool?: (name: string, on: boolean) => void;
+    /** The user's own persistent tools (from chat-service). */
+    userTools?: UserTool[];
+    onToggleUserTool?: (id: string, enabled: boolean) => void | Promise<void>;
+    onAddTool?: (input: AddUserToolInput) => Promise<void>;
+    onRemoveUserTool?: (id: string) => void | Promise<void>;
+    /** Fleet governance: 'locked' | 'enclave_only' | 'open'. Gates adding. */
+    toolPolicy?: string;
     placeholder?: string;
     autoFocus?: boolean;
     /**
@@ -63,11 +76,13 @@ export function Composer({
     const disabled = !!disabledReason;
     const advancedAvailable = !!sampling && !!onSamplingChange;
     const availableTools = instance.available_tools ?? [];
-    const toolsAvailable = availableTools.length > 0 && !!onToggleTool;
-    const enabledCount = availableTools.reduce(
-        (n, t) => (enabledTools?.has(t.name) ? n + 1 : n),
-        0
-    );
+    const myTools = userTools ?? [];
+    const canAddTool = !!onAddTool && !!toolPolicy && toolPolicy !== 'locked';
+    const toolsAvailable =
+        (availableTools.length > 0 && !!onToggleTool) || myTools.length > 0 || canAddTool;
+    const enabledCount =
+        availableTools.reduce((n, t) => (enabledTools?.has(t.name) ? n + 1 : n), 0) +
+        myTools.reduce((n, t) => (t.enabled ? n + 1 : n), 0);
 
     // Auto-resize textarea up to ~10 lines.
     useEffect(() => {
@@ -147,36 +162,63 @@ export function Composer({
                                         onClick={() => setShowTools(false)}
                                         className="fixed inset-0 z-10 cursor-default"
                                     />
-                                    <div className="absolute bottom-full left-0 z-20 mb-2 w-72 overflow-hidden rounded-xl border border-[var(--color-border-dark)] bg-[var(--color-surface-1)] shadow-xl shadow-black/30">
-                                        <p className="border-b border-[var(--color-border-dark)] px-3 py-2 text-[11px] font-medium tracking-wider text-[var(--color-text-muted)] uppercase">
-                                            AI Tools
-                                        </p>
-                                        <ul className="max-h-72 overflow-y-auto py-1">
-                                            {availableTools.map((t) => {
-                                                const on = enabledTools?.has(t.name) ?? false;
-                                                return (
-                                                    <li key={t.name}>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => onToggleTool?.(t.name, !on)}
-                                                            className="flex w-full items-start gap-2 px-3 py-2 text-left hover:bg-[var(--color-surface-2)]/60"
-                                                        >
-                                                            <span className="min-w-0 flex-1">
-                                                                <span className="block truncate text-sm text-[var(--color-text-primary)]">
-                                                                    {t.label}
-                                                                </span>
-                                                                {t.description && (
-                                                                    <span className="block truncate text-[11px] text-[var(--color-text-muted)]">
-                                                                        {t.description}
-                                                                    </span>
-                                                                )}
-                                                            </span>
-                                                            <Switch on={on} />
-                                                        </button>
-                                                    </li>
-                                                );
-                                            })}
-                                        </ul>
+                                    <div className="absolute bottom-full left-0 z-20 mb-2 w-80 overflow-hidden rounded-xl border border-[var(--color-border-dark)] bg-[var(--color-surface-1)] shadow-xl shadow-black/30">
+                                        <div className="max-h-96 overflow-y-auto">
+                                            {availableTools.length > 0 && (
+                                                <>
+                                                    <ToolSectionLabel>AI Tools</ToolSectionLabel>
+                                                    <ul className="py-1">
+                                                        {availableTools.map((t) => (
+                                                            <ToolRow
+                                                                key={t.name}
+                                                                label={t.label}
+                                                                description={t.description}
+                                                                on={enabledTools?.has(t.name) ?? false}
+                                                                onToggle={() =>
+                                                                    onToggleTool?.(
+                                                                        t.name,
+                                                                        !(enabledTools?.has(t.name) ?? false)
+                                                                    )
+                                                                }
+                                                            />
+                                                        ))}
+                                                    </ul>
+                                                </>
+                                            )}
+
+                                            {myTools.length > 0 && (
+                                                <>
+                                                    <ToolSectionLabel>Your tools</ToolSectionLabel>
+                                                    <ul className="py-1">
+                                                        {myTools.map((t) => (
+                                                            <ToolRow
+                                                                key={t.id}
+                                                                label={t.label || t.name}
+                                                                description={t.description}
+                                                                on={t.enabled}
+                                                                unverified={t.kind === 'external'}
+                                                                onToggle={() =>
+                                                                    void onToggleUserTool?.(t.id, !t.enabled)
+                                                                }
+                                                                onRemove={
+                                                                    onRemoveUserTool
+                                                                        ? () => void onRemoveUserTool(t.id)
+                                                                        : undefined
+                                                                }
+                                                            />
+                                                        ))}
+                                                    </ul>
+                                                </>
+                                            )}
+
+                                            {canAddTool && onAddTool && (
+                                                <AddToolForm
+                                                    instanceId={instance.id}
+                                                    allowExternal={toolPolicy === 'open'}
+                                                    onAdd={onAddTool}
+                                                />
+                                            )}
+                                        </div>
                                     </div>
                                 </>
                             )}
@@ -232,6 +274,238 @@ export function Composer({
                 </p>
             )}
         </div>
+    );
+}
+
+const toolInputCls =
+    'w-full rounded-md border border-[var(--color-border-dark)] bg-transparent px-2 py-1.5 text-sm text-[var(--color-text-primary)] outline-none focus:border-[var(--color-primary-blue)]/60';
+
+function ToolSectionLabel({ children }: { children: ReactNode }) {
+    return (
+        <p className="px-3 pt-2 pb-1 text-[11px] font-medium tracking-wider text-[var(--color-text-muted)] uppercase">
+            {children}
+        </p>
+    );
+}
+
+function ToolRow({
+    label,
+    description,
+    on,
+    unverified,
+    onToggle,
+    onRemove
+}: {
+    label: string;
+    description?: string;
+    on: boolean;
+    unverified?: boolean;
+    onToggle: () => void;
+    onRemove?: () => void;
+}) {
+    return (
+        <li className="group flex items-center gap-1 pr-2 hover:bg-[var(--color-surface-2)]/60">
+            <button
+                type="button"
+                onClick={onToggle}
+                className="flex min-w-0 flex-1 items-start gap-2 px-3 py-2 text-left"
+            >
+                <span className="min-w-0 flex-1">
+                    <span className="flex items-center gap-1.5">
+                        <span className="truncate text-sm text-[var(--color-text-primary)]">{label}</span>
+                        {unverified && (
+                            <span className="shrink-0 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-medium tracking-wide text-amber-600 uppercase dark:text-amber-400">
+                                unverified
+                            </span>
+                        )}
+                    </span>
+                    {description && (
+                        <span className="block truncate text-[11px] text-[var(--color-text-muted)]">
+                            {description}
+                        </span>
+                    )}
+                </span>
+                <Switch on={on} />
+            </button>
+            {onRemove && (
+                <button
+                    type="button"
+                    onClick={onRemove}
+                    title="Remove tool"
+                    className="shrink-0 rounded p-1 text-[var(--color-text-muted)] opacity-0 group-hover:opacity-100 hover:text-red-400"
+                >
+                    <TrashIcon />
+                </button>
+            )}
+        </li>
+    );
+}
+
+function KindTab({
+    active,
+    onClick,
+    children
+}: {
+    active: boolean;
+    onClick: () => void;
+    children: ReactNode;
+}) {
+    return (
+        <button
+            type="button"
+            onClick={onClick}
+            className={`flex-1 rounded px-2 py-1 ${active ? 'bg-[var(--color-surface-1)] text-[var(--color-text-primary)] shadow-sm' : 'text-[var(--color-text-muted)]'}`}
+        >
+            {children}
+        </button>
+    );
+}
+
+// Inline "Add a tool" form. Enclave (Privasys app) is the default and only
+// option under enclave_only; external is offered when the fleet policy is
+// open, behind an explicit off-platform acknowledgement.
+function AddToolForm({
+    instanceId,
+    allowExternal,
+    onAdd
+}: {
+    instanceId: string;
+    allowExternal: boolean;
+    onAdd: (input: AddUserToolInput) => Promise<void>;
+}) {
+    const [open, setOpen] = useState(false);
+    const [kind, setKind] = useState<'enclave' | 'external'>('enclave');
+    const [ref, setRef] = useState('');
+    const [name, setName] = useState('');
+    const [ack, setAck] = useState(false);
+    const [busy, setBusy] = useState(false);
+    const [err, setErr] = useState<string | undefined>();
+
+    const submit = async () => {
+        setErr(undefined);
+        if (!/^[a-zA-Z0-9_]+$/.test(name)) {
+            setErr('Name must be letters, numbers, or underscores.');
+            return;
+        }
+        if (!ref.trim()) {
+            setErr(kind === 'enclave' ? 'Enter the app id or alias.' : 'Enter the server URL.');
+            return;
+        }
+        if (kind === 'external' && !ack) {
+            setErr('Please acknowledge the off-platform notice.');
+            return;
+        }
+        setBusy(true);
+        try {
+            await onAdd({
+                kind,
+                ref: ref.trim(),
+                name,
+                acknowledged: kind === 'external' ? ack : undefined,
+                instance_id: instanceId
+            });
+            setRef('');
+            setName('');
+            setAck(false);
+            setOpen(false);
+        } catch (e) {
+            setErr(e instanceof Error ? e.message : 'Failed to add tool.');
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    if (!open) {
+        return (
+            <button
+                type="button"
+                onClick={() => setOpen(true)}
+                className="flex w-full items-center gap-2 border-t border-[var(--color-border-dark)] px-3 py-2.5 text-left text-sm text-[var(--color-primary-blue)] hover:bg-[var(--color-surface-2)]/60"
+            >
+                <PlusGlyph />
+                Add a tool…
+            </button>
+        );
+    }
+
+    return (
+        <div className="flex flex-col gap-2 border-t border-[var(--color-border-dark)] p-3">
+            {allowExternal && (
+                <div className="flex gap-1 rounded-md bg-[var(--color-surface-2)]/50 p-0.5 text-xs">
+                    <KindTab active={kind === 'enclave'} onClick={() => setKind('enclave')}>
+                        Privasys app
+                    </KindTab>
+                    <KindTab active={kind === 'external'} onClick={() => setKind('external')}>
+                        External
+                    </KindTab>
+                </div>
+            )}
+            <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Name (e.g. my_rag)"
+                className={toolInputCls}
+            />
+            <input
+                value={ref}
+                onChange={(e) => setRef(e.target.value)}
+                placeholder={kind === 'enclave' ? 'App id or alias' : 'https://server.example.com'}
+                className={toolInputCls}
+            />
+            {kind === 'external' && (
+                <label className="flex items-start gap-2 text-[11px] text-[var(--color-text-muted)]">
+                    <input
+                        type="checkbox"
+                        className="mt-0.5"
+                        checked={ack}
+                        onChange={(e) => setAck(e.target.checked)}
+                    />
+                    <span>
+                        This server runs outside Privasys. Data sent to it leaves the enclave
+                        and is not attested or protected.
+                    </span>
+                </label>
+            )}
+            {err && <p className="text-[11px] text-red-400">{err}</p>}
+            <div className="flex justify-end gap-2">
+                <button
+                    type="button"
+                    onClick={() => {
+                        setOpen(false);
+                        setErr(undefined);
+                    }}
+                    className="text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
+                >
+                    Cancel
+                </button>
+                <button
+                    type="button"
+                    onClick={() => void submit()}
+                    disabled={busy}
+                    className="rounded-md bg-[var(--color-primary-blue)] px-3 py-1 text-xs font-medium text-white disabled:opacity-50"
+                >
+                    {busy ? 'Adding…' : 'Add'}
+                </button>
+            </div>
+        </div>
+    );
+}
+
+function PlusGlyph() {
+    return (
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 5v14M5 12h14" />
+        </svg>
+    );
+}
+
+function TrashIcon() {
+    return (
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 6h18" />
+            <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+            <path d="M19 6 17.5 20a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2L5 6" />
+        </svg>
     );
 }
 

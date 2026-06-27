@@ -8,6 +8,7 @@ import { jwtSub } from '~/lib/jwt';
 import { modelLabel } from '~/lib/model-label';
 import { useConversations } from '~/lib/use-conversations';
 import { useEnabledTools } from '~/lib/use-enabled-tools';
+import { useUserTools } from '~/lib/use-user-tools';
 import { AppSidebar } from './app-sidebar';
 import { ChatPanel } from './chat-panel';
 import { SecurityView } from './security-view';
@@ -66,8 +67,19 @@ export function ChatShell({
     });
 
     const tools = useEnabledTools(instance.id, instance.available_tools);
-    const enabledToolsArray = useMemo(() => [...tools.enabled], [tools.enabled]);
-    const hasTools = (instance.available_tools?.length ?? 0) > 0;
+    const userTools = useUserTools(session?.accessToken);
+    const policyAllowsAdd = !!instance.tool_policy && instance.tool_policy !== 'locked';
+    const hasAdminTools = (instance.available_tools?.length ?? 0) > 0;
+    // The composer shows the Tools popover when there are admin tools, the
+    // user has saved tools, or the fleet policy lets them add one.
+    const showTools = hasAdminTools || userTools.tools.length > 0 || policyAllowsAdd;
+    // The X-Privasys-Tools header scopes the union catalogue to enabled
+    // admin + user tool names.
+    const enabledToolsArray = useMemo(() => {
+        const set = new Set<string>(tools.enabled);
+        for (const t of userTools.tools) if (t.enabled) set.add(t.name);
+        return [...set];
+    }, [tools.enabled, userTools.tools]);
 
     // ChatPanel is intentionally NOT remounted via a `key` when the
     // conversation changes. Re-keying was aborting in-flight chat
@@ -158,9 +170,14 @@ export function ChatShell({
                             conv.branchFromMessage(messageId);
                             goChat();
                         }}
-                        enabledTools={hasTools ? enabledToolsArray : undefined}
-                        enabledToolNames={hasTools ? tools.enabled : undefined}
-                        onToggleTool={hasTools ? tools.toggle : undefined}
+                        enabledTools={showTools ? enabledToolsArray : undefined}
+                        enabledToolNames={showTools ? tools.enabled : undefined}
+                        onToggleTool={showTools ? tools.toggle : undefined}
+                        userTools={userTools.tools}
+                        onToggleUserTool={userTools.setEnabled}
+                        onAddTool={userTools.add}
+                        onRemoveUserTool={userTools.remove}
+                        toolPolicy={instance.tool_policy}
                     />
                 )}
             </div>
