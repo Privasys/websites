@@ -25,7 +25,7 @@ import { deleteApp, cleanupApps } from './e2e-cleanup';
 const API = process.env.NEXT_PUBLIC_API_URL || 'https://api-test.developer.privasys.org';
 const COMMIT_URL =
     process.env.CHAT_SERVICE_COMMIT_URL ||
-    'https://github.com/Privasys/chat-service/commit/349f03ca1772e816d658f9085c3cd8367b395e0f';
+    'https://github.com/Privasys/chat-service/commit/92e3a08e50cd8c6c66f42a971e131130494fdd7b';
 const APP_NAME = 'e2e-chat-service';
 const PORT = 8080;
 
@@ -193,18 +193,21 @@ test.describe('chat-service container app', () => {
         await ctx.dispose();
     });
 
-    // Full readiness (the user-tools API + grant minting) needs two enclave
-    // runtime integrations that are config/ops, not app code:
-    //   - in-container Postgres on the sealed /data volume must start, and
-    //   - outbound TLS to the IdP must trust the enclave egress proxy CA
-    //     (OIDC discovery currently fails with "unknown authority").
-    // Until those land the deployed service runs degraded (JWKS works; the
-    // /me/tools + tool-grant routes 503). Unskip when the runtime config is in.
-    test.fixme('deployed chat-service /healthz reports ok (needs Postgres + egress CA)', async () => {
+    // Full readiness: Postgres (on /data) is up and OIDC discovery succeeded,
+    // so /healthz reports ok and the user-tools API + grant minting are live.
+    test('deployed chat-service /healthz reports ok', async () => {
+        test.skip(!deployed, 'chat-service not deployed — skipping');
         const ctx = await request.newContext({ ignoreHTTPSErrors: true });
-        const hz = await ctx.get(`https://${hostname}/healthz`, { timeout: 10_000 });
-        expect(hz.ok()).toBeTruthy();
-        expect((await hz.json()).status).toBe('ok');
+        let ok = false;
+        for (let i = 0; i < 18 && !ok; i++) {
+            const hz = await ctx.get(`https://${hostname}/healthz`, { timeout: 10_000 }).catch(() => null);
+            if (hz && hz.ok()) {
+                const b = await hz.json().catch(() => null);
+                if (b?.status === 'ok') ok = true;
+            }
+            if (!ok) await sleep(5_000);
+        }
+        expect(ok, 'chat-service /healthz should report ok (Postgres + OIDC up)').toBeTruthy();
         await ctx.dispose();
     });
 
