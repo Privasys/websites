@@ -61,6 +61,9 @@ export interface Instance {
      *  Each entry corresponds to one MCP server reachable from the
      *  confidential-ai container. Empty when no tools are configured. */
     available_tools?: AvailableTool[];
+    /** Fleet governance for user-added tools: 'locked' | 'enclave_only' |
+     *  'open'. Absent on older deployments → treat as 'locked'. */
+    tool_policy?: 'locked' | 'enclave_only' | 'open' | string;
 }
 
 /**

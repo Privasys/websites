@@ -151,6 +151,13 @@ export interface StreamChatArgs {
      * default (every configured server).
      */
     enabledTools?: string[];
+    /**
+     * Optional signed tool-grant (compact JWS from chat-service). When set,
+     * forwarded as the X-Privasys-Tool-Grant header so the enclave can admit
+     * the user's own MCP tools for this request. The enclave verifies the
+     * signature; the browser never names a server URL itself.
+     */
+    toolGrant?: string;
 }
 
 interface SSEChunk {
@@ -195,6 +202,9 @@ export async function streamChatCompletion(args: StreamChatArgs): Promise<void> 
     if (args.enabledTools !== undefined) {
         headers['X-Privasys-Tools'] = args.enabledTools.join(',');
     }
+    if (args.toolGrant) {
+        headers['X-Privasys-Tool-Grant'] = args.toolGrant;
+    }
 
     const body: Record<string, unknown> = {
         model: args.model,
@@ -231,7 +241,8 @@ export async function streamChatCompletion(args: StreamChatArgs): Promise<void> 
                     'X-Privasys-Reproducibility': '1',
                     ...(args.enabledTools !== undefined
                         ? { 'X-Privasys-Tools': args.enabledTools.join(',') }
-                        : {})
+                        : {}),
+                    ...(args.toolGrant ? { 'X-Privasys-Tool-Grant': args.toolGrant } : {})
                 }
             });
             if (sealed.status >= 400) {
