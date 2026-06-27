@@ -12,13 +12,13 @@
  * Run:
  *   npx playwright test --config apps/fronts/developer.privasys.org/e2e/playwright.config.ts fast-verify.spec.ts --project=portal --no-deps
  */
-import { test, expect, request } from '@playwright/test';
+import { test, expect } from '@playwright/test';
 import path from 'path';
 import { setupAuth, getToken as getE2eToken } from './e2e-auth';
+import { deleteApp, cleanupApps } from './e2e-cleanup';
 
 const screenshot = (name: string) => path.join(__dirname, 'test-results', `${name}.png`);
 const API = process.env.NEXT_PUBLIC_API_URL || 'https://api-test.developer.privasys.org';
-const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 // ── App config ─────────────────────────────────────────────────────
 const WASM_COMMIT_URL =
@@ -79,47 +79,8 @@ async function getToken(page: import('@playwright/test').Page): Promise<string> 
     return token;
 }
 
-// Delete an app by name (stop active deployments first, then remove). Takes an
-// APIRequestContext (page.request in tests, or a standalone context in afterAll)
-// so cleanup works both before a run and as a teardown that runs even when a
-// test fails (a final cleanup *test* would be skipped in serial mode on failure).
-async function deleteApp(
-    req: import('@playwright/test').APIRequestContext,
-    tok: string,
-    name: string,
-) {
-    const resp = await req.get(`${API}/api/v1/apps`, {
-        headers: { Authorization: `Bearer ${tok}` },
-    });
-    if (!resp.ok()) return;
-    const apps: { id: string; name: string }[] = await resp.json();
-    const app = apps.find(a => a.name === name);
-    if (!app) return;
-
-    // Stop active deployments first
-    const depsResp = await req.get(
-        `${API}/api/v1/apps/${app.id}/deployments`,
-        { headers: { Authorization: `Bearer ${tok}` } },
-    );
-    if (depsResp.ok()) {
-        const deps: { id: string; status: string }[] = await depsResp.json();
-        for (const dep of deps.filter(d => d.status === 'active')) {
-            await req.post(
-                `${API}/api/v1/apps/${app.id}/deployments/${dep.id}/stop`,
-                { headers: { Authorization: `Bearer ${tok}` }, timeout: 30_000 },
-            );
-        }
-        if (deps.some(d => d.status === 'active')) await sleep(5_000);
-    }
-    await req.delete(`${API}/api/v1/apps/${app.id}`, {
-        headers: { Authorization: `Bearer ${tok}` },
-    });
-    // Wait for enclave-side cleanup (snapshot removal)
-    await sleep(10_000);
-    console.log(`Deleted ${name} (${app.id})`);
-}
-
-// Every app this suite creates — pre-cleaned at the start and torn down in afterAll.
+// Every app this suite creates — pre-cleaned at the start (deleteApp) and torn
+// down in afterAll (cleanupApps). Both come from the shared ./e2e-cleanup helper.
 const SUITE_APPS = [WASM_APP_NAME, CONTAINER_APP_NAME, ROTATE_APP_NAME, WASM_ROTATE_APP_NAME];
 
 // Poll a deployment until it reaches `active` (or fails / times out).
@@ -151,21 +112,11 @@ async function waitForActive(
 test.describe('Fast Verification Suite', () => {
     test.describe.configure({ mode: 'serial' });
 
-    // Tear down every app this suite created, even when a test failed (an
-    // afterAll hook still runs; a cleanup *test* would be skipped in serial mode
-    // after a failure). Uses a standalone request context with the bearer token,
-    // so the admin Review-apps list isn't left littered with built e2e apps.
+    // Tear down every app this suite created, even when a test failed (afterAll
+    // still runs; a cleanup *test* would be skipped in serial mode after a
+    // failure), so the admin Review-apps list isn't littered with built e2e apps.
     test.afterAll(async () => {
-        if (!token) return;
-        const ctx = await request.newContext();
-        try {
-            for (const name of SUITE_APPS) await deleteApp(ctx, token, name);
-            console.log('afterAll: fast-verify apps cleaned up');
-        } catch (e) {
-            console.warn(`afterAll cleanup error: ${e}`);
-        } finally {
-            await ctx.dispose();
-        }
+        await cleanupApps({ names: SUITE_APPS });
     });
 
     // ── Phase 1: Create both apps ──────────────────────────────────

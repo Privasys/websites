@@ -15,6 +15,7 @@
  */
 import { test, expect } from '@playwright/test';
 import { setupAuth, getToken as getE2eToken } from './e2e-auth';
+import { cleanupApps } from './e2e-cleanup';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'https://api-test.developer.privasys.org';
 const APP_NAME = 'e2e-gemma4-pkg';
@@ -75,6 +76,11 @@ async function cleanupApp(page: import('@playwright/test').Page, tok: string, na
 
 test.describe('Gemma 4 Package Deploy', () => {
     test.describe.configure({ mode: 'serial' });
+
+    // Tear down the app this suite creates, even on failure (see ./e2e-cleanup).
+    test.afterAll(async () => {
+        await cleanupApps({ names: [APP_NAME] });
+    });
 
     test('cleanup previous run', async ({ page }) => {
         test.setTimeout(60_000);

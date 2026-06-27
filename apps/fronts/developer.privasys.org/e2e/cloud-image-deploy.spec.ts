@@ -40,6 +40,7 @@
  */
 import { test, expect, type Page } from '@playwright/test';
 import { setupAuth, getToken as getE2eToken } from './e2e-auth';
+import { cleanupApps } from './e2e-cleanup';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'https://api-test.developer.privasys.org';
 
@@ -99,6 +100,11 @@ async function deleteApp(page: Page, tok: string, name: string) {
 
 test.describe('Cloud-image deploy', () => {
     test.describe.configure({ mode: 'serial' });
+
+    // Tear down the app this suite creates, even on failure (see ./e2e-cleanup).
+    test.afterAll(async () => {
+        await cleanupApps({ names: [APP_NAME] });
+    });
 
     test('cleanup previous run', async ({ page }) => {
         test.setTimeout(60_000);
@@ -276,10 +282,5 @@ test.describe('Cloud-image deploy', () => {
         // legacy block below is preserved in git history for reference.
         return;
     });
-
-    test('cleanup', async ({ page }) => {
-        test.setTimeout(120_000);
-        token = await getToken(page);
-        await deleteApp(page, token, APP_NAME);
-    });
+    // Teardown handled by the afterAll hook above (reliable on failure too).
 });

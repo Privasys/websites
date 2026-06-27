@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import path from 'path';
 import { setupAuth, getToken } from './e2e-auth';
+import { cleanupApps } from './e2e-cleanup';
 
 // Coverage for the public App Store launch:
 //   - the unauthenticated store API (management-service): /store/apps, /store/apps/{slug}
@@ -18,6 +19,12 @@ interface StoreApp { slug: string; name: string; target: string; tee: string; ic
 
 test.describe('Public App Store', () => {
     test.describe.configure({ mode: 'serial' });
+
+    // The publish lifecycle test deletes its throwaway `e2e-store-<ts>` app, but
+    // back it up: if that test fails before the delete, remove it here by prefix.
+    test.afterAll(async () => {
+        await cleanupApps({ prefixes: ['e2e-store-'] });
+    });
 
     // ── Public store API (no auth) ─────────────────────────────────
 

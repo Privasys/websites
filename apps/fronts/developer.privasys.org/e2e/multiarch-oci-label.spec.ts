@@ -20,6 +20,7 @@
  */
 import { test, expect } from '@playwright/test';
 import { getToken } from './e2e-auth';
+import { cleanupApps } from './e2e-cleanup';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'https://api-test.developer.privasys.org';
 const TEST_APP_NAME = 'e2e-multiarch-oci-label';
@@ -41,6 +42,11 @@ async function deleteAppIfExists(page: import('@playwright/test').Page, token: s
 }
 
 test.describe('Container app — multi-arch OCI label auto-detect (bug #34)', () => {
+    // Tear down the app this suite creates, even on failure (see ./e2e-cleanup).
+    test.afterAll(async () => {
+        await cleanupApps({ names: [TEST_APP_NAME] });
+    });
+
     test('package-source app populates container_mcp from OCI image index', async ({ page }) => {
         test.setTimeout(60_000);
 
