@@ -98,8 +98,6 @@ export function ChatShell({
                 onRenameConversation={conv.rename}
                 onShowSecurity={() => setView('security')}
                 onShowSignIn={() => setView('signin')}
-                enabledTools={tools.enabled}
-                onToggleTool={tools.toggle}
             />
             <div className="flex min-w-0 flex-1 flex-col">
                 <header className="flex items-center gap-2 border-b border-[var(--color-border-dark)]/60 px-5 py-3">
@@ -161,6 +159,8 @@ export function ChatShell({
                             goChat();
                         }}
                         enabledTools={hasTools ? enabledToolsArray : undefined}
+                        enabledToolNames={hasTools ? tools.enabled : undefined}
+                        onToggleTool={hasTools ? tools.toggle : undefined}
                     />
                 )}
             </div>

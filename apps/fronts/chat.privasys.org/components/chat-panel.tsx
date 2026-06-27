@@ -56,7 +56,9 @@ export function ChatPanel({
     conversationId,
     onMessagesChange,
     onBranchFromMessage,
-    enabledTools
+    enabledTools,
+    enabledToolNames,
+    onToggleTool
 }: {
     instance: Instance;
     model: AvailableModel | null;
@@ -85,6 +87,11 @@ export function ChatPanel({
      *  proxy so the agentic loop is restricted to those MCP servers
      *  for this conversation. `undefined` keeps the proxy default. */
     enabledTools?: string[];
+    /** Set form of the enabled tools, used to drive the composer's
+     *  Tools popover checked state. */
+    enabledToolNames?: Set<string>;
+    /** Toggle a tool on/off from the composer's Tools popover. */
+    onToggleTool?: (name: string, on: boolean) => void;
 }) {
     const [messages, setMessages] = useState<DisplayMessage[]>(
         () => initialMessages.map((m) => ({ ...m }))
@@ -125,7 +132,11 @@ export function ChatPanel({
     // (`streaming`) so the on-disk shape matches PersistedMessage.
     const persist = useCallback(
         (next: DisplayMessage[]) => {
-            const sanitized: PersistedMessage[] = next.map(({ streaming, ...rest }) => rest);
+            const sanitized: PersistedMessage[] = next.map((m) => {
+                const copy: DisplayMessage = { ...m };
+                delete copy.streaming;
+                return copy;
+            });
             const id = onMessagesChange(sanitized);
             if (id) localConvIdRef.current = id;
         },
@@ -445,6 +456,8 @@ export function ChatPanel({
             onModelChange={onModelChange}
             sampling={sampling}
             onSamplingChange={setSampling}
+            enabledTools={enabledToolNames}
+            onToggleTool={onToggleTool}
             placeholder={
                 model
                     ? `Message ${modelLabel(model)}\u2026`
