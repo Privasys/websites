@@ -137,6 +137,14 @@ export default defineConfig({
             use: {
                 video: 'retain-on-failure'
             }
+        },
+        {
+            name: 'chat-service',
+            testMatch: 'chat-service.spec.ts',
+            // Authenticates in-test via getToken() (no storageState needed).
+            use: {
+                video: 'retain-on-failure'
+            }
         }
     ]
 });
