@@ -21,6 +21,7 @@ import { test, expect, Page } from '@playwright/test';
 import path from 'path';
 import fs from 'fs';
 import { setupAuth, getToken as getE2eToken } from './e2e-auth';
+import { cleanupApps } from './e2e-cleanup';
 
 const TUTORIAL_DIR = path.join(__dirname, 'test-results', 'tutorial');
 const API = process.env.NEXT_PUBLIC_API_URL || 'https://api-test.developer.privasys.org';
@@ -91,6 +92,11 @@ async function deleteAllApps(page: Page, token: string) {
 // ══════════════════════════════════════════════════════════════
 test.describe('WASM App Tutorial', () => {
     test.describe.configure({ mode: 'serial' });
+
+    // Tear down the apps this suite creates, even on failure (see ./e2e-cleanup).
+    test.afterAll(async () => {
+        await cleanupApps({ names: [WASM_APP_NAME, CONTAINER_APP_NAME] });
+    });
 
     test.beforeEach(async ({ page }) => {
         await setupAuth(page);

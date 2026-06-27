@@ -15,6 +15,7 @@
 import { test, expect } from '@playwright/test';
 import path from 'path';
 import { setupAuth, getToken as getE2eToken } from './e2e-auth';
+import { cleanupApps } from './e2e-cleanup';
 
 const screenshot = (name: string) => path.join(__dirname, 'test-results', `${name}.png`);
 const API = process.env.NEXT_PUBLIC_API_URL || 'https://api-test.developer.privasys.org';
@@ -83,6 +84,11 @@ async function deleteApp(
 // ════════════════════════════════════════════════════════════════════
 test.describe('Confidential AI Deployment', () => {
     test.describe.configure({ mode: 'serial' });
+
+    // Tear down the app this suite creates, even on failure (see ./e2e-cleanup).
+    test.afterAll(async () => {
+        await cleanupApps({ names: [APP_NAME] });
+    });
 
     // ── Phase 1: Create app ────────────────────────────────────────
 
@@ -361,9 +367,5 @@ test.describe('Confidential AI Deployment', () => {
 
     // ── Phase 8: Cleanup ───────────────────────────────────────────
 
-    test('cleanup: delete test app', async ({ page }) => {
-        test.setTimeout(60_000);
-        token = await getToken(page);
-        await deleteApp(page, token, APP_NAME);
-    });
+    // Teardown handled by the afterAll hook above (reliable on failure too).
 });

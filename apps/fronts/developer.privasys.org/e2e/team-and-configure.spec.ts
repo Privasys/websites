@@ -25,6 +25,7 @@
 import { test, expect } from '@playwright/test';
 import path from 'path';
 import { setupAuth, getToken as getE2eToken } from './e2e-auth';
+import { cleanupApps } from './e2e-cleanup';
 
 const screenshot = (name: string) => path.join(__dirname, 'test-results', `${name}.png`);
 const API = process.env.NEXT_PUBLIC_API_URL || 'https://api-test.developer.privasys.org';
@@ -344,16 +345,8 @@ test.describe('Owners Team + @config-api Freeze Gate', () => {
         });
     });
 
-    test.afterAll(async ({ browser }) => {
-        if (!appId || !token) return;
-        const ctx = await browser.newContext();
-        const p = await ctx.newPage();
-        try {
-            await deleteApp(p, token, APP_NAME);
-        } catch (err) {
-            console.log(`cleanup: ${err}`);
-        } finally {
-            await ctx.close();
-        }
+    // Tear down the app this suite creates, even on failure (see ./e2e-cleanup).
+    test.afterAll(async () => {
+        await cleanupApps({ names: [APP_NAME] });
     });
 });
