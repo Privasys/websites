@@ -71,6 +71,14 @@ interface AuthContextValue {
      * refused it (sign-in then re-creates it).
      */
     resumeSealed: (appHost: string) => Promise<void>;
+    /**
+     * Return a sealed session for an arbitrary enclave `appHost` (e.g. the
+     * chat-service back-end), independent of the primary `sealedSession`
+     * (which is the inference instance). Per-host cached; resumes silently
+     * via the EncAuth voucher. Returns null when not signed in, no voucher
+     * exists, or the enclave refused — callers then degrade gracefully.
+     */
+    getSealedSession: (appHost: string) => Promise<SealedSession | null>;
     signOut: () => Promise<void>;
 }
 
@@ -85,6 +93,7 @@ const AuthContext = createContext<AuthContextValue>({
     signIn: async () => {},
     signInInto: async () => {},
     resumeSealed: async () => {},
+    getSealedSession: async () => null,
     signOut: async () => {}
 });
 
@@ -126,6 +135,11 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
     const sealedFrameRef = useRef<AuthFrame | null>(null);
     const sealedHostRef = useRef<string | null>(null);
     const sealedResumeInFlight = useRef<Promise<void> | null>(null);
+    // Per-host sealed sessions for enclaves other than the inference instance
+    // (e.g. the chat-service back-end). Each enclave needs its own sealed
+    // session; this map keeps one frame + session per appHost.
+    const sealedByHost = useRef<Map<string, { frame: AuthFrame; session: SealedSession }>>(new Map());
+    const sealedByHostInFlight = useRef<Map<string, Promise<SealedSession | null>>>(new Map());
 
     const getFrame = useCallback(() => {
         if (!frameRef.current) {
@@ -276,6 +290,40 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
         [config, sealedSession]
     );
 
+    // getSealedSession returns (and caches) a sealed session for an arbitrary
+    // enclave appHost, independent of the primary instance session. Used to
+    // reach the chat-service back-end (a separate enclave) without the bearer
+    // or tool data ever crossing the gateway's terminate path.
+    const getSealedSession = useCallback(
+        async (appHost: string): Promise<SealedSession | null> => {
+            if (!session) return null;
+            const cached = sealedByHost.current.get(appHost);
+            if (cached) return cached.session;
+            const inflight = sealedByHostInFlight.current.get(appHost);
+            if (inflight) return inflight;
+            const run = (async (): Promise<SealedSession | null> => {
+                const frame = new AuthFrame({ ...config, sessionRelay: { appHost } });
+                try {
+                    const s = await frame.resumeSession();
+                    sealedByHost.current.set(appHost, { frame, session: s });
+                    return s;
+                } catch (err) {
+                    frame.destroy();
+                    // no-voucher / rejected / unavailable — caller degrades.
+                    console.log(`[chat-auth] sealed session for ${appHost} unavailable:`, (err as Error).message);
+                    return null;
+                }
+            })();
+            sealedByHostInFlight.current.set(appHost, run);
+            try {
+                return await run;
+            } finally {
+                sealedByHostInFlight.current.delete(appHost);
+            }
+        },
+        [config, session]
+    );
+
     const signOut = useCallback(async () => {
         const frame = getFrame();
         await frame.clearSession();
@@ -284,6 +332,8 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
         sealedFrameRef.current?.destroy();
         sealedFrameRef.current = null;
         sealedHostRef.current = null;
+        for (const { frame: f } of sealedByHost.current.values()) f.destroy();
+        sealedByHost.current.clear();
     }, [getFrame]);
 
     const getTokenForAudience = useCallback(
@@ -319,7 +369,7 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
 
     return (
         <AuthContext.Provider
-            value={{ session, loading, expired, sealedSession, getTokenForAudience, signIn, signInInto, resumeSealed, signOut }}
+            value={{ session, loading, expired, sealedSession, getTokenForAudience, signIn, signInInto, resumeSealed, getSealedSession, signOut }}
         >
             {children}
         </AuthContext.Provider>
