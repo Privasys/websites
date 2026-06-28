@@ -1870,9 +1870,12 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
             } else {
                 versionId = pickVersion; // fallback: an existing version id
             }
-            // Vault-backed: approve the new measurement before the cutover so the
-            // data key is released cleanly with no locked-data window.
-            if (needsApproval) {
+            // Vault-backed upgrade: when there is already a running deployment,
+            // approve the new measurement before the cutover so the data key is
+            // released cleanly with no locked-data window. On a first deploy the
+            // key does not exist yet — the enclave creates it during deploy — so
+            // staging a profile would fail with "key not found"; skip it.
+            if (needsApproval && currentDeployment) {
                 setWorkMsg('Staging measurement…');
                 await stageProfile(token, app.id, versionId, pickEnclave);
                 setWorkMsg('Promoting (releasing data key)…');
