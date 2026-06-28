@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { chatServiceHost } from '~/lib/chat-service-api';
 import { useAuth } from '~/lib/privasys-auth';
 import type { Instance } from '~/lib/types';
 
@@ -9,11 +10,11 @@ import type { Instance } from '~/lib/types';
 // shell (sidebar + header) remains visible during authentication.
 export function SignInView({
     instance,
-    onCancel,
     onSuccess
 }: {
     instance: Instance;
-    onCancel: () => void;
+    /** Accepted for API compatibility; the inline view has no cancel affordance. */
+    onCancel?: () => void;
     onSuccess: () => void;
 }) {
     const { signInInto } = useAuth();
@@ -40,7 +41,13 @@ export function SignInView({
         const sessionRelayHost = instance.session_relay?.enabled
             ? instance.session_relay.app_host
             : undefined;
-        void signInInto(el, sessionRelayHost ? { sessionRelayHost } : undefined)
+        // Multi-app attestation: seal the chat-service back-end (a separate
+        // enclave) in the SAME wallet ceremony, so getSealedSession(chatHost)
+        // later resumes silently without a second phone touch.
+        const opts = sessionRelayHost
+            ? { sessionRelayHost, extraAppHosts: [chatServiceHost()] }
+            : undefined;
+        void signInInto(el, opts)
             .then(() => onSuccess())
             .catch((e: unknown) => {
                 const msg = e instanceof Error ? e.message : 'Sign-in failed.';

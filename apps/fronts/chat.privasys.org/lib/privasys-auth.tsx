@@ -52,7 +52,7 @@ interface AuthContextValue {
      */
     getTokenForAudience: (audience: string) => Promise<string>;
     /** Open the auth ceremony in a full-screen overlay (default). */
-    signIn: (opts?: { sessionRelayHost?: string }) => Promise<void>;
+    signIn: (opts?: { sessionRelayHost?: string; extraAppHosts?: string[] }) => Promise<void>;
     /**
      * Mount the auth iframe inline inside `container` (instead of a
      * full-screen overlay). Used by the in-panel sign-in view so the
@@ -61,7 +61,7 @@ interface AuthContextValue {
      * persistent renewal frame picks up the session via cross-origin
      * SSO and starts the silent-renewal timer.
      */
-    signInInto: (container: HTMLElement, opts?: { sessionRelayHost?: string }) => Promise<void>;
+    signInInto: (container: HTMLElement, opts?: { sessionRelayHost?: string; extraAppHosts?: string[] }) => Promise<void>;
     /**
      * Re-establish the sealed enclave session after a page reload with
      * no wallet ceremony and no push: the privasys.id iframe bootstraps
@@ -196,7 +196,7 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
     );
 
     const signIn = useCallback(
-        async (opts?: { sessionRelayHost?: string }) => {
+        async (opts?: { sessionRelayHost?: string; extraAppHosts?: string[] }) => {
             // For the sealed-transport flow we need a one-shot frame whose
             // `sessionRelay.appHost` was set at construction time so the QR
             // includes the SDK pubkey. The persistent frame (used for SSO
@@ -204,7 +204,10 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
             if (opts?.sessionRelayHost) {
                 const oneShot = new AuthFrame({
                     ...config,
-                    sessionRelay: { appHost: opts.sessionRelayHost }
+                    sessionRelay: {
+                        appHost: opts.sessionRelayHost,
+                        ...(opts.extraAppHosts?.length ? { extraAppHosts: opts.extraAppHosts } : {})
+                    }
                 });
                 const result = await oneShot.signIn();
                 acceptResultToken(result.accessToken ?? result.sessionToken);
@@ -226,7 +229,7 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
     );
 
     const signInInto = useCallback(
-        async (container: HTMLElement, opts?: { sessionRelayHost?: string }) => {
+        async (container: HTMLElement, opts?: { sessionRelayHost?: string; extraAppHosts?: string[] }) => {
             // One-shot inline frame. We don't reuse `frameRef` because
             // `container` is a constructor-only option in @privasys/auth
             // and the persistent frame must keep its renewal iframe
@@ -235,7 +238,12 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
                 ...config,
                 container,
                 ...(opts?.sessionRelayHost
-                    ? { sessionRelay: { appHost: opts.sessionRelayHost } }
+                    ? {
+                        sessionRelay: {
+                            appHost: opts.sessionRelayHost,
+                            ...(opts.extraAppHosts?.length ? { extraAppHosts: opts.extraAppHosts } : {})
+                        }
+                    }
                     : {})
             });
             const result = await inline.signIn();
