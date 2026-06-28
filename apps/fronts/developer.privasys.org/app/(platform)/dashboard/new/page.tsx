@@ -341,6 +341,9 @@ export default function NewApplicationPage() {
         setSubmitting(true);
         setError(null);
 
+        const isContainerApp =
+            sourceMode === 'package' || sourceMode === 'cloud_image' || appType === 'container';
+
         try {
             const app = await createApp(session.accessToken, {
                 name: appName,
@@ -352,7 +355,15 @@ export default function NewApplicationPage() {
                 app_type: (sourceMode === 'package' || sourceMode === 'cloud_image') ? 'container' : appType,
                 container_image: sourceMode === 'package' ? containerImage.trim() : undefined,
                 cloud_image_name: sourceMode === 'cloud_image' ? cloudImageName : undefined,
-                cloud_image_channel: sourceMode === 'cloud_image' ? cloudImageChannel : undefined
+                cloud_image_channel: sourceMode === 'cloud_image' ? cloudImageChannel : undefined,
+                // Every container app gets an encrypted, vault-backed persistent
+                // volume mounted at /data. This is enclave-sealed storage that
+                // survives stop/start and image upgrades; the deployer reserves a
+                // key handle and mints the DEK in the fleet vault. Omitting these
+                // leaves the volume off, so the container's /data is lost on every
+                // restart.
+                container_storage: isContainerApp ? true : undefined,
+                key_provider: isContainerApp ? 'enclave_generated' : undefined
             });
 
             if (sourceMode === 'upload' && file) {
