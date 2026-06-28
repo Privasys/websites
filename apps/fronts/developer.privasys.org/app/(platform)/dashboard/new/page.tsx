@@ -359,11 +359,10 @@ export default function NewApplicationPage() {
                 // Every container app gets an encrypted, vault-backed persistent
                 // volume mounted at /data. This is enclave-sealed storage that
                 // survives stop/start and image upgrades; the deployer reserves a
-                // key handle and mints the DEK in the fleet vault. Omitting these
-                // leaves the volume off, so the container's /data is lost on every
-                // restart.
-                container_storage: isContainerApp ? true : undefined,
-                key_provider: isContainerApp ? 'enclave_generated' : undefined
+                // key handle and mints the DEK in the fleet vault. The key
+                // provider is defaulted server-side. Omitting this leaves the
+                // volume off, so the container's /data is lost on every restart.
+                container_storage: isContainerApp ? true : undefined
             });
 
             if (sourceMode === 'upload' && file) {
