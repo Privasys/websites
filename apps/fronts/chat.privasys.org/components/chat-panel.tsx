@@ -65,7 +65,8 @@ export function ChatPanel({
     onToggleUserTool,
     onAddTool,
     onRemoveUserTool,
-    toolPolicy
+    toolPolicy,
+    chatSession
 }: {
     instance: Instance;
     model: AvailableModel | null;
@@ -106,6 +107,8 @@ export function ChatPanel({
     onRemoveUserTool?: (id: string) => void | Promise<void>;
     /** Fleet governance mode, gates the add-tool affordance. */
     toolPolicy?: string;
+    /** Dedicated sealed session to chat-service, for minting tool-grants. */
+    chatSession?: SealedSession | null;
 }) {
     const [messages, setMessages] = useState<DisplayMessage[]>(
         () => initialMessages.map((m) => ({ ...m }))
@@ -203,12 +206,13 @@ export function ChatPanel({
         const ctrl = new AbortController();
         abortRef.current = ctrl;
 
-        // Mint a fresh tool-grant for this turn so the enclave can admit the
-        // user's own MCP tools. Best-effort: a missing grant just means only
-        // the fleet's admin tools are available.
+        // Mint a fresh tool-grant for this turn (over chat-service's sealed
+        // session) so the enclave can admit the user's own MCP tools.
+        // Best-effort: no chat session / no grant just means only the fleet's
+        // admin tools are available.
         let toolGrant: string | undefined;
-        if (token && enabledTools && enabledTools.length > 0) {
-            toolGrant = (await fetchToolGrant(token, instance.id, ctrl.signal)) ?? undefined;
+        if (chatSession && token && enabledTools && enabledTools.length > 0) {
+            toolGrant = (await fetchToolGrant(chatSession, token, instance.id)) ?? undefined;
         }
 
         // Pace assistant text into the UI on requestAnimationFrame so
@@ -433,7 +437,7 @@ export function ChatPanel({
                 return next;
             });
         }
-    }, [input, streaming, model, instance.endpoint, messages, token, sampling, persist]);
+    }, [input, streaming, model, instance.endpoint, messages, token, sampling, persist, chatSession, enabledTools]);
 
     const stop = useCallback(() => abortRef.current?.abort(), []);
 

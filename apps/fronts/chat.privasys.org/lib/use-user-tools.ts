@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import type { SealedSession } from '@privasys/auth';
 import {
     addUserTool,
     deleteUserTool,
@@ -11,10 +12,10 @@ import {
 } from './chat-service-api';
 
 // useUserTools loads and mutates the signed-in user's persistent MCP tools
-// from chat-service. The list is the source of truth across sessions and
-// devices (unlike the admin whitelist, which comes from the instance
-// payload and is toggled in localStorage). When there is no token the hook
-// stays empty and inert — an anonymous chat only sees the fleet's tools.
+// from chat-service over its dedicated sealed session. The list is the source
+// of truth across sessions and devices. When there is no sealed session
+// (signed out, or no chat-service voucher yet) the hook stays empty and inert
+// — the chat still works with the fleet's admin tools.
 export interface UserToolsState {
     tools: UserTool[];
     loading: boolean;
@@ -25,59 +26,68 @@ export interface UserToolsState {
     reload: () => void;
 }
 
-export function useUserTools(token: string | undefined): UserToolsState {
+export function useUserTools(
+    session: SealedSession | null,
+    token: string | undefined
+): UserToolsState {
     const [tools, setTools] = useState<UserTool[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | undefined>();
     const [nonce, setNonce] = useState(0);
+    const ready = !!session && !!token;
 
     useEffect(() => {
-        if (!token) {
+        if (!session || !token) {
             setTools([]);
             return;
         }
-        const ctrl = new AbortController();
+        let cancelled = false;
         setLoading(true);
         setError(undefined);
-        fetchUserTools(token, ctrl.signal)
-            .then((t) => setTools(t))
-            .catch((e) => {
-                if (e?.name !== 'AbortError') setError(e?.message ?? 'failed to load tools');
+        fetchUserTools(session, token)
+            .then((t) => {
+                if (!cancelled) setTools(t);
             })
-            .finally(() => setLoading(false));
-        return () => ctrl.abort();
-    }, [token, nonce]);
+            .catch((e) => {
+                if (!cancelled) setError(e?.message ?? 'failed to load tools');
+            })
+            .finally(() => {
+                if (!cancelled) setLoading(false);
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, [session, token, nonce]);
 
     const reload = useCallback(() => setNonce((n) => n + 1), []);
 
     const add = useCallback(
         async (input: AddUserToolInput) => {
-            if (!token) throw new Error('sign in to add a tool');
-            const created = await addUserTool(token, input);
+            if (!session || !token) throw new Error('sign in to add a tool');
+            const created = await addUserTool(session, token, input);
             setTools((prev) => [...prev, created]);
         },
-        [token]
+        [session, token]
     );
 
     const remove = useCallback(
         async (id: string) => {
-            if (!token) return;
-            await deleteUserTool(token, id);
+            if (!session || !token) return;
+            await deleteUserTool(session, token, id);
             setTools((prev) => prev.filter((t) => t.id !== id));
         },
-        [token]
+        [session, token]
     );
 
     const setEnabled = useCallback(
         async (id: string, enabled: boolean) => {
-            if (!token) return;
-            // Optimistic; reconcile from the server response.
+            if (!session || !token) return;
             setTools((prev) => prev.map((t) => (t.id === id ? { ...t, enabled } : t)));
-            const updated = await setUserToolEnabled(token, id, enabled);
+            const updated = await setUserToolEnabled(session, token, id, enabled);
             setTools((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
         },
-        [token]
+        [session, token]
     );
 
-    return { tools, loading, error, add, remove, setEnabled, reload };
+    return { tools, loading: ready && loading, error, add, remove, setEnabled, reload };
 }

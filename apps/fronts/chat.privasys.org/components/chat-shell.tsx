@@ -9,6 +9,8 @@ import { modelLabel } from '~/lib/model-label';
 import { useConversations } from '~/lib/use-conversations';
 import { useEnabledTools } from '~/lib/use-enabled-tools';
 import { useUserTools } from '~/lib/use-user-tools';
+import { chatServiceHost } from '~/lib/chat-service-api';
+import type { SealedSession } from '@privasys/auth';
 import { AppSidebar } from './app-sidebar';
 import { ChatPanel } from './chat-panel';
 import { SecurityView } from './security-view';
@@ -38,8 +40,27 @@ export function ChatShell({
     disabledReason?: string;
     userGreeting?: string;
 }) {
-    const { session, sealedSession, resumeSealed } = useAuth();
+    const { session, sealedSession, resumeSealed, getSealedSession } = useAuth();
     const [model, setModel] = useState<AvailableModel | null>(initialModel);
+
+    // chat-service is a separate enclave from the inference instance, so it
+    // needs its own sealed session (the user's bearer + tool data never cross
+    // the gateway's terminate path). Establish it once signed in; null until a
+    // chat-service voucher exists, in which case BYO-MCP degrades gracefully.
+    const [chatSession, setChatSession] = useState<SealedSession | null>(null);
+    useEffect(() => {
+        if (!session) {
+            setChatSession(null);
+            return;
+        }
+        let cancelled = false;
+        void getSealedSession(chatServiceHost()).then((s) => {
+            if (!cancelled) setChatSession(s);
+        });
+        return () => {
+            cancelled = true;
+        };
+    }, [session, getSealedSession]);
 
     // Sealed transport must survive page reloads without a wallet
     // ceremony: the OIDC session restores via cross-site SSO, and the
@@ -67,7 +88,7 @@ export function ChatShell({
     });
 
     const tools = useEnabledTools(instance.id, instance.available_tools);
-    const userTools = useUserTools(session?.accessToken);
+    const userTools = useUserTools(chatSession, session?.accessToken);
     const policyAllowsAdd = !!instance.tool_policy && instance.tool_policy !== 'locked';
     const hasAdminTools = (instance.available_tools?.length ?? 0) > 0;
     // The composer shows the Tools popover when there are admin tools, the
@@ -178,6 +199,7 @@ export function ChatShell({
                         onAddTool={userTools.add}
                         onRemoveUserTool={userTools.remove}
                         toolPolicy={instance.tool_policy}
+                        chatSession={chatSession}
                     />
                 )}
             </div>

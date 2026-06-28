@@ -1,12 +1,26 @@
 // Client for the chat-service back-end (api.chat.privasys.org).
 //
-// chat-service owns the user's persistent MCP tool list and mints the
-// signed tool-grant the chat forwards to the confidential-ai enclave. It is
-// distinct from management-service (instance discovery / control plane): the
-// chat front-end talks to both.
+// chat-service owns the user's persistent MCP tool list and mints the signed
+// tool-grant the chat forwards to the confidential-ai enclave. It is a
+// separate enclave from the inference instance and sits behind the gateway's
+// terminate marker, so the browser reaches its authenticated API over a
+// DEDICATED sealed session (PrivasysSession) — never plain fetch — and carries
+// the user's bearer INSIDE the sealed envelope so the gateway never sees it.
+// See chat-stream.ts for the equivalent sealed transport to confidential-ai.
+
+import type { SealedResponse, SealedSession } from '@privasys/auth';
 
 const CHAT_SERVICE_URL =
     process.env.NEXT_PUBLIC_CHAT_SERVICE_URL ?? 'https://api.chat.privasys.org';
+
+/** Bare host (no scheme) of chat-service, for sealed-session bootstrap. */
+export function chatServiceHost(): string {
+    try {
+        return new URL(CHAT_SERVICE_URL).host;
+    } catch {
+        return 'api.chat.privasys.org';
+    }
+}
 
 export type ToolKind = 'enclave' | 'external';
 
@@ -46,78 +60,84 @@ export interface AddUserToolInput {
     instance_id?: string;
 }
 
-function authHeaders(token: string): Record<string, string> {
-    return { Authorization: `Bearer ${token}`, Accept: 'application/json' };
-}
+const decoder = new TextDecoder();
 
-async function asError(res: Response): Promise<Error> {
-    const body = (await res.json().catch(() => null)) as { error?: string } | null;
-    return new Error(body?.error || `${res.status} ${res.statusText}`);
+// call issues a sealed request to chat-service with the user's bearer inside
+// the encrypted envelope, and decodes the JSON body. Throws on non-2xx.
+async function call<T>(
+    session: SealedSession,
+    token: string,
+    method: string,
+    path: string,
+    body?: unknown
+): Promise<T> {
+    const res: SealedResponse = await session.request(method, path, body, {
+        headers: { Authorization: `Bearer ${token}` }
+    });
+    const text = res.body && res.body.byteLength ? decoder.decode(res.body) : '';
+    if (res.status < 200 || res.status >= 300) {
+        let msg = `${res.status}`;
+        try {
+            const j = text ? (JSON.parse(text) as { error?: string }) : null;
+            if (j?.error) msg = j.error;
+        } catch {
+            if (text) msg = text;
+        }
+        throw new Error(msg);
+    }
+    return (text ? JSON.parse(text) : {}) as T;
 }
 
 /** List the caller's persistent tools. */
-export async function fetchUserTools(token: string, signal?: AbortSignal): Promise<UserTool[]> {
-    const res = await fetch(`${CHAT_SERVICE_URL}/api/v1/me/tools`, {
-        headers: authHeaders(token),
-        signal
-    });
-    if (!res.ok) throw await asError(res);
-    const data = (await res.json()) as { tools: UserTool[] };
+export async function fetchUserTools(session: SealedSession, token: string): Promise<UserTool[]> {
+    const data = await call<{ tools: UserTool[] }>(session, token, 'GET', '/api/v1/me/tools');
     return data.tools ?? [];
 }
 
 /** Add a tool (enclave or external). */
-export async function addUserTool(token: string, input: AddUserToolInput): Promise<UserTool> {
-    const res = await fetch(`${CHAT_SERVICE_URL}/api/v1/me/tools`, {
-        method: 'POST',
-        headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
-        body: JSON.stringify(input)
-    });
-    if (!res.ok) throw await asError(res);
-    return res.json();
+export async function addUserTool(
+    session: SealedSession,
+    token: string,
+    input: AddUserToolInput
+): Promise<UserTool> {
+    return call<UserTool>(session, token, 'POST', '/api/v1/me/tools', input);
 }
 
 /** Enable/disable a tool. */
 export async function setUserToolEnabled(
+    session: SealedSession,
     token: string,
     id: string,
     enabled: boolean
 ): Promise<UserTool> {
-    const res = await fetch(`${CHAT_SERVICE_URL}/api/v1/me/tools/${encodeURIComponent(id)}`, {
-        method: 'PATCH',
-        headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ enabled })
+    return call<UserTool>(session, token, 'PATCH', `/api/v1/me/tools/${encodeURIComponent(id)}`, {
+        enabled
     });
-    if (!res.ok) throw await asError(res);
-    return res.json();
 }
 
 /** Remove a tool. */
-export async function deleteUserTool(token: string, id: string): Promise<void> {
-    const res = await fetch(`${CHAT_SERVICE_URL}/api/v1/me/tools/${encodeURIComponent(id)}`, {
-        method: 'DELETE',
-        headers: authHeaders(token)
-    });
-    if (!res.ok && res.status !== 204) throw await asError(res);
+export async function deleteUserTool(session: SealedSession, token: string, id: string): Promise<void> {
+    await call<unknown>(session, token, 'DELETE', `/api/v1/me/tools/${encodeURIComponent(id)}`);
 }
 
 /**
  * Mint a tool-grant for {user, instance}. The returned compact JWS is
- * forwarded to the enclave as the X-Privasys-Tool-Grant header. Returns null
- * when chat-service is unreachable so chat still works with admin tools.
+ * forwarded to the inference enclave as the X-Privasys-Tool-Grant header.
+ * Returns null when chat-service is unreachable so chat still works with the
+ * fleet's admin tools.
  */
 export async function fetchToolGrant(
+    session: SealedSession,
     token: string,
-    instanceId: string,
-    signal?: AbortSignal
+    instanceId: string
 ): Promise<string | null> {
     try {
-        const res = await fetch(
-            `${CHAT_SERVICE_URL}/api/v1/instances/${encodeURIComponent(instanceId)}/tool-grant`,
-            { method: 'POST', headers: authHeaders(token), signal }
+        const data = await call<{ grant?: string }>(
+            session,
+            token,
+            'POST',
+            `/api/v1/instances/${encodeURIComponent(instanceId)}/tool-grant`
         );
-        if (!res.ok) return null;
-        const data = (await res.json()) as { grant?: string };
         return data.grant ?? null;
     } catch {
         return null;
