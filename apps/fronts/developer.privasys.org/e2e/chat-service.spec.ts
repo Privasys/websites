@@ -25,7 +25,7 @@ import { deleteApp, cleanupApps } from './e2e-cleanup';
 const API = process.env.NEXT_PUBLIC_API_URL || 'https://api-test.developer.privasys.org';
 const COMMIT_URL =
     process.env.CHAT_SERVICE_COMMIT_URL ||
-    'https://github.com/Privasys/chat-service/commit/92e3a08e50cd8c6c66f42a971e131130494fdd7b';
+    'https://github.com/Privasys/chat-service/commit/c8bac3fd9103b97057c20d3097cb048dabee81c7';
 const APP_NAME = 'e2e-chat-service';
 const PORT = 8080;
 
@@ -208,6 +208,21 @@ test.describe('chat-service container app', () => {
             if (!ok) await sleep(5_000);
         }
         expect(ok, 'chat-service /healthz should report ok (Postgres + OIDC up)').toBeTruthy();
+        await ctx.dispose();
+    });
+
+    test('configure is gateway-gated against direct external POST', async () => {
+        test.skip(!deployed, 'chat-service not deployed — skipping');
+        const ctx = await request.newContext({ ignoreHTTPSErrors: true });
+        // The /configure endpoint exists and is auth-gated, but the gateway
+        // refuses direct external mutating calls (sealed-transport-required).
+        // Real config delivery goes through the owner-authed management-service
+        // RPC relay; this asserts the gateway does not expose it directly.
+        const r = await ctx.post(`https://${hostname}/configure`, {
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+            data: { mgmt_base_url: API }
+        });
+        expect(r.status(), 'gateway should reject a direct external POST /configure').toBe(403);
         await ctx.dispose();
     });
 
