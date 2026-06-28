@@ -49,12 +49,13 @@ export function ChatShell({
     // chat-service voucher exists, in which case BYO-MCP degrades gracefully.
     const [chatSession, setChatSession] = useState<SealedSession | null>(null);
     useEffect(() => {
-        if (!session) {
+        const host = chatServiceHost();
+        if (!session || !host) {
             setChatSession(null);
             return;
         }
         let cancelled = false;
-        void getSealedSession(chatServiceHost()).then((s) => {
+        void getSealedSession(host).then((s) => {
             if (!cancelled) setChatSession(s);
         });
         return () => {

@@ -10,15 +10,18 @@
 
 import type { SealedResponse, SealedSession } from '@privasys/auth';
 
-const CHAT_SERVICE_URL =
-    process.env.NEXT_PUBLIC_CHAT_SERVICE_URL ?? 'https://api.chat.privasys.org';
+// Empty unless explicitly configured for this deployment. BYO-MCP stays fully
+// dormant (no sealed-session bootstrap, no calls) until a chat-service host is
+// set — so environments without a chat-service deployed make zero attempts.
+const CHAT_SERVICE_URL = process.env.NEXT_PUBLIC_CHAT_SERVICE_URL ?? '';
 
-/** Bare host (no scheme) of chat-service, for sealed-session bootstrap. */
+/** Bare host (no scheme) of chat-service, or '' when not configured. */
 export function chatServiceHost(): string {
+    if (!CHAT_SERVICE_URL) return '';
     try {
         return new URL(CHAT_SERVICE_URL).host;
     } catch {
-        return 'api.chat.privasys.org';
+        return '';
     }
 }
 
