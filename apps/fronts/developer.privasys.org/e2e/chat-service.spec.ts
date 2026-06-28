@@ -211,18 +211,20 @@ test.describe('chat-service container app', () => {
         await ctx.dispose();
     });
 
-    test('configure is gateway-gated against direct external POST', async () => {
+    test('configure refuses a plain-HTTPS (terminate-path) POST', async () => {
         test.skip(!deployed, 'chat-service not deployed — skipping');
         const ctx = await request.newContext({ ignoreHTTPSErrors: true });
-        // The /configure endpoint exists and is auth-gated, but the gateway
-        // refuses direct external mutating calls (sealed-transport-required).
-        // Real config delivery goes through the owner-authed management-service
-        // RPC relay; this asserts the gateway does not expose it directly.
+        // A plain-HTTPS client takes the gateway's *terminate* path, so the
+        // enclave's session-relay middleware refuses non-exempt paths with
+        // 403 sealed-transport-required (the "gateway never sees app data"
+        // guarantee). RA-TLS clients (CLI, mgmt RPC relay) splice straight to
+        // the enclave and reach /configure normally; the browser front-end
+        // reaches the API over the sealed session (PrivasysSession).
         const r = await ctx.post(`https://${hostname}/configure`, {
             headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
             data: { mgmt_base_url: API }
         });
-        expect(r.status(), 'gateway should reject a direct external POST /configure').toBe(403);
+        expect(r.status(), 'terminate-path POST /configure should be refused').toBe(403);
         await ctx.dispose();
     });
 
