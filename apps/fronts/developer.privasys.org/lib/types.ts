@@ -84,6 +84,7 @@ export interface CachedImage {
     zone: string;
     region: string;
     digest: string;
+    version?: string;   // privasys-version label (semver), optional
     disk_name: string;
     source_ref: string;
     created_at: string;
