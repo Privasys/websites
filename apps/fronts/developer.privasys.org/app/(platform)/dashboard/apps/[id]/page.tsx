@@ -11,7 +11,7 @@ const STORE_BASE_URL = 'https://store.privasys.org';
 import type { CreateVersionBody } from '~/lib/api';
 import { isApiStatus } from '~/lib/api';
 import { versionLabel, versionSemverStr, isStrictlyNewer } from '~/lib/version';
-import type { AppSchema, FunctionSchema, WitType, McpManifest, AppTeam, AppCommit } from '~/lib/api';
+import type { AppSchema, FunctionSchema, JsonSchemaProp, ActionProgress, WitType, McpManifest, AppTeam, AppCommit } from '~/lib/api';
 import { useSSE } from '~/lib/sse-context';
 import { useBalance } from '~/lib/use-balance';
 import { getApiBaseUrl } from '~/lib/api-base-url';
@@ -47,7 +47,7 @@ function BuildStatusDot({ status }: { status: string }) {
     return <span className={`w-2 h-2 rounded-full inline-block ${color}`} />;
 }
 
-type Tab = 'deployments' | 'store' | 'attestation' | 'api' | 'mcp' | 'ui' | 'team';
+type Tab = 'deployments' | 'store' | 'attestation' | 'api' | 'mcp' | 'ui' | 'configure' | 'team';
 
 export default function AppDetailPage() {
     const { id } = useParams<{ id: string }>();
@@ -204,7 +204,11 @@ export default function AppDetailPage() {
             { key: 'mcp' as Tab, label: 'AI Tools' },
             ...(containerUI?.url ? [
                 { key: 'ui' as Tab, label: containerUI.label || 'App UI' }
-            ] : [])
+            ] : []),
+            // Native Configure/Manage for apps whose manifest tags tools with
+            // role config/action. Self-hides if the deployed app declares
+            // neither (the tab content renders an empty state).
+            { key: 'configure' as Tab, label: 'Configure' }
         ] : []),
         { key: 'team', label: 'Team' }
     ];
@@ -298,6 +302,9 @@ export default function AppDetailPage() {
                 )}
                 {tab === 'ui' && session?.accessToken && containerUI?.url && (
                     <AppUITab appId={app.id} appName={app.name} hostname={activeDeployments[0]?.hostname} token={session.accessToken} containerMcp={app.container_mcp as Record<string, unknown>} onMcpUpdate={(updated) => setApp(updated)} />
+                )}
+                {tab === 'configure' && session?.accessToken && (
+                    <ConfigureTab appId={app.id} token={session.accessToken} />
                 )}
                 {tab === 'team' && session?.accessToken && (
                     <TeamTab appId={app.id} token={session.accessToken} />
@@ -2359,6 +2366,272 @@ function AppUITab({ appId, appName, hostname, token, containerMcp, onMcpUpdate }
                     style={{ minHeight: '600px', height: '80vh' }}
                     title={`${appName} UI`}
                 />
+            )}
+        </div>
+    );
+}
+
+// ------- Configure / Manage Tab -------
+// Native rendering of an app's role-tagged tools from its AppSchema:
+// role:config tools become a Configuration form (submitting lifts the
+// manager freeze gate); role:action tools become a Manage panel with a
+// typed form, dynamic enums (x-privasys.source), and a progress bar
+// (x-privasys.progress). Everything is invoked via rpcCall (/rpc/{name}),
+// the same surface as the API Test tab. No app-specific code.
+
+// Unwrap a WASM RPC envelope ({returns:[{value:{ok|err}}]}) to the inner
+// value; container apps return their JSON directly, so pass it through.
+function unwrapRpc(resp: unknown): unknown {
+    if (resp && typeof resp === 'object' && 'returns' in resp) {
+        const r = (resp as { returns?: { value?: unknown }[] }).returns?.[0]?.value;
+        if (r && typeof r === 'object' && 'ok' in r) return (r as { ok: unknown }).ok;
+        return r;
+    }
+    return resp;
+}
+
+// Navigate a dotted path ("available", "data.items") to an array of choices.
+function selectPath(obj: unknown, path: string): string[] {
+    let cur: unknown = obj;
+    for (const seg of path.split('.')) {
+        if (seg === '' ) continue;
+        if (cur && typeof cur === 'object') cur = (cur as Record<string, unknown>)[seg];
+        else return [];
+    }
+    if (Array.isArray(cur)) return cur.map(v => String(v));
+    return [];
+}
+
+function meta(prop: JsonSchemaProp) {
+    return prop['x-privasys'] ?? {};
+}
+
+function FieldInput({ name, prop, value, onChange, appId, token, disabled }: {
+    name: string; prop: JsonSchemaProp; value: string; onChange: (v: string) => void;
+    appId: string; token: string; disabled?: boolean;
+}) {
+    const m = meta(prop);
+    const label = m.label || name;
+    const cls = 'w-full px-3 py-2 text-sm rounded-lg border border-black/10 dark:border-white/10 bg-white dark:bg-black/30 disabled:opacity-50';
+
+    // Dynamic enum: fetch choices from the referenced tool.
+    const [dynChoices, setDynChoices] = useState<string[] | null>(null);
+    const [dynErr, setDynErr] = useState<string | null>(null);
+    useEffect(() => {
+        if (!m.source) return;
+        let alive = true;
+        rpcCall(token, appId, m.source.tool, {})
+            .then(r => { if (alive) setDynChoices(selectPath(unwrapRpc(r), m.source!.select)); })
+            .catch(e => { if (alive) setDynErr((e as Error).message); });
+        return () => { alive = false; };
+    }, [appId, token, m.source]);
+
+    const staticEnum = Array.isArray(prop.enum) ? prop.enum.map(v => String(v)) : null;
+    const choices = dynChoices ?? staticEnum;
+
+    let input;
+    if (choices) {
+        input = (
+            <select value={value} onChange={e => onChange(e.target.value)} disabled={disabled} className={cls}>
+                <option value="">{dynChoices === null && m.source ? 'loading…' : 'select…'}</option>
+                {choices.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+        );
+    } else if (prop.type === 'boolean') {
+        input = (
+            <input type="checkbox" checked={value === 'true'} disabled={disabled}
+                onChange={e => onChange(e.target.checked ? 'true' : 'false')} className="h-4 w-4" />
+        );
+    } else if (prop.type === 'number' || prop.type === 'integer') {
+        input = <input type="number" value={value} disabled={disabled}
+            onChange={e => onChange(e.target.value)} className={cls} />;
+    } else {
+        input = <input type={m.secret ? 'password' : 'text'} value={value} disabled={disabled}
+            placeholder={m.secret ? '••••••••' : ''} autoComplete="off"
+            onChange={e => onChange(e.target.value)} className={cls} />;
+    }
+
+    return (
+        <div className="space-y-1">
+            <label className="block text-sm font-medium">{label}{prop.type ? <span className="ml-1 text-xs text-black/30 dark:text-white/30">{m.secret ? 'secret' : prop.type}</span> : null}</label>
+            {input}
+            {(m.help || prop.description) && <p className="text-xs text-black/50 dark:text-white/50">{m.help || prop.description}</p>}
+            {dynErr && <p className="text-xs text-red-600 dark:text-red-400">could not load options: {dynErr}</p>}
+        </div>
+    );
+}
+
+function fieldEntries(fn: FunctionSchema): [string, JsonSchemaProp][] {
+    const props = fn.input_schema?.properties ?? {};
+    return Object.keys(props).sort().map(k => [k, props[k]]);
+}
+
+function coerce(prop: JsonSchemaProp, raw: string): unknown {
+    if (prop.type === 'boolean') return raw === 'true';
+    if (prop.type === 'number' || prop.type === 'integer') return raw === '' ? undefined : Number(raw);
+    return raw;
+}
+
+function ConfigForm({ fn, appId, token }: { fn: FunctionSchema; appId: string; token: string }) {
+    const entries = fieldEntries(fn);
+    const [values, setValues] = useState<Record<string, string>>({});
+    const [busy, setBusy] = useState(false);
+    const [result, setResult] = useState<string | null>(null);
+    const [error, setError] = useState<string | null>(null);
+
+    const submit = async () => {
+        setBusy(true); setError(null); setResult(null);
+        const payload: Record<string, unknown> = {};
+        for (const [k, prop] of entries) {
+            if (values[k] !== undefined && values[k] !== '') payload[k] = coerce(prop, values[k]);
+        }
+        try {
+            const r = unwrapRpc(await rpcCall(token, appId, fn.name, payload));
+            const errMsg = r && typeof r === 'object' && 'err' in r ? String((r as { err: unknown }).err) : null;
+            if (errMsg) { setError(errMsg); return; }
+            setResult('Configuration applied. The app is now unfrozen.');
+        } catch (e) {
+            setError((e as Error).message);
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    return (
+        <div className="p-4 rounded-lg border border-black/10 dark:border-white/10 space-y-3">
+            <div>
+                <h4 className="text-sm font-semibold">{fn.name}</h4>
+                {fn.description && <p className="mt-0.5 text-xs text-black/50 dark:text-white/50">{fn.description}</p>}
+            </div>
+            {entries.map(([k, prop]) => (
+                <FieldInput key={k} name={k} prop={prop} value={values[k] ?? String(prop.default ?? '')}
+                    onChange={v => setValues(s => ({ ...s, [k]: v }))} appId={appId} token={token} disabled={busy} />
+            ))}
+            <button onClick={submit} disabled={busy}
+                className="px-3 py-2 text-sm font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black disabled:opacity-40">
+                {busy ? 'Applying…' : 'Apply configuration'}
+            </button>
+            {result && <p className="text-sm text-green-700 dark:text-green-400">{result}</p>}
+            {error && <p className="text-sm text-red-700 dark:text-red-400">{error}</p>}
+        </div>
+    );
+}
+
+function ActionRunner({ fn, appId, token }: { fn: FunctionSchema; appId: string; token: string }) {
+    const entries = fieldEntries(fn);
+    const progress = fn.x_privasys?.progress;
+    const [values, setValues] = useState<Record<string, string>>({});
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [prog, setProg] = useState<{ state: string; pct: number; message: string } | null>(null);
+    const [result, setResult] = useState<string | null>(null);
+
+    const pollProgress = async (p: ActionProgress) => {
+        for (let i = 0; i < 600; i++) {
+            await new Promise(r => setTimeout(r, 2000));
+            let s: Record<string, unknown>;
+            try {
+                s = (unwrapRpc(await rpcCall(token, appId, p.tool, {})) ?? {}) as Record<string, unknown>;
+            } catch (e) { setError((e as Error).message); return; }
+            const state = String(s[p.stateField] ?? '');
+            const pct = p.progressField ? Math.round(Number(s[p.progressField] ?? 0) * 100) : 0;
+            const message = p.messageField ? String(s[p.messageField] ?? '') : '';
+            setProg({ state, pct, message });
+            if (p.terminal.success.includes(state)) { setResult(`Done${message ? `: ${message}` : ''}`); return; }
+            if (p.terminal.failure.includes(state)) { setError(`Failed${message ? `: ${message}` : ''}`); return; }
+        }
+        setError('Action did not finish in time.');
+    };
+
+    const run = async () => {
+        setBusy(true); setError(null); setResult(null); setProg(null);
+        const payload: Record<string, unknown> = {};
+        for (const [k, prop] of entries) {
+            if (values[k] !== undefined && values[k] !== '') payload[k] = coerce(prop, values[k]);
+        }
+        try {
+            const r = unwrapRpc(await rpcCall(token, appId, fn.name, payload));
+            const errMsg = r && typeof r === 'object' && 'err' in r ? String((r as { err: unknown }).err) : null;
+            if (errMsg) { setError(errMsg); setBusy(false); return; }
+            if (progress) { await pollProgress(progress); }
+            else { setResult('Done.'); }
+        } catch (e) {
+            setError((e as Error).message);
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    return (
+        <div className="p-4 rounded-lg border border-black/10 dark:border-white/10 space-y-3">
+            <div>
+                <h4 className="text-sm font-semibold">{fn.name}</h4>
+                {fn.description && <p className="mt-0.5 text-xs text-black/50 dark:text-white/50">{fn.description}</p>}
+            </div>
+            {entries.map(([k, prop]) => (
+                <FieldInput key={k} name={k} prop={prop} value={values[k] ?? String(prop.default ?? '')}
+                    onChange={v => setValues(s => ({ ...s, [k]: v }))} appId={appId} token={token} disabled={busy} />
+            ))}
+            <button onClick={run} disabled={busy}
+                className="px-3 py-2 text-sm font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black disabled:opacity-40">
+                {busy ? 'Running…' : 'Run'}
+            </button>
+            {prog && (
+                <div>
+                    <div className="h-2 w-full rounded-full bg-black/10 dark:bg-white/10 overflow-hidden">
+                        <div className="h-full bg-blue-500 transition-all duration-500" style={{ width: `${prog.pct}%` }} />
+                    </div>
+                    <p className="mt-1 text-xs text-black/50 dark:text-white/50">{prog.state} · {prog.pct}%{prog.message ? ` · ${prog.message}` : ''}</p>
+                </div>
+            )}
+            {result && <p className="text-sm text-green-700 dark:text-green-400">{result}</p>}
+            {error && <p className="text-sm text-red-700 dark:text-red-400">{error}</p>}
+        </div>
+    );
+}
+
+function ConfigureTab({ appId, token }: { appId: string; token: string }) {
+    const [schema, setSchema] = useState<AppSchema | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
+    useEffect(() => {
+        let alive = true;
+        setLoading(true);
+        getAppSchema(token, appId)
+            .then(s => { if (alive) { setSchema(s); setError(null); } })
+            .catch(e => { if (alive) setError((e as Error).message); })
+            .finally(() => { if (alive) setLoading(false); });
+        return () => { alive = false; };
+    }, [appId, token]);
+
+    if (loading) return <p className="text-sm text-black/50 dark:text-white/50">Loading capabilities…</p>;
+    if (error) return <div className="p-3 rounded-lg bg-red-50 dark:bg-red-900/20 text-sm text-red-700 dark:text-red-300">{error}</div>;
+
+    const fns = schema?.functions ?? [];
+    const configFns = fns.filter(f => f.role === 'config');
+    const actionFns = fns.filter(f => f.role === 'action');
+
+    if (configFns.length === 0 && actionFns.length === 0) {
+        return <div className="p-4 rounded-lg border border-black/10 dark:border-white/10 text-sm text-black/60 dark:text-white/60">
+            This app declares no configuration or actions.
+        </div>;
+    }
+
+    return (
+        <div className="space-y-6">
+            {configFns.length > 0 && (
+                <section className="space-y-3">
+                    <h3 className="text-sm font-semibold">Configuration</h3>
+                    <p className="text-xs text-black/50 dark:text-white/50">The app stays frozen (HTTP 503 at the routing layer) until configuration is applied.</p>
+                    {configFns.map(fn => <ConfigForm key={fn.name} fn={fn} appId={appId} token={token} />)}
+                </section>
+            )}
+            {actionFns.length > 0 && (
+                <section className="space-y-3">
+                    <h3 className="text-sm font-semibold">Actions</h3>
+                    {actionFns.map(fn => <ActionRunner key={fn.name} fn={fn} appId={appId} token={token} />)}
+                </section>
             )}
         </div>
     );
