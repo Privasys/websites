@@ -241,10 +241,57 @@ export interface ParamSchema {
     type: WitType;
 }
 
+// x-privasys vendor metadata on a JSON-Schema property: render hints the
+// portal uses for the native Configure/Manage tabs. Ignored by the WIT
+// param conversion, so the API Test tab is unaffected.
+export interface FieldMeta {
+    secret?: boolean;
+    label?: string;
+    help?: string;
+    source?: { tool: string; select: string };   // dynamic enum from another tool
+}
+
+export interface JsonSchemaProp {
+    'type'?: string;
+    'description'?: string;
+    'enum'?: unknown[];
+    'default'?: unknown;
+    'minimum'?: number;
+    'maximum'?: number;
+    'pattern'?: string;
+    'minLength'?: number;
+    'maxLength'?: number;
+    'x-privasys'?: FieldMeta;
+}
+
+export interface JsonSchemaObject {
+    type?: string;
+    properties?: Record<string, JsonSchemaProp>;
+    required?: string[];
+}
+
+// Progress contract for a long-running action: poll `tool` until `stateField`
+// reaches a terminal value.
+export interface ActionProgress {
+    tool: string;
+    stateField: string;
+    progressField?: string;
+    messageField?: string;
+    terminal: { success: string[]; failure: string[] };
+}
+
+export type ToolRole = 'config' | 'action' | 'status' | 'inference';
+
 export interface FunctionSchema {
     name: string;
     params: ParamSchema[];
     results: ParamSchema[];
+    // Additive app-capabilities metadata (present for container apps whose
+    // manifest tags tools). Everything is still invoked via rpcCall.
+    role?: ToolRole;
+    description?: string;
+    input_schema?: JsonSchemaObject;
+    x_privasys?: { progress?: ActionProgress };
 }
 
 export interface InterfaceSchema {
