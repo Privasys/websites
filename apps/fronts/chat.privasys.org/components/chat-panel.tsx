@@ -507,9 +507,11 @@ export function ChatPanel({
                             );
                             continue;
                         }
-                        // 'stale' → the Reconnect banner owns the next step, so
-                        // leave the turn quietly pending (no red error). 'timeout'
-                        // → a soft, actionable message.
+                        // Could not silently recover. Always leave a clear,
+                        // actionable notice on the turn — never an empty bubble.
+                        // 'stale' = the enclave was re-created/upgraded, so a
+                        // fresh sign-in is required (the composer also shows a
+                        // Reconnect button); 'timeout' = give it another go.
                         setMessages((prev) => {
                             const next = prev.map((m) =>
                                 m.id === assistantId
@@ -521,7 +523,7 @@ export function ChatPanel({
                                         error:
                                             outcome === 'timeout'
                                                 ? 'Could not reconnect to the secure enclave. Please try again.'
-                                                : undefined
+                                                : 'The secure enclave was re-created, so this session can no longer be verified. Use “Reconnect” below (or Sign out / in) to continue.'
                                     }
                                     : m
                             );
