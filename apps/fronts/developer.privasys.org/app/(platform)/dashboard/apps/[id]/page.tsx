@@ -1896,9 +1896,14 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                 const msg = e instanceof Error ? e.message : String(e);
                 if (!needsApproval || !/not promoted|approve this version/i.test(msg)) throw e;
                 setWorkMsg('Staging measurement…');
-                await stageProfile(token, app.id, versionId, pickEnclave);
+                const staged = await stageProfile(token, app.id, versionId, pickEnclave);
+                // Promote the pending profile the stage just created. The vault
+                // assigns its id; a key with prior pending profiles gets a
+                // non-zero id, so hardcoding 0 promotes the wrong/absent profile
+                // (4/4 denied → 502). Use the id the stage returned.
+                const pendingId = staged.vaults?.find(v => v.ok && v.pending_id != null)?.pending_id;
                 setWorkMsg('Promoting (releasing data key)…');
-                await promoteProfile(token, app.id, versionId, 0);
+                await promoteProfile(token, app.id, versionId, pendingId);
                 setWorkMsg('Deploying…');
                 await deployDirect(token, app.id, versionId, pickEnclave);
             }
