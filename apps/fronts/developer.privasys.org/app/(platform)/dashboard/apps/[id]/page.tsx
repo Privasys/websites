@@ -1750,12 +1750,24 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
     const tagOptions = (tags ?? []).filter(t => !currentDeployment || isStrictlyNewer(t, currentSemver));
     const versionOptions = readyVersions.filter(v => !currentDeployment || isStrictlyNewer(versionSemverStr(v), currentSemver));
     const imageChannels = Array.from(new Set((images ?? []).filter(i => i.name === app.cloud_image_name).map(i => i.channel)));
+    // Resolve a cloud-image channel/version to its current cached-image digest so
+    // labels show the actual image (image-<name>-<channel>-<digest12>) rather than
+    // just the channel name ("prod").
+    const cloudDigestForChannel = (ch: string): string | undefined =>
+        (images ?? []).find(i => i.name === app.cloud_image_name && i.channel === ch)?.digest;
+    const cloudDigestForVersion = (v: AppVersion): string | undefined => {
+        const img = v.container_image ?? '';
+        if (!img.startsWith('cloud-image:')) return undefined;
+        const ch = img.split(':').pop();
+        return ch ? cloudDigestForChannel(ch) : undefined;
+    };
+    const digest12 = (d: string): string => d.replace(/^sha256:/, '').slice(0, 12);
 
     // Unified dropdown choices (value + label) per source; upload uses a dropzone.
     const choices: { value: string; label: string; disabled?: boolean }[] =
         source === 'package' ? tagOptions.map(t => ({ value: t, label: t }))
             : source === 'github' ? (commits ?? []).map(c => ({ value: c.sha, label: `${c.sha.slice(0, 7)} · ${c.message}${c.verified ? '' : ' (unsigned — not deployable)'}`, disabled: !c.verified }))
-                : source === 'cloud_image' ? imageChannels.map(ch => ({ value: ch, label: ch }))
+                : source === 'cloud_image' ? imageChannels.map(ch => { const d = cloudDigestForChannel(ch); return { value: ch, label: d ? `${ch} · ${digest12(d)}` : ch }; })
                     : versionOptions.map(v => ({ value: v.id, label: versionLabel(v) }));
     const loaded = source === 'package' ? tags !== null : source === 'github' ? commits !== null : source === 'cloud_image' ? images !== null : true;
 
@@ -2066,7 +2078,7 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                                     {version && (
                                         <div>
                                             <div className="text-[10px] uppercase tracking-wider text-black/30 dark:text-white/30">Version</div>
-                                            <div className="mt-0.5">{versionLabel(version)}</div>
+                                            <div className="mt-0.5">{versionLabel(version, cloudDigestForVersion(version))}</div>
                                         </div>
                                     )}
                                     {app.app_type === 'container' && app.container_port != null && (
@@ -2199,7 +2211,7 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                                         <span className="font-medium text-black/70 dark:text-white/70">
                                             {enclave ? (enclave.region || enclave.name) : `${dep.enclave_host}:${dep.enclave_port}`}
                                         </span>
-                                        {version && <span className="text-black/40 dark:text-white/40">{versionLabel(version)}</span>}
+                                        {version && <span className="text-black/40 dark:text-white/40">{versionLabel(version, cloudDigestForVersion(version))}</span>}
                                     </div>
                                     <div className="flex items-center gap-3 text-black/40 dark:text-white/40">
                                         {dep.stopped_at && <span>{new Date(dep.stopped_at).toLocaleDateString()}</span>}
