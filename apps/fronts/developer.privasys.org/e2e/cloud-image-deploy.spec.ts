@@ -181,6 +181,14 @@ test.describe('Cloud-image deploy', () => {
         expect(body.cloud_image_name).toBe(CLOUD_IMAGE_NAME);
         appId = body.id;
         console.log(`Created ${APP_NAME} (${appId})`);
+
+        // A Description + Category are required before any deploy (App Store
+        // gate). Set them so the deploy isn't rejected for an incomplete listing.
+        const storeResp = await page.request.put(`${API}/api/v1/apps/${appId}/store`, {
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+            data: { store_description: 'E2E cloud-image deploy smoke test.', store_category: 'Developer Tools' },
+        });
+        expect(storeResp.ok(), `store listing: HTTP ${storeResp.status()}`).toBeTruthy();
     });
 
     test('version is ready', async ({ page }) => {
@@ -220,7 +228,10 @@ test.describe('Cloud-image deploy', () => {
         );
 
         let resp = await deploy();
-        if (resp.status() === 409) {
+        let body = await resp.json().catch(() => ({} as { error?: string }));
+        // Only the vault approve-before-deploy gate triggers stage+promote; other
+        // 409s (e.g. incomplete App Store listing) are real failures.
+        if (resp.status() === 409 && /not promoted|approve this version/i.test(body.error ?? '')) {
             // Approve-before-deploy: stage the measurement, then promote the
             // pending profile the stage just created.
             const stageResp = await page.request.post(
@@ -241,8 +252,8 @@ test.describe('Cloud-image deploy', () => {
             expect(promoteResp.ok(), `promote(pending_id=${pendingId ?? 0}): HTTP ${promoteResp.status()} ${JSON.stringify(promoted)}`).toBeTruthy();
             expect((promoted.promoted ?? 0), `promoted ${promoted.promoted}/${promoted.quorum}`).toBeGreaterThanOrEqual(promoted.quorum ?? 2);
             resp = await deploy();
+            body = await resp.json().catch(() => ({} as { error?: string }));
         }
-        const body = await resp.json().catch(() => ({}));
         expect(resp.ok(), `deploy: HTTP ${resp.status()} ${JSON.stringify(body)}`).toBeTruthy();
     });
 
