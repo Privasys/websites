@@ -162,6 +162,10 @@ test.describe('Cloud-image deploy', () => {
                 cloud_image_name: CLOUD_IMAGE_NAME,
                 cloud_image_channel: CLOUD_IMAGE_CHANNEL,
                 container_port: CONTAINER_PORT,
+                // Vault-backed /data — this is what exercises the key reservation,
+                // the approve-before-deploy gate, and stage/promote. Without it the
+                // test never touches the path that actually keeps breaking.
+                container_storage: true,
                 container_devices: [
                     '/dev/nvidia0',
                     '/dev/nvidiactl',
@@ -202,42 +206,44 @@ test.describe('Cloud-image deploy', () => {
         expect(false, 'no ready version').toBeTruthy();
     });
 
-    test('deploy version to enclave', async ({ page }) => {
-        // Direct-deploy is portal-driven: the browser establishes a sealed
-        // PrivasysSession to the enclave manager and pushes the
-        // container_load envelope itself. There is no `POST /deploy` on
-        // mgmt-service anymore — see direct_deploy.go and lib/api.ts
-        // (deployDirect). We drive the dashboard UI exactly as a user would.
+    test('deploy version to enclave (gate-aware: deploy → approve → retry)', async ({ page }) => {
+        // Mirror the portal's deploy flow against the API so this smoke test
+        // asserts the exact contract that kept breaking: a vault-backed deploy
+        // is gated until the version's measurement is promoted on the key, and
+        // promote must use the pending id the stage returns (not a hardcoded 0).
         test.setTimeout(180_000);
         token = await getToken(page);
-        // getToken() short-circuits when cached, so the per-page cookie +
-        // AuthFrame mock injected by setupAuth may not have happened on
-        // this fresh page. Always inject for any test that does a real
-        // page.goto into a protected route.
-        await setupAuth(page);
+        const hdrs = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+        const deploy = () => page.request.post(
+            `${API}/api/v1/apps/${appId}/versions/${versionId}/deploy`,
+            { headers: hdrs, data: { enclave_id: enclaveId }, timeout: 60_000 },
+        );
 
-        await page.goto(`/dashboard/apps/${appId}?tab=deployments`);
-        await page.waitForLoadState('domcontentloaded');
-
-        // The Deploy panel renders a version <select> + an enclave <select>
-        // + a Deploy button. The first option of each is the empty
-        // placeholder; pick the only ready version and the target enclave.
-        const versionSelect = page.locator('select').first();
-        await versionSelect.waitFor({ state: 'visible', timeout: 30_000 });
-        await versionSelect.selectOption({ value: versionId });
-
-        const enclaveSelect = page.locator('select').nth(1);
-        await enclaveSelect.selectOption({ value: enclaveId });
-
-        const deployBtn = page.getByRole('button', { name: /^deploy$/i });
-        await expect(deployBtn).toBeEnabled({ timeout: 15_000 });
-        await deployBtn.click();
-
-        // Sealed-relay handshake + container_load can take a while on cold
-        // ai-gpu (disk attach + image import). Wait until the button is
-        // re-enabled OR a "Deploying…" indicator goes away.
-        await expect(page.getByRole('button', { name: /deploying/i }))
-            .toHaveCount(0, { timeout: 150_000 });
+        let resp = await deploy();
+        if (resp.status() === 409) {
+            // Approve-before-deploy: stage the measurement, then promote the
+            // pending profile the stage just created.
+            const stageResp = await page.request.post(
+                `${API}/api/v1/apps/${appId}/versions/${versionId}/stage`,
+                { headers: hdrs, data: { enclave_id: enclaveId }, timeout: 60_000 },
+            );
+            const staged = await stageResp.json().catch(() => ({}));
+            expect(stageResp.ok(), `stage: HTTP ${stageResp.status()} ${JSON.stringify(staged)}`).toBeTruthy();
+            const pendingId: number | undefined = (staged.vaults ?? [])
+                .find((v: { ok: boolean; pending_id?: number }) => v.ok && v.pending_id != null)?.pending_id;
+            console.log(`Staged; promoting pending_id=${pendingId ?? 0}`);
+            const promoteResp = await page.request.post(
+                `${API}/api/v1/apps/${appId}/versions/${versionId}/promote`,
+                { headers: hdrs, data: { pending_id: pendingId ?? 0 }, timeout: 60_000 },
+            );
+            const promoted = await promoteResp.json().catch(() => ({}));
+            // The bug this guards: hardcoded pending_id=0 → 4/4 denied → 502.
+            expect(promoteResp.ok(), `promote(pending_id=${pendingId ?? 0}): HTTP ${promoteResp.status()} ${JSON.stringify(promoted)}`).toBeTruthy();
+            expect((promoted.promoted ?? 0), `promoted ${promoted.promoted}/${promoted.quorum}`).toBeGreaterThanOrEqual(promoted.quorum ?? 2);
+            resp = await deploy();
+        }
+        const body = await resp.json().catch(() => ({}));
+        expect(resp.ok(), `deploy: HTTP ${resp.status()} ${JSON.stringify(body)}`).toBeTruthy();
     });
 
     test('deployment becomes active', async ({ page }) => {
@@ -271,6 +277,37 @@ test.describe('Cloud-image deploy', () => {
             await page.waitForTimeout(5_000);
         }
         expect(active, `no active deployment; last statuses=${last.join(',')}`).toBeTruthy();
+    });
+
+    test('stage + promote uses the returned pending id (the path that 502d)', async ({ page }) => {
+        // Directly exercise the approve contract on the now-existing vault key:
+        // stage the current measurement, then promote the pending profile the
+        // stage returns. The regression this guards: the portal promoted a
+        // hardcoded pending_id=0, which on a key with prior pending profiles was
+        // denied 4/4 and surfaced as "API error 502". Use staged.pending_id.
+        test.setTimeout(90_000);
+        token = await getToken(page);
+        const hdrs = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+
+        const stageResp = await page.request.post(
+            `${API}/api/v1/apps/${appId}/versions/${versionId}/stage`,
+            { headers: hdrs, data: { enclave_id: enclaveId }, timeout: 60_000 },
+        );
+        const staged = await stageResp.json().catch(() => ({}));
+        expect(stageResp.ok(), `stage: HTTP ${stageResp.status()} ${JSON.stringify(staged)}`).toBeTruthy();
+        expect((staged.staged ?? 0), `staged ${staged.staged}/${staged.quorum}`).toBeGreaterThanOrEqual(staged.quorum ?? 2);
+
+        const pendingId: number | undefined = (staged.vaults ?? [])
+            .find((v: { ok: boolean; pending_id?: number }) => v.ok && v.pending_id != null)?.pending_id;
+        console.log(`stage ok; promoting pending_id=${pendingId ?? 0}`);
+
+        const promoteResp = await page.request.post(
+            `${API}/api/v1/apps/${appId}/versions/${versionId}/promote`,
+            { headers: hdrs, data: { pending_id: pendingId ?? 0 }, timeout: 60_000 },
+        );
+        const promoted = await promoteResp.json().catch(() => ({}));
+        expect(promoteResp.ok(), `promote(pending_id=${pendingId ?? 0}): HTTP ${promoteResp.status()} ${JSON.stringify(promoted)}`).toBeTruthy();
+        expect((promoted.promoted ?? 0), `promoted ${promoted.promoted}/${promoted.quorum}`).toBeGreaterThanOrEqual(promoted.quorum ?? 2);
     });
 
     test.skip('attestation exposes per-env-var OID extension', async ({ page: _page }) => {
