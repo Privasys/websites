@@ -94,6 +94,16 @@ export default defineConfig({
             }
         },
         {
+            // Container typed config + actions (build + deploy to TDX, ~10-15min);
+            // dedicated project so it stays out of the fast portal suite.
+            name: 'container-config',
+            testMatch: 'container-config-actions.spec.ts',
+            dependencies: ['auth-setup'],
+            use: {
+                storageState: AUTH_FILE
+            }
+        },
+        {
             name: 'register-enclave',
             testMatch: 'register-enclave.spec.ts',
             dependencies: ['auth-setup'],
