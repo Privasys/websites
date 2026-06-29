@@ -1870,19 +1870,26 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
             } else {
                 versionId = pickVersion; // fallback: an existing version id
             }
-            // Vault-backed upgrade: when there is already a running deployment,
-            // approve the new measurement before the cutover so the data key is
-            // released cleanly with no locked-data window. On a first deploy the
-            // key does not exist yet — the enclave creates it during deploy — so
-            // staging a profile would fail with "key not found"; skip it.
-            if (needsApproval && currentDeployment) {
+            // Vault-backed apps gate deploy on the new version's measurement
+            // being promoted on the data key. On a first deploy the key does not
+            // exist yet — the enclave creates it during deploy — so a plain deploy
+            // works. If the key already exists, the deploy is rejected until the
+            // new measurement is staged + promoted; do that, then retry. Deploying
+            // first (rather than always staging) avoids a "key not found" on the
+            // first deploy, since staging needs an existing key.
+            setWorkMsg('Deploying…');
+            try {
+                await deployDirect(token, app.id, versionId, pickEnclave);
+            } catch (e) {
+                const msg = e instanceof Error ? e.message : String(e);
+                if (!needsApproval || !/not promoted|approve this version/i.test(msg)) throw e;
                 setWorkMsg('Staging measurement…');
                 await stageProfile(token, app.id, versionId, pickEnclave);
                 setWorkMsg('Promoting (releasing data key)…');
                 await promoteProfile(token, app.id, versionId, 0);
+                setWorkMsg('Deploying…');
+                await deployDirect(token, app.id, versionId, pickEnclave);
             }
-            setWorkMsg('Deploying…');
-            await deployDirect(token, app.id, versionId, pickEnclave);
             if (!currentDeployment) { setPickVersion(''); setCwasmFile(null); }
         } catch (e) {
             setError(e instanceof Error ? e.message : 'Deployment failed');
