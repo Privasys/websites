@@ -1761,13 +1761,28 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
         const ch = img.split(':').pop();
         return ch ? cloudDigestForChannel(ch) : undefined;
     };
+    // The cached image's semver (privasys-version label), when published with one.
+    // Lets the cloud-image upgrade list be version-ordered + newer-only, like
+    // package/github, instead of always offering the channel.
+    const cloudVersionForChannel = (ch: string): string | undefined =>
+        (images ?? []).find(i => i.name === app.cloud_image_name && i.channel === ch)?.version || undefined;
     const digest12 = (d: string): string => d.replace(/^sha256:/, '').slice(0, 12);
 
     // Unified dropdown choices (value + label) per source; upload uses a dropzone.
     const choices: { value: string; label: string; disabled?: boolean }[] =
         source === 'package' ? tagOptions.map(t => ({ value: t, label: t }))
             : source === 'github' ? (commits ?? []).map(c => ({ value: c.sha, label: `${c.sha.slice(0, 7)} · ${c.message}${c.verified ? '' : ' (unsigned — not deployable)'}`, disabled: !c.verified }))
-                : source === 'cloud_image' ? imageChannels.map(ch => { const d = cloudDigestForChannel(ch); return { value: ch, label: d ? `${ch} · ${digest12(d)}` : ch }; })
+                : source === 'cloud_image' ? imageChannels
+                    // When the image is versioned, only offer it if it is strictly
+                    // newer than what is running (don't propose the current version).
+                    // Unversioned images fall back to always offering the channel.
+                    .filter(ch => { const ver = cloudVersionForChannel(ch); return !ver || !currentDeployment || isStrictlyNewer(ver, currentSemver); })
+                    .map(ch => {
+                        const ver = cloudVersionForChannel(ch);
+                        const d = cloudDigestForChannel(ch);
+                        const tail = d ? `@${digest12(d)}` : '';
+                        return { value: ch, label: ver ? `v${ver.replace(/^v/i, '')} · ${ch}${tail}` : (d ? `${ch} · ${digest12(d)}` : ch) };
+                    })
                     : versionOptions.map(v => ({ value: v.id, label: versionLabel(v) }));
     const loaded = source === 'package' ? tags !== null : source === 'github' ? commits !== null : source === 'cloud_image' ? images !== null : true;
 
@@ -1878,7 +1893,7 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                 versionId = await waitForReady(v.id);
             } else if (source === 'cloud_image') {
                 setWorkMsg(`Shipping ${pickVersion}…`);
-                versionId = (await createVersion(token, app.id, { channel: pickVersion })).id;
+                versionId = (await createVersion(token, app.id, { channel: pickVersion, version: cloudVersionForChannel(pickVersion) })).id;
             } else {
                 versionId = pickVersion; // fallback: an existing version id
             }
