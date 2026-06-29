@@ -31,6 +31,17 @@ export interface AuthSession {
     authenticatedAt: number;
 }
 
+/**
+ * Outcome of a sealed-session (re-)establish attempt.
+ *
+ * - `ok`         — a live sealed session is installed.
+ * - `no-voucher` — the user never completed a sealed sign-in for this app.
+ * - `rejected`   — the enclave refused the voucher; its identity/measurement
+ *                  changed and a fresh wallet ceremony is required.
+ * - `unavailable`— transient transport failure, worth retrying.
+ */
+export type SealedResumeOutcome = 'ok' | 'no-voucher' | 'rejected' | 'unavailable';
+
 interface AuthContextValue {
     session: AuthSession | null;
     loading: boolean;
@@ -72,6 +83,17 @@ interface AuthContextValue {
      */
     resumeSealed: (appHost: string) => Promise<void>;
     /**
+     * Force-rebuild the primary sealed enclave session, tearing down the
+     * existing (possibly dead) transport first. Unlike `resumeSealed` this
+     * does NOT short-circuit when a sealed session is already present — it is
+     * the recovery path after the enclave was redeployed or went unreachable.
+     * Returns the outcome so the caller can distinguish a transient failure
+     * (retry) from a measurement change (`rejected` → prompt re-sign-in).
+     * Leaves the per-host sessions (e.g. chat-service) untouched; those
+     * self-heal via PrivasysSession's request()-level silent rebind.
+     */
+    reestablishSealed: (appHost: string) => Promise<SealedResumeOutcome>;
+    /**
      * Return a sealed session for an arbitrary enclave `appHost` (e.g. the
      * chat-service back-end), independent of the primary `sealedSession`
      * (which is the inference instance). Per-host cached; resumes silently
@@ -93,6 +115,7 @@ const AuthContext = createContext<AuthContextValue>({
     signIn: async () => {},
     signInInto: async () => {},
     resumeSealed: async () => {},
+    reestablishSealed: async () => 'unavailable',
     getSealedSession: async () => null,
     signOut: async () => {}
 });
@@ -298,6 +321,36 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
         [config, sealedSession]
     );
 
+    // Recovery path: tear down the (possibly dead) primary sealed frame and
+    // rebuild it from the EncAuth voucher. Used by the chat shell after the
+    // enclave was redeployed (stale session → unsealed 401) or came back from
+    // an outage (VM stopped → 502). Returns the outcome so the shell can show
+    // "reconnecting" vs. a hard "the back-end changed, sign in again" prompt.
+    const reestablishSealed = useCallback(
+        async (appHost: string): Promise<SealedResumeOutcome> => {
+            setSealedSession(null);
+            sealedFrameRef.current?.destroy();
+            sealedResumeInFlight.current = null;
+            const frame = new AuthFrame({ ...config, sessionRelay: { appHost } });
+            sealedFrameRef.current = frame;
+            sealedHostRef.current = appHost;
+            try {
+                const s = await frame.resumeSession();
+                setSealedSession(s);
+                return 'ok';
+            } catch (err) {
+                const msg = (err as Error).message ?? '';
+                // The SDK rejects with one of these literal reasons; match
+                // defensively in case the message is wrapped.
+                if (msg.includes('rejected')) return 'rejected';
+                if (msg.includes('no-voucher')) return 'no-voucher';
+                console.log('[chat-auth] sealed reestablish failed:', msg);
+                return 'unavailable';
+            }
+        },
+        [config]
+    );
+
     // getSealedSession returns (and caches) a sealed session for an arbitrary
     // enclave appHost, independent of the primary instance session. Used to
     // reach the chat-service back-end (a separate enclave) without the bearer
@@ -377,7 +430,7 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
 
     return (
         <AuthContext.Provider
-            value={{ session, loading, expired, sealedSession, getTokenForAudience, signIn, signInInto, resumeSealed, getSealedSession, signOut }}
+            value={{ session, loading, expired, sealedSession, getTokenForAudience, signIn, signInInto, resumeSealed, reestablishSealed, getSealedSession, signOut }}
         >
             {children}
         </AuthContext.Provider>
