@@ -18,12 +18,22 @@ function shortImageRef(img: string): string {
     return img;
 }
 
-function versionSrcHash(v: AppVersion): [string, string] {
+// digest12 is the first 12 hex chars of an OCI digest (sha256[:12]), matching
+// the cloud-image disk naming convention image-<name>-<channel>-<digest12>.
+function digest12(d: string): string {
+    const s = d.replace(/^sha256:/, '');
+    return s.length > 12 ? s.slice(0, 12) : s;
+}
+
+function versionSrcHash(v: AppVersion, cloudDigest?: string): [string, string] {
     if (v.github_commit) return ['git', shortHash(v.github_commit)];
     const img = v.container_image ?? '';
     if (img.startsWith('cloud-image:')) {
         const segs = img.split(':');
-        return ['img', segs[segs.length - 1]];
+        const channel = segs[segs.length - 1];
+        // Show the resolved image digest with the channel so the label reflects
+        // the actual image (image-<name>-<channel>-<digest12>), not just "prod".
+        return ['img', cloudDigest ? `${channel}@${digest12(cloudDigest)}` : channel];
     }
     if (img) return ['pkg', shortImageRef(img)];
     if (v.cwasm_hash) return ['wasm', shortHash(v.cwasm_hash)];
@@ -75,9 +85,9 @@ export function isStrictlyNewer(candidate: string, current: string): boolean {
     return cmpSemver(candidate, current) > 0;
 }
 
-export function versionLabel(v: AppVersion): string {
+export function versionLabel(v: AppVersion, cloudDigest?: string): string {
     const sv = v.semver || (v.version_number ? `v${v.version_number}` : '');
-    const [src, hash] = versionSrcHash(v);
+    const [src, hash] = versionSrcHash(v, cloudDigest);
     const parts: string[] = [];
     if (sv) parts.push(sv);
     if (src && hash) parts.push(`${src}:${hash}`);
