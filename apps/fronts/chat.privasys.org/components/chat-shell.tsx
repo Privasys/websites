@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { AvailableModel, Instance } from '~/lib/types';
 import type { AggregateAttestationStatus } from '@privasys/attestation-view';
 import { useAuth } from '~/lib/privasys-auth';
@@ -10,6 +10,7 @@ import { useConversations } from '~/lib/use-conversations';
 import { useEnabledTools } from '~/lib/use-enabled-tools';
 import { useUserTools } from '~/lib/use-user-tools';
 import { chatServiceHost } from '~/lib/chat-service-api';
+import { probeInstanceHealth } from '~/lib/instance-api';
 import type { SealedSession } from '@privasys/auth';
 import { AppSidebar } from './app-sidebar';
 import { ChatPanel } from './chat-panel';
@@ -17,6 +18,27 @@ import { SecurityView } from './security-view';
 import { SignInView } from './signin-view';
 
 type ShellView = 'chat' | 'security' | 'signin';
+
+type TransportState = 'ok' | 'reconnecting' | 'stale';
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// Decide whether a chat-stream error reflects a broken enclave transport
+// (gateway can't reach the VM, or our sealed session was rejected) versus
+// an application-level error we should just show on the message. Transport
+// errors flip the shell into the reconnect flow.
+//
+// 502/503/504 + "unreachable"/"Bad Gateway" = VM down or restarting;
+// 401 + sealed-session rejection = stale session after a redeploy (the SDK
+// already auto-rebinds same-measurement sessions, so a 401 reaching here
+// means the measurement changed); "fetch failed"/"Failed to fetch" = network.
+function classifyStreamError(message: string): 'transport' | 'app' {
+    if (/\b(50[234])\b|bad gateway|unreachable|sealed stream failed|failed to fetch|fetch failed|networkerror|load failed/i.test(message)) {
+        return 'transport';
+    }
+    if (/\b401\b/.test(message)) return 'transport';
+    return 'app';
+}
 
 // Gemini-style two-pane shell: persistent left sidebar + main column.
 //
@@ -40,8 +62,18 @@ export function ChatShell({
     disabledReason?: string;
     userGreeting?: string;
 }) {
-    const { session, sealedSession, resumeSealed, getSealedSession } = useAuth();
+    const { session, sealedSession, resumeSealed, reestablishSealed, getSealedSession } = useAuth();
     const [model, setModel] = useState<AvailableModel | null>(initialModel);
+
+    // Health of the end-to-end enclave transport, independent of the OIDC
+    // session (which a back-end redeploy never touches). Drives the
+    // reconnect banner so the UI reacts to a stopped/redeployed VM instead
+    // of only surfacing a raw 502/401 on the next prompt.
+    //   ok          — live, chat normally.
+    //   reconnecting — enclave unreachable or session stale; auto-recovering.
+    //   stale        — enclave identity/measurement changed; needs a fresh
+    //                  wallet ceremony (re-sign-in).
+    const [transport, setTransport] = useState<TransportState>('ok');
 
     // chat-service is a separate enclave from the inference instance, so it
     // needs its own sealed session (the user's bearer + tool data never cross
@@ -74,6 +106,92 @@ export function ChatShell({
         if (!instance.session_relay?.enabled || !instance.session_relay.app_host) return;
         void resumeSealed(instance.session_relay.app_host);
     }, [session, sealedSession, instance.session_relay, resumeSealed]);
+
+    // A fresh sealed session (from a re-sign-in after a stale-back-end
+    // prompt) clears the reconnect banner.
+    useEffect(() => {
+        if (sealedSession && transport === 'stale') setTransport('ok');
+    }, [sealedSession, transport]);
+
+    // Classify a chat-stream failure and, when it is a transport problem,
+    // flip into the reconnecting state so the recovery effect below takes
+    // over. Non-transport errors (validation, model errors) are left to the
+    // per-message red notice. Called by ChatPanel on stream error.
+    const onTransportError = useCallback((err: Error) => {
+        if (classifyStreamError(err.message) === 'transport') {
+            setTransport((prev) => (prev === 'stale' ? 'stale' : 'reconnecting'));
+        }
+    }, []);
+
+    // Proactive liveness: detect the enclave going away even while the user
+    // is idle (stop the VM → the UI should react before the next prompt).
+    // Only probes while we believe the transport is healthy; once it drops,
+    // the recovery effect owns the polling cadence.
+    useEffect(() => {
+        if (!session || transport !== 'ok' || !instance.endpoint) return;
+        let cancelled = false;
+        let timer: ReturnType<typeof setTimeout>;
+        const tick = async () => {
+            const up = await probeInstanceHealth(instance.endpoint, 5_000);
+            if (cancelled) return;
+            if (!up) {
+                setTransport('reconnecting');
+                return;
+            }
+            timer = setTimeout(() => void tick(), 20_000);
+        };
+        timer = setTimeout(() => void tick(), 20_000);
+        return () => {
+            cancelled = true;
+            clearTimeout(timer);
+        };
+    }, [session, transport, instance.endpoint]);
+
+    // Recovery: while reconnecting, poll /healthz until the enclave answers,
+    // then rebuild the sealed transport from the EncAuth voucher. A
+    // measurement change comes back `rejected` → surface the hard reconnect
+    // prompt; transient failures loop with a short backoff.
+    useEffect(() => {
+        if (transport !== 'reconnecting' || !session) return;
+        let cancelled = false;
+        const host =
+            instance.session_relay?.enabled ? instance.session_relay.app_host : undefined;
+        (async () => {
+            // Self-looping retry: stays inside this single effect run so a
+            // transient `unavailable` retries without needing a state change
+            // to re-trigger the effect.
+            for (;;) {
+                if (cancelled) return;
+                // Wait until the back-end answers /healthz again.
+                while (!cancelled) {
+                    if (await probeInstanceHealth(instance.endpoint, 5_000)) break;
+                    await sleep(5_000);
+                }
+                if (cancelled) return;
+                if (!host) {
+                    // Non-sealed instance: reachability is the whole story.
+                    setTransport('ok');
+                    return;
+                }
+                const outcome = await reestablishSealed(host);
+                if (cancelled) return;
+                if (outcome === 'ok') {
+                    setTransport('ok');
+                    return;
+                }
+                if (outcome === 'rejected' || outcome === 'no-voucher') {
+                    setTransport('stale');
+                    return;
+                }
+                // Transient: back off and retry the loop.
+                await sleep(3_000);
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [transport, session, instance.endpoint, instance.session_relay, reestablishSealed]);
+
     const [view, setView] = useState<ShellView>('chat');
     // Aggregate attestation status for the sidebar pill. Driven by the
     // always-mounted SecurityView (hidden when view !== 'security') so
@@ -201,6 +319,9 @@ export function ChatShell({
                         onRemoveUserTool={userTools.remove}
                         toolPolicy={instance.tool_policy}
                         chatSession={chatSession}
+                        transport={transport}
+                        onStreamError={onTransportError}
+                        onReconnect={() => setView('signin')}
                     />
                 )}
             </div>

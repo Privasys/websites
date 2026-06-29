@@ -66,7 +66,10 @@ export function ChatPanel({
     onAddTool,
     onRemoveUserTool,
     toolPolicy,
-    chatSession
+    chatSession,
+    transport = 'ok',
+    onStreamError,
+    onReconnect
 }: {
     instance: Instance;
     model: AvailableModel | null;
@@ -109,6 +112,14 @@ export function ChatPanel({
     toolPolicy?: string;
     /** Dedicated sealed session to chat-service, for minting tool-grants. */
     chatSession?: SealedSession | null;
+    /** Enclave transport health, owned by the shell. Drives the reconnect
+     *  banner so an outage/redeploy is visible without sending a prompt. */
+    transport?: 'ok' | 'reconnecting' | 'stale';
+    /** Report a stream failure to the shell so it can classify transport
+     *  errors and start the reconnect flow. */
+    onStreamError?: (err: Error) => void;
+    /** Invoked when the user clicks "Reconnect" on a stale-back-end banner. */
+    onReconnect?: () => void;
 }) {
     const [messages, setMessages] = useState<DisplayMessage[]>(
         () => initialMessages.map((m) => ({ ...m }))
@@ -339,6 +350,10 @@ export function ChatPanel({
                     // them — the inline "loading model…" notice will
                     // be shown instead.
                     if (err instanceof ModelLoadingError) return;
+                    // Let the shell decide whether this is a transport
+                    // failure (enclave down / session stale) and kick off
+                    // the reconnect flow.
+                    onStreamError?.(err);
                     setMessages((prev) => {
                         const next = prev.map((m) =>
                             m.id === assistantId
@@ -437,7 +452,7 @@ export function ChatPanel({
                 return next;
             });
         }
-    }, [input, streaming, model, instance.endpoint, messages, token, sampling, persist, chatSession, enabledTools]);
+    }, [input, streaming, model, instance.endpoint, messages, token, sampling, persist, chatSession, enabledTools, onStreamError]);
 
     const stop = useCallback(() => abortRef.current?.abort(), []);
 
@@ -470,6 +485,11 @@ export function ChatPanel({
         },
         [persist, instance.id]
     );
+
+    const transportBanner =
+        transport === 'ok' ? null : (
+            <TransportBanner transport={transport} onReconnect={onReconnect} />
+        );
 
     const composer = (
         <Composer
@@ -540,7 +560,10 @@ export function ChatPanel({
                             )}
                         </div>
                     ) : (
-                        composer
+                        <div className='flex flex-col gap-2'>
+                            {transportBanner}
+                            {composer}
+                        </div>
                     )}
                 </div>
             </div>
@@ -593,7 +616,10 @@ export function ChatPanel({
             </div>
 
             <div className='px-4 pb-5'>
-                <div className='mx-auto max-w-3xl'>{composer}</div>
+                <div className='mx-auto max-w-3xl'>
+                    {transportBanner}
+                    {composer}
+                </div>
                 <p className='mx-auto mt-2 max-w-3xl text-center text-[11px] text-[var(--color-text-muted)]'>
                     Replies are signed by the hardware running the model. Verify
                     any response from the &ldquo;Secure enclaves
@@ -876,6 +902,54 @@ function PendingAssistant() {
             >
                 Analysing…
             </span>
+        </div>
+    );
+}
+
+// Reconnect banner shown above the composer when the enclave transport is
+// not healthy. `reconnecting` (enclave unreachable or session stale, auto-
+// recovering) shows a spinner; `stale` (the back-end's measurement changed,
+// so the EncAuth voucher is rejected) shows a Reconnect button that routes
+// to the in-panel sign-in for a fresh wallet ceremony.
+function TransportBanner({
+    transport,
+    onReconnect
+}: {
+    transport: 'reconnecting' | 'stale';
+    onReconnect?: () => void;
+}) {
+    if (transport === 'reconnecting') {
+        return (
+            <div
+                className='mb-2 flex items-center gap-2 rounded-lg border border-amber-300/40 bg-amber-50/50 px-3 py-2 text-xs text-amber-800 dark:border-amber-500/20 dark:bg-amber-900/10 dark:text-amber-200'
+                aria-live='polite'
+            >
+                <svg className='h-3.5 w-3.5 animate-spin' viewBox='0 0 24 24' aria-hidden='true'>
+                    <circle className='opacity-25' cx='12' cy='12' r='10' stroke='currentColor' strokeWidth='4' fill='none' />
+                    <path className='opacity-75' fill='currentColor' d='M4 12a8 8 0 0 1 8-8v4a4 4 0 0 0-4 4H4Z' />
+                </svg>
+                <span>Reconnecting to the secure enclave…</span>
+            </div>
+        );
+    }
+    return (
+        <div
+            className='mb-2 flex items-center justify-between gap-3 rounded-lg border border-red-300/40 bg-red-50/50 px-3 py-2 text-xs text-red-700 dark:border-red-500/20 dark:bg-red-900/10 dark:text-red-300'
+            aria-live='polite'
+        >
+            <span>
+                The secure back-end was updated, so this session can no longer be
+                verified. Reconnect to continue.
+            </span>
+            {onReconnect && (
+                <button
+                    type='button'
+                    onClick={onReconnect}
+                    className='shrink-0 rounded-md border border-red-300/60 px-2.5 py-1 font-medium hover:bg-red-100/40 dark:border-red-500/30 dark:hover:bg-red-900/20'
+                >
+                    Reconnect
+                </button>
+            )}
         </div>
     );
 }
