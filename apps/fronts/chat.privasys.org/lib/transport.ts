@@ -16,5 +16,12 @@ export function isTransportError(message: string): boolean {
     if (/\b(50[234])\b|bad gateway|unreachable|sealed stream failed|failed to fetch|fetch failed|networkerror|load failed/i.test(message)) {
         return true;
     }
+    // No sealed session yet (e.g. after the app was re-created and the old
+    // session is dead): route into the reconnect flow, which re-establishes
+    // the sealed transport or, failing that, prompts a fresh sign-in — never
+    // a dead-end "sign in" string the user can't act on inline.
+    if (/secure session required|sign in to establish/i.test(message)) {
+        return true;
+    }
     return /\b401\b/.test(message);
 }
