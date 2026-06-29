@@ -70,6 +70,14 @@ export default defineConfig({
             }
         },
         {
+            name: 'session-relay-encpub',
+            testMatch: 'session-relay-encpub.spec.ts',
+            dependencies: ['auth-setup'],
+            use: {
+                storageState: AUTH_FILE
+            }
+        },
+        {
             name: 'gemma4',
             testMatch: 'gemma4-deploy.spec.ts',
             dependencies: ['auth-setup'],
