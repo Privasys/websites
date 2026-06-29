@@ -30,11 +30,12 @@ import { cleanupApps } from './e2e-cleanup';
 const screenshot = (name: string) => path.join(__dirname, 'test-results', `${name}.png`);
 const API = process.env.NEXT_PUBLIC_API_URL || 'https://api-test.developer.privasys.org';
 
-// The configure-then-freeze variant — exports @config-api configure +
-// protected-call (the simple wasm-app-example dropped these after the repo
-// split, so this test uses wasm-app-example-with-config).
+// The configure-then-freeze variant — exports configure (role:config) +
+// protected-call. This commit drops the set-config-complete call: the runtime
+// auto-lifts the freeze gate on a successful configure return (wasm-v0.36.0+),
+// so this suite now also asserts the auto-lift (no app-driven unfreeze).
 const WASM_COMMIT_URL =
-    'https://github.com/Privasys/wasm-app-example-with-config/commit/da08e12e231a03ddf1c24af3b02b8cd67e20c567';
+    'https://github.com/Privasys/wasm-app-example-with-config/commit/ea22c5ce7c105166622470e72a1e627789a1094b';
 const APP_NAME = 'e2e-team-configure';
 
 let token: string;
@@ -184,25 +185,9 @@ test.describe('Owners Team + @config-api Freeze Gate', () => {
         throw new Error('Build did not become ready in time');
     });
 
-    test('set config_api so the freeze gate engages', async ({ page }) => {
-        test.setTimeout(15_000);
-        token = await getToken(page);
-
-        const resp = await page.request.patch(
-            `${API}/api/v1/apps/${appId}/config-api`,
-            {
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                    'Content-Type': 'application/json',
-                },
-                data: { config_api: 'configure' },
-            },
-        );
-        expect(resp.ok()).toBeTruthy();
-        const app = await resp.json();
-        expect(app.config_api).toBe('configure');
-        console.log(`config_api set: ${app.config_api}`);
-    });
+    // No PATCH /config-api: the freeze gate is now image-bound. mgmt derives
+    // config_api from the manifest tool tagged role:"config" (configure), so the
+    // app freezes without any manual step.
 
     test('deploy to SGX — DeployTarget carries owners', async ({ page }) => {
         test.setTimeout(300_000);
