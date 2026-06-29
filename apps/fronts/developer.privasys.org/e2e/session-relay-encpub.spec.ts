@@ -115,6 +115,64 @@ async function waitForEncPub(request: APIRequestContext, host: string, ms: numbe
     throw new Error(`enclave did not recover within ${ms}ms; last: ${last}`);
 }
 
+/**
+ * Poll until enc_pub equals `want`, or fail after `ms`. Robust to the
+ * post-reboot window where the manager is briefly serving before the registry
+ * replay re-installs the vault key (a transient ephemeral key). It passes iff
+ * enc_pub returns to the original (vault-backed) value; if the key is
+ * regenerated instead (the bug), it never matches and this times out.
+ */
+async function waitForEncPubEquals(
+    request: APIRequestContext,
+    host: string,
+    want: string,
+    ms: number,
+): Promise<void> {
+    const deadline = Date.now() + ms;
+    let lastSeen = '';
+    while (Date.now() < deadline) {
+        try {
+            const got = await probeEncPub(request, host);
+            lastSeen = got;
+            if (got === want) return;
+        } catch (e) {
+            lastSeen = `error: ${(e as Error).message}`;
+        }
+        await new Promise((r) => setTimeout(r, 10_000));
+    }
+    throw new Error(
+        `enc_pub did not return to the pre-restart value within ${ms}ms ` +
+            `(last seen ${lastSeen.slice(0, 24)}…, expected ${want.slice(0, 24)}…) ` +
+            `— the key was regenerated, not reconstructed from the vault`,
+    );
+}
+
+/**
+ * Probe until enc_pub STABILISES (two consecutive reads, ~15s apart, equal),
+ * then return it. Right after a deploy the manager briefly serves a lazily
+ * generated ephemeral key until resolveSessionRelayKey installs the
+ * vault-backed one; a single probe can race that window. Stability means we've
+ * captured the vault-backed key, which is the value Sc 2 must hold across a
+ * restart.
+ */
+async function waitForStableEncPub(request: APIRequestContext, host: string, ms: number): Promise<string> {
+    const deadline = Date.now() + ms;
+    let prev = '';
+    while (Date.now() < deadline) {
+        let cur: string;
+        try {
+            cur = await probeEncPub(request, host);
+        } catch {
+            await new Promise((r) => setTimeout(r, 10_000));
+            continue;
+        }
+        if (cur === prev) return cur;
+        prev = cur;
+        await new Promise((r) => setTimeout(r, 15_000));
+    }
+    throw new Error(`enc_pub did not stabilise within ${ms}ms (last ${prev.slice(0, 24)}…)`);
+}
+
 async function getToken(page: Page): Promise<string> {
     if (token) return token;
     await setupAuth(page);
@@ -145,9 +203,16 @@ async function deployFreshApp(page: Page): Promise<string> {
     expect(createResp.ok(), `create app: ${await createResp.text()}`).toBeTruthy();
     createdAppId = (await createResp.json()).id;
 
-    // Wait for the build.
+    // A Description + Category are required before any deploy (App Store gate).
+    const storeResp = await page.request.put(`${API}/api/v1/apps/${createdAppId}/store`, {
+        headers: hdrs,
+        data: { store_description: 'E2E session-relay enc_pub restart test.', store_category: 'Developer Tools' },
+    });
+    expect(storeResp.ok(), `store listing: HTTP ${storeResp.status()}`).toBeTruthy();
+
+    // Wait for the build (the reproducible builder can be slow/queued).
     let versionId = '';
-    for (let i = 0; i < 120 && !versionId; i++) {
+    for (let i = 0; i < 220 && !versionId; i++) {
         const vr = await page.request.get(`${API}/api/v1/apps/${createdAppId}/versions`, { headers: hdrs });
         if (vr.ok()) {
             const versions: { id: string; status: string }[] = await vr.json();
@@ -196,7 +261,7 @@ test.describe('Session-relay enc_pub survives an enclave restart (Sc 2)', () => 
     });
 
     test('ensure a session-relay app is deployed on the target enclave', async ({ page }) => {
-        test.setTimeout(720_000); // a fresh github build can take ~10 min
+        test.setTimeout(1_320_000); // a fresh github build can be slow/queued (~20 min)
         if (FIXED_APP_HOST) {
             console.log(`[sr-encpub] FAST mode: reusing ${FIXED_APP_HOST}`);
             appHost = FIXED_APP_HOST;
@@ -210,8 +275,11 @@ test.describe('Session-relay enc_pub survives an enclave restart (Sc 2)', () => 
     });
 
     test('record enc_pub before restart', async ({ request }) => {
-        test.setTimeout(60_000);
-        encPubBefore = await probeEncPub(request, appHost);
+        test.setTimeout(180_000);
+        // Tolerate gateway-route propagation (the host may 404 briefly) AND the
+        // post-deploy ephemeral→vault window: wait until enc_pub stabilises to
+        // the vault-backed key before recording the baseline.
+        encPubBefore = await waitForStableEncPub(request, appHost, 150_000);
         console.log(`[sr-encpub] enc_pub (before) = ${encPubBefore.slice(0, 24)}…`);
         expect(encPubBefore).toBeTruthy();
     });
@@ -225,12 +293,12 @@ test.describe('Session-relay enc_pub survives an enclave restart (Sc 2)', () => 
     test('enc_pub is identical after restart (vault-reconstructed, not regenerated)', async ({
         request,
     }) => {
-        test.setTimeout(300_000);
-        const encPubAfter = await waitForEncPub(request, appHost, 240_000);
-        console.log(`[sr-encpub] enc_pub (after)  = ${encPubAfter.slice(0, 24)}…`);
-        // The fix: same measurement → same vault key → identical enc_pub.
-        // Without it, the manager regenerates an ephemeral key on restart and
-        // this assertion fails (which is exactly the bug being guarded against).
-        expect(encPubAfter, 'enc_pub must survive the restart').toBe(encPubBefore);
+        test.setTimeout(420_000);
+        // The fix: same measurement → same vault key → enc_pub returns to its
+        // pre-restart value once the registry replay re-resolves it. Without it,
+        // the manager regenerates an ephemeral key on restart and this never
+        // matches (times out) — exactly the bug being guarded against.
+        await waitForEncPubEquals(request, appHost, encPubBefore, 360_000);
+        console.log('[sr-encpub] enc_pub identical after restart — Sc 2 confirmed');
     });
 });
