@@ -14,6 +14,7 @@ import type { SealedSession } from '@privasys/auth';
 import { clearFeedback, recordFeedback } from '~/lib/pending-feedback';
 import { waitForModelReady } from '~/lib/instance-api';
 import { fetchToolGrant } from '~/lib/chat-service-api';
+import { isTransportError } from '~/lib/transport';
 import { Composer } from './composer';
 import { Markdown } from './markdown';
 import { MetadataDialog } from './metadata-dialog';
@@ -30,7 +31,15 @@ import { createTextSmoother } from '~/lib/text-smoother';
 interface DisplayMessage extends PersistedMessage {
     /** True while tokens are still streaming in for this message. */
     streaming?: boolean;
+    /** Set while the turn is waiting for the enclave transport to recover
+     *  (enclave restarting / sealed session being re-established). Transient,
+     *  never persisted. The prompt is re-sent automatically once healthy. */
+    reconnecting?: { startedAt: number };
 }
+
+// How many times a single send re-tries through a transport reconnect before
+// giving up with a soft error. Each attempt waits out the full recovery window.
+const MAX_TRANSPORT_RETRIES = 3;
 
 let nextId = 0;
 const newId = () => `m${Date.now().toString(36)}-${++nextId}`;
@@ -138,6 +147,15 @@ export function ChatPanel({
     // `conversationId` to a *different* value AND we are not
     // currently streaming.
     const localConvIdRef = useRef<string | null>(conversationId);
+    // Live mirrors of props the long-running send() closure must read at
+    // RETRY time, not at call time: after the shell re-establishes the sealed
+    // session it hands us a NEW SealedSession (the old proxy's frame is gone),
+    // so a retry must use the current one, and the reconnect wait must observe
+    // the current transport state.
+    const transportRef = useRef(transport);
+    const sealedSessionRef = useRef(sealedSession);
+    useEffect(() => { transportRef.current = transport; }, [transport]);
+    useEffect(() => { sealedSessionRef.current = sealedSession; }, [sealedSession]);
 
     // Sync internal state when the parent switches conversation.
     // - null → string (first message persisted): keep local state,
@@ -163,6 +181,7 @@ export function ChatPanel({
             const sanitized: PersistedMessage[] = next.map((m) => {
                 const copy: DisplayMessage = { ...m };
                 delete copy.streaming;
+                delete copy.reconnecting;
                 return copy;
             });
             const id = onMessagesChange(sanitized);
@@ -262,7 +281,10 @@ export function ChatPanel({
                     ...history.map(({ role, content }) => ({ role, content }))
                 ],
                 token,
-                sealedSession,
+                // Read the CURRENT sealed session so a post-reconnect retry
+                // uses the freshly re-established transport, not the dead one
+                // captured when send() was first called.
+                sealedSession: sealedSessionRef.current ?? undefined,
                 // Instances that support sealed transport must never fall
                 // back to plaintext through the gateway.
                 sealedRequired: !!instance.session_relay?.enabled,
@@ -354,6 +376,10 @@ export function ChatPanel({
                     // failure (enclave down / session stale) and kick off
                     // the reconnect flow.
                     onStreamError?.(err);
+                    // Transport failures are handled by the reconnect/retry
+                    // loop below (inline "Reconnecting…" notice + auto-resend),
+                    // so don't paint a red per-message error for them.
+                    if (isTransportError(err.message)) return;
                     setMessages((prev) => {
                         const next = prev.map((m) =>
                             m.id === assistantId
@@ -366,62 +392,149 @@ export function ChatPanel({
                 }
             });
 
+        // Wait for the shell's transport state to settle after a transport
+        // error. The shell flips to 'reconnecting' (async) and drives recovery;
+        // we first let it leave 'ok' (it acknowledged), then wait for a
+        // terminal state. 'ok' = sealed session re-established (retry); 'stale'
+        // = the enclave's measurement changed and a fresh sign-in is needed
+        // (the composer's Reconnect banner takes over); 'timeout' = gave up.
+        const waitForTransportResolution = async (): Promise<'ok' | 'stale' | 'timeout'> => {
+            const ackDeadline = Date.now() + 4_000;
+            while (transportRef.current === 'ok' && Date.now() < ackDeadline) {
+                if (ctrl.signal.aborted) return 'timeout';
+                await new Promise((r) => setTimeout(r, 200));
+            }
+            const deadline = Date.now() + 120_000;
+            while (Date.now() < deadline) {
+                if (ctrl.signal.aborted) return 'timeout';
+                if (transportRef.current === 'ok') return 'ok';
+                if (transportRef.current === 'stale') return 'stale';
+                await new Promise((r) => setTimeout(r, 500));
+            }
+            return 'timeout';
+        };
+
         try {
-            try {
-                await runStream();
-            } catch (e) {
-                if (!(e instanceof ModelLoadingError)) throw e;
-                // Switch the placeholder to a friendly "loading model"
-                // notice while we poll the enclave. Use the model's
-                // declared `load_time_seconds` (set by the operator on
-                // the fleet's available_models JSON) as the ETA, with
-                // a sane default for unknown models.
-                const eta = model.load_time_seconds ?? 240;
-                const loadingStartedAt = Date.now();
-                setMessages((prev) =>
-                    prev.map((m) =>
-                        m.id === assistantId
-                            ? {
-                                ...m,
-                                streaming: true,
-                                error: undefined,
-                                loadingModel: { startedAt: loadingStartedAt, etaSeconds: eta }
-                            }
-                            : m
-                    )
-                );
-                const ready = await waitForModelReady(instance.endpoint, model.name, {
-                    timeoutMs: Math.max(eta * 2, 60) * 1000,
-                    intervalMs: 5_000,
-                    signal: ctrl.signal
-                });
-                if (!ready) {
-                    setMessages((prev) => {
-                        const next = prev.map((m) =>
-                            m.id === assistantId
-                                ? {
-                                    ...m,
-                                    streaming: false,
-                                    loadingModel: undefined,
-                                    error:
-                                        'The model did not finish loading in time. Please try again in a moment.'
-                                }
-                                : m
+            // Unified retry loop: a single send transparently rides out a model
+            // cold-start (503) AND an enclave transport blip (502/401/network)
+            // without the user retyping or seeing red errors. Each branch
+            // re-issues the exact same request via runStream(), which reads the
+            // current sealed session so a post-reconnect retry uses the fresh
+            // transport.
+            let transportRetries = 0;
+            for (;;) {
+                try {
+                    await runStream();
+                    break;
+                } catch (e) {
+                    if (e instanceof ModelLoadingError) {
+                        // Switch the placeholder to a friendly "loading model"
+                        // notice while we poll the enclave. Use the model's
+                        // declared `load_time_seconds` (set by the operator on
+                        // the fleet's available_models JSON) as the ETA, with
+                        // a sane default for unknown models.
+                        const eta = model.load_time_seconds ?? 240;
+                        const loadingStartedAt = Date.now();
+                        setMessages((prev) =>
+                            prev.map((m) =>
+                                m.id === assistantId
+                                    ? {
+                                        ...m,
+                                        streaming: true,
+                                        error: undefined,
+                                        reconnecting: undefined,
+                                        loadingModel: { startedAt: loadingStartedAt, etaSeconds: eta }
+                                    }
+                                    : m
+                            )
                         );
-                        persist(next);
-                        return next;
-                    });
-                    return;
+                        const ready = await waitForModelReady(instance.endpoint, model.name, {
+                            timeoutMs: Math.max(eta * 2, 60) * 1000,
+                            intervalMs: 5_000,
+                            signal: ctrl.signal
+                        });
+                        if (!ready) {
+                            setMessages((prev) => {
+                                const next = prev.map((m) =>
+                                    m.id === assistantId
+                                        ? {
+                                            ...m,
+                                            streaming: false,
+                                            loadingModel: undefined,
+                                            error:
+                                                'The model did not finish loading in time. Please try again in a moment.'
+                                        }
+                                        : m
+                                );
+                                persist(next);
+                                return next;
+                            });
+                            break;
+                        }
+                        // Model is ready — clear the loading notice and retry.
+                        setMessages((prev) =>
+                            prev.map((m) =>
+                                m.id === assistantId ? { ...m, loadingModel: undefined } : m
+                            )
+                        );
+                        continue;
+                    }
+
+                    if (isTransportError((e as Error).message) && transportRetries < MAX_TRANSPORT_RETRIES) {
+                        transportRetries++;
+                        // Show a "Reconnecting…" notice in place of a red error;
+                        // onError already notified the shell, which is recovering
+                        // the sealed session.
+                        setMessages((prev) =>
+                            prev.map((m) =>
+                                m.id === assistantId
+                                    ? {
+                                        ...m,
+                                        streaming: true,
+                                        error: undefined,
+                                        loadingModel: undefined,
+                                        reconnecting: { startedAt: Date.now() }
+                                    }
+                                    : m
+                            )
+                        );
+                        const outcome = await waitForTransportResolution();
+                        if (outcome === 'ok') {
+                            setMessages((prev) =>
+                                prev.map((m) =>
+                                    m.id === assistantId ? { ...m, reconnecting: undefined } : m
+                                )
+                            );
+                            continue;
+                        }
+                        // 'stale' → the Reconnect banner owns the next step, so
+                        // leave the turn quietly pending (no red error). 'timeout'
+                        // → a soft, actionable message.
+                        setMessages((prev) => {
+                            const next = prev.map((m) =>
+                                m.id === assistantId
+                                    ? {
+                                        ...m,
+                                        streaming: false,
+                                        reconnecting: undefined,
+                                        loadingModel: undefined,
+                                        error:
+                                            outcome === 'timeout'
+                                                ? 'Could not reconnect to the secure enclave. Please try again.'
+                                                : undefined
+                                    }
+                                    : m
+                            );
+                            persist(next);
+                            return next;
+                        });
+                        break;
+                    }
+
+                    // Non-transport app error (or retries exhausted): onError
+                    // already painted the message; stop here.
+                    break;
                 }
-                // Model is ready — clear the loading notice and retry.
-                setMessages((prev) =>
-                    prev.map((m) =>
-                        m.id === assistantId
-                            ? { ...m, loadingModel: undefined }
-                            : m
-                    )
-                );
-                await runStream();
             }
         } finally {
             setStreaming(false);
@@ -695,6 +808,8 @@ function Message({
                     content={message.content}
                     streaming={!!message.streaming}
                 />
+            ) : message.reconnecting ? (
+                <ReconnectingNotice />
             ) : message.loadingModel ? (
                 <ModelLoadingNotice info={message.loadingModel} />
             ) : message.streaming ? (
@@ -902,6 +1017,25 @@ function PendingAssistant() {
             >
                 Analysing…
             </span>
+        </div>
+    );
+}
+
+// Inline notice on the pending turn while the enclave transport recovers
+// (VM restarting / sealed session being re-established). The prompt is held
+// and re-sent automatically once the channel is healthy, so the user never
+// retypes and never sees a raw 502/401.
+function ReconnectingNotice() {
+    return (
+        <div
+            className='flex items-center gap-2 text-sm text-[var(--color-text-secondary)]'
+            aria-live='polite'
+        >
+            <svg className='h-3.5 w-3.5 animate-spin' viewBox='0 0 24 24' aria-hidden='true'>
+                <circle className='opacity-25' cx='12' cy='12' r='10' stroke='currentColor' strokeWidth='4' fill='none' />
+                <path className='opacity-75' fill='currentColor' d='M4 12a8 8 0 0 1 8-8v4a4 4 0 0 0-4 4H4Z' />
+            </svg>
+            <span>Reconnecting to the secure enclave… your message will be sent automatically.</span>
         </div>
     );
 }

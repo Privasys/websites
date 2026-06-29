@@ -11,6 +11,7 @@ import { useEnabledTools } from '~/lib/use-enabled-tools';
 import { useUserTools } from '~/lib/use-user-tools';
 import { chatServiceHost } from '~/lib/chat-service-api';
 import { probeInstanceHealth } from '~/lib/instance-api';
+import { isTransportError } from '~/lib/transport';
 import type { SealedSession } from '@privasys/auth';
 import { AppSidebar } from './app-sidebar';
 import { ChatPanel } from './chat-panel';
@@ -22,23 +23,6 @@ type ShellView = 'chat' | 'security' | 'signin';
 type TransportState = 'ok' | 'reconnecting' | 'stale';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-// Decide whether a chat-stream error reflects a broken enclave transport
-// (gateway can't reach the VM, or our sealed session was rejected) versus
-// an application-level error we should just show on the message. Transport
-// errors flip the shell into the reconnect flow.
-//
-// 502/503/504 + "unreachable"/"Bad Gateway" = VM down or restarting;
-// 401 + sealed-session rejection = stale session after a redeploy (the SDK
-// already auto-rebinds same-measurement sessions, so a 401 reaching here
-// means the measurement changed); "fetch failed"/"Failed to fetch" = network.
-function classifyStreamError(message: string): 'transport' | 'app' {
-    if (/\b(50[234])\b|bad gateway|unreachable|sealed stream failed|failed to fetch|fetch failed|networkerror|load failed/i.test(message)) {
-        return 'transport';
-    }
-    if (/\b401\b/.test(message)) return 'transport';
-    return 'app';
-}
 
 // Gemini-style two-pane shell: persistent left sidebar + main column.
 //
@@ -118,7 +102,7 @@ export function ChatShell({
     // over. Non-transport errors (validation, model errors) are left to the
     // per-message red notice. Called by ChatPanel on stream error.
     const onTransportError = useCallback((err: Error) => {
-        if (classifyStreamError(err.message) === 'transport') {
+        if (isTransportError(err.message)) {
             setTransport((prev) => (prev === 'stale' ? 'stale' : 'reconnecting'));
         }
     }, []);
