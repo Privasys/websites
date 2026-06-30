@@ -11,7 +11,7 @@ const STORE_BASE_URL = 'https://store.privasys.org';
 import type { CreateVersionBody } from '~/lib/api';
 import { isApiStatus } from '~/lib/api';
 import { versionLabel, versionSemverStr, isStrictlyNewer } from '~/lib/version';
-import type { AppSchema, FunctionSchema, JsonSchemaProp, ActionProgress, WitType, McpManifest, AppTeam, AppCommit } from '~/lib/api';
+import type { AppSchema, ConfigureSection, FunctionSchema, JsonSchemaProp, ActionProgress, WitType, McpManifest, AppTeam, AppCommit } from '~/lib/api';
 import { useSSE } from '~/lib/sse-context';
 import { useBalance } from '~/lib/use-balance';
 import { getApiBaseUrl } from '~/lib/api-base-url';
@@ -1769,6 +1769,9 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
             .catch(() => { if (alive) setSchema(null); });
         return () => { alive = false; };
     }, [liveDeployment?.id, app.id, token]);
+    // Owner configuration: prefer the dedicated `configure` section; fall back to
+    // a legacy role:config tool for apps not yet migrated to the section.
+    const configure = schema?.configure;
     const configFns = (schema?.functions ?? []).filter(f => f.role === 'config');
     const actionFns = (schema?.functions ?? []).filter(f => f.role === 'action');
 
@@ -2168,6 +2171,39 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                                     </div>
                                 )}
 
+                                {/* Owner configuration — merged into this tile, separated
+                                    by the same divider. Prefer the dedicated `configure`
+                                    section; fall back to a legacy role:config tool. */}
+                                {isLive && configure && (
+                                    <ConfigureForm cfg={configure} appId={app.id} token={token} frozen={dep.container_state === 'awaiting_config'} />
+                                )}
+                                {isLive && !configure && configFns.length > 0 && (
+                                    <div className="mt-3 pt-3 border-t border-black/5 dark:border-white/5">
+                                        {dep.container_state === 'awaiting_config' && (
+                                            <div className="mt-2 flex items-start gap-2 rounded-lg border border-amber-200 dark:border-amber-800/40 bg-amber-50 dark:bg-amber-900/15 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
+                                                <svg className="w-3.5 h-3.5 mt-px shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /></svg>
+                                                <span>The app stays frozen (HTTP 503 at the routing layer) until configuration is applied.</span>
+                                            </div>
+                                        )}
+                                        {configFns.map(fn => (
+                                            <div key={fn.name} className="mt-3">
+                                                <ConfigForm fn={fn} appId={app.id} token={token} />
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+
+                                {isLive && actionFns.length > 0 && (
+                                    <div className="mt-3 pt-3 border-t border-black/5 dark:border-white/5">
+                                        <h3 className="text-sm font-semibold">Actions</h3>
+                                        {actionFns.map(fn => (
+                                            <div key={fn.name} className="mt-3">
+                                                <ActionRunner fn={fn} appId={app.id} token={token} />
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+
                                 {/* Upgrade lives inside the tile, separated by the same grey
                                     divider as the endpoint row above. Only once live (item 1). */}
                                 {isLive && (
@@ -2207,37 +2243,6 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                                                 <span className="text-xs text-amber-700 dark:text-amber-300">Stop failed: {stopErrors[dep.id]}</span>
                                             </div>
                                         )}
-                                    </div>
-                                )}
-
-                                {/* Configuration — merged into this tile, separated by
-                                    the same divider; the freeze note is a warning shown
-                                    only while the app is actually frozen. */}
-                                {isLive && configFns.length > 0 && (
-                                    <div className="mt-3 pt-3 border-t border-black/5 dark:border-white/5">
-                                        <h3 className="text-sm font-semibold">Configuration</h3>
-                                        {dep.container_state === 'awaiting_config' && (
-                                            <div className="mt-2 flex items-start gap-2 rounded-lg border border-amber-200 dark:border-amber-800/40 bg-amber-50 dark:bg-amber-900/15 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
-                                                <svg className="w-3.5 h-3.5 mt-px shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /></svg>
-                                                <span>The app stays frozen (HTTP 503 at the routing layer) until configuration is applied.</span>
-                                            </div>
-                                        )}
-                                        {configFns.map(fn => (
-                                            <div key={fn.name} className="mt-3">
-                                                <ConfigForm fn={fn} appId={app.id} token={token} />
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-
-                                {isLive && actionFns.length > 0 && (
-                                    <div className="mt-3 pt-3 border-t border-black/5 dark:border-white/5">
-                                        <h3 className="text-sm font-semibold">Actions</h3>
-                                        {actionFns.map(fn => (
-                                            <div key={fn.name} className="mt-3">
-                                                <ActionRunner fn={fn} appId={app.id} token={token} />
-                                            </div>
-                                        ))}
                                     </div>
                                 )}
                             </section>
@@ -2467,6 +2472,7 @@ function FieldInput({ name, prop, value, onChange, appId, token, disabled }: {
     const m = meta(prop);
     const label = m.label || name;
     const cls = 'w-full px-3 py-2 text-sm rounded-lg border border-black/10 dark:border-white/10 bg-white dark:bg-black/30 disabled:opacity-50';
+    const [showDetails, setShowDetails] = useState(false);
 
     // Dynamic enum: fetch choices from the referenced tool.
     const [dynChoices, setDynChoices] = useState<string[] | null>(null);
@@ -2501,15 +2507,24 @@ function FieldInput({ name, prop, value, onChange, appId, token, disabled }: {
             onChange={e => onChange(e.target.value)} className={cls} />;
     } else {
         input = <input type={m.secret ? 'password' : 'text'} value={value} disabled={disabled}
-            placeholder={m.secret ? '••••••••' : ''} autoComplete="off"
+            placeholder={m.secret ? '••••••••' : (m.placeholder || '')} autoComplete="off"
             onChange={e => onChange(e.target.value)} className={cls} />;
     }
 
     return (
         <div className="space-y-1">
-            <label className="block text-sm font-medium">{label}{prop.type ? <span className="ml-1 text-xs text-black/30 dark:text-white/30">{m.secret ? 'secret' : prop.type}</span> : null}</label>
+            <div className="flex items-center justify-between gap-3">
+                <label className="block text-sm font-medium">{label}{prop.type ? <span className="ml-1 text-xs text-black/30 dark:text-white/30">{m.secret ? 'secret' : prop.type}</span> : null}</label>
+                {m.details && (
+                    <button type="button" onClick={() => setShowDetails(s => !s)}
+                        className="shrink-0 text-xs text-black/40 dark:text-white/40 hover:text-black/70 dark:hover:text-white/70 underline-offset-2 hover:underline">
+                        {showDetails ? 'Hide details' : 'Details'}
+                    </button>
+                )}
+            </div>
             {input}
             {(m.help || prop.description) && <p className="text-[11px] leading-snug text-black/40 dark:text-white/40">{m.help || prop.description}</p>}
+            {showDetails && m.details && <p className="text-xs text-black/50 dark:text-white/50">{m.details}</p>}
             {dynErr && <p className="text-xs text-red-600 dark:text-red-400">could not load options: {dynErr}</p>}
         </div>
     );
@@ -2518,6 +2533,63 @@ function FieldInput({ name, prop, value, onChange, appId, token, disabled }: {
 function fieldEntries(fn: FunctionSchema): [string, JsonSchemaProp][] {
     const props = fn.input_schema?.properties ?? {};
     return Object.keys(props).sort().map(k => [k, props[k]]);
+}
+
+// ConfigureForm renders an app's owner configuration from its dedicated
+// `configure` manifest section (not a tool). Owner-facing title + summary, an
+// amber warning while the app is frozen, the fields (label + placeholder + a
+// "Details" disclosure per field), and Apply — submitting lifts the freeze gate.
+function ConfigureForm({ cfg, appId, token, frozen }: { cfg: ConfigureSection; appId: string; token: string; frozen: boolean }) {
+    const props = cfg.inputSchema?.properties ?? {};
+    const entries = Object.keys(props).sort().map(k => [k, props[k]] as [string, JsonSchemaProp]);
+    const [values, setValues] = useState<Record<string, string>>({});
+    const [busy, setBusy] = useState(false);
+    const [result, setResult] = useState<string | null>(null);
+    const [error, setError] = useState<string | null>(null);
+    const rpcName = cfg.name || cfg.function || (cfg.endpoint ? cfg.endpoint.replace(/^\//, '') : 'configure');
+
+    const submit = async () => {
+        setBusy(true); setError(null); setResult(null);
+        const payload: Record<string, unknown> = {};
+        for (const [k, prop] of entries) {
+            if (values[k] !== undefined && values[k] !== '') payload[k] = coerce(prop, values[k]);
+        }
+        try {
+            const r = unwrapRpc(await rpcCall(token, appId, rpcName, payload));
+            const errMsg = r && typeof r === 'object' && 'err' in r ? String((r as { err: unknown }).err) : null;
+            if (errMsg) { setError(errMsg); return; }
+            setResult('Configuration applied. The app is now unfrozen.');
+        } catch (e) {
+            setError((e as Error).message);
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    return (
+        <div className="mt-3 pt-3 border-t border-black/5 dark:border-white/5">
+            {cfg.title && <h3 className="text-sm font-semibold">{cfg.title}</h3>}
+            {frozen && (
+                <div className="mt-2 flex items-start gap-2 rounded-lg border border-amber-200 dark:border-amber-800/40 bg-amber-50 dark:bg-amber-900/15 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
+                    <svg className="w-3.5 h-3.5 mt-px shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /></svg>
+                    <span>This app is frozen (HTTP 503) until you apply its configuration below.</span>
+                </div>
+            )}
+            {cfg.description && <p className="mt-2 text-xs text-black/50 dark:text-white/50">{cfg.description}</p>}
+            <div className="mt-3 space-y-3">
+                {entries.map(([k, prop]) => (
+                    <FieldInput key={k} name={k} prop={prop} value={values[k] ?? String(prop.default ?? '')}
+                        onChange={v => setValues(s => ({ ...s, [k]: v }))} appId={appId} token={token} disabled={busy} />
+                ))}
+                <button onClick={submit} disabled={busy}
+                    className="px-3 py-2 text-sm font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black disabled:opacity-40">
+                    {busy ? 'Applying…' : 'Apply configuration'}
+                </button>
+                {result && <p className="text-sm text-green-700 dark:text-green-400">{result}</p>}
+                {error && <p className="text-sm text-red-700 dark:text-red-400">{error}</p>}
+            </div>
+        </div>
+    );
 }
 
 function coerce(prop: JsonSchemaProp, raw: string): unknown {

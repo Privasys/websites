@@ -248,6 +248,8 @@ export interface FieldMeta {
     secret?: boolean;
     label?: string;
     help?: string;
+    placeholder?: string;                         // input placeholder
+    details?: string;                             // long explanation, shown behind a "Details" toggle
     source?: { tool: string; select: string };   // dynamic enum from another tool
 }
 
@@ -299,11 +301,23 @@ export interface InterfaceSchema {
     functions: FunctionSchema[];
 }
 
+// Owner-only configuration, declared in its own top-level manifest section
+// (not a tool). Reuses the MCP field format; the portal renders it from here.
+export interface ConfigureSection {
+    endpoint?: string;       // container: HTTP path
+    function?: string;       // wasm: WIT export name
+    name?: string;           // RPC name the portal invokes to apply
+    title?: string;          // owner-facing heading
+    description?: string;    // owner-facing summary
+    inputSchema?: JsonSchemaObject;
+}
+
 export interface AppSchema {
     name: string;
     hostname: string;
     functions: FunctionSchema[];
     interfaces: InterfaceSchema[];
+    configure?: ConfigureSection;
 }
 
 export async function getAppSchema(token: string, appId: string): Promise<AppSchema> {
