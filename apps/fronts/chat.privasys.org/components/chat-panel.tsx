@@ -1074,8 +1074,8 @@ function TransportBanner({
             aria-live='polite'
         >
             <span>
-                The secure back-end was updated, so this session can no longer be
-                verified. Reconnect to continue.
+                This secure session needs to be re-established (the enclave was
+                updated or restarted). Reconnect to continue.
             </span>
             {onReconnect && (
                 <button

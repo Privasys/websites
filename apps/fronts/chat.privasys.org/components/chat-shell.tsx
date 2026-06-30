@@ -144,6 +144,17 @@ export function ChatShell({
             // Self-looping retry: stays inside this single effect run so a
             // transient `unavailable` retries without needing a state change
             // to re-trigger the effect.
+            //
+            // A SILENT sealed resume can fail persistently (not just transiently)
+            // when the enclave is perfectly reachable — most commonly because the
+            // auth frame is a third-party iframe whose storage is partitioned, so
+            // re-binding the EncAuth voucher needs an interactive user gesture
+            // that a background resume can't make. Retrying forever would spin
+            // the "connecting" banner indefinitely; after a few attempts we
+            // surface the actionable Reconnect prompt (`stale`) so one click runs
+            // the interactive ceremony and restores the sealed session.
+            const MAX_SILENT_RESUME_TRIES = 4;
+            let silentTries = 0;
             for (;;) {
                 if (cancelled) return;
                 // Wait until the back-end answers /healthz again.
@@ -167,7 +178,15 @@ export function ChatShell({
                     setTransport('stale');
                     return;
                 }
-                // Transient: back off and retry the loop.
+                // `unavailable`: retry a few times for a genuine transient blip
+                // (e.g. the enclave is still finishing its boot), then fall back
+                // to the interactive Reconnect prompt since a silent resume
+                // cannot recover on its own.
+                silentTries += 1;
+                if (silentTries >= MAX_SILENT_RESUME_TRIES) {
+                    setTransport('stale');
+                    return;
+                }
                 await sleep(3_000);
             }
         })();
