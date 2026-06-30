@@ -68,7 +68,10 @@ Tokens are stored in the OS keychain, with a `0600` file fallback for headless e
 
 | Group | Commands |
 | --- | --- |
-| `apps` | `list`, `describe`, `create`, `upload`, `delete`, `versions` (incl. `stage`/`pending`/`promote`/`revoke`), `deploy`, `upgrade`, `deployments`, `stop`, `api`, `mcp`, `call`, `builds`, `owners` |
+| `apps` | `list`, `describe`, `create`, `store-listing`, `upload`, `delete`, `versions` (incl. `stage`/`pending`/`promote`/`revoke`), `deploy`, `update`, `upgrade`, `rotate-key`, `export-key`, `cosign`, `migrate-constellation`, `deployments`, `stop`, `api`, `mcp`, `call`, `configure`, `action`, `builds`, `owners` |
+| `vault` | `create`, `list`, `rm`; `key create`/`list`/`rm`/`sign`/`public`/`wrap`/`unwrap`/`rotate`/`audit`; `serve` (Azure Key Vault-shaped REST facade) |
+| `secrets` | `create`, `export` (user-owned keys in the vault) |
+| `registry` | `add`, `status`, `rm` (private-image pull credentials) |
 | `account` | `show`, `update` |
 | `team` | `list`, `add`, `set-role`, `remove` |
 | `billing` | `balance`, `usage`, `ledger`, `status`, `subscribe`, `buy-credits`, `portal` |
@@ -93,6 +96,25 @@ privasys team add <sub> --email dev@acme.com --role member
 privasys apps owners add demo <sub>
 privasys billing balance
 privasys billing subscribe          # opens Stripe Checkout; no card data touches the CLI
+```
+
+Run your **own private image** confidentially (your IP never leaves your control), then configure and operate it:
+
+```sh
+privasys apps create --name app --source package --image registry.example.com/app@sha256:<digest> --storage
+privasys registry add app --token <your-registry-PAT>   # the token goes into the vault; we never see it
+privasys apps deploy app --watch
+privasys apps configure app --set api_key=…             # lifts the configure-then-freeze gate
+privasys apps action app load_model --arg name=qwen     # runs an owner operation, streams progress
+```
+
+Use the vault as a confidential, attested **key store** (keys are Shamir-split across the enclaves; the platform never holds them):
+
+```sh
+privasys vault create my-vault
+privasys vault key create my-vault signer --type p256   # a signing key whose private half never leaves the enclave
+privasys vault key sign my-vault signer "message"
+privasys vault serve my-vault                           # Azure Key Vault-shaped REST facade for existing tooling
 ```
 
 ## Attestation is client-side
