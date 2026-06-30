@@ -189,6 +189,9 @@ export default function AppDetailPage() {
 
     // Full detail view
     const hasActiveDeployment = activeDeployments.length > 0;
+    // Config-gated app still behind its freeze gate (reported by the enclave):
+    // surface a "Frozen" tag until the owner applies its initial configuration.
+    const awaitingConfig = activeDeployments.some(d => d.container_state === 'awaiting_config');
     const hasContainerMcp = app.app_type === 'container' && app.container_mcp;
     const containerUI = app.container_mcp?.ui as { url: string; label?: string } | undefined;
     const TABS: { key: Tab; label: string; count?: number; danger?: boolean }[] = [
@@ -222,6 +225,12 @@ export default function AppDetailPage() {
                     </p>
                 </div>
                 <div className="flex items-center gap-2">
+                    {awaitingConfig && (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 text-xs font-medium rounded-full bg-sky-100 text-sky-800 dark:bg-sky-900/30 dark:text-sky-300" title="This app declares a configure gate and is frozen (HTTP 503) until you apply its initial configuration in the Deployments tab.">
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M5 11V7a5 5 0 0110 0v4M5 11h10a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2z" /></svg>
+                            Frozen
+                        </span>
+                    )}
                     {hasActiveDeployment && (app.app_type !== 'container' || hasContainerMcp) && (
                         <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 text-xs font-medium rounded-full bg-violet-100 text-violet-800 dark:bg-violet-900/30 dark:text-violet-300">
                             <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
