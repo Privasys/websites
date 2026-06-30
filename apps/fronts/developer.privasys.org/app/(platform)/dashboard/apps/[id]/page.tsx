@@ -1010,7 +1010,7 @@ function ApiTestingTab({ appId, token, deployments, versions }: { appId: string;
 
 // ------- App Store Tab -------
 const STORE_CATEGORIES = [
-    'Productivity', 'Finance', 'Healthcare', 'AI & Machine Learning',
+    'AI Tools', 'Productivity', 'Finance', 'Healthcare', 'AI & Machine Learning',
     'Security & Privacy', 'Communication', 'Developer Tools', 'Data Analytics',
     'Education', 'Entertainment', 'Business', 'Social', 'Utilities', 'Other'
 ];
