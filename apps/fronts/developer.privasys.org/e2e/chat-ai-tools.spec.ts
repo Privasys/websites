@@ -10,10 +10,10 @@
  *   2. The LightPanda app's attestation is reachable through the
  *      management-service proxy at the URL the discovery endpoint
  *      hands back.
- *   3. With `X-Privasys-Tools: lightpanda` set on a
+ *   3. With `X-Privasys-Tools: web_reader` set on a
  *      /v1/chat/completions request that contains a URL, the
  *      confidential-ai agent loop emits `tool_calls` (the model
- *      decides to invoke `lightpanda__browse`) and the SSE stream
+ *      decides to invoke `web_reader__browse`) and the SSE stream
  *      surfaces a `tool_result` event before the assistant finishes.
  *
  * Run:
@@ -29,9 +29,9 @@ const ENDPOINT_OVERRIDE = process.env.CHAT_INFERENCE_ENDPOINT || '';
 const API_BASE =
     process.env.CHAT_API_BASE || 'https://api-test.developer.privasys.org';
 
-const TOOL_NAME = 'lightpanda';
+const TOOL_NAME = 'web_reader';
 
-test('ai-tools: instance API publishes lightpanda in available_tools', async () => {
+test('ai-tools: instance API publishes web_reader in available_tools', async () => {
     const ctx = await request.newContext();
     const resp = await ctx.get(INSTANCE_API);
     expect(resp.ok(), `instance API ${INSTANCE_API} returned ${resp.status()}`).toBeTruthy();
@@ -47,20 +47,20 @@ test('ai-tools: instance API publishes lightpanda in available_tools', async () 
     }> = body.available_tools ?? [];
     expect(tools.length, 'available_tools[] is empty').toBeGreaterThan(0);
 
-    const lightpanda = tools.find((t) => t.name === TOOL_NAME);
-    expect(lightpanda, `no available_tools entry for '${TOOL_NAME}'`).toBeTruthy();
-    expect(lightpanda!.transport).toBe('mcp_sse');
-    expect(lightpanda!.attest_url, 'lightpanda missing attest_url').toBeTruthy();
-    expect(lightpanda!.attest_url).toMatch(/^\/api\/v1\/apps\/[0-9a-f-]+\/attest$/);
+    const web_reader = tools.find((t) => t.name === TOOL_NAME);
+    expect(web_reader, `no available_tools entry for '${TOOL_NAME}'`).toBeTruthy();
+    expect(web_reader!.transport).toBe('privasys_http');
+    expect(web_reader!.attest_url, 'web_reader missing attest_url').toBeTruthy();
+    expect(web_reader!.attest_url).toMatch(/^\/api\/v1\/apps\/[0-9a-f-]+\/attest$/);
 });
 
-test('ai-tools: lightpanda attest_url is reachable via mgmt-service', async () => {
+test('ai-tools: web_reader attest_url is reachable via mgmt-service', async () => {
     const ctx = await request.newContext();
     const meta = await (await ctx.get(INSTANCE_API)).json();
     const tool = (meta.available_tools ?? []).find(
         (t: { name: string }) => t.name === TOOL_NAME
     );
-    expect(tool, 'lightpanda tool missing').toBeTruthy();
+    expect(tool, 'web_reader tool missing').toBeTruthy();
 
     const url = `${API_BASE.replace(/\/$/, '')}${tool.attest_url}`;
     const resp = await ctx.get(url);
@@ -77,7 +77,7 @@ test('ai-tools: lightpanda attest_url is reachable via mgmt-service', async () =
     expect(body, 'attest body empty').toBeTruthy();
 });
 
-test('ai-tools: agent loop fires lightpanda__browse on a URL prompt', async () => {
+test('ai-tools: agent loop fires web_reader__browse on a URL prompt', async () => {
     test.setTimeout(120_000);
     const ctx = await request.newContext();
     const meta = await (await ctx.get(INSTANCE_API)).json();
@@ -108,7 +108,7 @@ test('ai-tools: agent loop fires lightpanda__browse on a URL prompt', async () =
                 {
                     role: 'system',
                     content:
-                        'You are Privasys Chat, a helpful assistant. When the user shares a URL, call the lightpanda__browse tool to fetch it before answering.'
+                        'You are Privasys Chat, a helpful assistant. When the user shares a URL, call the web_reader__browse tool to fetch it before answering.'
                 },
                 {
                     role: 'user',

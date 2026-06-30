@@ -7,16 +7,16 @@
  *
  * Asserts:
  *   1. The public instance discovery endpoint advertises
- *      `brave_search` in `available_tools[]` (the chat sidebar reads
+ *      `web_search` in `available_tools[]` (the chat sidebar reads
  *      this list to render the tool toggle).
  *   2. The Brave-Search app's attestation is reachable through the
  *      management-service proxy at the URL the discovery endpoint
  *      hands back (this is the request that surfaces as "Attest
  *      request failed: 502" when broken).
- *   3. With `X-Privasys-Tools: brave_search` on a
+ *   3. With `X-Privasys-Tools: web_search` on a
  *      /v1/chat/completions request asking the model to read a doc,
  *      the confidential-ai agent loop emits a `tool_call` (model
- *      decides to invoke `brave_search__*`) and the SSE stream
+ *      decides to invoke `web_search__*`) and the SSE stream
  *      surfaces a `tool_result` event before the assistant finishes —
  *      proving the tool actually executed against the web and the
  *      result flowed back into the model.
@@ -34,11 +34,11 @@ const ENDPOINT_OVERRIDE = process.env.CHAT_INFERENCE_ENDPOINT || '';
 const API_BASE =
     process.env.CHAT_API_BASE || 'https://api-test.developer.privasys.org';
 
-const TOOL_NAME = 'brave_search';
+const TOOL_NAME = 'web_search';
 const USER_PROMPT =
     'Please read privasys doc on enclave os and give me your opinion.';
 
-test('brave-search: instance API publishes brave_search in available_tools', async () => {
+test('brave-search: instance API publishes web_search in available_tools', async () => {
     const ctx = await request.newContext();
     const resp = await ctx.get(INSTANCE_API);
     expect(resp.ok(), `instance API ${INSTANCE_API} returned ${resp.status()}`).toBeTruthy();
@@ -57,7 +57,7 @@ test('brave-search: instance API publishes brave_search in available_tools', asy
     const brave = tools.find((t) => t.name === TOOL_NAME);
     expect(brave, `no available_tools entry for '${TOOL_NAME}'`).toBeTruthy();
     expect(brave!.transport).toBe('privasys_http');
-    expect(brave!.attest_url, 'brave_search missing attest_url').toBeTruthy();
+    expect(brave!.attest_url, 'web_search missing attest_url').toBeTruthy();
     expect(brave!.attest_url).toMatch(/^\/api\/v1\/apps\/[0-9a-f-]+\/attest$/);
 });
 
@@ -67,7 +67,7 @@ test('brave-search: attest_url is reachable via mgmt-service', async () => {
     const tool = (meta.available_tools ?? []).find(
         (t: { name: string }) => t.name === TOOL_NAME
     );
-    expect(tool, 'brave_search tool missing').toBeTruthy();
+    expect(tool, 'web_search tool missing').toBeTruthy();
 
     const url = `${API_BASE.replace(/\/$/, '')}${tool.attest_url}`;
     const resp = await ctx.get(url);
@@ -85,7 +85,7 @@ test('brave-search: attest_url is reachable via mgmt-service', async () => {
     expect(body.certificate || body.cert_pem || body.cert, 'attest body missing certificate').toBeTruthy();
 });
 
-test('brave-search: agent loop fires brave_search on a doc-reading prompt', async () => {
+test('brave-search: agent loop fires web_search on a doc-reading prompt', async () => {
     test.setTimeout(180_000);
     const ctx = await request.newContext();
     const meta = await (await ctx.get(INSTANCE_API)).json();
@@ -101,10 +101,10 @@ test('brave-search: agent loop fires brave_search on a doc-reading prompt', asyn
             'Content-Type': 'application/json',
             Accept: 'text/event-stream',
             // The chat front-end forwards the user's enabled tool set
-            // here. With 'brave_search', the agent loop opens with
+            // here. With 'web_search', the agent loop opens with
             // ONLY the Brave Search MCP server advertised, so any
             // tool_call we observe in the SSE stream must be from
-            // brave_search__*.
+            // web_search__*.
             'X-Privasys-Tools': TOOL_NAME
         },
         body: JSON.stringify({
@@ -122,10 +122,10 @@ test('brave-search: agent loop fires brave_search on a doc-reading prompt', asyn
                     role: 'system',
                     content:
                         // Production chat-shell system prompt minus
-                        // wallet-specific bits. The "use the brave_search
+                        // wallet-specific bits. The "use the web_search
                         // tool" nudge mirrors what the chat UI ships
                         // when a tool is toggled on.
-                        'You are Privasys Chat, a helpful assistant. When the user asks you to read documentation or otherwise look up information on the web, call the brave_search tool to fetch it before answering.'
+                        'You are Privasys Chat, a helpful assistant. When the user asks you to read documentation or otherwise look up information on the web, call the web_search tool to fetch it before answering.'
                 },
                 { role: 'user', content: USER_PROMPT }
             ]
@@ -212,11 +212,11 @@ test('brave-search: agent loop fires brave_search on a doc-reading prompt', asyn
 
     expect(
         toolCallSeen,
-        `agent loop did not emit any tool_call event for the brave_search prompt. SSE events: ${[...new Set(events)].join(',')}. This is the failure that surfaces as "no tool call" in the chat UI.`
+        `agent loop did not emit any tool_call event for the web_search prompt. SSE events: ${[...new Set(events)].join(',')}. This is the failure that surfaces as "no tool call" in the chat UI.`
     ).toBeTruthy();
     expect(
         toolResultSeen,
-        `no tool_result event surfaced — brave_search either errored out or the MCP relay dropped the response. SSE events: ${[...new Set(events)].join(',')}.`
+        `no tool_result event surfaced — web_search either errored out or the MCP relay dropped the response. SSE events: ${[...new Set(events)].join(',')}.`
     ).toBeTruthy();
     if (toolName) {
         expect(
