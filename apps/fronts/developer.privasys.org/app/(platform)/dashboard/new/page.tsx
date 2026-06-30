@@ -11,10 +11,10 @@ type SourceMode = 'github' | 'upload' | 'package' | 'cloud_image';
 type NameStatus = 'idle' | 'checking' | 'available' | 'taken';
 
 // App Store categories (mirrors the detail page's list).
+// Canonical App Store categories — kept in sync with the management-service
+// StoreCategories allow-list, which enforces them on save. Keep it short.
 const STORE_CATEGORIES = [
-    'AI Tools', 'Productivity', 'Finance', 'Healthcare', 'AI & Machine Learning',
-    'Security & Privacy', 'Communication', 'Developer Tools', 'Data Analytics',
-    'Education', 'Entertainment', 'Business', 'Social', 'Utilities', 'Other'
+    'AI Tools', 'Identity & KYC', 'Security & Privacy', 'Data & Storage', 'Developer Tools'
 ];
 
 // ── Helpers ──

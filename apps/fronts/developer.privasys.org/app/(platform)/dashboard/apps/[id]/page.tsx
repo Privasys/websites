@@ -1009,10 +1009,10 @@ function ApiTestingTab({ appId, token, deployments, versions }: { appId: string;
 }
 
 // ------- App Store Tab -------
+// Canonical App Store categories — kept in sync with the management-service
+// StoreCategories allow-list, which enforces them on save. Keep it short.
 const STORE_CATEGORIES = [
-    'AI Tools', 'Productivity', 'Finance', 'Healthcare', 'AI & Machine Learning',
-    'Security & Privacy', 'Communication', 'Developer Tools', 'Data Analytics',
-    'Education', 'Entertainment', 'Business', 'Social', 'Utilities', 'Other'
+    'AI Tools', 'Identity & KYC', 'Security & Privacy', 'Data & Storage', 'Developer Tools'
 ];
 
 // Recommended App Store asset dimensions, surfaced to the user.
