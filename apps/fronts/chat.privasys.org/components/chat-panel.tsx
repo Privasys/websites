@@ -1037,7 +1037,7 @@ function ReconnectingNotice() {
                 <circle className='opacity-25' cx='12' cy='12' r='10' stroke='currentColor' strokeWidth='4' fill='none' />
                 <path className='opacity-75' fill='currentColor' d='M4 12a8 8 0 0 1 8-8v4a4 4 0 0 0-4 4H4Z' />
             </svg>
-            <span>Reconnecting to the secure enclave… your message will be sent automatically.</span>
+            <span>Connecting to the secure enclave… if it was just restarted, the model can take a few minutes to load. Your message will be sent automatically.</span>
         </div>
     );
 }
@@ -1064,7 +1064,7 @@ function TransportBanner({
                     <circle className='opacity-25' cx='12' cy='12' r='10' stroke='currentColor' strokeWidth='4' fill='none' />
                     <path className='opacity-75' fill='currentColor' d='M4 12a8 8 0 0 1 8-8v4a4 4 0 0 0-4 4H4Z' />
                 </svg>
-                <span>Reconnecting to the secure enclave…</span>
+                <span>Connecting to the secure enclave… if it was just restarted, the model can take a few minutes to load.</span>
             </div>
         );
     }
