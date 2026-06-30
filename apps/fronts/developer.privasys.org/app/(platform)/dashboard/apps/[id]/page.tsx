@@ -1845,8 +1845,14 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
     // Inline upgrade: prefill the version with the newest option and pin the
     // location to the running instance (an upgrade does not move the app).
     const upgradeTarget = choices[0]?.value ?? '';
+    // An inline upgrade stays on the enclave already running the app, so prefer
+    // the deployment's own enclave_id. Falling back to enclaveMap alone breaks
+    // for cloud_image apps, whose map is built only from zone-compatible
+    // enclaves: a miss left pickEnclave empty and Upgrade silently no-opped.
     const currentEnclaveId = currentDeployment
-        ? (enclaveMap[`${currentDeployment.enclave_host}:${currentDeployment.enclave_port}`]?.id ?? '')
+        ? (currentDeployment.enclave_id
+            ?? enclaveMap[`${currentDeployment.enclave_host}:${currentDeployment.enclave_port}`]?.id
+            ?? '')
         : '';
     useEffect(() => {
         if (currentDeployment) {
@@ -2221,7 +2227,7 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                                             </div>
                                             <button
                                                 onClick={handleConfirm}
-                                                disabled={confirmDisabled}
+                                                disabled={confirmDisabled || !pickEnclave}
                                                 className="px-4 py-2 text-sm font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
                                             >
                                                 {working ? 'Upgrading…' : 'Upgrade'}
