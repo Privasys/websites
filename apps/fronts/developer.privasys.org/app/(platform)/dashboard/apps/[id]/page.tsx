@@ -1783,11 +1783,17 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
     const tagOptions = (tags ?? []).filter(t => !currentDeployment || isStrictlyNewer(t, currentSemver));
     const versionOptions = readyVersions.filter(v => !currentDeployment || isStrictlyNewer(versionSemverStr(v), currentSemver));
     const imageChannels = Array.from(new Set((images ?? []).filter(i => i.name === app.cloud_image_name).map(i => i.channel)));
-    // Resolve a cloud-image channel/version to its current cached-image digest so
-    // labels show the actual image (image-<name>-<channel>-<digest12>) rather than
-    // just the channel name ("prod").
+    // Resolve a cloud-image channel to its LATEST cached image (by created_at),
+    // so labels match what the deploy actually pulls — mgmt resolves a channel
+    // to the newest disk for (name, channel, zone), not the first one listed.
+    // A new image published on an existing channel reuses the same dropdown row
+    // (the row is per-channel), so the label must track the newest digest.
+    const latestImageForChannel = (ch: string): CachedImage | undefined =>
+        (images ?? [])
+            .filter(i => i.name === app.cloud_image_name && i.channel === ch)
+            .sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''))[0];
     const cloudDigestForChannel = (ch: string): string | undefined =>
-        (images ?? []).find(i => i.name === app.cloud_image_name && i.channel === ch)?.digest;
+        latestImageForChannel(ch)?.digest;
     const cloudDigestForVersion = (v: AppVersion): string | undefined => {
         const img = v.container_image ?? '';
         if (!img.startsWith('cloud-image:')) return undefined;
@@ -1798,7 +1804,7 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
     // Lets the cloud-image upgrade list be version-ordered + newer-only, like
     // package/github, instead of always offering the channel.
     const cloudVersionForChannel = (ch: string): string | undefined =>
-        (images ?? []).find(i => i.name === app.cloud_image_name && i.channel === ch)?.version || undefined;
+        latestImageForChannel(ch)?.version || undefined;
     const digest12 = (d: string): string => d.replace(/^sha256:/, '').slice(0, 12);
 
     // Unified dropdown choices (value + label) per source; upload uses a dropzone.
