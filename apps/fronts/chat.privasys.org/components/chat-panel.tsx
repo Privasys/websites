@@ -523,7 +523,7 @@ export function ChatPanel({
                                         error:
                                             outcome === 'timeout'
                                                 ? 'Could not reconnect to the secure enclave. Please try again.'
-                                                : 'The secure enclave was re-created, so this session can no longer be verified. Use “Reconnect” below (or Sign out / in) to continue.'
+                                                : 'This secure session could not be re-verified automatically. Use “Reconnect” below (or Sign out / in) to continue.'
                                     }
                                     : m
                             );

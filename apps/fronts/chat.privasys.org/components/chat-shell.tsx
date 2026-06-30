@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AvailableModel, Instance } from '~/lib/types';
 import type { AggregateAttestationStatus } from '@privasys/attestation-view';
 import { useAuth } from '~/lib/privasys-auth';
@@ -101,26 +101,49 @@ export function ChatShell({
     // flip into the reconnecting state so the recovery effect below takes
     // over. Non-transport errors (validation, model errors) are left to the
     // per-message red notice. Called by ChatPanel on stream error.
+    // Why we entered the reconnect flow. A 'reactive' trigger (a real request
+    // 401/502) means the sealed session is probably dead and must be rebuilt; a
+    // 'proactive' trigger (a /healthz blip while idle) most likely is NOT — so
+    // we must not tear down a working session for it. Defaults to 'reactive'
+    // (the safe, authoritative path).
+    const reconnectReasonRef = useRef<'proactive' | 'reactive'>('reactive');
+    // Live mirror of the sealed session so the recovery effect can read it
+    // without re-running every time it changes.
+    const sealedSessionRef = useRef(sealedSession);
+    useEffect(() => { sealedSessionRef.current = sealedSession; }, [sealedSession]);
+
     const onTransportError = useCallback((err: Error) => {
         if (isTransportError(err.message)) {
+            reconnectReasonRef.current = 'reactive';
             setTransport((prev) => (prev === 'stale' ? 'stale' : 'reconnecting'));
         }
     }, []);
 
     // Proactive liveness: detect the enclave going away even while the user
     // is idle (stop the VM → the UI should react before the next prompt).
-    // Only probes while we believe the transport is healthy; once it drops,
-    // the recovery effect owns the polling cadence.
+    // Requires SUSTAINED unreachability before reacting: a single /healthz blip
+    // (gateway restart, the enclave busy with inference, a network hiccup) must
+    // not flip us into recovery, because recovery tears down a working sealed
+    // session — and a silent background rebind can't always complete (e.g. a
+    // partitioned third-party auth iframe in Firefox), which would strand the
+    // user on a false "reconnect" prompt every few minutes.
     useEffect(() => {
         if (!session || transport !== 'ok' || !instance.endpoint) return;
         let cancelled = false;
         let timer: ReturnType<typeof setTimeout>;
+        let consecutiveFailures = 0;
         const tick = async () => {
             const up = await probeInstanceHealth(instance.endpoint, 5_000);
             if (cancelled) return;
-            if (!up) {
-                setTransport('reconnecting');
-                return;
+            if (up) {
+                consecutiveFailures = 0;
+            } else {
+                consecutiveFailures += 1;
+                if (consecutiveFailures >= 3) {
+                    reconnectReasonRef.current = 'proactive';
+                    setTransport('reconnecting');
+                    return;
+                }
             }
             timer = setTimeout(() => void tick(), 20_000);
         };
@@ -165,6 +188,16 @@ export function ChatShell({
                 if (cancelled) return;
                 if (!host) {
                     // Non-sealed instance: reachability is the whole story.
+                    setTransport('ok');
+                    return;
+                }
+                // Proactive trigger (a /healthz blip) with a sealed session
+                // still in hand: it is very likely still valid, so do NOT tear
+                // it down. Return to 'ok' and let the next REAL request reveal a
+                // genuine failure (which re-enters here as 'reactive' and does
+                // rebuild). This is what stops the idle false-positive reconnect
+                // loop.
+                if (reconnectReasonRef.current === 'proactive' && sealedSessionRef.current) {
                     setTransport('ok');
                     return;
                 }
