@@ -204,11 +204,9 @@ export default function AppDetailPage() {
             { key: 'mcp' as Tab, label: 'AI Tools' },
             ...(containerUI?.url ? [
                 { key: 'ui' as Tab, label: containerUI.label || 'App UI' }
-            ] : []),
-            // Native Configure/Manage for apps whose manifest tags tools with
-            // role config/action. Self-hides if the deployed app declares
-            // neither (the tab content renders an empty state).
-            { key: 'configure' as Tab, label: 'Configure' }
+            ] : [])
+            // Native Configure/Manage (role config/action) now lives inside the
+            // Deployments tab, alongside the running instance — no separate tab.
         ] : []),
         { key: 'team', label: 'Team' }
     ];
@@ -302,9 +300,6 @@ export default function AppDetailPage() {
                 )}
                 {tab === 'ui' && session?.accessToken && containerUI?.url && (
                     <AppUITab appId={app.id} appName={app.name} hostname={activeDeployments[0]?.hostname} token={session.accessToken} containerMcp={app.container_mcp as Record<string, unknown>} onMcpUpdate={(updated) => setApp(updated)} />
-                )}
-                {tab === 'configure' && session?.accessToken && (
-                    <ConfigureTab appId={app.id} token={session.accessToken} />
                 )}
                 {tab === 'team' && session?.accessToken && (
                     <TeamTab appId={app.id} token={session.accessToken} />
@@ -1712,6 +1707,8 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
 
     const isActiveStatus = (s: string) => s === 'active' || s === 'deploying' || s === 'starting';
     const currentDeployment = deployments.find(d => isActiveStatus(d.status));
+    // Strictly-live (not deploying/starting): gates the inline Configure section.
+    const liveDeployment = deployments.find(d => d.status === 'active');
     const pastDeployments = deployments.filter(d => !isActiveStatus(d.status));
 
     // Compact build status (moved from the removed Overview tab): a github app's
@@ -2073,10 +2070,22 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                                         }`} />
                                         <span className="text-sm font-medium truncate">{dep.hostname || `${dep.enclave_host}:${dep.enclave_port}`}</span>
                                     </div>
-                                    {/* One status, not three: container state when live, else the deploy phase. */}
-                                    {isLive
-                                        ? <StatusBadge status={dep.container_state || 'running'} labels={CONTAINER_STATE_LABELS} colors={CONTAINER_STATE_COLORS} />
-                                        : <StatusBadge status={dep.status} labels={DEPLOYMENT_STATUS_LABELS} colors={DEPLOYMENT_STATUS_COLORS} />}
+                                    {/* One status, not three: container state when live, else the deploy phase.
+                                        Stop sits in the tile's top-right corner once the instance is live. */}
+                                    <div className="flex items-center gap-2 shrink-0">
+                                        {isLive
+                                            ? <StatusBadge status={dep.container_state || 'running'} labels={CONTAINER_STATE_LABELS} colors={CONTAINER_STATE_COLORS} />
+                                            : <StatusBadge status={dep.status} labels={DEPLOYMENT_STATUS_LABELS} colors={DEPLOYMENT_STATUS_COLORS} />}
+                                        {isLive && (
+                                            <button
+                                                onClick={() => handleStop(dep.id)}
+                                                disabled={stopping === dep.id || working}
+                                                className="px-2.5 py-1 text-xs font-medium rounded-lg border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-40 transition-colors"
+                                            >
+                                                {stopping === dep.id ? 'Stopping…' : 'Stop instance'}
+                                            </button>
+                                        )}
+                                    </div>
                                 </div>
                                 {/* Pull progress bar */}
                                 {(() => {
@@ -2134,12 +2143,11 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                                         <a href={`https://${dep.hostname}`} target="_blank" rel="noopener noreferrer" className="text-xs text-emerald-600 dark:text-emerald-400 hover:underline">https://{dep.hostname} &rarr;</a>
                                     </div>
                                 )}
-                            </section>
 
-                            {/* Actions: only once the instance is live (item 1). */}
-                            {isLive && (
-                                <>
-                                    <section className="mt-4 p-4 rounded-xl border border-black/10 dark:border-white/10">
+                                {/* Upgrade lives inside the tile, separated by the same grey
+                                    divider as the endpoint row above. Only once live (item 1). */}
+                                {isLive && (
+                                    <div className="mt-3 pt-3 border-t border-black/5 dark:border-white/5">
                                         <div className="flex items-end gap-3">
                                             <div className="flex-1">
                                                 <label className="text-xs text-black/50 dark:text-white/50 block mb-1">Upgrade to</label>
@@ -2163,32 +2171,22 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                                             <div className="mt-2 text-xs text-amber-700 dark:text-amber-400">Your credit balance is empty. <Link href="/dashboard/billing" className="underline font-medium">Top up or redeem a code</Link>.</div>
                                         )}
                                         {buildStatusLine}
-                                    </section>
-
-                                    <div className="mt-3 flex items-center gap-3">
-                                        <button
-                                            onClick={() => handleStop(dep.id)}
-                                            disabled={stopping === dep.id || working}
-                                            className="px-3 py-1.5 text-xs font-medium rounded-lg border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-40 transition-colors"
-                                        >
-                                            {stopping === dep.id ? 'Stopping…' : 'Stop instance'}
-                                        </button>
                                         {stopErrors[dep.id] && (
-                                            <button
-                                                onClick={() => handleStop(dep.id, true)}
-                                                disabled={stopping === dep.id}
-                                                title="Mark this deployment stopped without contacting the enclave. Use when the enclave is gone or unreachable."
-                                                className="px-3 py-1.5 text-xs font-medium rounded-lg border border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-900/20 disabled:opacity-40 transition-colors"
-                                            >
-                                                Force remove
-                                            </button>
-                                        )}
-                                        {stopErrors[dep.id] && (
-                                            <span className="text-xs text-amber-700 dark:text-amber-300">Stop failed: {stopErrors[dep.id]}</span>
+                                            <div className="mt-2 flex items-center gap-3">
+                                                <button
+                                                    onClick={() => handleStop(dep.id, true)}
+                                                    disabled={stopping === dep.id}
+                                                    title="Mark this deployment stopped without contacting the enclave. Use when the enclave is gone or unreachable."
+                                                    className="px-3 py-1.5 text-xs font-medium rounded-lg border border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-900/20 disabled:opacity-40 transition-colors"
+                                                >
+                                                    Force remove
+                                                </button>
+                                                <span className="text-xs text-amber-700 dark:text-amber-300">Stop failed: {stopErrors[dep.id]}</span>
+                                            </div>
                                         )}
                                     </div>
-                                </>
-                            )}
+                                )}
+                            </section>
                         </>
                     );
                 })() : (
@@ -2224,6 +2222,15 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                     </section>
                 )}
             </section>
+
+            {/* Configure / Manage — brought in from its own tab so the deployed
+                app's setup and actions live alongside its running instance. */}
+            {liveDeployment && (
+                <section>
+                    <h2 className="text-sm font-semibold mb-3">Configure</h2>
+                    <ConfigureTab appId={app.id} token={token} />
+                </section>
+            )}
 
             {/* Previous deployments (compact) */}
             {pastDeployments.length > 0 && (
