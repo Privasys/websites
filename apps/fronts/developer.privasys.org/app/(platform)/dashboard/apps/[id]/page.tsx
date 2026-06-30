@@ -1757,6 +1757,21 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
     const [optLoading, setOptLoading] = useState(false);
     const [optError, setOptError] = useState<string | null>(null);
 
+    // App capabilities (config/action tools) for the live deployment, rendered
+    // inline in the Current-instance tile — no separate Configure tab/component.
+    const [schema, setSchema] = useState<AppSchema | null>(null);
+    useEffect(() => {
+        const liveId = liveDeployment?.id;
+        if (!liveId) { setSchema(null); return; }
+        let alive = true;
+        getAppSchema(token, app.id)
+            .then(s => { if (alive) setSchema(s); })
+            .catch(() => { if (alive) setSchema(null); });
+        return () => { alive = false; };
+    }, [liveDeployment?.id, app.id, token]);
+    const configFns = (schema?.functions ?? []).filter(f => f.role === 'config');
+    const actionFns = (schema?.functions ?? []).filter(f => f.role === 'action');
+
     // Upgrade offers only versions NEWER than the running one (item 1). Package tags
     // are semver-filtered; github commits are already newer-only from the server;
     // cloud-image channels and uploads are not semver-ordered (shown as-is).
@@ -2194,6 +2209,37 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                                         )}
                                     </div>
                                 )}
+
+                                {/* Configuration — merged into this tile, separated by
+                                    the same divider; the freeze note is a warning shown
+                                    only while the app is actually frozen. */}
+                                {isLive && configFns.length > 0 && (
+                                    <div className="mt-3 pt-3 border-t border-black/5 dark:border-white/5">
+                                        <h3 className="text-sm font-semibold">Configuration</h3>
+                                        {dep.container_state === 'awaiting_config' && (
+                                            <div className="mt-2 flex items-start gap-2 rounded-lg border border-amber-200 dark:border-amber-800/40 bg-amber-50 dark:bg-amber-900/15 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
+                                                <svg className="w-3.5 h-3.5 mt-px shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /></svg>
+                                                <span>The app stays frozen (HTTP 503 at the routing layer) until configuration is applied.</span>
+                                            </div>
+                                        )}
+                                        {configFns.map(fn => (
+                                            <div key={fn.name} className="mt-3">
+                                                <ConfigForm fn={fn} appId={app.id} token={token} />
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+
+                                {isLive && actionFns.length > 0 && (
+                                    <div className="mt-3 pt-3 border-t border-black/5 dark:border-white/5">
+                                        <h3 className="text-sm font-semibold">Actions</h3>
+                                        {actionFns.map(fn => (
+                                            <div key={fn.name} className="mt-3">
+                                                <ActionRunner fn={fn} appId={app.id} token={token} />
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
                             </section>
                         </>
                     );
@@ -2231,17 +2277,10 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                 )}
             </section>
 
-            {/* Configure / Manage — brought in from its own tab so the deployed
-                app's setup and actions live alongside its running instance. Each
-                section is its own tile, styled like the Current-instance tile. */}
-            {liveDeployment && (
-                <ConfigureTab appId={app.id} token={token} />
-            )}
-
             {/* Previous deployments (compact) */}
             {pastDeployments.length > 0 && (
                 <section>
-                    <h2 className="text-xs font-semibold mb-2 text-black/40 dark:text-white/40 uppercase tracking-wider">Previous deployments</h2>
+                    <h2 className="text-sm font-semibold mb-3">Previous deployments</h2>
                     <div className="divide-y divide-black/5 dark:divide-white/5 rounded-xl border border-black/10 dark:border-white/10">
                         {pastDeployments.map((dep) => {
                             const version = versionMap[dep.version_id];
@@ -2470,7 +2509,7 @@ function FieldInput({ name, prop, value, onChange, appId, token, disabled }: {
         <div className="space-y-1">
             <label className="block text-sm font-medium">{label}{prop.type ? <span className="ml-1 text-xs text-black/30 dark:text-white/30">{m.secret ? 'secret' : prop.type}</span> : null}</label>
             {input}
-            {(m.help || prop.description) && <p className="text-xs text-black/50 dark:text-white/50">{m.help || prop.description}</p>}
+            {(m.help || prop.description) && <p className="text-[11px] leading-snug text-black/40 dark:text-white/40">{m.help || prop.description}</p>}
             {dynErr && <p className="text-xs text-red-600 dark:text-red-400">could not load options: {dynErr}</p>}
         </div>
     );
@@ -2493,6 +2532,7 @@ function ConfigForm({ fn, appId, token }: { fn: FunctionSchema; appId: string; t
     const [busy, setBusy] = useState(false);
     const [result, setResult] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const [showDetails, setShowDetails] = useState(false);
 
     const submit = async () => {
         setBusy(true); setError(null); setResult(null);
@@ -2515,8 +2555,16 @@ function ConfigForm({ fn, appId, token }: { fn: FunctionSchema; appId: string; t
     return (
         <div className="space-y-3">
             <div>
-                <h4 className="text-sm font-semibold">{fn.name}</h4>
-                {fn.description && <p className="mt-0.5 text-xs text-black/50 dark:text-white/50">{fn.description}</p>}
+                <div className="flex items-center justify-between gap-3">
+                    <h4 className="text-sm font-semibold">{fn.name}</h4>
+                    {fn.description && (
+                        <button type="button" onClick={() => setShowDetails(s => !s)}
+                            className="shrink-0 text-xs text-black/40 dark:text-white/40 hover:text-black/70 dark:hover:text-white/70 underline-offset-2 hover:underline">
+                            {showDetails ? 'Hide details' : 'Details'}
+                        </button>
+                    )}
+                </div>
+                {showDetails && fn.description && <p className="mt-1 text-xs text-black/50 dark:text-white/50">{fn.description}</p>}
             </div>
             {entries.map(([k, prop]) => (
                 <FieldInput key={k} name={k} prop={prop} value={values[k] ?? String(prop.default ?? '')}
@@ -2601,61 +2649,6 @@ function ActionRunner({ fn, appId, token }: { fn: FunctionSchema; appId: string;
             )}
             {result && <p className="text-sm text-green-700 dark:text-green-400">{result}</p>}
             {error && <p className="text-sm text-red-700 dark:text-red-400">{error}</p>}
-        </div>
-    );
-}
-
-function ConfigureTab({ appId, token }: { appId: string; token: string }) {
-    const [schema, setSchema] = useState<AppSchema | null>(null);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
-
-    useEffect(() => {
-        let alive = true;
-        setLoading(true);
-        getAppSchema(token, appId)
-            .then(s => { if (alive) { setSchema(s); setError(null); } })
-            .catch(e => { if (alive) setError((e as Error).message); })
-            .finally(() => { if (alive) setLoading(false); });
-        return () => { alive = false; };
-    }, [appId, token]);
-
-    if (loading) return <p className="text-sm text-black/50 dark:text-white/50">Loading capabilities…</p>;
-    if (error) return <div className="p-3 rounded-lg bg-red-50 dark:bg-red-900/20 text-sm text-red-700 dark:text-red-300">{error}</div>;
-
-    const fns = schema?.functions ?? [];
-    const configFns = fns.filter(f => f.role === 'config');
-    const actionFns = fns.filter(f => f.role === 'action');
-
-    if (configFns.length === 0 && actionFns.length === 0) {
-        return <div className="p-4 rounded-lg border border-black/10 dark:border-white/10 text-sm text-black/60 dark:text-white/60">
-            This app declares no configuration or actions.
-        </div>;
-    }
-
-    return (
-        <div className="space-y-6">
-            {configFns.length > 0 && (
-                <section className="p-5 rounded-xl border border-sky-200 dark:border-sky-800/40 bg-sky-50/30 dark:bg-sky-900/5">
-                    <h2 className="text-sm font-semibold">Configuration</h2>
-                    <p className="mt-1 text-xs text-black/50 dark:text-white/50">The app stays frozen (HTTP 503 at the routing layer) until configuration is applied.</p>
-                    {configFns.map(fn => (
-                        <div key={fn.name} className="mt-4 pt-4 border-t border-black/5 dark:border-white/5">
-                            <ConfigForm fn={fn} appId={appId} token={token} />
-                        </div>
-                    ))}
-                </section>
-            )}
-            {actionFns.length > 0 && (
-                <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">
-                    <h2 className="text-sm font-semibold">Actions</h2>
-                    {actionFns.map(fn => (
-                        <div key={fn.name} className="mt-4 pt-4 border-t border-black/5 dark:border-white/5">
-                            <ActionRunner fn={fn} appId={appId} token={token} />
-                        </div>
-                    ))}
-                </section>
-            )}
         </div>
     );
 }
