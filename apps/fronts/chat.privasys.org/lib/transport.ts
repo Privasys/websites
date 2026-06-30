@@ -13,6 +13,15 @@
 //         enc_pub-stability fix lands fleet-wide, a plain restart);
 //   "fetch failed"/"Failed to fetch"/NetworkError/"load failed" = network.
 export function isTransportError(message: string): boolean {
+    // An enclave that is reachable but still WARMING UP is not a broken
+    // transport: after a VM restart the model cold-loads for several minutes and
+    // returns 503 with an app-level body, and the configure-then-freeze gate
+    // returns "awaiting initial configuration". These have their own friendlier
+    // UI (model-loading notice / starting banner) and must not trigger the
+    // reconnect flow, which would show a scary "enclave unreachable" state.
+    if (/model is loading|no model loaded|model load failed|awaiting initial configuration/i.test(message)) {
+        return false;
+    }
     if (/\b(50[234])\b|bad gateway|unreachable|sealed stream failed|failed to fetch|fetch failed|networkerror|load failed/i.test(message)) {
         return true;
     }
