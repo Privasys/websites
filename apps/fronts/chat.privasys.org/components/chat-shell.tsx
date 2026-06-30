@@ -46,7 +46,7 @@ export function ChatShell({
     disabledReason?: string;
     userGreeting?: string;
 }) {
-    const { session, sealedSession, resumeSealed, reestablishSealed, getSealedSession } = useAuth();
+    const { session, sealedSession, reestablishSealed, getSealedSession } = useAuth();
     const [model, setModel] = useState<AvailableModel | null>(initialModel);
 
     // Health of the end-to-end enclave transport, independent of the OIDC
@@ -58,6 +58,17 @@ export function ChatShell({
     //   stale        — enclave identity/measurement changed; needs a fresh
     //                  wallet ceremony (re-sign-in).
     const [transport, setTransport] = useState<TransportState>('ok');
+
+    // Why we entered the reconnect flow. A 'reactive' trigger (a real request
+    // 401/502, or a rejected cold-reload resume) means the sealed session is
+    // dead and must be rebuilt; a 'proactive' trigger (a /healthz blip while
+    // idle) most likely is NOT — so we must not tear down a working session for
+    // it. Defaults to 'reactive' (the safe, authoritative path).
+    const reconnectReasonRef = useRef<'proactive' | 'reactive'>('reactive');
+    // Live mirror of the sealed session so the recovery effect can read it
+    // without re-running every time it changes.
+    const sealedSessionRef = useRef(sealedSession);
+    useEffect(() => { sealedSessionRef.current = sealedSession; }, [sealedSession]);
 
     // chat-service is a separate enclave from the inference instance, so it
     // needs its own sealed session (the user's bearer + tool data never cross
@@ -86,10 +97,34 @@ export function ChatShell({
     // without a transport (the plaintext-through-the-gateway fallback
     // no longer exists — the gateway must never see message bodies).
     useEffect(() => {
-        if (!session || sealedSession) return;
+        if (!session || sealedSession || transport !== 'ok') return;
         if (!instance.session_relay?.enabled || !instance.session_relay.app_host) return;
-        void resumeSealed(instance.session_relay.app_host);
-    }, [session, sealedSession, instance.session_relay, resumeSealed]);
+        let cancelled = false;
+        (async () => {
+            // Cold reload: the OIDC session restored via SSO but the sealed
+            // session did not (it is deliberately never persisted). Try to
+            // re-establish it from the EncAuth voucher. If the enclave REJECTS
+            // the voucher — it was restarted/re-created since sign-in so its
+            // enc_pub rotated, and the reject arrives as a 200 with an
+            // X-Privasys-EncAuth-Reject header (clean-looking in the network
+            // tab) — surface the Reconnect prompt UP FRONT rather than leaving
+            // the user "connected" (green attestation pill, enabled composer)
+            // only to fail on the first send.
+            const outcome = await reestablishSealed(instance.session_relay!.app_host!);
+            if (cancelled) return;
+            reconnectReasonRef.current = 'reactive';
+            if (outcome === 'rejected' || outcome === 'no-voucher') {
+                setTransport('stale');
+            } else if (outcome === 'unavailable') {
+                // Transient (enclave still booting): let the recovery loop retry.
+                setTransport('reconnecting');
+            }
+            // 'ok' → sealedSession is now installed; stay 'ok'.
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [session, sealedSession, instance.session_relay, reestablishSealed, transport]);
 
     // A fresh sealed session (from a re-sign-in after a stale-back-end
     // prompt) clears the reconnect banner.
@@ -101,17 +136,6 @@ export function ChatShell({
     // flip into the reconnecting state so the recovery effect below takes
     // over. Non-transport errors (validation, model errors) are left to the
     // per-message red notice. Called by ChatPanel on stream error.
-    // Why we entered the reconnect flow. A 'reactive' trigger (a real request
-    // 401/502) means the sealed session is probably dead and must be rebuilt; a
-    // 'proactive' trigger (a /healthz blip while idle) most likely is NOT — so
-    // we must not tear down a working session for it. Defaults to 'reactive'
-    // (the safe, authoritative path).
-    const reconnectReasonRef = useRef<'proactive' | 'reactive'>('reactive');
-    // Live mirror of the sealed session so the recovery effect can read it
-    // without re-running every time it changes.
-    const sealedSessionRef = useRef(sealedSession);
-    useEffect(() => { sealedSessionRef.current = sealedSession; }, [sealedSession]);
-
     const onTransportError = useCallback((err: Error) => {
         if (isTransportError(err.message)) {
             reconnectReasonRef.current = 'reactive';
