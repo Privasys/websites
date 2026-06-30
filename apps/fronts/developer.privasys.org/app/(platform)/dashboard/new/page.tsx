@@ -12,9 +12,11 @@ type NameStatus = 'idle' | 'checking' | 'available' | 'taken';
 
 // App Store categories (mirrors the detail page's list).
 // Canonical App Store categories — kept in sync with the management-service
-// StoreCategories allow-list, which enforces them on save. Keep it short.
+// StoreCategories allow-list, which enforces them on save. Open platform:
+// capability categories + consumer verticals + an Other catch-all.
 const STORE_CATEGORIES = [
-    'AI Tools', 'Identity & KYC', 'Security & Privacy', 'Data & Storage', 'Developer Tools'
+    'AI Tools', 'Developer Tools', 'Data & Storage', 'Identity & KYC', 'Security & Privacy',
+    'Finance', 'Healthcare', 'Education', 'Social', 'Entertainment', 'Other'
 ];
 
 // ── Helpers ──
