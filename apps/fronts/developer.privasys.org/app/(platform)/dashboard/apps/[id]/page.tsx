@@ -2169,7 +2169,6 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                                             >
                                                 {working ? 'Upgrading…' : 'Upgrade'}
                                             </button>
-                                            <button onClick={() => { onRefresh(); loadOptions(); }} className="px-3 py-2 text-xs text-black/50 dark:text-white/50 hover:text-black dark:hover:text-white" title="Refresh versions">↻</button>
                                         </div>
                                         {storeMissing.length > 0 && (
                                             <div className="mt-2 text-xs text-amber-700 dark:text-amber-400">
@@ -2233,12 +2232,10 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
             </section>
 
             {/* Configure / Manage — brought in from its own tab so the deployed
-                app's setup and actions live alongside its running instance. */}
+                app's setup and actions live alongside its running instance. Each
+                section is its own tile, styled like the Current-instance tile. */}
             {liveDeployment && (
-                <section>
-                    <h2 className="text-sm font-semibold mb-3">Configure</h2>
-                    <ConfigureTab appId={app.id} token={token} />
-                </section>
+                <ConfigureTab appId={app.id} token={token} />
             )}
 
             {/* Previous deployments (compact) */}
@@ -2516,7 +2513,7 @@ function ConfigForm({ fn, appId, token }: { fn: FunctionSchema; appId: string; t
     };
 
     return (
-        <div className="p-4 rounded-lg border border-black/10 dark:border-white/10 space-y-3">
+        <div className="space-y-3">
             <div>
                 <h4 className="text-sm font-semibold">{fn.name}</h4>
                 {fn.description && <p className="mt-0.5 text-xs text-black/50 dark:text-white/50">{fn.description}</p>}
@@ -2581,7 +2578,7 @@ function ActionRunner({ fn, appId, token }: { fn: FunctionSchema; appId: string;
     };
 
     return (
-        <div className="p-4 rounded-lg border border-black/10 dark:border-white/10 space-y-3">
+        <div className="space-y-3">
             <div>
                 <h4 className="text-sm font-semibold">{fn.name}</h4>
                 {fn.description && <p className="mt-0.5 text-xs text-black/50 dark:text-white/50">{fn.description}</p>}
@@ -2639,16 +2636,24 @@ function ConfigureTab({ appId, token }: { appId: string; token: string }) {
     return (
         <div className="space-y-6">
             {configFns.length > 0 && (
-                <section className="space-y-3">
-                    <h3 className="text-sm font-semibold">Configuration</h3>
-                    <p className="text-xs text-black/50 dark:text-white/50">The app stays frozen (HTTP 503 at the routing layer) until configuration is applied.</p>
-                    {configFns.map(fn => <ConfigForm key={fn.name} fn={fn} appId={appId} token={token} />)}
+                <section className="p-5 rounded-xl border border-sky-200 dark:border-sky-800/40 bg-sky-50/30 dark:bg-sky-900/5">
+                    <h2 className="text-sm font-semibold">Configuration</h2>
+                    <p className="mt-1 text-xs text-black/50 dark:text-white/50">The app stays frozen (HTTP 503 at the routing layer) until configuration is applied.</p>
+                    {configFns.map(fn => (
+                        <div key={fn.name} className="mt-4 pt-4 border-t border-black/5 dark:border-white/5">
+                            <ConfigForm fn={fn} appId={appId} token={token} />
+                        </div>
+                    ))}
                 </section>
             )}
             {actionFns.length > 0 && (
-                <section className="space-y-3">
-                    <h3 className="text-sm font-semibold">Actions</h3>
-                    {actionFns.map(fn => <ActionRunner key={fn.name} fn={fn} appId={appId} token={token} />)}
+                <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">
+                    <h2 className="text-sm font-semibold">Actions</h2>
+                    {actionFns.map(fn => (
+                        <div key={fn.name} className="mt-4 pt-4 border-t border-black/5 dark:border-white/5">
+                            <ActionRunner fn={fn} appId={appId} token={token} />
+                        </div>
+                    ))}
                 </section>
             )}
         </div>
