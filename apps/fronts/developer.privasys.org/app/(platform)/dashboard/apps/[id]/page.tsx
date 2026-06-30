@@ -2523,7 +2523,7 @@ function FieldInput({ name, prop, value, onChange, appId, token, disabled }: {
                 )}
             </div>
             {input}
-            {(m.help || prop.description) && <p className="text-[11px] leading-snug text-black/40 dark:text-white/40">{m.help || prop.description}</p>}
+            {(m.help || prop.description) && <p className="text-[10px] leading-snug text-black/40 dark:text-white/40">{m.help || prop.description}</p>}
             {showDetails && m.details && <p className="text-xs text-black/50 dark:text-white/50">{m.details}</p>}
             {dynErr && <p className="text-xs text-red-600 dark:text-red-400">could not load options: {dynErr}</p>}
         </div>
@@ -2546,6 +2546,9 @@ function ConfigureForm({ cfg, appId, token, frozen }: { cfg: ConfigureSection; a
     const [busy, setBusy] = useState(false);
     const [result, setResult] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
+    // Once applied, the app is unfrozen immediately even though the reconciler
+    // only flips container_state on its next sweep — so clear the warning now.
+    const [applied, setApplied] = useState(false);
     const rpcName = cfg.name || cfg.function || (cfg.endpoint ? cfg.endpoint.replace(/^\//, '') : 'configure');
 
     const submit = async () => {
@@ -2558,7 +2561,8 @@ function ConfigureForm({ cfg, appId, token, frozen }: { cfg: ConfigureSection; a
             const r = unwrapRpc(await rpcCall(token, appId, rpcName, payload));
             const errMsg = r && typeof r === 'object' && 'err' in r ? String((r as { err: unknown }).err) : null;
             if (errMsg) { setError(errMsg); return; }
-            setResult('Configuration applied. The app is now unfrozen.');
+            setResult('Configuration applied.');
+            setApplied(true);
         } catch (e) {
             setError((e as Error).message);
         } finally {
@@ -2569,7 +2573,7 @@ function ConfigureForm({ cfg, appId, token, frozen }: { cfg: ConfigureSection; a
     return (
         <div className="mt-3 pt-3 border-t border-black/5 dark:border-white/5">
             {cfg.title && <h3 className="text-sm font-semibold">{cfg.title}</h3>}
-            {frozen && (
+            {frozen && !applied && (
                 <div className="mt-2 flex items-start gap-2 rounded-lg border border-amber-200 dark:border-amber-800/40 bg-amber-50 dark:bg-amber-900/15 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
                     <svg className="w-3.5 h-3.5 mt-px shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /></svg>
                     <span>This app is frozen (HTTP 503) until you apply its configuration below.</span>
