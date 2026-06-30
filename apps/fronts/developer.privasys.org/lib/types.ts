@@ -296,7 +296,8 @@ export type ContainerState =
     | 'pulling'
     | 'missing'
     | 'failed'
-    | 'unreachable';
+    | 'unreachable'
+    | 'awaiting_config';
 
 export const CONTAINER_STATE_LABELS: Record<ContainerState, string> = {
     unknown: 'Not yet probed',
@@ -305,7 +306,8 @@ export const CONTAINER_STATE_LABELS: Record<ContainerState, string> = {
     pulling: 'Pulling image',
     missing: 'Missing — auto-redeploying',
     failed: 'Failed',
-    unreachable: 'Enclave unreachable'
+    unreachable: 'Enclave unreachable',
+    awaiting_config: 'Frozen'
 };
 
 export const CONTAINER_STATE_COLORS: Record<ContainerState, string> = {
@@ -315,7 +317,8 @@ export const CONTAINER_STATE_COLORS: Record<ContainerState, string> = {
     pulling: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300',
     missing: 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300',
     failed: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300',
-    unreachable: 'bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-300'
+    unreachable: 'bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-300',
+    awaiting_config: 'bg-sky-100 text-sky-800 dark:bg-sky-900/30 dark:text-sky-300'
 };
 
 export const DEPLOYMENT_STATUS_LABELS: Record<DeploymentStatus, string> = {
