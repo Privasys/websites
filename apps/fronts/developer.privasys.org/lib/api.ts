@@ -16,7 +16,11 @@ export function isApiStatus(error: unknown, status: number): boolean {
     return error instanceof ApiError && error.status === status;
 }
 
-async function request<T>(path: string, token: string, init?: RequestInit): Promise<T> {
+// proxied: the endpoint forwards an app/enclave HTTP status (e.g. /rpc, /schema
+// proxy to the container). A 401 from there means the APP rejected the call, not
+// that the developer's portal session lapsed, so it must not fire auth:expired
+// (which logs the developer out). Surface it inline instead.
+async function request<T>(path: string, token: string, init?: RequestInit, opts?: { proxied?: boolean }): Promise<T> {
     const res = await fetch(`${API_URL}${path}`, {
         ...init,
         headers: {
@@ -26,7 +30,7 @@ async function request<T>(path: string, token: string, init?: RequestInit): Prom
         }
     });
     if (!res.ok) {
-        if (res.status === 401) {
+        if (res.status === 401 && !opts?.proxied) {
             window.dispatchEvent(new Event('auth:expired'));
         }
         const body = await res.json().catch(() => ({ error: res.statusText }));
@@ -321,7 +325,7 @@ export interface AppSchema {
 }
 
 export async function getAppSchema(token: string, appId: string): Promise<AppSchema> {
-    const resp = await request<{ status: string; schema: AppSchema }>(`/api/v1/apps/${encodeURIComponent(appId)}/schema`, token);
+    const resp = await request<{ status: string; schema: AppSchema }>(`/api/v1/apps/${encodeURIComponent(appId)}/schema`, token, undefined, { proxied: true });
     if (resp.status !== 'schema') {
         throw new ApiError((resp as unknown as { message?: string }).message || 'Failed to fetch schema', 500);
     }
@@ -332,7 +336,7 @@ export async function rpcCall(token: string, appId: string, func: string, params
     return request<unknown>(`/api/v1/apps/${encodeURIComponent(appId)}/rpc/${encodeURIComponent(func)}`, token, {
         method: 'POST',
         body: JSON.stringify(params)
-    });
+    }, { proxied: true });
 }
 
 // ---------------------------------------------------------------------------
