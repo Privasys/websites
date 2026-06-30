@@ -40,7 +40,7 @@
  */
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 import { execSync } from 'node:child_process';
-import { generateKeyPairSync } from 'node:crypto';
+import { createHash, generateKeyPairSync } from 'node:crypto';
 
 import { setupAuth, getToken as getE2eToken } from './e2e-auth';
 import { cleanupApps } from './e2e-cleanup';
@@ -272,6 +272,57 @@ test.describe('Session-relay enc_pub survives an enclave restart (Sc 2)', () => 
             test.skip(true, 'Set E2E_SR_APP_HOST (fast) or E2E_SR_COMMIT_URL (full) to run this test.');
         }
         expect(appHost).toBeTruthy();
+    });
+
+    // Sc 1 value-parity probe: compute the wallet-side workload digest from the
+    // app's real attestation leaf (the value the wallet would put in the
+    // voucher's field 4) and log it, so it can be compared to the manager's
+    // armed digest ("session-relay workload-digest wake armed" in the manager
+    // log). They must match for Sc 1 (the app-code-change wake) to be correct.
+    test('Sc 1: log wallet-side workload digest from /attest', async ({ request }) => {
+        test.setTimeout(180_000);
+        // Non-fatal diagnostic: must never block the Sc 2 tests below.
+        if (!createdAppId || !token) {
+            console.log('[sr-encpub] no app id/token (fast mode) — skipping Sc 1 parity probe');
+            return;
+        }
+        // /attest needs the container serving an attestable leaf — retry after deploy.
+        let att: { app_extensions?: { oid: string; value_hex: string }[] } | undefined;
+        for (let i = 0; i < 18; i++) {
+            const r = await request.get(`${API}/api/v1/apps/${createdAppId}/attest`, {
+                headers: { Authorization: `Bearer ${token}` },
+                timeout: 30_000,
+            });
+            if (r.ok()) {
+                const j = (await r.json()) as { app_extensions?: { oid: string; value_hex: string }[] };
+                if ((j.app_extensions ?? []).length > 0) {
+                    att = j;
+                    break;
+                }
+            }
+            await new Promise((res) => setTimeout(res, 8_000));
+        }
+        if (!att) {
+            console.warn('[sr-encpub] /attest not ready — skipping Sc 1 parity probe (non-fatal)');
+            return;
+        }
+        const exts = att.app_extensions ?? [];
+        const valHex = (suffix: string) => exts.find((e) => e.oid.endsWith(suffix))?.value_hex;
+        const hexToUtf8 = (h?: string) => (h ? Buffer.from(h, 'hex').toString('utf8') : undefined);
+        // Match the wallet's RA-TLS parser: hex for 3.1/3.2, UTF-8 string for 3.3/3.4.
+        const fields: Record<string, string | undefined> = {
+            workload_config_merkle_root: valHex('65230.3.1'),
+            workload_code_hash: valHex('65230.3.2'),
+            workload_image_ref: hexToUtf8(valHex('65230.3.3')),
+            workload_key_source: hexToUtf8(valHex('65230.3.4')),
+        };
+        const lines = Object.keys(fields)
+            .filter((k) => fields[k] !== undefined && fields[k] !== '')
+            .sort()
+            .map((k) => `${k}=${fields[k]}`);
+        const wd = createHash('sha256').update(lines.join('\n'), 'utf8').digest('hex');
+        console.log(`[sr-encpub] WALLET_WORKLOAD_DIGEST=${wd}  host=${appHost}`);
+        expect(wd).toMatch(/^[0-9a-f]{64}$/);
     });
 
     test('record enc_pub before restart', async ({ request }) => {
