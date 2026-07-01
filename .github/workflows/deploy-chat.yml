@@ -45,12 +45,19 @@ jobs:
             # provisioned with the inference VM.
             echo "api_url=https://api-test.developer.privasys.org" >> "$GITHUB_OUTPUT"
             echo "default_instance=demo"                        >> "$GITHUB_OUTPUT"
+            # No dedicated chat-service back-end in prod yet: leave the
+            # chat-service URL empty so BYO-MCP stays fully dormant there.
+            echo "chat_service_url="                            >> "$GITHUB_OUTPUT"
           else
             echo "container=chat"                                  >> "$GITHUB_OUTPUT"
             echo "host_port=3011"                                  >> "$GITHUB_OUTPUT"
             echo "env_file=~/chat-test.env"                        >> "$GITHUB_OUTPUT"
             echo "api_url=https://api-test.developer.privasys.org" >> "$GITHUB_OUTPUT"
             echo "default_instance=demo"                           >> "$GITHUB_OUTPUT"
+            # Point the chat-service sealed transport + extra-app voucher at
+            # the dev inference enclave so the multi-app attestation path is
+            # exercised end-to-end on chat-test.
+            echo "chat_service_url=https://confidential-ai.apps-test.privasys.org" >> "$GITHUB_OUTPUT"
           fi
           echo "tag=$(date -u +%Y%m%d-%H%M%S)-${ENV}-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
@@ -71,6 +78,7 @@ jobs:
           {
             echo "NEXT_PUBLIC_API_BASE_URL=${{ steps.target.outputs.api_url }}"
             echo "NEXT_PUBLIC_DEFAULT_INSTANCE=${{ steps.target.outputs.default_instance }}"
+            echo "NEXT_PUBLIC_CHAT_SERVICE_URL=${{ steps.target.outputs.chat_service_url }}"
           } > apps/fronts/chat.privasys.org/.env.local
           npx nx reset
           npx nx build chat.privasys.org --skip-nx-cache
