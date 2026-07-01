@@ -1843,8 +1843,11 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
         }
     }, [source, token, app.id]);
 
-    // List versions on tab load (a Refresh button re-lists too).
-    useEffect(() => { loadOptions(); }, [loadOptions]);
+    // List versions on tab load (a Refresh button re-lists too). Also re-list
+    // when the active deployment changes: a github app's commit picker cuts off
+    // at the DEPLOYED commit, so a stale (pre-deploy) list would keep offering
+    // the just-deployed commit as an upgrade.
+    useEffect(() => { loadOptions(); }, [loadOptions, currentDeployment?.id, currentDeployment?.version_id]);
 
     // Inline upgrade: prefill the version with the newest option and pin the
     // location to the running instance (an upgrade does not move the app).
