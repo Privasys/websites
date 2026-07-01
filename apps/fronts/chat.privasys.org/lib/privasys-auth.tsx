@@ -42,6 +42,19 @@ export interface AuthSession {
  */
 export type SealedResumeOutcome = 'ok' | 'no-voucher' | 'rejected' | 'unavailable';
 
+// withTimeout rejects with `label` if p does not settle within ms, so a hung
+// sealed-session ceremony (iframe/enclave never responds) cannot park a
+// caller's await indefinitely.
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+        const t = setTimeout(() => reject(new Error(label)), ms);
+        p.then(
+            (v) => { clearTimeout(t); resolve(v); },
+            (e) => { clearTimeout(t); reject(e as Error); }
+        );
+    });
+}
+
 interface AuthContextValue {
     session: AuthSession | null;
     loading: boolean;
@@ -335,11 +348,19 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
             sealedFrameRef.current = frame;
             sealedHostRef.current = appHost;
             try {
-                const s = await frame.resumeSession();
+                // Bound the rebind: the voucher ceremony runs in the privasys.id
+                // iframe and can hang (enclave rebind endpoint stalls, iframe
+                // never posts back). Without a timeout a hang parks the shell's
+                // recovery loop on `await` forever, so the "Connecting…" spinner
+                // never advances to the actionable Reconnect (`stale`) prompt.
+                // A timeout surfaces as `unavailable`, which the recovery loop
+                // retries a few times and then escalates to `stale`.
+                const s = await withTimeout(frame.resumeSession(), 15_000, 'sealed-resume-timeout');
                 setSealedSession(s);
                 return 'ok';
             } catch (err) {
                 const msg = (err as Error).message ?? '';
+                try { frame.destroy(); } catch { /* frame already torn down */ }
                 // The SDK rejects with one of these literal reasons; match
                 // defensively in case the message is wrapped.
                 if (msg.includes('rejected')) return 'rejected';
