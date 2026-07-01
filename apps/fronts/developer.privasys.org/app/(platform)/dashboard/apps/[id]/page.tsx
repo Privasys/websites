@@ -2147,6 +2147,23 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                                         </div>
                                     );
                                 })()}
+                                {/* Non-active deployments: surface the reconciler's own view
+                                    (container_state + reconcile_message) so a deployment that is
+                                    starting/awaiting/redeploying says what it is doing, instead of
+                                    a bare "Starting" badge. The rich per-app activity/progress doc
+                                    (app-status-protocol) renders here too once wired. */}
+                                {dep.status !== 'active' && (dep.reconcile_message || (dep.container_state && dep.container_state !== 'running')) && (
+                                    <div className="mb-3 flex items-start gap-2 rounded-lg border border-black/5 dark:border-white/10 bg-black/[0.02] dark:bg-white/[0.03] px-3 py-2 text-xs text-black/60 dark:text-white/60">
+                                        <span className="mt-1 w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse shrink-0" />
+                                        <span>
+                                            {(dep.container_state && CONTAINER_STATE_LABELS[dep.container_state]) || dep.container_state || DEPLOYMENT_STATUS_LABELS[dep.status] || dep.status}
+                                            {dep.reconcile_message ? ` — ${dep.reconcile_message}` : ''}
+                                            {dep.last_checked_at && (
+                                                <span className="text-black/30 dark:text-white/30"> · checked {new Date(dep.last_checked_at).toLocaleTimeString()}</span>
+                                            )}
+                                        </span>
+                                    </div>
+                                )}
                                 <div className="grid grid-cols-3 gap-3 text-xs text-black/50 dark:text-white/50">
                                     <div>
                                         <div className="text-[10px] uppercase tracking-wider text-black/30 dark:text-white/30">Location</div>
