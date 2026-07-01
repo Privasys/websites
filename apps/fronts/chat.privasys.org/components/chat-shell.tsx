@@ -46,7 +46,7 @@ export function ChatShell({
     disabledReason?: string;
     userGreeting?: string;
 }) {
-    const { session, sealedSession, reestablishSealed, getSealedSession } = useAuth();
+    const { session, sealedSession, reestablishSealed, staleReason, getSealedSession } = useAuth();
     const [model, setModel] = useState<AvailableModel | null>(initialModel);
 
     // Health of the end-to-end enclave transport, independent of the OIDC
@@ -380,6 +380,7 @@ export function ChatShell({
                         toolPolicy={instance.tool_policy}
                         chatSession={chatSession}
                         transport={transport}
+                        staleReason={staleReason}
                         onStreamError={onTransportError}
                         onReconnect={() => setView('signin')}
                     />

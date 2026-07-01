@@ -11,6 +11,7 @@ import { modelLabel } from '~/lib/model-label';
 import type { PersistedMessage, Rating, ToolInvocation } from '~/lib/conversations';
 import type { AddUserToolInput, UserTool } from '~/lib/chat-service-api';
 import type { SealedSession } from '@privasys/auth';
+import type { SealedStaleReason } from '~/lib/privasys-auth';
 import { clearFeedback, recordFeedback } from '~/lib/pending-feedback';
 import { waitForModelReady } from '~/lib/instance-api';
 import { fetchToolGrant } from '~/lib/chat-service-api';
@@ -77,6 +78,7 @@ export function ChatPanel({
     toolPolicy,
     chatSession,
     transport = 'ok',
+    staleReason = null,
     onStreamError,
     onReconnect
 }: {
@@ -124,6 +126,10 @@ export function ChatPanel({
     /** Enclave transport health, owned by the shell. Drives the reconnect
      *  banner so an outage/redeploy is visible without sending a prompt. */
     transport?: 'ok' | 'reconnecting' | 'stale';
+    /** Why the enclave refused the session voucher, when it said:
+     *  'workload-changed' = the app was updated, 'enc-changed' = the
+     *  hosting platform changed. Refines the stale-banner wording. */
+    staleReason?: SealedStaleReason;
     /** Report a stream failure to the shell so it can classify transport
      *  errors and start the reconnect flow. */
     onStreamError?: (err: Error) => void;
@@ -603,7 +609,7 @@ export function ChatPanel({
 
     const transportBanner =
         transport === 'ok' ? null : (
-            <TransportBanner transport={transport} onReconnect={onReconnect} />
+            <TransportBanner transport={transport} staleReason={staleReason} onReconnect={onReconnect} />
         );
 
     const composer = (
@@ -1049,9 +1055,11 @@ function ReconnectingNotice() {
 // to the in-panel sign-in for a fresh wallet ceremony.
 function TransportBanner({
     transport,
+    staleReason = null,
     onReconnect
 }: {
     transport: 'reconnecting' | 'stale';
+    staleReason?: SealedStaleReason;
     onReconnect?: () => void;
 }) {
     if (transport === 'reconnecting') {
@@ -1074,8 +1082,11 @@ function TransportBanner({
             aria-live='polite'
         >
             <span>
-                This secure session needs to be re-established (the enclave was
-                updated or restarted). Reconnect to continue.
+                {staleReason === 'workload-changed'
+                    ? 'This app was updated since you verified it. Reconnect to review and re-verify the new version from your wallet.'
+                    : staleReason === 'enc-changed'
+                        ? 'The secure platform hosting this app has changed. Reconnect to re-verify it from your wallet.'
+                        : 'This secure session needs to be re-established (the enclave was updated or restarted). Reconnect to continue.'}
             </span>
             {onReconnect && (
                 <button
