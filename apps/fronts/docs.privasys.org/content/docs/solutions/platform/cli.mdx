@@ -180,7 +180,23 @@ Because builds are reproducible, the digest in the staged measurement is somethi
 
 ## Agent-first
 
-The CLI is built to be driven by AI agents.
+The CLI is built to be driven by AI agents. Installing the CLI puts the binary on
+your PATH; one more step wires it into your agent.
+
+### Getting started with an agent
+
+Two surfaces, two paths — pick the one you use:
+
+- **Claude Code terminal CLI** (`claude` in a terminal): install the [plugin](#claude-code-plugin)
+  — the MCP tools, the workflow skill, and `/deploy` `/attest` slash commands in
+  one step. (`/plugin` only works in the terminal CLI, not the desktop app.)
+- **The Claude desktop app, Cursor, VS Code, Gemini, or any MCP client**: run
+  [`privasys agents init`](#one-command-wiring) in your project — it writes the
+  MCP registration plus an `AGENTS.md` briefing the agent reads.
+
+After either, **restart your agent/editor** so it picks up the new config (and
+your PATH, if you just installed `privasys`), then confirm it worked by asking the
+agent to run `privasys version`. Then try: *"deploy me a confidential app."*
 
 ### MCP server
 
