@@ -2152,7 +2152,7 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                                     starting/awaiting/redeploying says what it is doing, instead of
                                     a bare "Starting" badge. The rich per-app activity/progress doc
                                     (app-status-protocol) renders here too once wired. */}
-                                {dep.status !== 'active' && (dep.reconcile_message || (dep.container_state && dep.container_state !== 'running')) && (
+                                {(dep.status !== 'active' || (dep.container_state && dep.container_state !== 'running')) && (dep.reconcile_message || (dep.container_state && dep.container_state !== 'running')) && (
                                     <div className="mb-3 flex items-start gap-2 rounded-lg border border-black/5 dark:border-white/10 bg-black/[0.02] dark:bg-white/[0.03] px-3 py-2 text-xs text-black/60 dark:text-white/60">
                                         <span className="mt-1 w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse shrink-0" />
                                         <span>
