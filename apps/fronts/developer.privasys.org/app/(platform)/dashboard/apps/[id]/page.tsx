@@ -4,14 +4,14 @@ import Link from 'next/link';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { useAuth } from '~/lib/privasys-auth';
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { getApp, listBuilds, listVersions, listDeployments, listCompatibleEnclaves, deleteApp, deployDirect, stopDeployment, getAppSchema, rpcCall, updateStoreListing, publishApp, identiconUrl, getAppMcp, updateContainerMcp, detectContainerMcp, retryBuild, listAppOwners, addAppOwner, removeAppOwner, createVersion, stageProfile, promoteProfile, listRegistryTags, uploadAsset, listAppCommits, uploadVersionCwasm, getVersion, listCachedImages } from '~/lib/api';
+import { getApp, listBuilds, listVersions, listDeployments, listCompatibleEnclaves, deleteApp, deployDirect, stopDeployment, getAppSchema, rpcCall, updateStoreListing, publishApp, identiconUrl, getAppMcp, updateContainerMcp, detectContainerMcp, retryBuild, listAppOwners, addAppOwner, removeAppOwner, createVersion, stageProfile, promoteProfile, listRegistryTags, uploadAsset, listAppCommits, uploadVersionCwasm, getVersion, listCachedImages, listAppApiKeys, createAppApiKey, revokeAppApiKey } from '~/lib/api';
 
 // Public store base — where a published app is browsable.
 const STORE_BASE_URL = 'https://store.privasys.org';
 import type { CreateVersionBody } from '~/lib/api';
 import { isApiStatus } from '~/lib/api';
 import { versionLabel, versionSemverStr, isStrictlyNewer } from '~/lib/version';
-import type { AppSchema, ConfigureSection, FunctionSchema, JsonSchemaProp, ActionProgress, WitType, McpManifest, AppTeam, AppCommit } from '~/lib/api';
+import type { AppSchema, ConfigureSection, FunctionSchema, JsonSchemaProp, ActionProgress, WitType, McpManifest, AppTeam, AppCommit, AppApiKey, CreatedApiKey } from '~/lib/api';
 import { useSSE } from '~/lib/sse-context';
 import { useBalance } from '~/lib/use-balance';
 import { getApiBaseUrl } from '~/lib/api-base-url';
@@ -47,7 +47,7 @@ function BuildStatusDot({ status }: { status: string }) {
     return <span className={`w-2 h-2 rounded-full inline-block ${color}`} />;
 }
 
-type Tab = 'deployments' | 'store' | 'attestation' | 'api' | 'mcp' | 'ui' | 'configure' | 'team';
+type Tab = 'deployments' | 'store' | 'attestation' | 'api' | 'apikeys' | 'mcp' | 'ui' | 'configure' | 'team';
 
 export default function AppDetailPage() {
     const { id } = useParams<{ id: string }>();
@@ -200,7 +200,8 @@ export default function AppDetailPage() {
         ...(hasActiveDeployment ? [
             { key: 'attestation' as Tab, label: 'Attestation' },
             ...(app.app_type !== 'container' || hasContainerMcp ? [
-                { key: 'api' as Tab, label: 'API Testing' }
+                { key: 'api' as Tab, label: 'API Testing' },
+                { key: 'apikeys' as Tab, label: 'API Keys' }
             ] : []),
             // AI Tools is shown for any deployed app: it hosts the MCP tool list
             // AND the "Detect AI Tools" action for container apps with no manifest yet.
@@ -303,6 +304,9 @@ export default function AppDetailPage() {
                 )}
                 {tab === 'api' && session?.accessToken && (
                     <ApiTestingTab appId={app.id} token={session.accessToken} deployments={activeDeployments} versions={versions} />
+                )}
+                {tab === 'apikeys' && session?.accessToken && (
+                    <APIKeysTab appId={app.id} appName={app.name} hostname={activeDeployments[0]?.hostname} token={session.accessToken} />
                 )}
                 {tab === 'mcp' && session?.accessToken && (
                     <McpToolsTab app={app} hostname={activeDeployments[0]?.hostname} token={session.accessToken} deployed={hasActiveDeployment} onAppUpdate={(updated) => setApp(updated)} />
@@ -2484,6 +2488,101 @@ function AppUITab({ appId, appName, hostname, token, containerMcp, onMcpUpdate }
                     title={`${appName} UI`}
                 />
             )}
+        </div>
+    );
+}
+
+// ------- API Keys Tab -------
+function APIKeysTab({ appId, appName, hostname, token }: {
+    appId: string; appName: string; hostname?: string; token: string;
+}) {
+    const [keys, setKeys] = useState<AppApiKey[] | null>(null);
+    const [error, setError] = useState<string | null>(null);
+    const [label, setLabel] = useState('');
+    const [creating, setCreating] = useState(false);
+    const [created, setCreated] = useState<CreatedApiKey | null>(null);
+    const [copied, setCopied] = useState(false);
+    const [revoking, setRevoking] = useState<string | null>(null);
+    const baseUrl = hostname ? `https://${hostname}/v1` : 'https://<your-instance>/v1';
+
+    const load = useCallback(async () => {
+        setError(null);
+        try { setKeys((await listAppApiKeys(token, appId)).api_keys ?? []); }
+        catch (e) { setError((e as Error).message); }
+    }, [token, appId]);
+    useEffect(() => { load(); }, [load]);
+
+    const create = async () => {
+        setCreating(true); setError(null); setCreated(null);
+        try {
+            const k = await createAppApiKey(token, appId, label.trim() || 'API key');
+            setCreated(k); setLabel(''); load();
+        } catch (e) { setError((e as Error).message); }
+        finally { setCreating(false); }
+    };
+    const revoke = async (sid: string) => {
+        setRevoking(sid); setError(null);
+        try { await revokeAppApiKey(token, appId, sid); load(); }
+        catch (e) { setError((e as Error).message); }
+        finally { setRevoking(null); }
+    };
+    const copy = (text: string) => { navigator.clipboard?.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1500); };
+
+    const snippet = created
+        ? `from openai import OpenAI\nclient = OpenAI(base_url="${baseUrl}", api_key="sk-...")\nprint(client.chat.completions.create(\n    model="${appName}",\n    messages=[{"role": "user", "content": "hello"}],\n).choices[0].message.content)`
+        : '';
+
+    return (
+        <div className="space-y-4">
+            <p className="text-sm text-black/50 dark:text-white/50">
+                Long-lived keys for programmatic access, usable with any OpenAI-compatible client
+                (<code className="rounded bg-black/5 dark:bg-white/10 px-1">base_url = {baseUrl}</code>).
+                Usage is billed to the key owner; revoke any time.
+            </p>
+            <div className="flex items-end gap-2">
+                <div className="flex-1">
+                    <label className="text-xs text-black/50 dark:text-white/50 block mb-1">Label</label>
+                    <input value={label} onChange={e => setLabel(e.target.value)} placeholder="e.g. production backend"
+                        className="w-full px-3 py-2 text-sm rounded-lg border border-black/10 dark:border-white/10 bg-white dark:bg-white/5" />
+                </div>
+                <button onClick={create} disabled={creating}
+                    className="px-4 py-2 text-sm font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black disabled:opacity-40">
+                    {creating ? 'Creating…' : 'Create key'}
+                </button>
+            </div>
+            {error && <p className="text-sm text-red-700 dark:text-red-400">{error}</p>}
+            {created && (
+                <div className="rounded-xl border border-green-300/50 dark:border-green-700/40 bg-green-50/60 dark:bg-green-900/15 p-3 space-y-2">
+                    <p className="text-xs font-medium text-green-800 dark:text-green-300">Copy your key now — it is not shown again.</p>
+                    <div className="flex items-center gap-2">
+                        <code className="flex-1 truncate rounded bg-black/5 dark:bg-white/10 px-2 py-1.5 text-xs font-mono">{created.token}</code>
+                        <button onClick={() => copy(created.token)} className="shrink-0 text-xs rounded-lg border border-black/10 dark:border-white/10 px-2 py-1.5">{copied ? 'Copied' : 'Copy'}</button>
+                    </div>
+                    <details className="text-xs">
+                        <summary className="cursor-pointer text-black/50 dark:text-white/50">OpenAI SDK snippet (paste your key)</summary>
+                        <pre className="mt-1 overflow-x-auto rounded bg-black/5 dark:bg-white/10 p-2 text-[11px] leading-snug">{snippet}</pre>
+                    </details>
+                </div>
+            )}
+            {keys === null ? <p className="text-sm text-black/40 dark:text-white/40">Loading…</p> :
+                keys.length === 0 ? <p className="text-sm text-black/40 dark:text-white/40">No API keys yet.</p> : (
+                    <div className="divide-y divide-black/5 dark:divide-white/5 rounded-xl border border-black/10 dark:border-white/10">
+                        {keys.map(k => (
+                            <div key={k.sid} className="flex items-center justify-between gap-3 px-3 py-2.5 text-sm">
+                                <div className="min-w-0">
+                                    <div className="font-medium truncate">{k.label}</div>
+                                    <div className="text-[11px] text-black/40 dark:text-white/40">
+                                        created {new Date(k.created_at * 1000).toLocaleDateString()} · expires {new Date(k.expires_at * 1000).toLocaleDateString()} · {k.sid.slice(0, 8)}…
+                                    </div>
+                                </div>
+                                <button onClick={() => revoke(k.sid)} disabled={revoking === k.sid}
+                                    className="shrink-0 text-xs rounded-lg border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 px-2.5 py-1 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-40">
+                                    {revoking === k.sid ? 'Revoking…' : 'Revoke'}
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                )}
         </div>
     );
 }

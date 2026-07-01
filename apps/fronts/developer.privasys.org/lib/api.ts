@@ -339,6 +339,37 @@ export async function rpcCall(token: string, appId: string, func: string, params
     }, { proxied: true });
 }
 
+// --- API keys (long-lived, revocable inference credentials) ---
+
+export interface AppApiKey {
+    sid: string;
+    label: string;
+    created_at: number;
+    expires_at: number;
+}
+
+// The full token is returned ONLY at creation and never again.
+export interface CreatedApiKey extends AppApiKey {
+    token: string;
+}
+
+export function listAppApiKeys(token: string, appId: string): Promise<{ api_keys: AppApiKey[] }> {
+    return request(`/api/v1/apps/${encodeURIComponent(appId)}/api-keys`, token);
+}
+
+export function createAppApiKey(token: string, appId: string, label: string): Promise<CreatedApiKey> {
+    return request(`/api/v1/apps/${encodeURIComponent(appId)}/api-keys`, token, {
+        method: 'POST',
+        body: JSON.stringify({ label })
+    });
+}
+
+export function revokeAppApiKey(token: string, appId: string, sid: string): Promise<unknown> {
+    return request(`/api/v1/apps/${encodeURIComponent(appId)}/api-keys/${encodeURIComponent(sid)}`, token, {
+        method: 'DELETE'
+    });
+}
+
 // ---------------------------------------------------------------------------
 // MCP tools
 // ---------------------------------------------------------------------------
