@@ -2207,38 +2207,8 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                                     </div>
                                 )}
 
-                                {/* Owner configuration — merged into this tile, separated
-                                    by the same divider. Prefer the dedicated `configure`
-                                    section; fall back to a legacy role:config tool. */}
-                                {isLive && configure && (
-                                    <ConfigureForm cfg={configure} appId={app.id} token={token} frozen={dep.container_state === 'awaiting_config'} />
-                                )}
-                                {isLive && !configure && configFns.length > 0 && (
-                                    <div className="mt-3 pt-3 border-t border-black/5 dark:border-white/5">
-                                        {dep.container_state === 'awaiting_config' && (
-                                            <div className="mt-2 flex items-start gap-2 rounded-lg border border-amber-200 dark:border-amber-800/40 bg-amber-50 dark:bg-amber-900/15 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
-                                                <svg className="w-3.5 h-3.5 mt-px shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /></svg>
-                                                <span>The app stays frozen (HTTP 503 at the routing layer) until configuration is applied.</span>
-                                            </div>
-                                        )}
-                                        {configFns.map(fn => (
-                                            <div key={fn.name} className="mt-3">
-                                                <ConfigForm fn={fn} appId={app.id} token={token} />
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-
-                                {isLive && actionFns.length > 0 && (
-                                    <div className="mt-3 pt-3 border-t border-black/5 dark:border-white/5">
-                                        <h3 className="text-sm font-semibold">Actions</h3>
-                                        {actionFns.map(fn => (
-                                            <div key={fn.name} className="mt-3">
-                                                <ActionRunner fn={fn} appId={app.id} token={token} />
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
+                                {/* Configuration + Actions live in their own tile below the
+                                    instance (see "Configuration and Actions"), not here. */}
 
                                 {/* Upgrade lives inside the tile, separated by the same grey
                                     divider as the endpoint row above. Only once live (item 1). */}
@@ -2317,6 +2287,41 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                     </section>
                 )}
             </section>
+
+            {/* Configuration and Actions — a dedicated tile below the instance, with
+                its own title (like Current instance), so it reads clearly as an
+                owner surface rather than a stray label inside the instance card. */}
+            {liveDeployment && (configure || configFns.length > 0 || actionFns.length > 0) && (
+                <section>
+                    <h2 className="text-sm font-semibold mb-3">Configuration and Actions</h2>
+                    <div className="p-5 rounded-xl border border-black/10 dark:border-white/10">
+                        {configure && (
+                            <ConfigureForm cfg={configure} appId={app.id} token={token} frozen={liveDeployment.container_state === 'awaiting_config'} />
+                        )}
+                        {!configure && configFns.length > 0 && (
+                            <div>
+                                {liveDeployment.container_state === 'awaiting_config' && (
+                                    <div className="mb-3 flex items-start gap-2 rounded-lg border border-amber-200 dark:border-amber-800/40 bg-amber-50 dark:bg-amber-900/15 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
+                                        <svg className="w-3.5 h-3.5 mt-px shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /></svg>
+                                        <span>The app stays frozen (HTTP 503 at the routing layer) until configuration is applied.</span>
+                                    </div>
+                                )}
+                                {configFns.map(fn => (
+                                    <div key={fn.name} className="mt-3 first:mt-0"><ConfigForm fn={fn} appId={app.id} token={token} /></div>
+                                ))}
+                            </div>
+                        )}
+                        {actionFns.length > 0 && (
+                            <div className={(configure || configFns.length > 0) ? 'mt-4 pt-4 border-t border-black/5 dark:border-white/5' : ''}>
+                                <h3 className="text-sm font-semibold">Actions</h3>
+                                {actionFns.map(fn => (
+                                    <div key={fn.name} className="mt-3"><ActionRunner fn={fn} appId={app.id} token={token} /></div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </section>
+            )}
 
             {/* Previous deployments (compact) */}
             {pastDeployments.length > 0 && (
@@ -2734,7 +2739,7 @@ function ConfigureForm({ cfg, appId, token, frozen }: { cfg: ConfigureSection; a
     };
 
     return (
-        <div className="mt-3 pt-3 border-t border-black/5 dark:border-white/5">
+        <div>
             <button type="button" onClick={() => setCollapsed(c => !c)}
                 className="flex w-full items-center justify-between gap-2 text-left">
                 <h3 className="text-sm font-semibold">{cfg.title || 'Configuration'}</h3>
