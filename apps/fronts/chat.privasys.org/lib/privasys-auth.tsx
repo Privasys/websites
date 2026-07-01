@@ -42,6 +42,22 @@ export interface AuthSession {
  */
 export type SealedResumeOutcome = 'ok' | 'no-voucher' | 'rejected' | 'unavailable';
 
+/**
+ * Why the enclave refused the EncAuth voucher, when it said (SDK rejects
+ * with `rejected:<reason>`): `workload-changed` = the app's code/config
+ * was updated since the user verified it; `enc-changed` = the hosting
+ * platform's identity changed. Both need a fresh wallet ceremony — the
+ * wallet then shows the user exactly what changed. Null when the enclave
+ * gave no reason (older enclave, or a voucher-lifecycle refusal).
+ */
+export type SealedStaleReason = 'workload-changed' | 'enc-changed' | null;
+
+function parseStaleReason(msg: string): SealedStaleReason {
+    if (msg.includes('workload-changed')) return 'workload-changed';
+    if (msg.includes('enc-changed')) return 'enc-changed';
+    return null;
+}
+
 // withTimeout rejects with `label` if p does not settle within ms, so a hung
 // sealed-session ceremony (iframe/enclave never responds) cannot park a
 // caller's await indefinitely.
@@ -107,6 +123,13 @@ interface AuthContextValue {
      */
     reestablishSealed: (appHost: string) => Promise<SealedResumeOutcome>;
     /**
+     * Why the last `reestablishSealed` rejection happened, when the enclave
+     * said (`workload-changed` = app updated, `enc-changed` = platform
+     * changed). Cleared when a sealed session is (re-)established. Drives
+     * the specific wording on the stale-transport banner.
+     */
+    staleReason: SealedStaleReason;
+    /**
      * Return a sealed session for an arbitrary enclave `appHost` (e.g. the
      * chat-service back-end), independent of the primary `sealedSession`
      * (which is the inference instance). Per-host cached; resumes silently
@@ -129,6 +152,7 @@ const AuthContext = createContext<AuthContextValue>({
     signInInto: async () => {},
     resumeSealed: async () => {},
     reestablishSealed: async () => 'unavailable',
+    staleReason: null,
     getSealedSession: async () => null,
     signOut: async () => {}
 });
@@ -163,6 +187,7 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
     const [loading, setLoading] = useState(true);
     const [expired, setExpired] = useState(false);
     const [sealedSession, setSealedSession] = useState<SealedSession | null>(null);
+    const [staleReason, setStaleReason] = useState<SealedStaleReason>(null);
     const frameRef = useRef<AuthFrame | null>(null);
     // Dedicated frame for voucher-based sealed resume. Separate from the
     // persistent renewal frame because `sessionRelay.appHost` is a
@@ -251,6 +276,7 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
                     try {
                         const s = await oneShot.session();
                         setSealedSession(s);
+                        setStaleReason(null);
                     } catch (err) {
                         console.warn('[chat-auth] sealed session install failed:', err);
                     }
@@ -288,6 +314,7 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
                 try {
                     const s = await inline.session();
                     setSealedSession(s);
+                    setStaleReason(null);
                 } catch (err) {
                     console.warn('[chat-auth] sealed session install failed:', err);
                 }
@@ -314,6 +341,7 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
                 try {
                     const s = await frame.resumeSession();
                     setSealedSession(s);
+                    setStaleReason(null);
                 } catch (err) {
                     // no-voucher    → user never completed a sealed sign-in here
                     // rejected      → enclave identity/measurement changed; a
@@ -357,13 +385,20 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
                 // retries a few times and then escalates to `stale`.
                 const s = await withTimeout(frame.resumeSession(), 15_000, 'sealed-resume-timeout');
                 setSealedSession(s);
+                setStaleReason(null);
                 return 'ok';
             } catch (err) {
                 const msg = (err as Error).message ?? '';
                 try { frame.destroy(); } catch { /* frame already torn down */ }
                 // The SDK rejects with one of these literal reasons; match
-                // defensively in case the message is wrapped.
-                if (msg.includes('rejected')) return 'rejected';
+                // defensively in case the message is wrapped. A rejection may
+                // carry the enclave's reason (`rejected:workload-changed` /
+                // `rejected:enc-changed`) — keep it so the stale banner can
+                // say WHAT changed instead of a generic reconnect prompt.
+                if (msg.includes('rejected')) {
+                    setStaleReason(parseStaleReason(msg));
+                    return 'rejected';
+                }
                 if (msg.includes('no-voucher')) return 'no-voucher';
                 console.log('[chat-auth] sealed reestablish failed:', msg);
                 return 'unavailable';
@@ -451,7 +486,7 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
 
     return (
         <AuthContext.Provider
-            value={{ session, loading, expired, sealedSession, getTokenForAudience, signIn, signInInto, resumeSealed, reestablishSealed, getSealedSession, signOut }}
+            value={{ session, loading, expired, sealedSession, getTokenForAudience, signIn, signInInto, resumeSealed, reestablishSealed, staleReason, getSealedSession, signOut }}
         >
             {children}
         </AuthContext.Provider>
