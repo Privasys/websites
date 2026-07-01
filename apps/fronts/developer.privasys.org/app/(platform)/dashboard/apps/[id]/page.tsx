@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { useAuth } from '~/lib/privasys-auth';
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { getApp, listBuilds, listVersions, listDeployments, listCompatibleEnclaves, deleteApp, deployDirect, stopDeployment, getAppSchema, rpcCall, updateStoreListing, publishApp, identiconUrl, getAppMcp, updateContainerMcp, detectContainerMcp, retryBuild, listAppOwners, addAppOwner, removeAppOwner, createVersion, stageProfile, promoteProfile, listRegistryTags, uploadAsset, listAppCommits, uploadVersionCwasm, getVersion, listCachedImages } from '~/lib/api';
 
 // Public store base — where a published app is browsable.
@@ -2349,6 +2349,7 @@ function AppUITab({ appId, appName, hostname, token, containerMcp, onMcpUpdate }
     containerMcp: Record<string, unknown>; onMcpUpdate: (app: App) => void;
 }) {
     const apiUrl = getApiBaseUrl();
+    const iframeRef = useRef<HTMLIFrameElement>(null);
     const iframeSrc = `${apiUrl}/api/v1/apps/${encodeURIComponent(appId)}/ui`;
     const currentUrl = (containerMcp?.ui as { url?: string })?.url || '';
     const [editUrl, setEditUrl] = useState(currentUrl);
@@ -2379,6 +2380,33 @@ function AppUITab({ appId, appName, hostname, token, containerMcp, onMcpUpdate }
             });
         return () => { cancelled = true; };
     }, [iframeSrc, token, iframeKey]);
+
+    // Chat proxy for the sandboxed demo UI. The iframe is intentionally NOT
+    // allow-same-origin (it can host an arbitrary app's UI, which must never
+    // reach the portal session), so it has a null origin and cannot make
+    // authenticated cross-origin calls itself. Instead it postMessages a chat
+    // request and the portal — same-origin to the API, owner-authenticated —
+    // relays it through the mgmt RPC proxy (no enclave CORS/cert exposure) and
+    // posts the reply back. Only messages from THIS iframe are honoured.
+    useEffect(() => {
+        const onMsg = async (e: MessageEvent) => {
+            const d = e.data as { type?: string; id?: unknown; messages?: unknown };
+            if (!d || d.type !== 'privasys-chat' || !Array.isArray(d.messages)) return;
+            if (e.source !== iframeRef.current?.contentWindow) return;
+            const reply = (payload: Record<string, unknown>) =>
+                (e.source as Window | null)?.postMessage({ type: 'privasys-chat-response', id: d.id, ...payload }, '*');
+            try {
+                const r = await rpcCall(token, appId, 'chat', { messages: d.messages, stream: false });
+                const doc = r as { choices?: Array<{ message?: { content?: string } }>; error?: unknown };
+                if (doc.error) { reply({ error: String(doc.error) }); return; }
+                reply({ content: doc.choices?.[0]?.message?.content ?? '' });
+            } catch (err) {
+                reply({ error: (err as Error).message });
+            }
+        };
+        window.addEventListener('message', onMsg);
+        return () => window.removeEventListener('message', onMsg);
+    }, [token, appId]);
 
     const handleIframeLoad = useCallback((e: React.SyntheticEvent<HTMLIFrameElement>) => {
         const iframe = e.currentTarget;
@@ -2447,6 +2475,7 @@ function AppUITab({ appId, appName, hostname, token, containerMcp, onMcpUpdate }
             {htmlContent != null && (
                 <iframe
                     key={iframeKey}
+                    ref={iframeRef}
                     srcDoc={htmlContent}
                     onLoad={handleIframeLoad}
                     sandbox="allow-scripts allow-forms"
@@ -2578,6 +2607,9 @@ function ConfigureForm({ cfg, appId, token, frozen }: { cfg: ConfigureSection; a
     // Once applied, the app is unfrozen immediately even though the reconciler
     // only flips container_state on its next sweep — so clear the warning now.
     const [applied, setApplied] = useState(false);
+    // Collapsed by default (the form is large and usually already configured);
+    // auto-expanded when the app is frozen and still needs its configuration.
+    const [collapsed, setCollapsed] = useState(!frozen);
     const rpcName = cfg.name || cfg.function || (cfg.endpoint ? cfg.endpoint.replace(/^\//, '') : 'configure');
 
     const submit = async () => {
@@ -2601,26 +2633,37 @@ function ConfigureForm({ cfg, appId, token, frozen }: { cfg: ConfigureSection; a
 
     return (
         <div className="mt-3 pt-3 border-t border-black/5 dark:border-white/5">
-            {cfg.title && <h3 className="text-sm font-semibold">{cfg.title}</h3>}
-            {frozen && !applied && (
-                <div className="mt-2 flex items-start gap-2 rounded-lg border border-amber-200 dark:border-amber-800/40 bg-amber-50 dark:bg-amber-900/15 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
-                    <svg className="w-3.5 h-3.5 mt-px shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /></svg>
-                    <span>This app is frozen (HTTP 503) until you apply its configuration below.</span>
-                </div>
+            <button type="button" onClick={() => setCollapsed(c => !c)}
+                className="flex w-full items-center justify-between gap-2 text-left">
+                <h3 className="text-sm font-semibold">{cfg.title || 'Configuration'}</h3>
+                <span className="flex items-center gap-2 text-xs text-black/40 dark:text-white/40">
+                    {frozen && !applied && <span className="text-amber-600 dark:text-amber-400">needs configuration</span>}
+                    <svg className={`w-4 h-4 transition-transform ${collapsed ? '' : 'rotate-180'}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="m6 9 6 6 6-6" /></svg>
+                </span>
+            </button>
+            {!collapsed && (
+                <>
+                    {frozen && !applied && (
+                        <div className="mt-2 flex items-start gap-2 rounded-lg border border-amber-200 dark:border-amber-800/40 bg-amber-50 dark:bg-amber-900/15 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
+                            <svg className="w-3.5 h-3.5 mt-px shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /></svg>
+                            <span>This app is frozen (HTTP 503) until you apply its configuration below.</span>
+                        </div>
+                    )}
+                    {cfg.description && <p className="mt-2 text-xs text-black/50 dark:text-white/50">{cfg.description}</p>}
+                    <div className="mt-3 space-y-3">
+                        {entries.map(([k, prop]) => (
+                            <FieldInput key={k} name={k} prop={prop} value={values[k] ?? String(prop.default ?? '')}
+                                onChange={v => setValues(s => ({ ...s, [k]: v }))} appId={appId} token={token} disabled={busy} />
+                        ))}
+                        <button onClick={submit} disabled={busy}
+                            className="px-3 py-2 text-sm font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black disabled:opacity-40">
+                            {busy ? 'Applying…' : 'Apply configuration'}
+                        </button>
+                        {result && <p className="text-sm text-green-700 dark:text-green-400">{result}</p>}
+                        {error && <p className="text-sm text-red-700 dark:text-red-400">{error}</p>}
+                    </div>
+                </>
             )}
-            {cfg.description && <p className="mt-2 text-xs text-black/50 dark:text-white/50">{cfg.description}</p>}
-            <div className="mt-3 space-y-3">
-                {entries.map(([k, prop]) => (
-                    <FieldInput key={k} name={k} prop={prop} value={values[k] ?? String(prop.default ?? '')}
-                        onChange={v => setValues(s => ({ ...s, [k]: v }))} appId={appId} token={token} disabled={busy} />
-                ))}
-                <button onClick={submit} disabled={busy}
-                    className="px-3 py-2 text-sm font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black disabled:opacity-40">
-                    {busy ? 'Applying…' : 'Apply configuration'}
-                </button>
-                {result && <p className="text-sm text-green-700 dark:text-green-400">{result}</p>}
-                {error && <p className="text-sm text-red-700 dark:text-red-400">{error}</p>}
-            </div>
         </div>
     );
 }
