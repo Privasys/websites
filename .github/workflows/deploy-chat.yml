@@ -54,10 +54,12 @@ jobs:
             echo "env_file=~/chat-test.env"                        >> "$GITHUB_OUTPUT"
             echo "api_url=https://api-test.developer.privasys.org" >> "$GITHUB_OUTPUT"
             echo "default_instance=demo"                           >> "$GITHUB_OUTPUT"
-            # Point the chat-service sealed transport + extra-app voucher at
-            # the dev inference enclave so the multi-app attestation path is
-            # exercised end-to-end on chat-test.
-            echo "chat_service_url=https://confidential-ai.apps-test.privasys.org" >> "$GITHUB_OUTPUT"
+            # BYO-MCP back-end: the real chat-service enclave app (user tool
+            # store + signed tool-grant + JWKS). The browser reaches it over a
+            # DEDICATED sealed session (bearer inside the envelope) and the
+            # wallet vouchers it alongside the inference enclave in one ceremony
+            # (multi-app attestation).
+            echo "chat_service_url=https://chat-service.apps-test.privasys.org" >> "$GITHUB_OUTPUT"
           fi
           echo "tag=$(date -u +%Y%m%d-%H%M%S)-${ENV}-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
