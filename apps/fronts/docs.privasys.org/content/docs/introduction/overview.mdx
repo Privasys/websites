@@ -15,7 +15,7 @@ Privasys is an **open-source confidential computing platform** that builds trust
 
 ## Start in Your Terminal
 
-The fastest way to try Privasys is the [CLI](/cli). Four commands take you from nothing to a deployed, hardware-attested confidential app:
+The fastest way to try Privasys is the [CLI](/solutions/cli). Four commands take you from nothing to a deployed, hardware-attested confidential app:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/Privasys/cli/main/install.sh | sh
@@ -24,7 +24,7 @@ privasys apps deploy my-app --watch    # deploy to confidential infrastructure
 privasys attest my-app                 # verify the hardware quote yourself
 ```
 
-The CLI is also an [MCP server](/cli/agents), so an AI agent can drive the whole platform: run `privasys agents init` in your project and ask your agent to deploy a confidential app.
+The CLI is also an [MCP server](/solutions/cli/agents), so an AI agent can drive the whole platform: run `privasys agents init` in your project and ask your agent to deploy a confidential app.
 
 ## Our Commitments
 
@@ -85,7 +85,7 @@ Confidential AI inference inside hardware-protected environments. Models run ins
 
 ### Privasys Platform
 
-The deployment infrastructure that ties everything together: a [developer platform](https://developer.privasys.org) for deploying WASM modules and containers on confidential infrastructure, the [`privasys` CLI](/cli) (which is also an MCP server for AI agents), verification libraries in multiple languages (Python, Go, Rust, TypeScript, C# .NET), and an attestation server that independently verifies hardware quotes. The Developer Platform is live, sign in with GitHub and deploy your first application in minutes.
+The deployment infrastructure that ties everything together: a [developer platform](https://developer.privasys.org) for deploying WASM modules and containers on confidential infrastructure, the [`privasys` CLI](/solutions/cli) (which is also an MCP server for AI agents), verification libraries in multiple languages (Python, Go, Rust, TypeScript, C# .NET), and an attestation server that independently verifies hardware quotes. The Developer Platform is live, sign in with GitHub and deploy your first application in minutes.
 
 [Platform documentation](/solutions/platform/overview)
 
@@ -109,7 +109,7 @@ Traditional cloud requires you to *trust* the provider. Privasys replaces trust 
 ## Explore the Docs
 
 <Cards>
-  <Card title="Privasys CLI" href="/cli">
+  <Card title="Privasys CLI" href="/solutions/cli">
     Deploy, attest, and manage confidential apps from your terminal, CI, or an AI agent.
   </Card>
   <Card title="Technology" href="/technology/confidential-computing/overview">
