@@ -1,0 +1,134 @@
+---
+title: Sealed Session
+description: How Privasys combines FIDO2 authentication with attestation-bound, end-to-end sealed transport, so even clients that cannot verify attestation themselves reach confidential workloads with proof of what they are talking to.
+---
+
+A **sealed session** is an end-to-end confidential channel between a client and an attested enclave application, established through a FIDO2 ceremony that cryptographically binds three things together: *who* the user is, *which* enclave (down to the exact code and configuration measurements) they verified, and *which* transport key their client will use. Nothing between the client and the enclave, including Privasys's own gateways, can read the traffic or substitute the endpoint.
+
+This page explains the whole mechanism: the authentication system it builds on, how a session is established and sealed, how it survives restarts and reloads without waking the user, and exactly what forces a re-verification.
+
+We also wrote a long-form post about the underlying pattern: [Bringing attestation to the browser, the session-relay pattern](https://privasys.org/blog/bringing-attestation-to-the-browser-the-session-relay-pattern).
+
+## The Problem
+
+Clients that can speak [RA-TLS](/technology/attestation/attested-connections) do not need any of this: they verify the enclave's attested certificate directly and terminate TLS inside the enclave, so their connection is already end-to-end confidential and verified.
+
+Browsers cannot do that. A browser will not let JavaScript inspect the TLS leaf chain, cannot parse an SGX or TDX quote, and refuses an RA-TLS certificate outright with `ERR_CERT_AUTHORITY_INVALID`. Yet a huge fraction of what people build on confidential computing (chat clients, dashboards, custom UIs over private models) runs in a browser. A server-side proxy that "verifies on behalf of the browser" defeats the point of attestation: you would be trusting the proxy.
+
+The sealed-session design resolves this by pairing the incapable client with a capable device the user already trusts, the [Privasys Wallet](/solutions/privasys-id/wallet). The wallet performs the attestation verification once, over RA-TLS, and the client inherits the result through a JWT it cannot forge and a session key that nothing in the middle can derive.
+
+## The Authentication System Underneath
+
+Sealed sessions are not a separate login method. They are an extension of the standard Privasys ID sign-in flow, which involves three components:
+
+- **The Wallet** is a mobile FIDO2 authenticator. Private keys are generated in the phone's Secure Enclave (iOS) or StrongBox/TEE (Android) and never leave the hardware. The wallet is the *only* attestation verifier in the system: it RA-TLS-handshakes the enclave, parses the attestation extensions, shows the user what it verified, and only then prompts for a biometric.
+- **The IdP** at `privasys.id` is a standard OIDC issuer that runs WebAuthn ceremonies on behalf of relying-party apps and mints identity tokens. For sealed sessions it enforces one additional, load-bearing check described below.
+- **The Auth SDK** (`@privasys/auth`) runs in the page as a small script plus a hidden iframe hosted on `privasys.id`. The iframe holds all key material; the embedding page never sees it.
+
+A normal sign-in is a QR or push-to-wallet ceremony: the SDK shows a QR, the wallet scans it, verifies the enclave, performs the FIDO2 assertion, and the IdP issues the JWT. Sealed sessions add exactly three things to that flow.
+
+## Establishing a Sealed Session
+
+1. **An ephemeral client keypair in the QR.** The SDK iframe generates a P-256 keypair `(sdk_priv, sdk_pub)` and adds `mode: "session-relay"` and `sdk_pub` to the QR payload. `sdk_priv` never leaves the iframe.
+2. **An enclave session bootstrap.** The wallet, after RA-TLS-verifying the enclave, calls `POST /__privasys/session-bootstrap { sdk_pub, ... }` on the enclave and captures `{ session_id, enc_pub, expires_at }`. Both ends derive the same 256-bit session key:
+
+   ```
+   K = HKDF-SHA256(
+         ikm  = ECDH_P256(sdk_priv, enc_pub),   # or (enc_priv, sdk_pub) enclave-side
+         salt = session_id,
+         info = "privasys-session/v1",
+         L    = 32)
+   ```
+
+   The enclave stores `K` in an in-memory session table; the SDK iframe derives the same `K` after sign-in completes. The wallet, which brokered the exchange, cannot derive `K`: it never holds `sdk_priv`.
+3. **WebAuthn challenge binding.** Instead of a random WebAuthn challenge, the wallet signs:
+
+   ```
+   challenge = SHA-256(
+       "privasys-session-relay/v1" ||
+       nonce || sdk_pub || quote_hash || enc_pub || session_id )
+   ```
+
+   where `quote_hash` is the wallet's deterministic digest over the attestation it just verified (TEE type, MRENCLAVE/MRTD, code hash, configuration Merkle root, attestation-server set). The IdP recomputes this challenge on `/complete` from the submitted inputs, compares in constant time, and refuses to issue the token on any mismatch.
+
+The issued JWT then carries `att_verified`, `att_quote_hash`, `att_oids`, and `session.{id, enc_pub, expires_at, sdk_pub_bind}`. The SDK pins `att_quote_hash` and `att_oids` against an app-supplied attestation policy, derives `K`, and starts sealing.
+
+## Why the Binding Challenge Carries the Whole Protocol
+
+Without the binding, the JWT means "a wallet talked to the IdP". With it, the JWT means "the wallet holding the FIDO2 private key for this account verified attestation measurements `X` for an enclave whose identity key is `enc_pub`, and bound the session derived from `sdk_pub` to that result". Every property the client gets to assume flows from that one constant-time comparison:
+
+- that the JWT belongs to *this* SDK instance (via `sdk_pub`),
+- that the enclave in the claims is the same enclave the session key is shared with (via `enc_pub`),
+- that the wallet really performed the verification (via `quote_hash`, signed under a hardware-bound key).
+
+It is a small amount of code with known-answer test vectors reproduced byte-for-byte by the wallet (TypeScript) and the IdP (Go), and it is the one check that will never be relaxed for backwards compatibility.
+
+## Sealed Transport on the Wire
+
+Once established, every request body is sealed in the iframe and unsealed only inside the enclave:
+
+| Layer | What happens |
+| --- | --- |
+| Request framing | `Content-Type: application/privasys-sealed+cbor`, `Authorization: PrivasysSession <session_id>`, body `CBOR { v, ctr, ct }` |
+| Cipher | AES-256-GCM under `K`, additional data `method:path:session_id`, per-direction monotonic counters (replay of any frame, including the last one, is rejected) |
+| Streaming | Server-sent streams arrive as length-prefixed sealed frames (`application/privasys-sealed-stream+cbor`) so tokens decrypt incrementally |
+| Lifetime | `expires_at` is epoch seconds; the session has a **15-minute sliding inactivity window**. Every authenticated sealed request extends it, so an active session never expires mid-use; idle sessions are garbage-collected and re-established silently (below) |
+
+The embedding page submits plaintext to the iframe over `postMessage` and receives plaintext back. `K` and `sdk_priv` never cross the iframe boundary; the same-origin policy is what separates the app from its own transport keys.
+
+## What Each Party Sees
+
+The platform gateway terminates a public Let's Encrypt certificate for `*.apps.privasys.org` so browsers see a normal padlock, then forwards the still-sealed bodies to the enclave over an internal RA-TLS leg. On this gateway-terminated leg the enclave *refuses* plaintext application bodies (`403 sealed-transport-required`), so a front-end regression cannot silently downgrade the data plane.
+
+| Component | Sees | Cannot do |
+| --- | --- | --- |
+| Browser parent frame | Plaintext request/response (its own data) | Hold `K` or `sdk_priv` (those live in the iframe scope) |
+| `privasys.id` auth iframe | `K`, `sdk_priv`, plaintext bodies for that tab | Exfiltrate: same-origin and postMessage-gated |
+| Broker | Encrypted WebSocket frames between wallet and SDK, IdP-signed JWT in transit | Derive `K`, forge the JWT |
+| Platform gateway | TLS metadata, AEAD ciphertext bodies | Read sealed bodies; bypass enclave RA-TLS (it is itself an RA-TLS client and aborts on policy mismatch) |
+| IdP | Wallet-supplied `quote_hash`, `att_oids`, `sdk_pub`, `enc_pub`, `session_id` | Verify the quote itself: values are pass-through and signed; a policy mismatch is rejected by the SDK |
+| Wallet | The enclave's RA-TLS leaf and attestation extensions; `enc_pub` from bootstrap | Derive `K` (it never holds `sdk_priv`) |
+| Enclave | `sdk_pub`, plaintext bodies after unsealing | Learn the user's biometric, the FIDO2 private key, or any other tab's `K` |
+
+## Staying Signed In: Silent Rebind
+
+A 15-minute transport key would be unusable if every expiry woke the user's phone. It does not, because of the **EncAuth voucher**, a one-time capability the wallet issues right after a successful sign-in:
+
+- The wallet signs a compact CBOR payload binding `{ user, session id, workload digest, platform measurement digest, enc_pub, quote_hash, validity window }` under its hardware-bound key.
+- The IdP verifies that signature against the registered FIDO2 credential, co-signs the envelope, and stores it.
+- When the SDK later loses its session (idle expiry, page reload, enclave restart), it fetches the voucher and re-bootstraps against the enclave with a fresh ephemeral keypair. The enclave verifies both signatures and every binding, then re-establishes the session **with no wallet ceremony and no push notification**.
+
+The SDK pins the resumed session to the voucher too: the `enc_pub` in the bootstrap response must byte-equal the wallet-attested `enc_pub` signed inside the voucher, so an intermediary answering the bootstrap with its own key gains nothing.
+
+The voucher says, in effect: "this user has already verified this exact app on this exact platform, and accepts future transport keys for it without being woken". Which raises the real question: what happens when the app or the platform *changes*?
+
+## Stable Enclave Identity, and What Wakes the User
+
+The enclave's identity key (`enc_pub`) is reconstructed at start-up from a vault key whose policy is pinned to the exact platform measurement and is structurally non-promotable: not even the enclave operator, with any number of approvals, can move it to a different measurement. The consequences define the whole lifecycle:
+
+| Event | What happens | User woken? |
+| --- | --- | --- |
+| Enclave restart, host reschedule, VM reset (same measurements) | The vault releases the same key, `enc_pub` is unchanged, vouchers keep working | No |
+| Platform upgrade (measurement changes) | The vault refuses the old key; the new platform provisions its own. `enc_pub` changes, vouchers fail the pin | Yes |
+| App code or configuration update | `enc_pub` is unchanged, but the enclave manager checks the voucher's **workload digest** (a hash over the app's code, configuration and image measurements) against the running app and rejects the stale voucher | Yes |
+| Voucher expiry (up to 90 days) or session revocation | Voucher refused; nothing changed on the enclave side | Yes (fresh ceremony) |
+
+When a voucher is refused, the enclave reports a stable reason (`enc-changed`, `workload-changed`, `voucher-expired`, `voucher-invalid`) that the SDK surfaces to the application, so the page can say "this app was updated since you verified it" instead of a generic sign-in wall. The re-verification itself runs through the wallet, which compares the new attestation against its trusted record and shows the user exactly **what changed**, field by field (application code, configuration, or hosting platform), before asking them to approve the new state.
+
+This is the trust model working as intended: benign operational events are invisible, and every meaningful change to what the user originally verified requires their explicit, informed re-approval.
+
+## Generalising Beyond Browsers
+
+Browsers are the first structurally-incapable client, not the only one. A native app embedded in a host without crypto APIs, a third-party SDK distributed under someone else's domain, a terminal that can do TLS but not RA-TLS: they all face the same problem. Pair the incapable client with a capable device the user already trusts, have that device verify once, and let the client inherit the result through a token it cannot forge and a key nothing in the middle can derive.
+
+You are not extending the trust model. You are extending the *reach* of the existing trust model.
+
+## Source
+
+Everything on this page is open source (AGPL-3.0):
+
+- Wallet: binding computation and voucher issuance in `auth/wallet/src/services/` ([identity-platform](https://github.com/Privasys/identity-platform))
+- IdP: binding enforcement and voucher co-signing in `auth/idp/internal/fido2/` and `auth/idp/internal/sessions/`, with known-answer vectors in the tests
+- SDK: `PrivasysSession` and the iframe RPC in `auth/sdk/src/`
+- Enclave middleware: `enclave-os/enclave-os-virtual/internal/sessionrelay` (Go, TDX VMs) and `enclave-os/enclave-os-mini/enclave/src/sessionrelay.rs` (Rust, SGX) ([enclave-os-mini](https://github.com/Privasys/enclave-os-mini))
+- Gateway termination: `platform/gateway/internal/terminate`

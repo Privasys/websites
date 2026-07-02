@@ -1,6 +1,6 @@
 ---
 title: Overview
-description: The identity and authentication layer for Privasys — wallet, identity provider, browser SDK, and session-relay transport for non-RA-TLS-capable clients.
+description: The identity and authentication layer for Privasys — wallet, identity provider, browser SDK, and sealed-session transport for non-RA-TLS-capable clients.
 ---
 
 **Privasys ID** is the identity and authentication layer for the Privasys platform. It is the umbrella over four components that together let users sign in to attested workloads, approve sensitive operations on [Enclave Vaults](/solutions/enclave-vaults/overview), and reach enclave applications end-to-end-confidentially from clients that cannot perform attestation themselves (browsers, embedded SDKs).
@@ -21,9 +21,9 @@ The identity provider at `https://privasys.id`. Standard OIDC issuer with a JWKS
 
 The browser SDK published as `@privasys/auth`, hosted as an iframe under `privasys.id/auth/`. Embedding apps drop in a small script and get FIDO2 sign-in via a QR or push-to-wallet flow, cross-site SSO via iframe storage on `privasys.id`, attribute consent, and a fallback federated sign-in. The SDK also exports `PrivasysSession`, the sealed-transport client used in session-relay mode.
 
-### [Session Relay](/solutions/privasys-id/session-relay)
+### [Sealed Sessions](/technology/sealed-session)
 
-The protocol that brings attestation-verified, end-to-end-confidential transport to clients that cannot speak RA-TLS — primarily browsers and WebViews. The user's wallet does the verification once over RA-TLS, the IdP signs a JWT bound to that verification, and the browser inherits the result through a session key derived in the iframe. The platform gateway terminates a public Let's Encrypt certificate so users see a green padlock, but never sees plaintext bodies — those are AES-256-GCM-sealed end-to-end between the iframe and the enclave.
+The three components above combine into the platform's sealed-session mechanism: attestation-verified, end-to-end-confidential transport for clients that cannot speak RA-TLS, primarily browsers and WebViews. The user's wallet does the verification once over RA-TLS, the IdP signs a JWT bound to that verification, and the browser inherits the result through a session key derived in the iframe. The concept, the wire protocol, the trust argument, and the session lifecycle are presented in detail under [Technology > Sealed Session](/technology/sealed-session).
 
 ## Design principles
 
@@ -73,5 +73,5 @@ The session-relay middleware lives outside this repo, in the enclave runtimes:
 
 - **You're a developer adding sign-in to your app.** Start at the [Auth SDK page](/solutions/privasys-id/auth-sdk).
 - **You're integrating with Enclave Vaults manager approvals.** Read the [Wallet page](/solutions/privasys-id/wallet) and [vault access control](/solutions/enclave-vaults/access-control).
-- **You're shipping a browser-based UI on top of a confidential workload.** Read the [Session Relay page](/solutions/privasys-id/session-relay).
+- **You're shipping a browser-based UI on top of a confidential workload.** Read [Technology > Sealed Session](/technology/sealed-session).
 - **You want to self-host the IdP or wire BYO OIDC.** Read the [IdP page](/solutions/privasys-id/idp).

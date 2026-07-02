@@ -70,7 +70,7 @@ expected = SHA-256(
 
 …from the `binding_challenge` it stored at `/begin` and from the query-string inputs at `/complete`. It then `subtle.ConstantTimeCompare`s `expected` against the value the wallet stored *and* against `clientDataJSON.challenge`. Any mismatch returns 400 with no side effect — no row written, no JWT minted.
 
-Without this check, the JWT would not constitute proof of attestation verification — see the [Session Relay page](/solutions/privasys-id/session-relay) for the full trust argument.
+Without this check, the JWT would not constitute proof of attestation verification — see [Technology > Sealed Session](/technology/sealed-session) for the full trust argument.
 
 ## Service-account authentication
 

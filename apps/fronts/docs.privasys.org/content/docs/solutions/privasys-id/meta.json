@@ -5,7 +5,6 @@
         "overview",
         "wallet",
         "idp",
-        "auth-sdk",
-        "session-relay"
+        "auth-sdk"
     ]
 }
