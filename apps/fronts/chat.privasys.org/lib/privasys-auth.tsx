@@ -137,6 +137,13 @@ interface AuthContextValue {
      * exists, or the enclave refused — callers then degrade gracefully.
      */
     getSealedSession: (appHost: string) => Promise<SealedSession | null>;
+    /**
+     * Ask the wallet (via push notification) to voucher an additional enclave
+     * host for the current session — one biometric approval on the phone, no
+     * sign-out. Rejects with `no-push` (session not wallet-backed), `timeout`
+     * (not approved / old wallet), or `no-session`.
+     */
+    requestAppVoucher: (appHost: string) => Promise<void>;
     signOut: () => Promise<void>;
 }
 
@@ -154,6 +161,7 @@ const AuthContext = createContext<AuthContextValue>({
     reestablishSealed: async () => 'unavailable',
     staleReason: null,
     getSealedSession: async () => null,
+    requestAppVoucher: async () => {},
     signOut: async () => {}
 });
 
@@ -466,6 +474,22 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
         [getFrame]
     );
 
+    // Ask the wallet (via push) to voucher an additional enclave host for
+    // the live session — incremental multi-app attestation. On success the
+    // per-host sealed session can then resume silently; we drop any cached
+    // null so getSealedSession re-resumes on the next call.
+    const requestAppVoucher = useCallback(
+        async (appHost: string) => {
+            const frame = getFrame();
+            await frame.getSession(); // ensure the persistent iframe is mounted
+            await frame.requestAppVoucher(appHost);
+            sealedByHost.current.get(appHost)?.frame.destroy();
+            sealedByHost.current.delete(appHost);
+            sealedByHostInFlight.current.delete(appHost);
+        },
+        [getFrame]
+    );
+
     // Expose a minimal helper on `window.PrivasysAuth` so the copy-paste
     // quote-verification snippet (and other dev-console flows) can mint
     // an audience-scoped token without having to wire the React context
@@ -486,7 +510,7 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
 
     return (
         <AuthContext.Provider
-            value={{ session, loading, expired, sealedSession, getTokenForAudience, signIn, signInInto, resumeSealed, reestablishSealed, staleReason, getSealedSession, signOut }}
+            value={{ session, loading, expired, sealedSession, getTokenForAudience, signIn, signInInto, resumeSealed, reestablishSealed, staleReason, getSealedSession, requestAppVoucher, signOut }}
         >
             {children}
         </AuthContext.Provider>
