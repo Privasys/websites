@@ -75,6 +75,7 @@ export function ChatPanel({
     onToggleUserTool,
     onAddTool,
     onRemoveUserTool,
+    addAwaitingApproval,
     toolPolicy,
     chatSession,
     transport = 'ok',
@@ -118,6 +119,8 @@ export function ChatPanel({
     userTools?: UserTool[];
     onToggleUserTool?: (id: string, enabled: boolean) => void | Promise<void>;
     onAddTool?: (input: AddUserToolInput) => Promise<void>;
+    /** True while an add is blocked on a wallet push approval. */
+    addAwaitingApproval?: boolean;
     onRemoveUserTool?: (id: string) => void | Promise<void>;
     /** Fleet governance mode, gates the add-tool affordance. */
     toolPolicy?: string;
@@ -703,6 +706,7 @@ export function ChatPanel({
             onToggleUserTool={onToggleUserTool}
             onAddTool={onAddTool}
             onRemoveUserTool={onRemoveUserTool}
+            addAwaitingApproval={addAwaitingApproval}
             toolPolicy={toolPolicy}
             placeholder={
                 model

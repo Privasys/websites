@@ -36,6 +36,7 @@ export function Composer({
     onToggleUserTool,
     onAddTool,
     onRemoveUserTool,
+    addAwaitingApproval,
     toolPolicy,
     placeholder,
     autoFocus,
@@ -70,6 +71,8 @@ export function Composer({
     onToggleUserTool?: (id: string, enabled: boolean) => void | Promise<void>;
     onAddTool?: (input: AddUserToolInput) => Promise<void>;
     onRemoveUserTool?: (id: string) => void | Promise<void>;
+    /** True while an add is blocked on a wallet push approval. */
+    addAwaitingApproval?: boolean;
     /** Fleet governance: 'locked' | 'enclave_only' | 'open'. Gates adding. */
     toolPolicy?: string;
     placeholder?: string;
@@ -230,6 +233,7 @@ export function Composer({
                                                     instanceId={instance.id}
                                                     allowExternal={toolPolicy === 'open'}
                                                     onAdd={onAddTool}
+                                                    awaitingApproval={addAwaitingApproval}
                                                 />
                                             )}
                                         </div>
@@ -508,11 +512,13 @@ function KindTab({
 function AddToolForm({
     instanceId,
     allowExternal,
-    onAdd
+    onAdd,
+    awaitingApproval
 }: {
     instanceId: string;
     allowExternal: boolean;
     onAdd: (input: AddUserToolInput) => Promise<void>;
+    awaitingApproval?: boolean;
 }) {
     const [open, setOpen] = useState(false);
     const [kind, setKind] = useState<'enclave' | 'external'>('enclave');
@@ -608,6 +614,12 @@ function AddToolForm({
                 </label>
             )}
             {err && <p className="text-[11px] text-red-400">{err}</p>}
+            {awaitingApproval && (
+                <p className="flex items-center gap-1.5 text-[11px] text-[var(--color-primary-blue)]">
+                    <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--color-primary-blue)]" />
+                    Approve adding this tool on your phone…
+                </p>
+            )}
             <div className="flex justify-end gap-2">
                 <button
                     type="button"
@@ -625,7 +637,7 @@ function AddToolForm({
                     disabled={busy}
                     className="rounded-md bg-[var(--color-primary-blue)] px-3 py-1 text-xs font-medium text-white disabled:opacity-50"
                 >
-                    {busy ? 'Adding…' : 'Add'}
+                    {busy ? (awaitingApproval ? 'Waiting for phone…' : 'Adding…') : 'Add'}
                 </button>
             </div>
         </div>

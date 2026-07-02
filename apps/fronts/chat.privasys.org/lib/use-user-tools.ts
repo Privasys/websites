@@ -20,6 +20,8 @@ export interface UserToolsState {
     tools: UserTool[];
     loading: boolean;
     error?: string;
+    /** True while an add() is blocked waiting for a wallet push approval. */
+    awaitingApproval: boolean;
     add: (input: AddUserToolInput) => Promise<void>;
     remove: (id: string) => Promise<void>;
     setEnabled: (id: string, enabled: boolean) => Promise<void>;
@@ -30,14 +32,17 @@ export function useUserTools(
     session: SealedSession | null,
     token: string | undefined,
     /** Optional last-chance establisher: when a mutation is attempted with no
-     *  sealed session in hand, this is called once to (re-)establish it (a
-     *  fresh voucher resume). Covers the just-signed-in race and transient
-     *  resume failures without waiting for a re-render. */
-    ensureSession?: () => Promise<SealedSession | null>
+     *  sealed session in hand, this (re-)establishes it — a silent voucher
+     *  resume, then, if there's no voucher yet, a wallet push approval. The
+     *  `onNeedApproval` callback fires when we fall through to the push so the
+     *  UI can show "Approve on your phone…". Rejects with `no-push` / `timeout`
+     *  / `no-session` so add() can map them to a precise message. */
+    ensureSession?: (onNeedApproval?: () => void) => Promise<SealedSession | null>
 ): UserToolsState {
     const [tools, setTools] = useState<UserTool[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | undefined>();
+    const [awaitingApproval, setAwaitingApproval] = useState(false);
     const [nonce, setNonce] = useState(0);
     const ready = !!session && !!token;
 
@@ -70,17 +75,36 @@ export function useUserTools(
         async (input: AddUserToolInput) => {
             if (!token) throw new Error('Sign in to add a tool.');
             // The sealed session to chat-service resumes from a wallet-issued
-            // voucher. If it isn't in hand yet, try once more now — this
-            // covers the just-signed-in race and transient resume failures.
+            // voucher. If it isn't in hand yet, establish it now: a silent
+            // resume first, then — if there's no voucher — a wallet PUSH
+            // approval (one tap on the phone, no sign-out).
             let s = session;
-            if (!s && ensureSession) s = await ensureSession();
+            if (!s && ensureSession) {
+                try {
+                    s = await ensureSession(() => setAwaitingApproval(true));
+                } catch (e) {
+                    const m = (e as Error)?.message ?? '';
+                    if (m.includes('no-push')) {
+                        throw new Error(
+                            'This session was not opened with the Privasys Wallet, so we ' +
+                            'can’t send a phone approval. Sign in with the wallet to add tools.'
+                        );
+                    }
+                    if (m.includes('timeout')) {
+                        throw new Error(
+                            'No approval received. Open the Privasys Wallet on your phone, ' +
+                            'approve adding the tools back-end, then try again.'
+                        );
+                    }
+                    throw new Error('Couldn’t verify the tools back-end. Please try again.');
+                } finally {
+                    setAwaitingApproval(false);
+                }
+            }
             if (!s) {
-                // Signed in, but the wallet never vouched the tools back-end
-                // (sign-in predates multi-app attestation, or an old wallet
-                // version). A fresh ceremony fixes it.
                 throw new Error(
-                    'Your wallet has not verified the tools back-end yet. ' +
-                    'Sign out and sign in again (one approval covers it), then retry.'
+                    'The tools back-end isn’t verified for this session yet. ' +
+                    'Approve it from the Privasys Wallet, then retry.'
                 );
             }
             const created = await addUserTool(s, token, input);
@@ -108,5 +132,5 @@ export function useUserTools(
         [session, token]
     );
 
-    return { tools, loading: ready && loading, error, add, remove, setEnabled, reload };
+    return { tools, loading: ready && loading, error, awaitingApproval, add, remove, setEnabled, reload };
 }

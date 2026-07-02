@@ -46,7 +46,7 @@ export function ChatShell({
     disabledReason?: string;
     userGreeting?: string;
 }) {
-    const { session, sealedSession, reestablishSealed, staleReason, getSealedSession } = useAuth();
+    const { session, sealedSession, reestablishSealed, staleReason, getSealedSession, requestAppVoucher } = useAuth();
     const [model, setModel] = useState<AvailableModel | null>(initialModel);
 
     // Health of the end-to-end enclave transport, independent of the OIDC
@@ -90,16 +90,31 @@ export function ChatShell({
         };
     }, [session, getSealedSession]);
 
-    // Last-chance establisher for user-tool mutations: retries the voucher
-    // resume at action time (covers the just-signed-in race) and flows a
-    // late success back into state so the tool list loads.
-    const ensureChatSession = useCallback(async () => {
-        const host = chatServiceHost();
-        if (!host) return null;
-        const s = await getSealedSession(host);
-        if (s) setChatSession(s);
-        return s;
-    }, [getSealedSession]);
+    // Establish the chat-service sealed session on demand for a user-tool
+    // mutation. First a silent voucher resume (covers the just-signed-in
+    // race); if there's no voucher yet, ask the wallet to issue one via a
+    // push approval (incremental multi-app attestation — one tap on the
+    // phone, no sign-out), then resume. `onNeedApproval` lets the caller
+    // show "Approve on your phone…" while we wait. Rejects propagate so the
+    // add form can show a precise message.
+    const ensureChatSession = useCallback(
+        async (onNeedApproval?: () => void): Promise<SealedSession | null> => {
+            const host = chatServiceHost();
+            if (!host) return null;
+            let s = await getSealedSession(host);
+            if (s) {
+                setChatSession(s);
+                return s;
+            }
+            // No voucher for chat-service yet — request one from the wallet.
+            onNeedApproval?.();
+            await requestAppVoucher(host); // throws no-push / timeout / no-session
+            s = await getSealedSession(host);
+            if (s) setChatSession(s);
+            return s;
+        },
+        [getSealedSession, requestAppVoucher]
+    );
 
     // Sealed transport must survive page reloads without a wallet
     // ceremony: the OIDC session restores via cross-site SSO, and the
@@ -387,6 +402,7 @@ export function ChatShell({
                         userTools={userTools.tools}
                         onToggleUserTool={userTools.setEnabled}
                         onAddTool={userTools.add}
+                        addAwaitingApproval={userTools.awaitingApproval}
                         onRemoveUserTool={userTools.remove}
                         toolPolicy={instance.tool_policy}
                         chatSession={chatSession}
