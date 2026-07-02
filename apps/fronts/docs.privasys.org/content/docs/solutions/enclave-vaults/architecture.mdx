@@ -1,6 +1,6 @@
 ---
 title: Architecture
-description: How the Enclave Vaults distributed vHSM is built — typed key objects, in-enclave operations, RawShare distribution, per-key policy, and a controlled lifecycle for caller-enclave version changes.
+description: How the Enclave Vaults distributed vHSM is built. Typed key objects, in-enclave operations, RawShare distribution, per-key policy, and a controlled lifecycle for caller-enclave version changes.
 ---
 
 Enclave Vaults runs as the `enclave-os-vault` module inside an Intel SGX enclave on top of [Enclave OS Mini](/solutions/enclave-os/mini/overview). It inherits the OS's attestation stack, sealed storage, RA-TLS ingress, and OIDC token verification.
@@ -9,15 +9,16 @@ A production deployment is a **constellation** of vault enclaves on independent 
 
 ```
                ┌──────────────────────────────────────────────────┐
-               │              Attested Registry                   │
-               │       (returns endpoints + MRENCLAVE)            │
+               │            Vault directory                       │
+               │       (management-service, GET /api/v1/vaults)   │
+               │       returns endpoints + MRENCLAVE              │
                └──────────────────────────────────────────────────┘
                                          ▲
                                          │ discover (untrusted phonebook)
                                          │
         ┌──────────────────────────┐     │
         │    Client SDK            │─────┘
-        │  RegistryClient          │
+        │  directory client        │
         │  Client                  │
         │  Constellation           │──── mutual RA-TLS (one channel per vault) ────┐
         └──────────────────────────┘                                               │
@@ -50,7 +51,7 @@ A vault holds **typed key objects**. Each `KeyObject` has a stable handle, a `Ke
 |---|---|---|---|
 | `RawShare` | One Shamir share of an external secret | `Reconstruct` (the share itself is fetched by an authorised client) | yes |
 | `Aes256GcmKey` | Symmetric key, sealed inside the enclave | `Wrap`, `Unwrap` | no |
-| `P256SigningKey` / `Ed25519SigningKey` | Asymmetric key pair, sealed inside the enclave | `Sign`, `Verify` | no |
+| `P256SigningKey` / `Ed25519SigningKey` | Asymmetric key pair, sealed inside the enclave | `Sign` (a message the vault hashes, or a pre-computed digest it signs raw), `Verify` | no |
 | `HmacKey` | MAC key, sealed inside the enclave | `Mac`, `MacVerify` | no |
 | `Bip32MasterSeed` | Hierarchical seed, sealed inside the enclave | `Derive(path)` returns a child key handle | no |
 | `WrappedBlob` | Caller ciphertext under a vault KEK | `Unwrap` only | no |
@@ -63,7 +64,7 @@ Every key object carries a [`KeyPolicy`](/solutions/enclave-vaults/access-contro
 
 There are two complementary patterns, chosen per key.
 
-### Pattern A — distributed shares (`RawShare`)
+### Pattern A: distributed shares (`RawShare`)
 
 For secrets the owner wants to keep recoverable across the constellation, **and** wants to keep distributed even at rest, the secret is split with Shamir Secret Sharing on the client side. Each vault stores one share as a `RawShare` key object. To use the secret, an authorised client fetches a quorum of shares over mutual RA-TLS and reconstructs the secret inside its own trusted environment.
 
@@ -90,7 +91,7 @@ A single compromised vault leaks one share. By the information-theoretic guarant
 
 `RawShare` is the right pattern for things like LUKS volume keys for confidential VMs, master KEKs that are reconstructed on a controlled schedule, and any secret whose value the owner ultimately needs in cleartext somewhere.
 
-### Pattern B — in-enclave operations on a typed key
+### Pattern B: in-enclave operations on a typed key
 
 For signing keys, AES data keys, HMAC keys, and derivation seeds, the value the owner needs is not the key itself but the result of an operation on it. Each vault that holds the key holds the **full** key material, sealed to its own MRENCLAVE, and refuses to export it. The constellation provides redundancy and geographic distribution; clients dial a vault, present their authentication and any required approvals, and receive the operation's result.
 
@@ -176,7 +177,7 @@ The `pending-profile` lifecycle implements that invariant.
       v(N) from the policy.
 ```
 
-The fan-out is driven by the client SDK on the **owner's** side. The vaults do not coordinate behind the operator's back; the registry never sees policies, profiles, or approvals. A single compromised vault still cannot promote a profile on its own, because the policy requires the configured number of approvals from authentic principals.
+The fan-out is driven by the client SDK on the **owner's** side. The vaults do not coordinate behind the operator's back; the directory never sees policies, profiles, or approvals. A single compromised vault still cannot promote a profile on its own, because the policy requires the configured number of approvals from authentic principals.
 
 A separate `Lifecycle.auto_migrate_to_next_attestation_profile` flag exists for adopters who explicitly opt in to hands-off rollout (sandbox tenants, low-stakes workloads). It is off by default, and the SDK forces a one-time confirmation when a key is first created with the flag set.
 
@@ -184,8 +185,12 @@ A separate `Lifecycle.auto_migrate_to_next_attestation_profile` flag exists for 
 
 The pending-profile flow is about the *caller's* MRENCLAVE in a key's policy. Upgrading the **vault's own enclave** to a new MRENCLAVE is a separate concern and is handled by the deployment model, not by the per-key lifecycle.
 
-In production, every vault registration in the Attested Registry has a **30-day TTL**. Clients refresh their constellation view at least that often, which gives every vault instance an explicit expiry. To roll a new vault enclave version forward we run the new MRENCLAVE in parallel with the old one, register both in the registry, let owners stage the new vault profile on their keys at their own pace, and let the old vault expire out of the registry once nothing dials it. The key owner is in control of when their secret material reaches the new vault enclave, in exactly the same way as for caller-enclave version changes.
+The vault directory models each vault version as a **constellation**: a set of vault instances that share one MRENCLAVE, attestation server, and OIDC configuration. A new vault build is a new constellation, which an operator activates; at most one is active per environment. To roll a new vault enclave version forward we stand up the new constellation alongside the old one and cut the directory pin over to it. When a constellation holds no production keys, the cutover is a clean replacement with fresh sealed storage. When it holds keys the owner needs to keep reachable, the owner stages and promotes the new vault profile on each key first, exactly as for a caller-enclave version change, so the key owner is in control of when their secret material reaches the new vault enclave. Self-migration of sealed storage across a version boundary is on the roadmap.
 
 ## Bootstrap and configuration
 
 On first boot, each vault accepts a bootstrap configuration over an authenticated channel: OIDC issuer, audience, attestation server URL(s), registered modules, intermediate CA cert and key for RA-TLS issuance. The vault seals this configuration and refuses to use a different one on subsequent boots without a recorded reconfiguration event. The configuration is committed into the Merkle root attested by the vault's RA-TLS certificate, so clients can detect any drift.
+
+## Standard interfaces
+
+The RA-TLS wire protocol described above is the native surface. On top of it, the same enclave operations are reachable through the interfaces existing software already speaks: a PKCS#11 3.1 module, a KMIP 2.1 gateway, and a REST API plus CLI. These are front-ends over the same policy engine and data plane, so they add no new trust boundary. The [Standard Interfaces](/solutions/enclave-vaults/standard-interfaces) page covers how each maps onto the vault and where the standard client's reach ends.

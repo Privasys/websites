@@ -4,6 +4,7 @@
     "pages": [
         "overview",
         "architecture",
-        "access-control"
+        "access-control",
+        "standard-interfaces"
     ]
 }

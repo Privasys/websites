@@ -1,0 +1,77 @@
+---
+title: Vault and keys
+description: A confidential, attested key store from your terminal. Vaults, signing and wrapping keys, user secrets, and an Azure Key Vault-shaped REST facade.
+---
+
+A **vault** is a container of keys that you own, backed by the [vault constellation](/solutions/enclave-vaults/overview): a set of SGX enclaves across which key material is Shamir-split, so no single machine holds a usable key and the platform never sees it. You authenticate; the platform authors the key's owner-bound policy and mints a short-lived grant; the CLI then creates the material **directly on the constellation** over mutual RA-TLS. The control plane never touches key material.
+
+## Vaults
+
+```sh
+privasys vault create my-vault
+privasys vault list
+privasys vault rm <vault-id>
+```
+
+The number of vaults you may create is set by your plan.
+
+## Keys
+
+```sh
+privasys vault key create my-vault signer --type p256    # ECDSA P-256 signing key
+privasys vault key create my-vault wrapper --type aes    # AES-256-GCM wrapping key
+privasys vault key create my-vault seed                  # a Shamir-split secret (default)
+privasys vault key list my-vault
+```
+
+Three key types:
+
+- **`p256`**: a managed signing key. Generated client-side, created whole on one vault, **signed in-enclave**; the private half never leaves and the key is non-exportable.
+- **`aes`**: a managed wrapping key. Encrypt and decrypt happen in-enclave; non-exportable.
+- **`secret`** (default): opaque bytes you provide (or random), Shamir-split across the constellation, exportable by the owner.
+
+## Use a key
+
+```sh
+# Sign (the private key never leaves the enclave)
+privasys vault key sign my-vault signer "message"
+privasys vault key sign my-vault signer <64-hex-digest> --prehashed   # CKM_ECDSA: sign a SHA-256 digest raw
+privasys vault key public my-vault signer
+
+# Encrypt / decrypt under an AES key (in-enclave)
+privasys vault key wrap my-vault wrapper "plaintext"
+privasys vault key unwrap my-vault wrapper --ciphertext <b64> --iv <b64>
+```
+
+`--prehashed` signs a pre-computed 32-byte SHA-256 digest without re-hashing. That is the form TLS stacks and code signers need (PKCS#11 `CKM_ECDSA`).
+
+## Rotate, audit, delete
+
+```sh
+privasys vault key rotate my-vault signer     # new primary version; old versions still verify/unwrap
+privasys vault key audit my-vault signer      # the key's tamper-evident audit log, read from the vault
+privasys vault key rm my-vault signer         # destroys the material on the constellation
+```
+
+Rotation creates a new primary version with fresh material. Old versions are retained so data signed or wrapped under them still verifies and unwraps; pin one with `--version`.
+
+## User secrets
+
+`secrets` is the lightweight path for a personal key that is not inside a named vault:
+
+```sh
+privasys secrets create api-seed              # random material; Shamir-split; you own it
+privasys secrets export api-seed --out ./key  # local file only, never printed; WebAuthn step-up
+```
+
+Export is deliberately guarded: the material is written to a local file with `0600` permissions, only a fingerprint is shown, and the vault requires a fresh WebAuthn approval bound to that exact export, so a leaked session token alone cannot exfiltrate a key.
+
+## The REST facade and standards
+
+`privasys vault serve` runs a local, Azure Key Vault-shaped REST facade over a vault, so existing tooling can use the vHSM unchanged:
+
+```sh
+privasys vault serve my-vault
+```
+
+On top of that facade Privasys ships enterprise interop: a **KMIP 2.1 gateway** and a **PKCS#11 3.1 module** (OpenSSL provider, Java SunPKCS11), which let existing key-management and TLS/code-signing stacks use vault-held keys with no application change. Keys whose policy requires WebAuthn step-up fail closed over these interfaces by design.

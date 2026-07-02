@@ -1,0 +1,43 @@
+---
+title: Install
+description: Install the privasys CLI with the install script, Homebrew, Scoop, or OS packages, and verify the install.
+---
+
+The canonical install is a script you can read before you run it:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Privasys/cli/main/install.sh | sh
+```
+
+Other channels:
+
+```sh
+# Homebrew (macOS / Linux)
+brew install Privasys/tap/privasys
+
+# Scoop (Windows)
+scoop bucket add privasys https://github.com/Privasys/scoop-bucket
+scoop install privasys
+```
+
+Debian and RPM packages (`.deb` / `.rpm`) and raw archives for every OS and architecture are attached to each [GitHub release](https://github.com/Privasys/cli/releases).
+
+<Callout type="info">
+`go install` is not supported. The CLI performs client-side RA-TLS, which links the RA-TLS client library and is built with the [Privasys Go fork](https://github.com/Privasys/go). Use the released binaries or one of the package managers above.
+</Callout>
+
+## Verify
+
+```sh
+privasys version
+```
+
+<Callout type="warn">
+If you install into a shell whose applications are already running (an editor, an agent, a terminal multiplexer), restart them so they pick up the updated PATH. A running app keeps the PATH it started with.
+</Callout>
+
+## Next steps
+
+1. [Sign in](/cli/authentication): `privasys auth login`.
+2. [Deploy an app](/cli/apps) or [create a vault](/cli/vault).
+3. Working with an AI agent? [Wire it up](/cli/agents): `privasys agents init`.

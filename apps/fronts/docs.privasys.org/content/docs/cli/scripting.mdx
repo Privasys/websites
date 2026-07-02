@@ -1,0 +1,47 @@
+---
+title: Scripting and configuration
+description: JSON output, stable exit codes, named configurations, and environment overrides.
+---
+
+## Output
+
+Every command takes `--format json` (and `yaml`), and output auto-switches to JSON when stdout is not a TTY, so pipes and agents always get machine-readable output without asking. `--no-input` never prompts.
+
+```sh
+TOKEN=$(privasys auth print-access-token)        # pipe a bearer into curl
+privasys apps list --format json | jq '.[].name'
+```
+
+## Exit codes
+
+Exit codes are stable so scripts and agents can branch on the failure class:
+
+| Code | Meaning |
+| --- | --- |
+| `0` | success |
+| `1` | generic error |
+| `3` | not authenticated |
+| `4` | not authorized |
+| `5` | not found |
+
+## Configuration
+
+Configuration lives at `~/.privasys/config.yaml` (named configurations). Global flags: `--endpoint`, `--issuer`, `--account`, `--format`, `--no-input`, `--quiet`.
+
+```sh
+privasys config set endpoint https://api.developer.privasys.org
+privasys config set account <account-id>
+privasys config list
+```
+
+## Environment overrides
+
+| Variable | Overrides |
+| --- | --- |
+| `PRIVASYS_ENDPOINT` | platform API base URL |
+| `PRIVASYS_ISSUER` | identity provider issuer URL |
+| `PRIVASYS_ACCOUNT` | account id to act on |
+| `PRIVASYS_FORMAT` | output format |
+| `PRIVASYS_SERVICE_KEY` | service-account key (unattended auth) |
+| `PRIVASYS_ACCESS_TOKEN` | a raw bearer, bypassing stored sessions |
+| `PRIVASYS_NO_INPUT` | never prompt |
