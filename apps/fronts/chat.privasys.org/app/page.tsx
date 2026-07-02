@@ -30,24 +30,21 @@ export default function LandingPage() {
         <MarketingShell>
             {/* ── Hero ─────────────────────────────────────────── */}
             <section className="pt-16 text-center sm:pt-24">
-                <p className="text-xs font-medium tracking-widest text-[var(--color-text-muted)] uppercase">
-                    Confidential AI
-                </p>
                 <h1 className="mx-auto mt-4 max-w-3xl text-4xl font-bold tracking-tight text-[var(--color-text-primary)] sm:text-6xl">
-                    Private AI you can{' '}
+                    Chat like{' '}
                     <span
                         className="bg-clip-text text-transparent"
                         style={{ backgroundImage: 'var(--brand-gradient)' }}
                     >
-                        actually verify
+                        no one is watching
                     </span>
                     .
                 </h1>
                 <p className="mx-auto mt-6 max-w-2xl text-base leading-7 text-[var(--color-text-secondary)] sm:text-lg">
-                    Most AI chats ask you to trust a privacy policy. Privasys Chat
-                    runs the AI inside sealed hardware that nobody can look into,
-                    not even us, and gives you the tools to check that for
-                    yourself.
+                    Because no one is. Your health questions, your contracts, your
+                    ideas, your code: the AI runs inside sealed hardware that
+                    nobody can look into, not even us. And you don&apos;t have to
+                    take our word for it, you can check.
                 </p>
                 <div className="mt-9 flex flex-wrap items-center justify-center gap-4">
                     <CtaButton href={CHAT_HREF}>Start chatting</CtaButton>
@@ -125,10 +122,11 @@ export default function LandingPage() {
                         deployment: your own models, your own AI tools, your own
                         region, isolated from everyone else.
                     </Card>
-                    <Card title="Answers with receipts" icon={<ReceiptIcon />} href="/verify/">
-                        Every reply comes with a signed record of exactly which
-                        model and software produced it, so important answers can
-                        be audited later instead of just remembered.
+                    <Card title="Reproducible answers" icon={<ReceiptIcon />} href="/verify/">
+                        Run the same prompt again and get the exact same answer.
+                        Every reply carries a signed record of the model, software
+                        and settings that produced it, so an important answer can
+                        be replayed and audited, which compliance teams love.
                     </Card>
                 </div>
             </section>

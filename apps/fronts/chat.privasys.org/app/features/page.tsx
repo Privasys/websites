@@ -120,10 +120,10 @@ export default function FeaturesPage() {
 
             <Section title="The details that add up.">
                 <div className="mt-8 grid grid-cols-1 gap-6 md:grid-cols-3">
-                    <Card title="Answers with receipts">
-                        Every reply carries metadata naming the exact model,
-                        software and seed that produced it. Open Metadata under
-                        any reply to inspect it.
+                    <Card title="Reproducible answers">
+                        Every reply carries the exact model, software and seed
+                        that produced it, so the same prompt can be replayed to
+                        the identical output for audit and compliance.
                     </Card>
                     <Card title="Edit and branch">
                         Edit any of your messages to re-run the conversation from

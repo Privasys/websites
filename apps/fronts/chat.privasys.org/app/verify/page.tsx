@@ -95,19 +95,23 @@ export default function VerifyPage() {
             </Section>
 
             <Section
-                title="Answers with receipts."
-                lead="Every reply carries reproducibility metadata: the model
-                    digest, the server image fingerprint, the software versions
-                    and the sampling seed that produced it."
+                title="Reproducible answers, for audit and compliance."
+                lead="Ask the same question with the same settings and you get
+                    the exact same answer, byte for byte. Most AI services
+                    cannot promise that; here it is a design goal."
             >
                 <p className="mt-4 max-w-2xl text-sm leading-6 text-[var(--color-text-secondary)]">
-                    Open <em>Metadata</em> under any reply to see its receipt.
-                    Because the server is built reproducibly from public source
-                    code, a third party can rebuild the exact runtime and replay
-                    the same generation. That turns an important answer from
-                    &ldquo;the AI said so&rdquo; into something you can audit
-                    months later. Replies are signed by the attested hardware, so
-                    the receipt also proves <em>where</em> the answer came from.
+                    Every reply carries reproducibility metadata: the model digest,
+                    the server image fingerprint, the software versions and the
+                    sampling seed that produced it. Open <em>Metadata</em> under
+                    any reply to see its receipt. With that receipt, the same
+                    prompt can be replayed later, by you, an auditor or a
+                    regulator, and produce the identical output. For enterprises
+                    this is the difference between &ldquo;the AI said so&rdquo;
+                    and a decision trail you can stand behind: answers that
+                    influenced a decision can be re-derived, checked and archived.
+                    Replies are signed by the attested hardware, so the receipt
+                    also proves <em>where</em> the answer came from.
                 </p>
             </Section>
 
