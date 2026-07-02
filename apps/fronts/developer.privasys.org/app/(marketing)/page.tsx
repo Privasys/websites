@@ -2,6 +2,7 @@
 
 import Balancer from 'react-wrap-balancer';
 import Link from 'next/link';
+import { CliWindow } from '@privasys/cli-window';
 
 const FEATURES = [
     {
@@ -116,6 +117,36 @@ export default function MarketingPage() {
                             </div>
                         </div>
                     ))}
+                </div>
+            </section>
+
+            {/* CLI */}
+            <section className="mt-28 lg:mt-48">
+                <h2 className="text-2xl lg:text-4xl">
+                    <Balancer>Or do it all from your terminal.</Balancer>
+                </h2>
+                <p className="mt-6 text-lg text-black/60 dark:text-white/60">
+                    <Balancer>
+                        The privasys CLI drives the whole platform: sign in with your wallet, deploy, verify
+                        hardware attestation, call your app over RA-TLS, and manage keys in the vault.
+                        It is also an MCP server, so your AI agent can do all of it for you.
+                    </Balancer>
+                </p>
+                <div className="mt-12">
+                    <CliWindow title="privasys — confidential apps" />
+                </div>
+                <div className="mt-8 flex flex-wrap items-center gap-4">
+                    <code className="px-4 py-2.5 rounded-lg text-sm bg-black/5 dark:bg-white/10 text-black/80 dark:text-white/80">
+                        curl -fsSL https://raw.githubusercontent.com/Privasys/cli/main/install.sh | sh
+                    </code>
+                    <Link
+                        href="https://docs.privasys.org/cli"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-6 py-2.5 font-bold border rounded-full text-black dark:text-white hover:bg-black hover:text-white dark:border-white dark:hover:bg-white dark:hover:text-black transition-colors"
+                    >
+                        CLI documentation
+                    </Link>
                 </div>
             </section>
 
