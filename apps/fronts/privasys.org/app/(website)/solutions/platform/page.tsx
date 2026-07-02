@@ -253,6 +253,7 @@ export default function Platform() {
                     </pre>
                     <p className='mt-3 text-sm text-[#1d1d1f]/60 dark:text-[#f5f5f7]/60'>
                         Also available via Homebrew (<code className='bg-[#1d1d1f]/5 dark:bg-[#f5f5f7]/10 px-1 rounded'>brew install Privasys/tap/privasys</code>), Scoop, and <code className='bg-[#1d1d1f]/5 dark:bg-[#f5f5f7]/10 px-1 rounded'>.deb</code>/<code className='bg-[#1d1d1f]/5 dark:bg-[#f5f5f7]/10 px-1 rounded'>.rpm</code> packages.
+                        See the <a href='https://docs.privasys.org/solutions/cli/install' className='underline hover:no-underline'>installation guide</a>.
                     </p>
                 </div>
                 <div className='mt-16 grid grid-cols-1 lg:grid-cols-2 gap-16 lg:gap-x-32 lg:gap-y-20'>
@@ -281,7 +282,7 @@ export default function Platform() {
                         className='px-6 py-2.5 font-bold border rounded-full text-black dark:text-white hover:bg-black hover:text-white dark:border-white dark:hover:bg-white dark:hover:text-black transition-colors'>
                         Privasys CLI on GitHub
                     </a>
-                    <a href='https://docs.privasys.org/solutions/platform/cli/'
+                    <a href='https://docs.privasys.org/solutions/cli'
                         className='px-6 py-2.5 font-bold border rounded-full text-black dark:text-white hover:bg-black hover:text-white dark:border-white dark:hover:bg-white dark:hover:text-black transition-colors'>
                         CLI documentation
                     </a>
