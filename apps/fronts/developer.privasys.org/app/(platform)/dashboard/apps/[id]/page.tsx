@@ -647,6 +647,7 @@ function ApiTestingTab({ appId, token, deployments, versions }: { appId: string;
     const [error, setError] = useState<string | null>(null);
     const [elapsed, setElapsed] = useState<number | null>(null);
     const [copied, setCopied] = useState(false);
+    const [cliCopied, setCliCopied] = useState(false);
 
     const [history, setHistory] = useState<CallHistoryEntry[]>([]);
     const [historyCounter, setHistoryCounter] = useState(0);
@@ -769,6 +770,18 @@ function ApiTestingTab({ appId, token, deployments, versions }: { appId: string;
     const allFuncs = schema ? getAllFunctions(schema) : [];
     const currentFunc = getSelectedFunction();
     const hasParams = currentFunc && currentFunc.params.length > 0;
+
+    // The equivalent CLI invocation for the current query — same function, same
+    // body — so the tab doubles as a copy-paste teacher for `privasys apps call`
+    // (which goes direct to the enclave over RA-TLS, attestation verified first).
+    const cliCommand = (() => {
+        if (!currentFunc) return '';
+        const target = schema?.name || appId;
+        if (currentFunc.params.length === 0) return `privasys apps call ${target} ${currentFunc.name}`;
+        // Single-quote the JSON for the shell; escape embedded single quotes.
+        const json = JSON.stringify(paramValues).replace(/'/g, '\'\\\'\'');
+        return `privasys apps call ${target} ${currentFunc.name} --data '${json}'`;
+    })();
 
     if (schemaLoading) {
         return (
@@ -937,6 +950,27 @@ function ApiTestingTab({ appId, token, deployments, versions }: { appId: string;
                     </span>
                 </div>
             </section>
+
+            {/* ── CLI equivalent ──────────────────────────────── */}
+            {cliCommand && (
+                <section className="rounded-xl border border-black/10 dark:border-white/10 overflow-hidden">
+                    <div className="flex items-center justify-between px-4 py-2 border-b border-black/5 dark:border-white/5 bg-black/2 dark:bg-white/2">
+                        <div className="flex items-center gap-2">
+                            <span className="text-xs font-semibold">CLI</span>
+                            <span className="text-[10px] text-black/30 dark:text-white/30">the same call from your terminal — direct to the enclave over RA-TLS, attestation verified first</span>
+                        </div>
+                        <button
+                            onClick={() => { navigator.clipboard.writeText(cliCommand); setCliCopied(true); setTimeout(() => setCliCopied(false), 1500); }}
+                            className="text-[11px] px-2 py-1 rounded-md border border-black/10 dark:border-white/10 text-black/50 dark:text-white/50 hover:text-black dark:hover:text-white transition-colors"
+                        >
+                            {cliCopied ? 'Copied ✓' : 'Copy'}
+                        </button>
+                    </div>
+                    <pre className="px-4 py-2.5 text-[11px] leading-relaxed font-mono overflow-x-auto whitespace-pre-wrap break-all text-black/70 dark:text-white/70">
+                        <span className="select-none text-black/30 dark:text-white/30">$ </span>{cliCommand}
+                    </pre>
+                </section>
+            )}
 
             {/* ── Response Panel ──────────────────────────────── */}
             {(response || error) && (
