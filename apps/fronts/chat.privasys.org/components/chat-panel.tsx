@@ -16,7 +16,7 @@ import { clearFeedback, recordFeedback } from '~/lib/pending-feedback';
 import { waitForModelReady } from '~/lib/instance-api';
 import { fetchToolGrant } from '~/lib/chat-service-api';
 import { isTransportError } from '~/lib/transport';
-import { Composer } from './composer';
+import { Composer, type ChatMode } from './composer';
 import { Markdown } from './markdown';
 import { MetadataDialog } from './metadata-dialog';
 import { ThinkingBlock } from './thinking-block';
@@ -143,6 +143,9 @@ export function ChatPanel({
     const [streaming, setStreaming] = useState(false);
     const streamingRef = useRef(false);
     const [sampling, setSampling] = useState<SamplingParams>({ ...DEFAULT_SAMPLING });
+    // Response mode. Fast (thinking disabled) is the default; new sessions
+    // always start fast — the conversation-switch effect below resets it.
+    const [mode, setMode] = useState<ChatMode>('fast');
     const [metaFor, setMetaFor] = useState<DisplayMessage | null>(null);
     const abortRef = useRef<AbortController | null>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
@@ -178,6 +181,8 @@ export function ChatPanel({
         if (streamingRef.current) return;
         setMessages(initialMessages.map((m) => ({ ...m })));
         setInput('');
+        // New sessions start with thinking disabled (Fast).
+        setMode('fast');
     }, [conversationId, initialMessages]);
 
     // Persist a snapshot of the message list. Strips transient state
@@ -210,15 +215,19 @@ export function ChatPanel({
     // every time `streaming` flips.
     useEffect(() => { streamingRef.current = streaming; }, [streaming]);
 
-    const send = useCallback(async () => {
-        const text = input.trim();
+    // Core turn runner. `baseHistory` is the message list the new user turn
+    // is appended to — `send()` passes the full current list, while
+    // `editMessage()` passes a truncated one (everything before the edited
+    // message), which is how editing "replaces all chat after the prompt".
+    const sendWith = useCallback(async (text: string, baseHistory: DisplayMessage[]) => {
         if (!text || streaming || !model) return;
 
         const userMsg: DisplayMessage = { id: newId(), role: 'user', content: text };
         const assistantId = newId();
-        const history = [...messages, userMsg];
+        const history = [...baseHistory, userMsg];
         const startedAt = Date.now();
         const samplingSnapshot: SamplingParams = { ...sampling };
+        const thinkingSnapshot = mode === 'thinking';
 
         const initial: DisplayMessage[] = [
             ...history,
@@ -236,7 +245,6 @@ export function ChatPanel({
         // mid-stream still surfaces the in-flight question. The
         // assistant body will be overwritten when streaming ends.
         persist(initial);
-        setInput('');
         setStreaming(true);
 
         const ctrl = new AbortController();
@@ -251,23 +259,46 @@ export function ChatPanel({
             toolGrant = (await fetchToolGrant(chatSession, token, instance.id)) ?? undefined;
         }
 
+        // The authoritative final text of the assistant turn, set by the
+        // stream's onDone. The on-screen content is built incrementally by
+        // the smoother (below) and can lag or lose frames; anything we
+        // PERSIST must come from this instead.
+        let finalText: string | null = null;
+
         // Pace assistant text into the UI on requestAnimationFrame so
         // bursty SSE arrivals (sealed-relay frame coalescing, vLLM
         // detokeniser hiccups) render as a steady typewriter instead
         // of a strobe. The smoother accumulates raw deltas and drains
         // a fraction of its buffer per frame; when the stream ends,
         // the trailing buffer is flushed promptly via finish().
-        const smoother = createTextSmoother({
-            onText: (chunk) => {
-                setMessages((prev) =>
-                    prev.map((m) =>
-                        m.id === assistantId
-                            ? { ...m, content: m.content + chunk }
-                            : m
-                    )
-                );
-            }
-        });
+        //
+        // One smoother per ATTEMPT: onError cancels the active smoother
+        // (cancel is terminal — pushes become no-ops), so the retry
+        // branches below must build a fresh one or the retried reply
+        // would render blank.
+        const makeSmoother = () =>
+            createTextSmoother({
+                onText: (chunk) => {
+                    setMessages((prev) =>
+                        prev.map((m) =>
+                            m.id === assistantId
+                                ? { ...m, content: m.content + chunk }
+                                : m
+                        )
+                    );
+                },
+                onDone: () => {
+                    // Buffer fully drained after finish(): snap the on-screen
+                    // content to the authoritative final text. Protects against
+                    // dropped rAF frames (e.g. a backgrounded tab).
+                    const full = finalText;
+                    if (full === null) return;
+                    setMessages((prev) =>
+                        prev.map((m) => (m.id === assistantId ? { ...m, content: full } : m))
+                    );
+                }
+            });
+        let smoother = makeSmoother();
         ctrl.signal.addEventListener('abort', () => smoother.cancel());
 
         // The chat stream is wrapped in a tiny retry loop so a "Model
@@ -297,6 +328,9 @@ export function ChatPanel({
                 signal: ctrl.signal,
                 enabledTools,
                 toolGrant,
+                // Fast mode (the default) asks the chat template to skip the
+                // thinking block; Thinking leaves the server default.
+                thinking: thinkingSnapshot ? undefined : false,
                 onDelta: (delta) => {
                     smoother.push(delta);
                 },
@@ -337,13 +371,13 @@ export function ChatPanel({
                         })
                     );
                 },
-                onDone: (_full, meta) => {
-                    // Drain any text still buffered by the smoother
-                    // before we flip `streaming` off. The smoother
-                    // calls back through onText (still running on
-                    // rAF), so the assistant content keeps catching
-                    // up for a few extra frames after the network
-                    // stream closes.
+                onDone: (full, meta) => {
+                    // Record the authoritative final text, then drain any
+                    // text still buffered by the smoother. The smoother
+                    // calls back through onText (still running on rAF), so
+                    // the assistant content keeps catching up for a few
+                    // extra frames after the network stream closes.
+                    finalText = full;
                     smoother.finish();
                     // Stamp the system prompt identity into the per-message
                     // reproducibility block so the MetadataDialog can show
@@ -367,7 +401,17 @@ export function ChatPanel({
                                 }
                                 : m
                         );
-                        persist(next);
+                        // PERSIST the authoritative full text, not the
+                        // incrementally-built m.content: the smoother is
+                        // still draining its buffer at this point, so the
+                        // on-screen content is behind. Persisting it as-is
+                        // stored a truncated (or empty) reply that surfaced
+                        // when switching to another chat and back.
+                        persist(
+                            next.map((m) =>
+                                m.id === assistantId ? { ...m, content: full } : m
+                            )
+                        );
                         return next;
                     });
                 },
@@ -477,7 +521,10 @@ export function ChatPanel({
                             });
                             break;
                         }
-                        // Model is ready — clear the loading notice and retry.
+                        // Model is ready — clear the loading notice and retry
+                        // with a fresh smoother (onError cancelled the old one,
+                        // and cancel is terminal).
+                        smoother = makeSmoother();
                         setMessages((prev) =>
                             prev.map((m) =>
                                 m.id === assistantId ? { ...m, loadingModel: undefined } : m
@@ -506,6 +553,9 @@ export function ChatPanel({
                         );
                         const outcome = await waitForTransportResolution();
                         if (outcome === 'ok') {
+                            // Fresh smoother for the retried attempt (the old
+                            // one was cancelled by onError and is terminal).
+                            smoother = makeSmoother();
                             setMessages((prev) =>
                                 prev.map((m) =>
                                     m.id === assistantId ? { ...m, reconnecting: undefined } : m
@@ -573,7 +623,28 @@ export function ChatPanel({
                 return next;
             });
         }
-    }, [input, streaming, model, instance.endpoint, messages, token, sampling, persist, chatSession, enabledTools, onStreamError]);
+    }, [streaming, model, instance.endpoint, instance.id, instance.session_relay, token, sampling, mode, persist, chatSession, enabledTools, onStreamError]);
+
+    const send = useCallback(async () => {
+        const text = input.trim();
+        if (!text || streaming || !model) return;
+        setInput('');
+        await sendWith(text, messages);
+    }, [input, streaming, model, messages, sendWith]);
+
+    // Replace an earlier user message and re-run the conversation from
+    // there: everything after the edited prompt is dropped and a fresh
+    // turn is sent. The edit UI warns the user before this is invoked.
+    const editMessage = useCallback(
+        (messageId: string, newText: string) => {
+            const text = newText.trim();
+            if (!text || streaming) return;
+            const idx = messages.findIndex((m) => m.id === messageId);
+            if (idx < 0) return;
+            void sendWith(text, messages.slice(0, idx));
+        },
+        [messages, streaming, sendWith]
+    );
 
     const stop = useCallback(() => abortRef.current?.abort(), []);
 
@@ -624,6 +695,8 @@ export function ChatPanel({
             onModelChange={onModelChange}
             sampling={sampling}
             onSamplingChange={setSampling}
+            mode={mode}
+            onModeChange={setMode}
             enabledTools={enabledToolNames}
             onToggleTool={onToggleTool}
             userTools={userTools}
@@ -704,6 +777,11 @@ export function ChatPanel({
                             token={token}
                             onShowMeta={() => setMetaFor(m)}
                             onRate={(rating, comment) => rateMessage(m.id, rating, comment)}
+                            onEdit={
+                                m.role === 'user' && !streaming
+                                    ? (text) => editMessage(m.id, text)
+                                    : undefined
+                            }
                             onBranch={
                                 onBranchFromMessage
                                     ? () => onBranchFromMessage(m.id)
@@ -742,9 +820,10 @@ export function ChatPanel({
                     {composer}
                 </div>
                 <p className='mx-auto mt-2 max-w-3xl text-center text-[11px] text-[var(--color-text-muted)]'>
-                    Replies are signed by the hardware running the model. Verify
-                    any response from the &ldquo;Secure enclaves
-                    attestations&rdquo; panel.
+                    Replies are signed by the hardware running the model. Only you
+                    can see your chats and they can&apos;t be used to improve the
+                    model. {model ? modelLabel(model) : 'The model'} can make
+                    mistakes, double-check important info.
                 </p>
             </div>
 
@@ -770,6 +849,7 @@ function Message({
     token,
     onShowMeta,
     onRate,
+    onEdit,
     onBranch,
     onConsentDecision
 }: {
@@ -778,17 +858,14 @@ function Message({
     token?: string;
     onShowMeta: () => void;
     onRate: (rating: Rating | null, comment?: string) => void;
+    /** Present on user messages when editing is allowed (not streaming).
+     *  Invoking it replaces this message and everything after it. */
+    onEdit?: (newText: string) => void;
     onBranch?: () => void;
     onConsentDecision: (callId: string, allowed: boolean) => void;
 }) {
     if (message.role === 'user') {
-        return (
-            <div className='flex justify-end'>
-                <div className='max-w-[80%] rounded-2xl rounded-br-sm border border-[var(--color-primary-blue)]/30 bg-[var(--color-surface-2)] px-4 py-2.5 text-sm whitespace-pre-wrap text-[var(--color-text-primary)] shadow-sm'>
-                    {message.content}
-                </div>
-            </div>
-        );
+        return <UserMessage message={message} onEdit={onEdit} />;
     }
 
     return (
@@ -840,6 +917,94 @@ function Message({
                 />
             )}
         </div>
+    );
+}
+
+// User turn: right-aligned pill with a hover Edit affordance. Editing
+// opens an inline textarea with an explicit warning that sending will
+// replace this message and every reply after it (the conversation is
+// re-run from the edited prompt).
+function UserMessage({
+    message,
+    onEdit
+}: {
+    message: DisplayMessage;
+    onEdit?: (newText: string) => void;
+}) {
+    const [editing, setEditing] = useState(false);
+    const [draft, setDraft] = useState(message.content);
+
+    if (editing) {
+        return (
+            <div className='flex justify-end'>
+                <div className='flex w-full max-w-[80%] flex-col gap-2 rounded-2xl border border-[var(--color-primary-blue)]/40 bg-[var(--color-surface-2)] p-3 shadow-sm'>
+                    <textarea
+                        value={draft}
+                        onChange={(e) => setDraft(e.target.value)}
+                        rows={Math.min(10, Math.max(2, draft.split('\n').length))}
+                        autoFocus
+                        className='w-full resize-y rounded-md border border-[var(--color-border-dark)] bg-transparent p-2 text-sm text-[var(--color-text-primary)] outline-none focus:border-[var(--color-primary-blue)]/60'
+                    />
+                    <p className='text-[11px] text-amber-600 dark:text-amber-400'>
+                        Sending will replace this message and every reply after it.
+                    </p>
+                    <div className='flex justify-end gap-2'>
+                        <button
+                            type='button'
+                            onClick={() => {
+                                setEditing(false);
+                                setDraft(message.content);
+                            }}
+                            className='text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]'
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type='button'
+                            disabled={!draft.trim()}
+                            onClick={() => {
+                                setEditing(false);
+                                onEdit?.(draft);
+                            }}
+                            className='rounded-full px-3.5 py-1 text-xs font-semibold text-[var(--color-navy)] shadow-sm transition-opacity hover:opacity-90 disabled:opacity-40'
+                            style={{ background: 'var(--brand-gradient)' }}
+                        >
+                            Send
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div className='group flex items-center justify-end gap-1.5'>
+            {onEdit && (
+                <button
+                    type='button'
+                    onClick={() => {
+                        setDraft(message.content);
+                        setEditing(true);
+                    }}
+                    title='Edit message (replaces everything after it)'
+                    aria-label='Edit message'
+                    className='rounded-full p-1.5 text-[var(--color-text-muted)] opacity-0 transition-opacity group-hover:opacity-100 hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text-primary)] focus:opacity-100'
+                >
+                    <PencilIcon />
+                </button>
+            )}
+            <div className='max-w-[80%] rounded-2xl rounded-br-sm border border-[var(--color-primary-blue)]/30 bg-[var(--color-surface-2)] px-4 py-2.5 text-sm whitespace-pre-wrap text-[var(--color-text-primary)] shadow-sm'>
+                {message.content}
+            </div>
+        </div>
+    );
+}
+
+function PencilIcon() {
+    return (
+        <svg width='13' height='13' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2' strokeLinecap='round' strokeLinejoin='round' aria-hidden>
+            <path d='M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z' />
+        </svg>
     );
 }
 

@@ -160,11 +160,39 @@ export function AppSidebar({
                     </button>
                 )}
 
-                <div className="mt-2 flex items-center justify-end border-t border-[var(--color-border-dark)] pt-2">
+                <div className="mt-2 flex items-center justify-between border-t border-[var(--color-border-dark)] pt-2">
+                    <BuildInfo />
                     <ThemeToggle />
                 </div>
             </div>
         </aside>
+    );
+}
+
+// Build provenance, bottom-left: version + short commit hash linking to
+// the exact commit on GitHub. The sha is baked in at build time by
+// deploy-chat.yml (NEXT_PUBLIC_COMMIT_SHA); local dev shows no link.
+const COMMIT_SHA = process.env.NEXT_PUBLIC_COMMIT_SHA ?? '';
+const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION ?? '';
+
+function BuildInfo() {
+    const short = COMMIT_SHA ? COMMIT_SHA.slice(0, 7) : 'dev';
+    const label = APP_VERSION ? `v${APP_VERSION} · ${short}` : short;
+    if (!COMMIT_SHA) {
+        return (
+            <span className="px-1 text-[10px] text-[var(--color-text-muted)]">{label}</span>
+        );
+    }
+    return (
+        <a
+            href={`https://github.com/Privasys/websites/commit/${COMMIT_SHA}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="View this build's commit on GitHub"
+            className="px-1 font-mono text-[10px] text-[var(--color-text-muted)] hover:text-[var(--color-primary-blue)]"
+        >
+            {label}
+        </a>
     );
 }
 
