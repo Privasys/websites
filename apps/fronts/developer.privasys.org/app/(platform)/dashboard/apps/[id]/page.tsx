@@ -1732,6 +1732,7 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
     const buildFailed = !!lastBuild && (lastBuild.status === 'failed' || lastBuild.status === 'cancelled');
     const buildCanRetry = buildFailed && app.source_type === 'github';
 
+    const [actionsCollapsed, setActionsCollapsed] = useState(true);
     const [stopping, setStopping] = useState<string | null>(null);
     const [stopErrors, setStopErrors] = useState<Record<string, string>>({});
     const [error, setError] = useState<string | null>(null);
@@ -1784,6 +1785,9 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
     // cloud-image channels and uploads are not semver-ordered (shown as-is).
     const currentVersion = currentDeployment ? versionMap[currentDeployment.version_id] : undefined;
     const currentSemver = currentVersion ? versionSemverStr(currentVersion) : '';
+    // The cloud-image channel the running version was deployed from (cloud-image:name:CHANNEL).
+    const deployedChannel = currentVersion?.container_image?.startsWith('cloud-image:')
+        ? currentVersion.container_image.split(':').pop() : undefined;
     const tagOptions = (tags ?? []).filter(t => !currentDeployment || isStrictlyNewer(t, currentSemver));
     const versionOptions = readyVersions.filter(v => !currentDeployment || isStrictlyNewer(versionSemverStr(v), currentSemver));
     const imageChannels = Array.from(new Set((images ?? []).filter(i => i.name === app.cloud_image_name).map(i => i.channel)));
@@ -1816,10 +1820,15 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
         source === 'package' ? tagOptions.map(t => ({ value: t, label: t }))
             : source === 'github' ? (commits ?? []).map(c => ({ value: c.sha, label: `${c.sha.slice(0, 7)} · ${c.message}${c.verified ? '' : ' (unsigned — not deployable)'}`, disabled: !c.verified }))
                 : source === 'cloud_image' ? imageChannels
-                    // When the image is versioned, only offer it if it is strictly
-                    // newer than what is running (don't propose the current version).
-                    // Unversioned images fall back to always offering the channel.
-                    .filter(ch => { const ver = cloudVersionForChannel(ch); return !ver || !currentDeployment || isStrictlyNewer(ver, currentSemver); })
+                    // Versioned: only offer if strictly newer than what's running.
+                    // Unversioned: offer unless it's the currently-deployed channel —
+                    // re-deploying the same channel just re-pulls the running image
+                    // (that was the "Upgrade shows the deployed version" bug).
+                    .filter(ch => {
+                        const ver = cloudVersionForChannel(ch);
+                        if (ver && currentDeployment) return isStrictlyNewer(ver, currentSemver);
+                        return !currentDeployment || ch !== deployedChannel;
+                    })
                     .map(ch => {
                         const ver = cloudVersionForChannel(ch);
                         const d = cloudDigestForChannel(ch);
@@ -2313,10 +2322,18 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                         )}
                         {actionFns.length > 0 && (
                             <div className={(configure || configFns.length > 0) ? 'mt-4 pt-4 border-t border-black/5 dark:border-white/5' : ''}>
-                                <h3 className="text-sm font-semibold">Actions</h3>
-                                {actionFns.map(fn => (
-                                    <div key={fn.name} className="mt-3"><ActionRunner fn={fn} appId={app.id} token={token} /></div>
-                                ))}
+                                <button type="button" onClick={() => setActionsCollapsed(c => !c)}
+                                    className="flex w-full items-center justify-between gap-2 text-left">
+                                    <h3 className="text-sm font-semibold">Actions</h3>
+                                    <svg className={`w-4 h-4 text-black/40 dark:text-white/40 transition-transform ${actionsCollapsed ? '' : 'rotate-180'}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="m6 9 6 6 6-6" /></svg>
+                                </button>
+                                {!actionsCollapsed && (
+                                    <div className="mt-3 space-y-3">
+                                        {actionFns.map(fn => (
+                                            <ActionRunner key={fn.name} fn={fn} appId={app.id} token={token} />
+                                        ))}
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>
@@ -2679,7 +2696,7 @@ function FieldInput({ name, prop, value, onChange, appId, token, disabled }: {
     return (
         <div className="space-y-1">
             <div className="flex items-center justify-between gap-3">
-                <label className="block text-sm font-medium">{label}{prop.type ? <span className="ml-1 text-xs text-black/30 dark:text-white/30">{m.secret ? 'secret' : prop.type}</span> : null}</label>
+                <label className="block text-xs font-medium">{label}{prop.type ? <span className="ml-1 text-[10px] text-black/30 dark:text-white/30">{m.secret ? 'secret' : prop.type}</span> : null}</label>
                 {m.details && (
                     <button type="button" onClick={() => setShowDetails(s => !s)}
                         className="shrink-0 text-xs text-black/40 dark:text-white/40 hover:text-black/70 dark:hover:text-white/70 underline-offset-2 hover:underline">
@@ -2756,7 +2773,7 @@ function ConfigureForm({ cfg, appId, token, frozen }: { cfg: ConfigureSection; a
                             <span>This app is frozen (HTTP 503) until you apply its configuration below.</span>
                         </div>
                     )}
-                    {cfg.description && <p className="mt-2 text-xs text-black/50 dark:text-white/50">{cfg.description}</p>}
+                    {cfg.description && <p className="mt-2 text-[11px] leading-snug text-black/50 dark:text-white/50">{cfg.description}</p>}
                     <div className="mt-3 space-y-3">
                         {entries.map(([k, prop]) => (
                             <FieldInput key={k} name={k} prop={prop} value={values[k] ?? String(prop.default ?? '')}
@@ -2884,8 +2901,8 @@ function ActionRunner({ fn, appId, token }: { fn: FunctionSchema; appId: string;
         <div className="rounded-lg border border-black/10 dark:border-white/10 p-3 space-y-3">
             <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                    <code className="font-mono text-sm px-1.5 py-0.5 rounded bg-black/5 dark:bg-white/10">{fn.name}</code>
-                    {fn.description && <p className="mt-1 text-xs text-black/50 dark:text-white/50">{fn.description}</p>}
+                    <code className="font-mono text-xs px-1.5 py-0.5 rounded bg-black/5 dark:bg-white/10">{fn.name}</code>
+                    {fn.description && <p className="mt-1 text-[11px] leading-snug text-black/50 dark:text-white/50">{fn.description}</p>}
                 </div>
                 <button onClick={run} disabled={busy}
                     className="shrink-0 px-3 py-1.5 text-sm font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-80 disabled:opacity-40 transition-opacity">
