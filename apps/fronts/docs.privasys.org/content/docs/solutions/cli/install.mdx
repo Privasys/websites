@@ -36,6 +36,17 @@ privasys version
 If you install into a shell whose applications are already running (an editor, an agent, a terminal multiplexer), restart them so they pick up the updated PATH. A running app keeps the PATH it started with.
 </Callout>
 
+## Update
+
+The CLI updates itself:
+
+```sh
+privasys update            # update to the latest release
+privasys update --check    # only report whether a newer release exists
+```
+
+Package-manager installs are delegated to the package manager (`scoop update privasys`, `brew upgrade privasys`); script or manual installs are replaced in place after the binary's checksum is verified against the release's `checksums.txt`.
+
 ## Next steps
 
 1. [Sign in](/solutions/cli/authentication): `privasys auth login`.
