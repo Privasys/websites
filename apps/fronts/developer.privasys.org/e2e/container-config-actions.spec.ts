@@ -91,7 +91,7 @@ test.describe('Container typed config + actions (image-bound freeze)', () => {
 
         const resp = await page.request.post(`${API}/api/v1/apps`, {
             headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-            data: { name: APP_NAME, source_type: 'github', commit_url: COMMIT_URL },
+            data: { name: APP_NAME, source_type: 'github', commit_url: COMMIT_URL, app_type: 'container' },
         });
         expect(resp.ok(), `create app: ${resp.status()}`).toBeTruthy();
         const body = await resp.json();
@@ -146,9 +146,23 @@ test.describe('Container typed config + actions (image-bound freeze)', () => {
         if (!deploy.ok()) console.log(`Deploy failed: ${deploy.status()} ${(await deploy.text()).substring(0, 500)}`);
         expect(deploy.ok()).toBeTruthy();
         const dep = await deploy.json();
-        expect(dep.status).toBe('active');
+        console.log(`Deploy accepted: status=${dep.status} host=${dep.hostname}`);
+        // Container deploys are async: the API returns "starting" and the
+        // deploy-poller flips the deployment to "active" once the container is
+        // running on the enclave. Poll until active.
+        let active = dep.status === 'active';
+        for (let i = 0; i < 30 && !active; i++) {
+            await page.waitForTimeout(6_000);
+            const ds = await page.request.get(`${API}/api/v1/apps/${appId}/deployments`, { headers: { Authorization: `Bearer ${token}` } });
+            if (ds.ok()) {
+                const deps: { id: string; status: string }[] = await ds.json();
+                if (deps.some(d => d.status === 'active')) { active = true; break; }
+                if (deps.some(d => d.status === 'failed')) throw new Error(`deployment failed: ${JSON.stringify(deps)}`);
+            }
+        }
+        expect(active, 'deployment did not reach active').toBeTruthy();
         deployed = true;
-        console.log(`Deployed: ${dep.hostname}`);
+        console.log('Deployed: active');
     });
 
     test('store is frozen until configure', async ({ page }) => {
