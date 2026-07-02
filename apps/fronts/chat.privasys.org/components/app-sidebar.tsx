@@ -161,7 +161,7 @@ export function AppSidebar({
                 )}
 
                 <div className="mt-2 flex items-center justify-between border-t border-[var(--color-border-dark)] pt-2">
-                    <BuildInfo />
+                    <BuildInfo instance={instance} />
                     <ThemeToggle />
                 </div>
             </div>
@@ -169,29 +169,79 @@ export function AppSidebar({
     );
 }
 
-// Build provenance, bottom-left: version + short commit hash linking to
-// the exact commit on GitHub. The sha is baked in at build time by
-// deploy-chat.yml (NEXT_PUBLIC_COMMIT_SHA); local dev shows no link.
+// Build provenance, bottom-left: the front-end version + commit (baked in
+// at build time by deploy-chat.yml) and, when the enclave advertises it on
+// /healthz, the back-end (confidential-ai) commit — each linking to the
+// exact commit on GitHub.
 const COMMIT_SHA = process.env.NEXT_PUBLIC_COMMIT_SHA ?? '';
 const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION ?? '';
 
-function BuildInfo() {
-    const short = COMMIT_SHA ? COMMIT_SHA.slice(0, 7) : 'dev';
-    const label = APP_VERSION ? `v${APP_VERSION} · ${short}` : short;
-    if (!COMMIT_SHA) {
+function BuildInfo({ instance }: { instance: Instance | null }) {
+    const [ai, setAi] = useState<{ commit?: string; version?: string } | null>(null);
+
+    // Best-effort: /healthz is public (exempt from sealed-transport
+    // enforcement) and already used for liveness probing. Older backend
+    // builds don't carry commit/version — the AI line is simply omitted.
+    useEffect(() => {
+        const endpoint = instance?.endpoint;
+        if (!endpoint) return;
+        const ctrl = new AbortController();
+        fetch(`${endpoint.replace(/\/$/, '')}/healthz`, {
+            signal: ctrl.signal,
+            cache: 'no-store',
+            credentials: 'omit',
+            headers: { Accept: 'application/json' }
+        })
+            .then((r) => (r.ok ? r.json() : null))
+            .then((body: { commit?: string; version?: string } | null) => {
+                if (body?.commit || body?.version) {
+                    setAi({ commit: body.commit, version: body.version });
+                }
+            })
+            .catch(() => {
+                /* liveness/banner flows handle outages; this is cosmetic */
+            });
+        return () => ctrl.abort();
+    }, [instance?.endpoint]);
+
+    const uiShort = COMMIT_SHA ? COMMIT_SHA.slice(0, 7) : 'dev';
+    const uiLabel = APP_VERSION ? `v${APP_VERSION} · ${uiShort}` : uiShort;
+
+    return (
+        <span className="flex min-w-0 flex-col px-1 font-mono text-[10px] leading-4 text-[var(--color-text-muted)]">
+            <BuildLine
+                prefix="UI"
+                label={uiLabel}
+                href={COMMIT_SHA ? `https://github.com/Privasys/websites/commit/${COMMIT_SHA}` : undefined}
+            />
+            {ai?.commit && (
+                <BuildLine
+                    prefix="AI"
+                    label={ai.version ? `v${ai.version} · ${ai.commit.slice(0, 7)}` : ai.commit.slice(0, 7)}
+                    href={`https://github.com/Privasys/confidential-ai/commit/${ai.commit}`}
+                />
+            )}
+        </span>
+    );
+}
+
+function BuildLine({ prefix, label, href }: { prefix: string; label: string; href?: string }) {
+    if (!href) {
         return (
-            <span className="px-1 text-[10px] text-[var(--color-text-muted)]">{label}</span>
+            <span className="truncate">
+                {prefix} {label}
+            </span>
         );
     }
     return (
         <a
-            href={`https://github.com/Privasys/websites/commit/${COMMIT_SHA}`}
+            href={href}
             target="_blank"
             rel="noopener noreferrer"
-            title="View this build's commit on GitHub"
-            className="px-1 font-mono text-[10px] text-[var(--color-text-muted)] hover:text-[var(--color-primary-blue)]"
+            title={`View the ${prefix} build's commit on GitHub`}
+            className="truncate hover:text-[var(--color-primary-blue)]"
         >
-            {label}
+            {prefix} {label}
         </a>
     );
 }
