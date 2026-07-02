@@ -107,7 +107,7 @@ The CLI makes that path shorter. Deploy an agent into a trust boundary,
 prove what is running inside it, and let the people who rely on it
 verify the same thing for themselves.
 
-Read the [CLI documentation](https://docs.privasys.org/solutions/platform/cli/),
+Read the [CLI documentation](https://docs.privasys.org/solutions/cli/),
 browse the source on [GitHub](https://github.com/Privasys/cli), and
 deploy your first attested agent today.
 
