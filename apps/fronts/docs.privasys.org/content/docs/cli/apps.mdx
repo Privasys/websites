@@ -1,0 +1,121 @@
+---
+title: Managing apps
+description: Create, deploy, attest, call, configure and operate confidential apps. Private images, owner-approved upgrades, and data keys.
+---
+
+An app is a WASM module (Enclave OS Mini, Intel SGX) or a container (Enclave OS Virtual, Intel TDX) running on confidential infrastructure. The CLI drives the full lifecycle; every deployment is attestable.
+
+## Create and deploy
+
+```sh
+privasys apps create --name demo --source github --commit-url https://github.com/you/demo/commit/<sha>
+privasys apps store-listing demo --description "My demo" --category "Developer Tools"
+privasys apps deploy demo --watch
+privasys apps call demo hello --data '{"who":"world"}'
+```
+
+Sources: `github` (the platform builds reproducibly from your commit), `package` (a pre-built container image, pinned by digest), `upload` (a pre-compiled `.cwasm`), or `cloud_image`. A description and category are required before the first deploy.
+
+`--watch` follows the rollout and returns once the app is **active and routable**: it waits for the gateway to pick up the new route, so an `attest` or `call` straight afterwards works.
+
+For apps that store user data, request encrypted storage at create time with `--storage`. The volume's data key is generated inside the confidential hardware and is [owned by you](#upgrades-and-data-keys).
+
+### The container contract
+
+Any container runs confidentially if it follows three rules:
+
+1. **Listen on `$PORT`.** The platform injects a unique port; a hardcoded port fails the health probe.
+2. **Persist state to `/data`.** That is the per-app encrypted volume. Anything elsewhere is ephemeral.
+3. **Serve `GET /health`** on `$PORT` and return 200 when ready.
+
+Declare your API in a `privasys.json` manifest and its endpoints become callable tools, in the portal, over the CLI, and as MCP tools for agents.
+
+## Private images (protect your IP)
+
+Keep your source private, run your own reproducible build, and push a digest-pinned image to a private registry. Privasys runs and attests that image without ever seeing your source, the image bytes, or your registry credentials: the pull credential is stored in the vault and only the attested in-enclave runtime can read it.
+
+```sh
+privasys apps create --name app --source package --image registry.example.com/app@sha256:<digest> --storage
+privasys registry add app --token <your-registry-PAT>   # goes straight into the vault; we never see it
+privasys apps deploy app --watch
+```
+
+## Configure and operate
+
+Apps declare typed configuration and owner operations in their image-bound manifest (role-tagged tools in `privasys.json`). The CLI renders and drives them generically:
+
+```sh
+privasys apps configure app --set api_key=...          # lifts the configure-then-freeze gate
+privasys apps action app load_model --arg name=qwen    # runs an owner operation, streams progress
+```
+
+An app that declares a `config` tool boots **frozen**: every endpoint returns 503 until the owner delivers its configuration, and the gate lifts automatically on success. Actions with a progress contract stream a progress bar until a terminal state.
+
+## Attest before you trust
+
+`privasys attest <app>` connects to the app's enclave through the gateway's L4 splice, challenges it with a fresh nonce, and verifies the hardware quote against the [attestation server](/solutions/enclave-os/attestation/ra-tls). You trust the enclave's hardware attestation, not the control plane.
+
+```text
+host          my-app.apps.privasys.org:443
+tls           TLSv1.3  TLS_AES_128_GCM_SHA256
+quote type    TDX Quote
+challenged    true   nonce 42e0ac75…
+workload      code b453d9aa…   image my-app:817987b
+quote status  OK
+✓ VERIFIED    hardware attestation matches the source
+```
+
+Useful flags:
+
+```sh
+privasys attest my-app --host my-app.apps.privasys.org   # skip the control-plane hostname lookup entirely
+privasys attest my-app --mrtd <hex>                      # pin an expected measurement
+privasys attest my-app --out ./att                       # dump certificate.pem, quote.bin, attestation.json
+privasys attest my-app --format json                     # full result as JSON
+```
+
+The data plane is direct too: `privasys apps call` connects to the enclave over RA-TLS, verifies the report-data binding locally, and streams the response. Pass `--attest` to add a full attestation-server quote check on the call.
+
+## Upgrades and data keys
+
+Apps with vault-backed encrypted storage bind their data key to a precise measurement (the enclave measurement plus the container image digest). When you deploy a new version, or the enclave itself is upgraded, that measurement changes and the vault refuses to release the key until **you, the app owner, approve the new measurement**. The platform cannot approve it for you.
+
+The guided command stages the new measurement, shows you what is being approved, and promotes it after your confirmation:
+
+```sh
+privasys apps upgrade my-app
+```
+
+For scripting or finer control, the discrete owner-only verbs:
+
+```sh
+privasys apps versions stage   my-app [version] [--enclave <id>]
+privasys apps versions pending my-app [version]
+privasys apps versions promote my-app [version] [--pending 0]
+privasys apps versions revoke  my-app [version] [--pending 0]
+```
+
+<Callout type="info">
+If `apps deploy --watch` reports a vault-backed app failing to start right after a version or enclave change, the data key is locked pending approval. Run `privasys apps upgrade <app>` to review and promote the new measurement.
+</Callout>
+
+Because builds are reproducible, the digest in the staged measurement is something you can verify against your own build before you approve. That is the point: you authorise a specific, known version to read your data; you do not take the platform's word for it.
+
+The rest of the key lifecycle:
+
+```sh
+privasys apps rotate-key my-app          # online re-key; data is never re-encrypted, the app keeps running
+privasys apps export-key my-app --out f  # take YOUR data key out (local file only, never printed)
+privasys apps cosign my-app --enable     # require a second team approver on promote
+privasys apps migrate-constellation my-app   # move the key onto a new vault constellation, gracefully
+```
+
+## Teams and access
+
+```sh
+privasys team add <sub> --email dev@acme.com --role member
+privasys apps owners list demo
+privasys apps owners add demo <sub>
+privasys billing balance
+privasys billing subscribe          # opens Stripe Checkout; no card data touches the CLI
+```

@@ -1,0 +1,13 @@
+{
+    "title": "Privasys CLI",
+    "defaultOpen": false,
+    "pages": [
+        "index",
+        "install",
+        "authentication",
+        "apps",
+        "vault",
+        "agents",
+        "scripting"
+    ]
+}

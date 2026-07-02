@@ -1,0 +1,69 @@
+---
+title: Overview
+description: The privasys command-line interface. Sign in with your wallet, deploy WASM or container apps, manage keys in the vault, and verify hardware attestation from your terminal, your CI pipeline, or an AI agent.
+---
+
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+The `privasys` CLI is a single binary that drives the whole [Privasys Platform](/solutions/platform/overview): wallet authentication, the app lifecycle, the vault key store, teams, billing, and client-side attestation. It is built for three audiences: developers, CI pipelines, and AI agents.
+
+It talks only to the public platform API and, for the data plane, **directly to enclaves over RA-TLS**. There is no proprietary control plane in the path when you call or attest an app.
+
+The source is public and AGPL-3.0 at [github.com/Privasys/cli](https://github.com/Privasys/cli).
+
+## Quickstart
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Privasys/cli/main/install.sh | sh
+
+privasys auth login                          # scan the QR with your Privasys Wallet
+privasys apps deploy my-app --watch          # build, roll out, and follow progress
+privasys attest my-app                       # challenge the enclave and verify its quote
+privasys apps call my-app hello --data '{}'  # call it directly over RA-TLS
+```
+
+Commands that take an app accept either its **id or its name**.
+
+## The rule that matters
+
+`privasys attest` connects to the app's enclave, challenges it with a fresh nonce, and verifies the hardware quote against the attestation server. Attestation is client-side: you trust the enclave's hardware evidence, never the control plane. Attest before you trust an endpoint.
+
+## In this section
+
+<Cards>
+  <Card title="Install" href="/cli/install">
+    Install script, Homebrew, Scoop, deb/rpm packages, and why go install is not supported.
+  </Card>
+  <Card title="Authentication" href="/cli/authentication">
+    Wallet sign-in, passkeys, agent-brokered device flow, and service accounts for CI.
+  </Card>
+  <Card title="Managing apps" href="/cli/apps">
+    Create, deploy, attest, call, configure and operate apps; private images; owner-approved upgrades and data keys.
+  </Card>
+  <Card title="Vault and keys" href="/cli/vault">
+    A confidential, attested key store: vaults, signing and wrapping keys, user secrets, and the REST facade.
+  </Card>
+  <Card title="AI agents" href="/cli/agents">
+    The MCP server, one-command wiring, and the Claude Code plugin. The CLI is agent-first.
+  </Card>
+  <Card title="Scripting and configuration" href="/cli/scripting">
+    JSON output, stable exit codes, named configurations, and environment overrides.
+  </Card>
+</Cards>
+
+## Command groups
+
+| Group | Commands |
+| --- | --- |
+| `apps` | `list`, `describe`, `create`, `store-listing`, `upload`, `delete`, `versions` (incl. `stage`/`pending`/`promote`/`revoke`), `deploy`, `update`, `upgrade`, `rotate-key`, `export-key`, `cosign`, `migrate-constellation`, `deployments`, `stop`, `api`, `mcp`, `call`, `configure`, `action`, `builds`, `owners` |
+| `vault` | `create`, `list`, `rm`; `key create`/`list`/`rm`/`sign`/`public`/`wrap`/`unwrap`/`rotate`/`audit`; `serve` (Azure Key Vault-shaped REST facade) |
+| `secrets` | `create`, `export` (user-owned keys in the vault) |
+| `registry` | `add`, `status`, `rm` (private-image pull credentials) |
+| `account` | `show`, `update` |
+| `team` | `list`, `add`, `set-role`, `remove` |
+| `billing` | `balance`, `usage`, `ledger`, `status`, `subscribe`, `buy-credits`, `portal` |
+| `attest` | `attest <app>` |
+| `auth` | `login`, `begin`, `poll`, `activate-service-account`, `whoami`, `print-access-token`, `list`, `logout` |
+| `agents` | `init` |
+| `mcp` | `serve` |
+| `config` | `set`, `get`, `list` |

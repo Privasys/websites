@@ -1,0 +1,68 @@
+---
+title: AI agents
+description: The CLI is agent-first. An MCP server with the full command surface, one-command wiring, and a Claude Code plugin.
+---
+
+The CLI is built to be driven by AI agents. Installing the CLI puts the binary on your PATH; one more step wires it into your agent, and a cold-start agent can then onboard a user, deploy a confidential app, attest it, and call it, with no prior knowledge of Privasys.
+
+## Getting started with an agent
+
+Two surfaces, two paths. Pick the one you use:
+
+- **Claude Code terminal CLI** (`claude` in a terminal): install the [plugin](#claude-code-plugin). You get the MCP tools, the workflow skill, and `/deploy` `/attest` slash commands in one step. (`/plugin` only works in the terminal CLI, not the desktop app.)
+- **The Claude desktop app, Cursor, VS Code, Gemini, or any MCP client**: run [`privasys agents init`](#one-command-wiring) in your project. It writes the MCP registration plus an `AGENTS.md` briefing the agent reads.
+
+After either, **restart your agent or editor** so it picks up the new config (and your PATH, if you just installed `privasys`), then confirm it worked by asking the agent to run `privasys version`. Then try: *"deploy me a confidential app."*
+
+## MCP server
+
+`privasys mcp serve` exposes the full command surface as [Model Context Protocol](https://modelcontextprotocol.io) tools over stdio: onboarding (`auth_begin`/`auth_poll`), the app lifecycle, attestation, the vault and key operations, owners, teams, and billing.
+
+```sh
+# Claude Code
+claude mcp add privasys -- privasys mcp serve
+```
+
+```jsonc
+// Generic MCP client config
+{
+  "mcpServers": {
+    "privasys": { "command": "privasys", "args": ["mcp", "serve"] }
+  }
+}
+```
+
+### Built agent-safe
+
+The tool surface is designed so that secrets can never reach the model:
+
+- Key-creating tools (`secrets_create`, `vault_key_create`, `vault_key_rotate`) generate random material the agent never sees.
+- Export tools write to a **local file only** and return just a path and a fingerprint.
+- Destructive tools are flagged so the agent confirms with the human first.
+- The registry pull token (`registry add`) stays a human CLI command; only a read-only status tool is exposed.
+- Onboarding never touches credentials: the agent surfaces a URL and code, the human approves in their wallet, the agent polls.
+
+## One-command wiring
+
+`privasys agents init` writes the right MCP registration into your repository so an agent picks up the tools with no manual JSON editing, plus an `AGENTS.md` briefing:
+
+```sh
+privasys agents init            # Claude Code + AGENTS.md
+privasys agents init --all      # every supported harness: claude, cursor, vscode, gemini
+privasys agents init --print    # show what would be written, touch nothing
+```
+
+It is idempotent and never writes secrets. The generated config only points at the local `privasys` binary, which reads its token from the OS keychain.
+
+## Claude Code plugin
+
+Install the plugin for slash commands (`/deploy`, `/attest`), a workflow skill that teaches the agent the confidential-app flow, and the MCP server in one step:
+
+```sh
+claude plugin marketplace add Privasys/cli
+claude plugin install privasys@privasys
+```
+
+## Apps become tools too
+
+A deployed app's `privasys.json` manifest turns its API into MCP tools as well (`privasys apps mcp <app>`), so an agent can call your confidential app's endpoints over attested RA-TLS the same way it drives the platform.

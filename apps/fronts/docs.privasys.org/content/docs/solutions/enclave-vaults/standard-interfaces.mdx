@@ -1,0 +1,71 @@
+---
+title: Standard Interfaces
+description: How existing software reaches a vault-held key. The REST API and CLI, the PKCS#11 3.1 module, and the KMIP 2.1 gateway, with the limits each standard client runs into.
+---
+
+The native surface of Enclave Vaults is a framed RPC protocol over mutual RA-TLS (see [Architecture](/solutions/enclave-vaults/architecture)). It carries the full policy model: attested principals, per-operation approvals from a wallet, and owner-immutable governance. No key-management standard can express those, so we keep that core as it is and wrap the interfaces your tools already speak around it. Each interface below is a front-end over the same enclave operations and the same policy engine; none of them adds a trust boundary, and none of them can weaken a key's policy.
+
+## The design rule
+
+The value of this vault sits in the parts that are in no standard: policy principals bound to attested measurements, a fresh WebAuthn approval per sensitive operation, and Shamir custody across independent machines. A standard interface cannot represent any of that, so we do not try to force it in. A PKCS#11 or KMIP client gets the baseline cryptographic operations a key allows without a wallet step; the richer policy is authored out of band through the native REST API or the CLI, and any operation a key gates on an attested condition or a wallet approval is simply unavailable over the standard interface, by design. It fails closed rather than degrading silently.
+
+## REST API and CLI
+
+Anyone with a Privasys account can create a vault, hold keys in it, and operate them.
+
+- **Resource model.** A user creates a **vault** (a container billed to their account) and holds **keys** in it, each with a policy and versions. The shape follows the cloud KMS surfaces developers already know: create, list, rotate, sign, wrap, unwrap.
+- **The platform is the control plane, never the data plane.** When you create a key, the platform verifies you may use the vault, authors the owner-bound policy, and mints a short-lived, holder-of-key-bound grant. The material is then created directly on the constellation by your client. The `privasys vault serve` REST facade works the same way: it is a client-side proxy, so the data plane stays a direct, attested channel from your machine to the enclave. The platform enforces quotas and catalogues the key, and never sees the key material.
+
+```bash
+# create a vault and a signing key, then sign a message in the enclave
+privasys vault create billing
+privasys vault key create <vault-id> release-signer --type p256
+privasys vault key sign   <vault-id> release-signer "the message"
+
+# a wrapping key, used to wrap and unwrap a data key
+privasys vault key create <vault-id> data-kek --type aes
+privasys vault key wrap   <vault-id> data-kek <plaintext-b64>
+
+# every key carries an owner-readable, tamper-evident audit log
+privasys vault key audit  <vault-id> release-signer
+```
+
+## PKCS#11
+
+[`Privasys/pkcs11-provider`](https://github.com/Privasys/pkcs11-provider) is a Cryptoki 3.1 provider module. It lets any application that speaks PKCS#11, including OpenSSL, Java, TLS servers, and code-signing tools, use a vault-held key with no change to the application.
+
+- **Thin module, local agent.** The loadable module carries no key material and no vault crypto. It translates the Cryptoki C ABI into calls on a local agent (`privasys vault serve`) that holds the RA-TLS session to the constellation. One PKCS#11 token maps to one vault; each object is a key in that vault. `C_Login` attaches to the agent session rather than overloading a PIN with a real grant.
+- **Consumption, not management.** The module lets existing applications *use* keys: sign, encrypt, decrypt, wrap, run TLS handshakes. Key creation and policy authoring stay in the native API.
+
+The headline case is a **confidential TLS server**. You mint a certificate whose private key lives in the vault, then run a standard TLS server against it:
+
+```bash
+export PKCS11_PROVIDER_MODULE=/path/to/libprivasys_pkcs11.so
+export PRIVASYS_PKCS11_VAULT=<vault-id>          # privasys vault serve is running
+
+# a certificate whose key never leaves the enclave
+openssl req -new -x509 -provider pkcs11 -provider default \
+  -key "pkcs11:object=tls-key;type=private" -subj "/CN=example" -out cert.pem
+
+# serve TLS with the vault-held key; the handshake signature happens in-enclave
+openssl s_server -provider pkcs11 -provider default \
+  -key "pkcs11:object=tls-key;type=private" -cert cert.pem -accept 4443 -www
+```
+
+Every TLS handshake asks the vault to sign, so the server's private key never exists in the server's memory. The signing operation that a TLS handshake needs is a signature over a pre-computed digest, which the vault performs raw rather than hashing again. Java's `SunPKCS11` reaches vault-held AES keys the same way, through the standard `KeyStore` and `Cipher` classes.
+
+## KMIP
+
+[`Privasys/kmip-gateway`](https://github.com/Privasys/kmip-gateway) is a KMIP 2.1 front-end that lets enterprise key-management software point at the constellation and use it as a remote key manager, unchanged. It implements the Baseline and Symmetric Key Lifecycle profiles plus asymmetric signing: create, get attributes, locate, encrypt, decrypt, sign, and destroy map onto the vault's operations, with the KMIP unique identifier equal to the key name.
+
+The gateway is itself a Privasys confidential container-app, so it runs inside a TEE, authenticates to the vault with a manager-minted attested identity, and never introduces a plaintext hop between the client and the enclave. A small proxy adapts a standard KMIP client, which cannot verify an enclave quote on its own, onto the attested channel and verifies the gateway's quote before relaying anything.
+
+## Where a standard client stops
+
+The same limit applies to every interface on this page. A PKCS#11 or KMIP client authenticates with a certificate or a credential, not with an OIDC grant, and it has no way to present a fresh wallet approval or to reason about a caller enclave's measurement. So:
+
+- Operations a key allows unconditionally, or under conditions a standard client can satisfy, work over the standard interface.
+- Operations a key gates on an attested measurement, a manager approval, or a wallet step-up are unavailable over the standard interface, and the vault refuses them.
+- Policy authoring stays in the native REST API and CLI.
+
+This is deliberate. A buyer who needs those interfaces gets interoperability for the baseline; the properties that make the vault worth using are still enforced by the enclave underneath, and a standard client can never turn them off.

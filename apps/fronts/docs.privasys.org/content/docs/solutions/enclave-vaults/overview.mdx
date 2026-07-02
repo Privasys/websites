@@ -5,7 +5,7 @@ description: A distributed virtual HSM (vHSM) built on a constellation of attest
 
 Enclave Vaults is a **distributed virtual HSM** (vHSM). Each vault instance is a small key-management service that runs inside an Intel SGX enclave: it holds typed key objects, executes cryptographic operations on them inside the enclave, and refuses to act outside the policy attached to each key. A constellation of independent vault instances forms a single logical key-management surface, with redundancy across machines and an information-theoretic distribution path for the secrets that warrant it.
 
-This page is a one-screen orientation. The [Architecture](/solutions/enclave-vaults/architecture) page describes the runtime in detail, and the [Access Control](/solutions/enclave-vaults/access-control) page covers policies, principals, and approvals.
+This page is a one-screen orientation. The [Architecture](/solutions/enclave-vaults/architecture) page describes the runtime in detail, the [Access Control](/solutions/enclave-vaults/access-control) page covers policies, principals, and approvals, and the [Standard Interfaces](/solutions/enclave-vaults/standard-interfaces) page covers the PKCS#11, KMIP, and REST surfaces your existing software can use to reach a vault-held key.
 
 ## Where Enclave Vaults sits
 
@@ -24,26 +24,37 @@ Enclave Vaults is the right fit when you want HSM-style key custody without putt
 2. **Distributed trust where it matters.** Highly sensitive secrets that the owner wants to keep recoverable across the constellation can be stored as `RawShare` keys: the secret is split with Shamir Secret Sharing, one share per vault, and reconstructed by the owner from any quorum. A single compromised vault leaks one share, which reveals nothing about the secret.
 3. **Every operation is gated by a policy that the enclave enforces.** A `KeyPolicy` describes which OIDC identities, which calling enclaves, and which fresh approvals are required for each operation. The enclave refuses anything that does not match. There is no admin override.
 
-## What is new in v0.19
+## Typed keys and in-enclave operations
 
-The current release reorganises the vault around typed keys and in-enclave operations. Previous versions were already a meaningful step (information-theoretic distribution of opaque secrets across attested enclaves), and that path is still here as the `RawShare` key type. v0.19 adds:
+The `v0.19` redesign reorganised the vault around typed keys and in-enclave operations, and that is the shape today. The earlier information-theoretic distribution of opaque secrets across attested enclaves is still here as the `RawShare` key type.
 
-- **Typed key objects with in-enclave operations.** `Aes256GcmKey`, `Ed25519SigningKey`, `P256SigningKey`, `HmacKey`, `Bip32MasterSeed`, `WrappedBlob`. By default these keys are non-exportable: the operation runs inside the enclave, only the result leaves.
+- **Typed key objects with in-enclave operations.** `Aes256GcmKey`, `Ed25519SigningKey`, `P256SigningKey`, `HmacKey`, `Bip32MasterSeed`, `WrappedBlob`. By default these keys are non-exportable: the operation runs inside the enclave, only the result leaves. Signing covers both a message the vault hashes and a pre-computed digest the vault signs raw (the path TLS stacks and code signers use).
 - **A richer `KeyPolicy`.** Per-operation rules with composable conditions (`AttestationMatches`, `ManagerApproval`, `TimeWindow`, `CallerHoldsRole`), a separate `Mutability` surface, and explicit `principals` for owner, managers, auditors, plus optional TEE / FIDO2 / mTLS principals.
 - **A controlled lifecycle for caller-enclave version changes.** When the customer application that consumes a key is rebuilt and its MRENCLAVE changes from `v(N)` to `v(N+1)`, the new measurement is held in a **pending** slot until the key owner (and managers, if configured) explicitly approves promoting it into the key's `attestation_profiles`. The platform never auto-grants a new measurement access to existing key material; this is a protocol invariant.
+
+## A user-first KMS with standard interfaces
+
+Two capabilities were added on top of that core.
+
+- **A developer can own keys.** Custody is no longer reserved for platform enclaves. Any user can create a vault, hold signing and wrapping keys in it, and author the policy that governs them, through the Privasys CLI (`privasys vault ...`) and a REST API shaped like the cloud KMS surfaces developers already know. The API is a client-side proxy, so the data plane stays a direct, attested channel to the constellation; the platform mints the grant and enforces quotas but never sees the key material.
+- **Existing software reaches a vault key unchanged.** A [PKCS#11 3.1 module](https://github.com/Privasys/pkcs11-provider) puts a vault-held key behind OpenSSL, Java, TLS servers, and code-signing tools, and a [KMIP 2.1 gateway](https://github.com/Privasys/kmip-gateway) lets enterprise key-management software use the constellation as a remote key manager. See [Standard Interfaces](/solutions/enclave-vaults/standard-interfaces).
 
 ## Components
 
 | Component | Repository | Role |
 |---|---|---|
 | Vault enclave | [`Privasys/enclave-vaults`](https://github.com/Privasys/enclave-vaults) | Runs inside Intel SGX. Holds keys, runs in-enclave operations, enforces `KeyPolicy`. |
-| Attested Registry | [`Privasys/enclave-vaults`](https://github.com/Privasys/enclave-vaults) (sub-tree) | Phonebook for the constellation. Returns `(endpoint, measurement)` tuples for clients to dial and verify. Treated as untrusted by every other component. |
-| Client SDK (Rust + Go) | [`Privasys/enclave-vaults-client`](https://github.com/Privasys/enclave-vaults-client) | Three layers: `RegistryClient` (discover), `Client` (single-vault session), `Constellation` (fan-out, approvals, pending-profile lifecycle). |
+| Vault directory | [`Privasys/management-service`](https://github.com/Privasys) | Phonebook for the constellation, served from `GET /api/v1/vaults`. Returns the active set of `(endpoint, measurement)` tuples for clients to dial and verify. Treated as untrusted by every other component. (Replaced the standalone Attested Registry.) |
+| PKCS#11 module | [`Privasys/pkcs11-provider`](https://github.com/Privasys/pkcs11-provider) | A Cryptoki 3.1 provider that proxies to a local agent holding the vault session. Consumption surface for OpenSSL, Java, and other PKCS#11 clients. |
+| KMIP gateway | [`Privasys/kmip-gateway`](https://github.com/Privasys/kmip-gateway) | A KMIP 2.1 front-end deployed as an attested confidential workload. |
+| Client SDK (Rust + Go) | [`Privasys/enclave-vaults-client`](https://github.com/Privasys/enclave-vaults-client) | Three layers: directory client (discover), `Client` (single-vault session), `Constellation` (fan-out, approvals, pending-profile lifecycle). |
 | Privasys Wallet | [`Privasys/auth`](https://github.com/Privasys/auth) | Default surface for the live FIDO2 approvals required by sensitive policies. |
 | Underlying enclave OS | [`Privasys/enclave-os-mini`](https://github.com/Privasys/enclave-os-mini) | Provides attestation, RA-TLS, sealed storage, OIDC, and the module system the vault is built on. |
 
-## Honest boundaries
+## Boundaries
 
-Enclave Vaults is a **vHSM, not a FIPS 140-3 certified HSM**. It does not have tamper-evident enclosures or environmental sensors. The security model rests on Intel SGX isolation, on attested identity for every connection, and (for `RawShare` keys) on the unlinkability of Shamir shares across independent enclaves. For most threat models this is a strict improvement over a single appliance taken on faith. Where a specific FIPS certification is a hard legal requirement, dedicated certified HSMs remain the right choice.
+Enclave Vaults is a **vHSM, not a FIPS 140-3 certified HSM**. It has no tamper-evident enclosure and no environmental sensors. The security model rests on Intel SGX isolation, on attested identity for every connection, and (for `RawShare` keys) on the unlinkability of Shamir shares across independent enclaves. For most threat models this improves on a single appliance taken on faith. Where a specific FIPS certification is a hard legal requirement, dedicated certified HSMs remain the right choice.
 
-The architectural rationale is in the original blog post on [rethinking secrets management](https://privasys.org/blog/enclave-vaults-rethinking-secrets-management-for-the-age-of-confidential-computing). The motivation for the v0.19 redesign is in [the v0.19 release post](https://privasys.org/blog/enclave-vaults-v0-19-typed-keys-and-policy-driven-operations).
+The standard interfaces carry a deliberate limit as well: a PKCS#11 or KMIP client cannot present a wallet approval or reason about attested measurements, so operations a key gates on those conditions are unavailable over those interfaces and fail closed. A standard client gets the baseline operations; the richer policy is authored through the native API.
+
+The architectural rationale is in the original blog post on [rethinking secrets management](https://privasys.org/blog/enclave-vaults-rethinking-secrets-management-for-the-age-of-confidential-computing). The typed-key redesign is covered in [the v0.19 release post](https://privasys.org/blog/enclave-vaults-v0-19-typed-keys-and-policy-driven-operations), and the standard interfaces in [Enclave Vaults speaks PKCS#11 and KMIP](https://privasys.org/blog/enclave-vaults-speaks-pkcs11-and-kmip).

@@ -1,0 +1,39 @@
+---
+title: Authentication
+description: Wallet sign-in, passkeys, the agent-brokered device flow, and service accounts. The CLI never holds your signing key.
+---
+
+The CLI never holds your signing key. The key stays on your wallet; the CLI holds a short-lived access token that it refreshes silently. Every interactive flow is the OAuth 2.0 Device Authorization Grant (RFC 8628). See [Privasys ID](/solutions/privasys-id/overview) for the identity platform behind it.
+
+## Sign-in modes
+
+| Mode | Command | Use it for |
+| --- | --- | --- |
+| Wallet (default) | `privasys auth login` | A human with the Privasys Wallet. Scan the QR; the wallet verifies enclave attestation before approving. |
+| No wallet | open the URL printed by `auth login` | Complete a passkey, security key, or social sign-in in the browser. |
+| Agent-brokered | `privasys auth begin` then `privasys auth poll --wait` | An agent surfaces the verification URL and code to a human, who approves; the agent then receives the token. |
+| Service account | `privasys auth activate-service-account --key-file key.json` | Unattended CI and agents. Or set `PRIVASYS_SERVICE_KEY`. |
+
+## Token storage
+
+Tokens are stored in the OS keychain, with a `0600` file fallback for headless environments. No secret is ever written into project files: the agent wiring that `privasys agents init` generates points at the local binary, which reads its token from the keychain.
+
+## Helpers
+
+```sh
+privasys auth whoami               # who am I, on which issuer
+privasys auth print-access-token   # pipe a bearer into curl
+privasys auth list                 # every stored session
+privasys auth logout
+```
+
+## Sessions in CI
+
+For pipelines, create a service account in the [developer portal](https://developer.privasys.org), store its key as a CI secret, and either export it or activate it explicitly:
+
+```sh
+export PRIVASYS_SERVICE_KEY="$(cat key.json)"
+privasys apps deploy my-app --watch --no-input
+```
+
+Exit code `3` always means not authenticated, so scripts can branch on it. See [Scripting](/cli/scripting).
