@@ -90,6 +90,17 @@ export function ChatShell({
         };
     }, [session, getSealedSession]);
 
+    // Last-chance establisher for user-tool mutations: retries the voucher
+    // resume at action time (covers the just-signed-in race) and flows a
+    // late success back into state so the tool list loads.
+    const ensureChatSession = useCallback(async () => {
+        const host = chatServiceHost();
+        if (!host) return null;
+        const s = await getSealedSession(host);
+        if (s) setChatSession(s);
+        return s;
+    }, [getSealedSession]);
+
     // Sealed transport must survive page reloads without a wallet
     // ceremony: the OIDC session restores via cross-site SSO, and the
     // sealed session re-bootstraps from the EncAuth voucher stored at
@@ -267,7 +278,7 @@ export function ChatShell({
     });
 
     const tools = useEnabledTools(instance.id, instance.available_tools);
-    const userTools = useUserTools(chatSession, session?.accessToken);
+    const userTools = useUserTools(chatSession, session?.accessToken, ensureChatSession);
     const policyAllowsAdd = !!instance.tool_policy && instance.tool_policy !== 'locked';
     const hasAdminTools = (instance.available_tools?.length ?? 0) > 0;
     // The composer shows the Tools popover when there are admin tools, the
