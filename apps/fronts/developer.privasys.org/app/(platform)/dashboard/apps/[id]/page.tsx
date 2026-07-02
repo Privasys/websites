@@ -2881,19 +2881,21 @@ function ActionRunner({ fn, appId, token }: { fn: FunctionSchema; appId: string;
     };
 
     return (
-        <div className="space-y-3">
-            <div>
-                <h4 className="text-sm font-semibold">{fn.name}</h4>
-                {fn.description && <p className="mt-0.5 text-xs text-black/50 dark:text-white/50">{fn.description}</p>}
+        <div className="rounded-lg border border-black/10 dark:border-white/10 p-3 space-y-3">
+            <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                    <code className="font-mono text-sm px-1.5 py-0.5 rounded bg-black/5 dark:bg-white/10">{fn.name}</code>
+                    {fn.description && <p className="mt-1 text-xs text-black/50 dark:text-white/50">{fn.description}</p>}
+                </div>
+                <button onClick={run} disabled={busy}
+                    className="shrink-0 px-3 py-1.5 text-sm font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-80 disabled:opacity-40 transition-opacity">
+                    {busy ? 'Running…' : 'Run'}
+                </button>
             </div>
             {entries.map(([k, prop]) => (
                 <FieldInput key={k} name={k} prop={prop} value={values[k] ?? String(prop.default ?? '')}
                     onChange={v => setValues(s => ({ ...s, [k]: v }))} appId={appId} token={token} disabled={busy} />
             ))}
-            <button onClick={run} disabled={busy}
-                className="px-3 py-2 text-sm font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black disabled:opacity-40">
-                {busy ? 'Running…' : 'Run'}
-            </button>
             {prog && (
                 <div>
                     <div className="h-2 w-full rounded-full bg-black/10 dark:bg-white/10 overflow-hidden">
