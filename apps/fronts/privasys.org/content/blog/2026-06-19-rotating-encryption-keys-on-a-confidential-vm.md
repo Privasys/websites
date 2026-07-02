@@ -1,5 +1,5 @@
 ---
-title: "Rotating Encryption Keys on a Confidential VM Without Re-Encrypting It"
+title: "Rotating Encryption Keys on a Confidential VM"
 author: "B Foing"
 date: "2026-06-19"
 ---
@@ -14,19 +14,19 @@ This post is the companion to our earlier one on [upgrading an enclave without h
 
 The trap is a reasonable-sounding model of how the encryption works: the key the enclave fetches is *the* disk-encryption key, so rotating it must mean rewriting every sector under a new one.
 
-If that were true, rotation would be miserable. Re-encrypting a confidential database of any real size is hours of I/O. Historically it has often meant taking the volume offline, and any interruption partway through risks leaving it in a half-converted state that is its own incident. Faced with that cost, the honest outcome is that rotation quietly never happens. The control exists on the audit spreadsheet and nowhere else. A rotation procedure too expensive to run is not a security control. It is a compliance decoration.
+If that were true, rotation would be miserable. Re-encrypting a confidential database of any real size is hours of I/O. Historically it has often meant taking the volume offline, and any interruption partway through risks leaving it in a half-converted state that is its own incident. Faced with that cost, the usual outcome is that rotation quietly never happens. The control exists on the audit spreadsheet and nowhere else. A rotation procedure too expensive to run protects nothing; it only decorates a compliance report.
 
-So the interesting question is not how to make re-encryption fast. It is how to make rotation not require re-encryption at all.
+So this leads us to the interesting question: how to make rotation not require re-encryption at all?
 
 ## Do not encrypt data with the key you rotate
 
 The way out is old and well understood: **envelope encryption**. Two keys, not one. A data-encryption key, the DEK, does the actual work of encrypting bytes at rest. A key-encryption key, the KEK, does nothing but wrap the DEK. The data is encrypted once, under the DEK, and the DEK never changes for the life of the volume. What you rotate is the KEK, and rotating it means decrypting one small wrapped blob and re-encrypting that blob under the new KEK. Microseconds, not hours. The terabytes on disk are never touched. This is exactly what a KMS-backed managed database does when it rotates a customer master key: the data key underneath is re-wrapped, the data itself is left alone.
 
-Here is the part that surprises people. A confidential VM that encrypts its volume with LUKS already has this structure, whether its operators realise it or not. LUKS2 does not encrypt your data directly with the passphrase you hand it. At format time it generates a master key, encrypts the volume with that, and stores the master key in the volume header, wrapped by a keyslot derived from your passphrase. The passphrase is a KEK. The LUKS master key is the DEK. In our case the passphrase is the key the enclave reconstructs from the vault constellation on every boot, which is precisely why we name that key a **storage-kek** and not a storage-key.
+Good news, a confidential VM that encrypts its volume with LUKS already has this structure, whether its operators realise it or not. LUKS2 does not encrypt your data directly with the passphrase you hand it. At format time it generates a master key, encrypts the volume with that, and stores the master key in the volume header, wrapped by a keyslot derived from your passphrase. The passphrase is a KEK. The LUKS master key is the DEK. In our case the passphrase is the key the enclave reconstructs from the vault constellation on every boot, which is precisely why we name that key a **storage-kek** and not a storage-key.
 
 So the answer to "does rotating the key mean re-encrypting the disk" is no. The key you rotate was never the key encrypting the disk. It was always one wrap removed, and rotating it is a re-wrap, not a re-encrypt.
 
-## Two kinds of rotation, and being honest about both
+## Two kinds of rotation, kept distinct
 
 It pays to be precise about what "rotate the key" means, because there are two different operations and conflating them is how people end up frightened of the cheap one.
 
@@ -56,7 +56,7 @@ The answer here is the same as for upgrades, for the same structural reason. The
 
 So a compromised platform cannot quietly rotate your key to one it controls, for the same reason it cannot grant a freshly built measurement access to your data: the authority lives with the owner, the key material lives in the enclave, and the platform holds neither. Rotation, like upgrade, is something the platform can request and never something it can grant itself.
 
-## The honest boundaries
+## The boundaries
 
 A few things are worth stating plainly.
 
