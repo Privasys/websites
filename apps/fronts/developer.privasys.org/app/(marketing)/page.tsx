@@ -20,6 +20,14 @@ const FEATURES = [
     {
         title: 'Secrets management',
         description: 'Enclave Vaults provides hardware-protected key storage and secrets management. Keys are split using Shamir secret sharing, sealed to the enclave measurements, and never exist in cleartext outside the trust boundary.'
+    },
+    {
+        title: 'Private images',
+        description: 'Protect your IP as well as your data. Build privately, push to your own registry, and hand the platform a pull credential that only the attested in-enclave runtime can read. Privasys never sees your source, your image, or your token.'
+    },
+    {
+        title: 'Agent-first CLI',
+        description: 'The privasys CLI drives everything here, and it is also an MCP server. Wire it into Claude Code, Cursor, VS Code, or Gemini with one command and let your AI agent deploy, attest, and operate confidential apps for you.'
     }
 ];
 
@@ -79,6 +87,82 @@ export default function MarketingPage() {
                 </div>
             </section>
 
+            {/* CLI showcase */}
+            <section className="mt-16 lg:mt-24">
+                <CliWindow title="privasys — confidential apps" />
+            </section>
+
+            {/* From your terminal */}
+            <section className="mt-28 lg:mt-48">
+                <h2 className="text-2xl lg:text-4xl">
+                    <Balancer>The whole platform, from your terminal.</Balancer>
+                </h2>
+                <p className="mt-6 text-lg text-black/60 dark:text-white/60">
+                    <Balancer>
+                        The privasys CLI drives everything you can do in the dashboard: sign in with your wallet,
+                        deploy WASM or container apps, manage keys in the vault, and verify hardware attestation.
+                        Attestation runs client-side: the CLI challenges the enclave directly over RA-TLS and
+                        checks the quote itself, so you never have to trust an intermediary.
+                    </Balancer>
+                </p>
+                <div className="mt-8">
+                    <p className="text-sm font-medium tracking-wide uppercase text-black/50 dark:text-white/50 mb-2">Install</p>
+                    <pre className="overflow-x-auto rounded-xl bg-[#0B0F17] text-[#C9D1D9] p-4 text-sm">
+                        <code>curl -fsSL https://raw.githubusercontent.com/Privasys/cli/main/install.sh | sh</code>
+                    </pre>
+                    <p className="mt-3 text-sm text-black/60 dark:text-white/60">
+                        Also available via Homebrew, Scoop, and .deb/.rpm packages, with a built-in{' '}
+                        <code className="bg-black/5 dark:bg-white/10 px-1 rounded">privasys update</code>. See the{' '}
+                        <a href="https://docs.privasys.org/solutions/cli/install" className="underline hover:no-underline">
+                            installation guide
+                        </a>.
+                    </p>
+                </div>
+                <div className="mt-14 grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-x-24">
+                    <div>
+                        <h3 className="text-xl lg:text-3xl">Agent-first by design</h3>
+                        <p className="mt-3 text-black/60 dark:text-white/60">
+                            <Balancer>
+                                The CLI is also a Model Context Protocol server. Run{' '}
+                                <code className="bg-black/5 dark:bg-white/10 px-1 rounded">privasys agents init</code>{' '}
+                                and your AI agent can onboard you, deploy confidential apps, and verify them as native tools.
+                                Every command speaks JSON and returns stable exit codes, so it scripts cleanly in CI too.
+                            </Balancer>
+                        </p>
+                    </div>
+                    <div>
+                        <h3 className="text-xl lg:text-3xl">Verify, don&apos;t trust</h3>
+                        <p className="mt-3 text-black/60 dark:text-white/60">
+                            <Balancer>
+                                <code className="bg-black/5 dark:bg-white/10 px-1 rounded">privasys attest</code>{' '}
+                                challenges the enclave with a fresh nonce and verifies the TEE quote and the per-workload
+                                code hash. The data plane is direct:{' '}
+                                <code className="bg-black/5 dark:bg-white/10 px-1 rounded">privasys apps call</code>{' '}
+                                streams straight to the enclave over RA-TLS, with the control plane never in the path.
+                            </Balancer>
+                        </p>
+                    </div>
+                </div>
+                <div className="mt-10 flex flex-wrap gap-4">
+                    <Link
+                        href="https://docs.privasys.org/solutions/cli"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-6 py-2.5 font-bold border rounded-full text-black dark:text-white hover:bg-black hover:text-white dark:border-white dark:hover:bg-white dark:hover:text-black transition-colors"
+                    >
+                        CLI documentation
+                    </Link>
+                    <a
+                        href="https://github.com/Privasys/cli"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-6 py-2.5 font-bold border rounded-full text-black dark:text-white hover:bg-black hover:text-white dark:border-white dark:hover:bg-white dark:hover:text-black transition-colors"
+                    >
+                        Privasys CLI on GitHub
+                    </a>
+                </div>
+            </section>
+
             {/* What you can deploy */}
             <section className="mt-28 lg:mt-48">
                 <h2 className="text-2xl lg:text-4xl">
@@ -117,36 +201,6 @@ export default function MarketingPage() {
                             </div>
                         </div>
                     ))}
-                </div>
-            </section>
-
-            {/* CLI */}
-            <section className="mt-28 lg:mt-48">
-                <h2 className="text-2xl lg:text-4xl">
-                    <Balancer>Or do it all from your terminal.</Balancer>
-                </h2>
-                <p className="mt-6 text-lg text-black/60 dark:text-white/60">
-                    <Balancer>
-                        The privasys CLI drives the whole platform: sign in with your wallet, deploy, verify
-                        hardware attestation, call your app over RA-TLS, and manage keys in the vault.
-                        It is also an MCP server, so your AI agent can do all of it for you.
-                    </Balancer>
-                </p>
-                <div className="mt-12">
-                    <CliWindow title="privasys — confidential apps" />
-                </div>
-                <div className="mt-8 flex flex-wrap items-center gap-4">
-                    <code className="px-4 py-2.5 rounded-lg text-sm bg-black/5 dark:bg-white/10 text-black/80 dark:text-white/80">
-                        curl -fsSL https://raw.githubusercontent.com/Privasys/cli/main/install.sh | sh
-                    </code>
-                    <Link
-                        href="https://docs.privasys.org/cli"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="px-6 py-2.5 font-bold border rounded-full text-black dark:text-white hover:bg-black hover:text-white dark:border-white dark:hover:bg-white dark:hover:text-black transition-colors"
-                    >
-                        CLI documentation
-                    </Link>
                 </div>
             </section>
 
