@@ -158,6 +158,15 @@ export interface StreamChatArgs {
      * signature; the browser never names a server URL itself.
      */
     toolGrant?: string;
+    /**
+     * Thinking mode. When false (the "Fast" mode, and the chat default),
+     * the request carries `chat_template_kwargs: {enable_thinking: false}`
+     * so the model answers directly without a chain-of-thought preamble.
+     * True/undefined leaves the server's template default (thinking on for
+     * Qwen-family models). The confidential-ai proxy round-trips the body
+     * as map[string]any, so the extra field survives the agentic loop.
+     */
+    thinking?: boolean;
 }
 
 interface SSEChunk {
@@ -217,6 +226,13 @@ export async function streamChatCompletion(args: StreamChatArgs): Promise<void> 
         // the closing chunk.
         stream_options: { include_usage: true }
     };
+    if (args.thinking === false) {
+        // Fast mode: ask the chat template to skip the thinking block.
+        // vLLM forwards chat_template_kwargs into the Jinja template;
+        // Qwen-family templates honour enable_thinking. Models that
+        // ignore the kwarg simply behave as before.
+        body.chat_template_kwargs = { enable_thinking: false };
+    }
     if (args.sampling) {
         for (const [k, v] of Object.entries(args.sampling)) {
             if (v !== undefined && v !== null && v !== '') body[k] = v;

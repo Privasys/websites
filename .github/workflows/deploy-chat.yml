@@ -81,6 +81,10 @@ jobs:
             echo "NEXT_PUBLIC_API_BASE_URL=${{ steps.target.outputs.api_url }}"
             echo "NEXT_PUBLIC_DEFAULT_INSTANCE=${{ steps.target.outputs.default_instance }}"
             echo "NEXT_PUBLIC_CHAT_SERVICE_URL=${{ steps.target.outputs.chat_service_url }}"
+            # Build provenance shown bottom-left in the sidebar (links to
+            # the exact commit on GitHub).
+            echo "NEXT_PUBLIC_COMMIT_SHA=${GITHUB_SHA}"
+            echo "NEXT_PUBLIC_APP_VERSION=$(node -p "require('./apps/fronts/chat.privasys.org/package.json').version")"
           } > apps/fronts/chat.privasys.org/.env.local
           npx nx reset
           npx nx build chat.privasys.org --skip-nx-cache
