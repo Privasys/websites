@@ -67,7 +67,7 @@ const result = await session.json("POST", "/v1/messages", { text: "hello" });
 
 The bytes that leave the browser are AES-GCM ciphertext in `application/privasys-sealed+cbor`. The platform gateway terminates the public TLS in front of the enclave — but the request body is sealed end-to-end; the gateway sees only ciphertext.
 
-See the [Session Relay page](/solutions/privasys-id/session-relay) for the full protocol and trust argument.
+See [Technology > Sealed Session](/technology/sealed-session) for the full protocol and trust argument.
 
 ## Failure modes
 

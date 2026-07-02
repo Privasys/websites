@@ -3,6 +3,7 @@
     "defaultOpen": false,
     "pages": [
         "confidential-computing",
-        "attestation"
+        "attestation",
+        "sealed-session"
     ]
 }

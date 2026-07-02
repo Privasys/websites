@@ -91,7 +91,7 @@ The deployment infrastructure that ties everything together: a [developer platfo
 
 ### Privasys ID
 
-The identity and authentication layer of the platform. Privasys ID groups the mobile [Wallet](/solutions/privasys-id/wallet) (FIDO2 authenticator with built-in RA-TLS verification, hardware-bound keys in Secure Enclave / StrongBox), the [IdP](/solutions/privasys-id/idp) at `privasys.id` (OIDC issuer with attestation-bound claims), the browser [Auth SDK](/solutions/privasys-id/auth-sdk) (`@privasys/auth`, iframe SSO across the ecosystem), and the [Session Relay](/solutions/privasys-id/session-relay) protocol that brings attestation-verified end-to-end-confidential transport to clients that cannot speak RA-TLS themselves — starting with browsers.
+The identity and authentication layer of the platform. Privasys ID groups the mobile [Wallet](/solutions/privasys-id/wallet) (FIDO2 authenticator with built-in RA-TLS verification, hardware-bound keys in Secure Enclave / StrongBox), the [IdP](/solutions/privasys-id/idp) at `privasys.id` (OIDC issuer with attestation-bound claims), the browser [Auth SDK](/solutions/privasys-id/auth-sdk) (`@privasys/auth`, iframe SSO across the ecosystem), and the [Sealed Session](/technology/sealed-session) mechanism that brings attestation-verified end-to-end-confidential transport to clients that cannot speak RA-TLS themselves — starting with browsers.
 
 [Privasys ID documentation](/solutions/privasys-id/overview)
 
@@ -128,6 +128,6 @@ Traditional cloud requires you to *trust* the provider. Privasys replaces trust 
     Developer platform, verification libraries, and attestation server.
   </Card>
   <Card title="Privasys ID" href="/solutions/privasys-id/overview">
-    Wallet, IdP, browser SDK, and session-relay transport — the identity and authentication layer.
+    Wallet, IdP, browser SDK, and sealed-session transport — the identity and authentication layer.
   </Card>
 </Cards>
