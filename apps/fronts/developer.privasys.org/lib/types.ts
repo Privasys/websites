@@ -185,6 +185,10 @@ export interface Enclave {
     app_count: number;
     os_release_url?: string;
     os_release_tag?: string;
+    // Whether the enclave's measurements match the linked release:
+    // '' (never checked) | 'verified' | 'unverified' (TDX pre-boot) | 'mismatch'
+    os_release_status?: string;
+    os_release_checked_at?: string;
     created_at: string;
     updated_at: string;
 }
