@@ -751,10 +751,26 @@ export default function AdminEnclavePage() {
                                                         <div className="col-span-3">
                                                             <div className="text-xs text-black/50 dark:text-white/50">Enclave OS release</div>
                                                             {enc.os_release_url ? (
-                                                                <a href={enc.os_release_url} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}
-                                                                    className="text-xs mt-0.5 inline-flex items-center gap-1 text-blue-600 dark:text-blue-400 hover:underline break-all">
-                                                                    {enc.os_release_tag || enc.os_release_url} ↗
-                                                                </a>
+                                                                <div className="mt-0.5 flex items-center gap-2 flex-wrap">
+                                                                    <a href={enc.os_release_url} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}
+                                                                        className="text-xs inline-flex items-center gap-1 text-blue-600 dark:text-blue-400 hover:underline break-all">
+                                                                        {enc.os_release_tag || enc.os_release_url} ↗
+                                                                    </a>
+                                                                    {/* Measurement-verification badge: set on admin save and
+                                                                        re-checked on every boot quote that changes measurements. */}
+                                                                    {enc.os_release_status === 'verified' && (
+                                                                        <span className="text-[11px] font-medium text-emerald-600 dark:text-emerald-400">✓ measurements match</span>
+                                                                    )}
+                                                                    {enc.os_release_status === 'mismatch' && (
+                                                                        <span className="text-[11px] font-medium text-red-600 dark:text-red-400">✗ measurements do NOT match this release</span>
+                                                                    )}
+                                                                    {enc.os_release_status === 'unverified' && (
+                                                                        <span className="text-[11px] text-amber-600 dark:text-amber-400">not yet verified (no quote reported)</span>
+                                                                    )}
+                                                                    {enc.os_release_checked_at && (
+                                                                        <span className="text-[10px] text-black/30 dark:text-white/30">checked {new Date(enc.os_release_checked_at).toLocaleString()}</span>
+                                                                    )}
+                                                                </div>
                                                             ) : (
                                                                 <div className="mt-0.5 text-xs text-amber-600 dark:text-amber-400">Not set — edit the enclave to link its GitHub release</div>
                                                             )}
