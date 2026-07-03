@@ -1,4 +1,4 @@
-import type { App, CreateAppRequest, ReviewRequest, DeploymentLog, BuildJob, Enclave, CreateEnclaveRequest, EnclaveMeasurements, AppVersion, AppDeployment, AttestationResult, TeeType, CachedImage } from './types';
+import type { App, CreateAppRequest, ReviewRequest, DeploymentLog, BuildJob, Enclave, CreateEnclaveRequest, EnclaveMeasurements, AppVersion, AppDeployment, AttestationResult, TeeType, CachedImage, CloudProvider, CloudRegion, CloudRegionsMeta } from './types';
 import { getApiBaseUrl } from './api-base-url';
 
 const API_URL = getApiBaseUrl();
@@ -488,6 +488,24 @@ export function adminDeleteEnclave(token: string, id: string): Promise<void> {
     return request<void>(`/api/v1/admin/enclaves/${encodeURIComponent(id)}`, token, {
         method: 'DELETE'
     });
+}
+
+// Cloud-region reference data (manager role): pre-fills enclave location
+// metadata from provider + cloud zone.
+export function adminListCloudProviders(token: string): Promise<{ providers: CloudProvider[]; meta: CloudRegionsMeta }> {
+    return request<{ providers: CloudProvider[]; meta: CloudRegionsMeta }>('/api/v1/admin/cloud-regions/providers', token);
+}
+
+export function adminListCloudRegions(token: string, provider: string): Promise<{ regions: CloudRegion[] }> {
+    return request<{ regions: CloudRegion[] }>(`/api/v1/admin/cloud-regions/?provider=${encodeURIComponent(provider)}`, token);
+}
+
+export function adminMatchCloudRegion(token: string, provider: string, zone: string): Promise<CloudRegion> {
+    return request<CloudRegion>(`/api/v1/admin/cloud-regions/match?provider=${encodeURIComponent(provider)}&zone=${encodeURIComponent(zone)}`, token);
+}
+
+export function adminRefreshCloudRegions(token: string): Promise<{ providers: number; regions: number; meta: CloudRegionsMeta }> {
+    return request<{ providers: number; regions: number; meta: CloudRegionsMeta }>('/api/v1/admin/cloud-regions/refresh', token, { method: 'POST' });
 }
 
 // ---------------------------------------------------------------------------

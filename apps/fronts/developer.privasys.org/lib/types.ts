@@ -176,6 +176,10 @@ export interface Enclave {
     gps_lon?: number;
     provider: string;
     owner: string;
+    city: string;
+    country_code: string;
+    continent: string;
+    cloud_region_code: string;
     status: 'active' | 'maintenance' | 'retired';
     max_apps: number;
     app_count: number;
@@ -183,6 +187,33 @@ export interface Enclave {
     os_release_tag?: string;
     created_at: string;
     updated_at: string;
+}
+
+// Cloud-provider / region reference data (imported dataset) used to pre-fill
+// enclave location metadata from provider + cloud zone.
+export interface CloudProvider {
+    id: string;
+    name: string;
+}
+
+export interface CloudRegion {
+    provider: string;
+    region_code: string;
+    display_name: string;
+    country: string;
+    country_code: string;
+    city: string;
+    latitude?: number;
+    longitude?: number;
+    continent: string;
+    display_country: string;  // country with " (EU)" applied for EU members
+    region_label: string;     // "Europe (EU)", "North America", … "World"
+}
+
+export interface CloudRegionsMeta {
+    source_version: string;
+    source_updated: string;
+    refreshed_at?: string;
 }
 
 // A single TDX measurement set an enclave reported on boot.
@@ -216,8 +247,12 @@ export interface CreateEnclaveRequest {
     zone?: string;
     gps_lat?: number;
     gps_lon?: number;
-    provider?: string;
-    owner?: string;
+    provider?: string;   // mandatory server-side (400 when blank)
+    owner?: string;      // mandatory server-side (400 when blank)
+    city?: string;
+    country_code?: string;
+    continent?: string;
+    cloud_region_code?: string;
     max_apps?: number;
     os_release_url?: string;
 }

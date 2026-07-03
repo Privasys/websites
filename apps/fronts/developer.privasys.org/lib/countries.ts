@@ -201,11 +201,23 @@ export const COUNTRIES: { code: string; name: string }[] = [
 ];
 
 /**
- * Country code → region mapping.
- * Edit this to configure region inference from country selection.
+ * EU member states (ISO 3166-1 alpha-2, the 27). The " (EU)" country postfix
+ * and the "Europe (EU)" region label apply ONLY to these — geographic-Europe
+ * countries outside the EU (GB, CH, NO, …) keep their plain name, so the
+ * label never overstates EU data residency. Mirrors the management-service
+ * euMemberCodes set.
+ */
+export const EU_MEMBER_CODES = new Set([
+    'AT', 'BE', 'BG', 'HR', 'CY', 'CZ', 'DK', 'EE', 'FI', 'FR', 'DE', 'GR',
+    'HU', 'IE', 'IT', 'LV', 'LT', 'LU', 'MT', 'NL', 'PL', 'PT', 'RO', 'SK',
+    'SI', 'ES', 'SE'
+]);
+
+/**
+ * Country code → region mapping (manual overrides; EU members are handled by
+ * EU_MEMBER_CODES). Kept as the fallback when no cloud-region match exists.
  */
 export const COUNTRY_REGION_MAP: Record<string, string> = {
-    FR: 'Europe (EU)',
     GB: 'Europe (United Kingdom)'
 };
 
@@ -214,10 +226,17 @@ export const DEFAULT_REGION = 'World';
 
 /** Returns the inferred region for a given country code. */
 export function regionForCountry(code: string): string {
+    if (EU_MEMBER_CODES.has(code)) return 'Europe (EU)';
     return COUNTRY_REGION_MAP[code] || DEFAULT_REGION;
 }
 
 /** Returns the display name for a country code, or the code itself as fallback. */
 export function countryName(code: string): string {
     return COUNTRIES.find(c => c.code === code)?.name || code;
+}
+
+/** Country display name with " (EU)" postfixed for EU member states. */
+export function displayCountryName(code: string): string {
+    const name = countryName(code);
+    return EU_MEMBER_CODES.has(code) ? `${name} (EU)` : name;
 }
