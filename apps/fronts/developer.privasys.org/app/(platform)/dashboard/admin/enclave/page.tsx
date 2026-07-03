@@ -2,14 +2,42 @@
 
 import { useAuth, hasManagerRole } from '~/lib/privasys-auth';
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { adminEnclaveHealth, adminInspectEnclave, adminEnclaveMeasurements, adminListEnclaves, adminCreateEnclave, adminUpdateEnclave, adminDeleteEnclave } from '~/lib/api';
+import { adminEnclaveHealth, adminInspectEnclave, adminEnclaveMeasurements, adminListEnclaves, adminCreateEnclave, adminUpdateEnclave, adminDeleteEnclave, adminListCloudProviders, adminListCloudRegions, adminMatchCloudRegion, adminRefreshCloudRegions } from '~/lib/api';
 import { useSSE } from '~/lib/sse-context';
-import { COUNTRIES, regionForCountry, countryName } from '~/lib/countries';
-import type { Enclave, CreateEnclaveRequest, TeeType, EnclaveMeasurements } from '~/lib/types';
+import { COUNTRIES, regionForCountry, displayCountryName } from '~/lib/countries';
+import type { Enclave, CreateEnclaveRequest, TeeType, EnclaveMeasurements, CloudProvider, CloudRegion, CloudRegionsMeta } from '~/lib/types';
 
 const EMPTY_FORM: CreateEnclaveRequest = {
-    name: '', port: 8445, gateway_host: '', tee_type: 'sgx', mr_enclave: '', country: '', region: '', zone: '', provider: '', owner: '', max_apps: 10, os_release_url: '',
+    name: '', port: 8445, gateway_host: '', tee_type: 'sgx', mr_enclave: '', country: '', region: '', zone: '', provider: '', owner: '',
+    city: '', country_code: '', continent: '', cloud_region_code: '', max_apps: 10, os_release_url: '',
 };
+
+// OTHER_PROVIDER marks a provider outside the cloud-regions dataset: the
+// admin types the name and fills the location manually.
+const OTHER_PROVIDER = '__other__';
+
+// FieldLabel: label + optional required marker + a "?" toggle that reveals the
+// field's help text on demand (descriptions stay hidden by default so they
+// don't dwarf the field labels).
+function FieldLabel({ label, required, help }: { label: string; required?: boolean; help?: string }) {
+    const [open, setOpen] = useState(false);
+    return (
+        <div className="mb-1">
+            <span className="inline-flex items-center gap-1.5">
+                <label className="text-xs font-medium">{label}{required ? ' *' : ''}</label>
+                {help && (
+                    <button type="button" onClick={() => setOpen(o => !o)} title={open ? 'Hide help' : 'What is this?'}
+                        className={`w-4 h-4 flex items-center justify-center rounded-full border text-[10px] leading-none transition-colors ${open
+                            ? 'border-black/40 text-black/70 dark:border-white/40 dark:text-white/70'
+                            : 'border-black/20 text-black/40 dark:border-white/20 dark:text-white/40 hover:border-black/40 hover:text-black/70 dark:hover:border-white/40 dark:hover:text-white/70'}`}>
+                        ?
+                    </button>
+                )}
+            </span>
+            {help && open && <p className="mt-1 text-[11px] leading-snug text-black/40 dark:text-white/40">{help}</p>}
+        </div>
+    );
+}
 
 const ENC_STATUS_COLORS: Record<string, string> = {
     active: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300',
@@ -35,6 +63,17 @@ export default function AdminEnclavePage() {
     const [enclaveHealth, setEnclaveHealth] = useState<Record<string, { status: string; error?: string } | null>>({});
     // null = loading, undefined-key = not fetched yet
     const [measurements, setMeasurements] = useState<Record<string, EnclaveMeasurements | null>>({});
+
+    // Cloud-region reference data: providers dropdown + per-provider regions +
+    // the zone→region match that pre-fills the location fields.
+    const [cloudProviders, setCloudProviders] = useState<CloudProvider[]>([]);
+    const [regionsMeta, setRegionsMeta] = useState<CloudRegionsMeta | null>(null);
+    const [providerSel, setProviderSel] = useState<string>('');   // '' | provider id | OTHER_PROVIDER
+    const [cloudRegions, setCloudRegions] = useState<CloudRegion[]>([]);
+    const [matched, setMatched] = useState<CloudRegion | null>(null);
+    const [matchState, setMatchState] = useState<'idle' | 'checking' | 'matched' | 'none'>('idle');
+    const [refreshing, setRefreshing] = useState(false);
+    const [refreshMsg, setRefreshMsg] = useState<string | null>(null);
 
     // Filters
     const [search, setSearch] = useState('');
@@ -64,6 +103,76 @@ export default function AdminEnclavePage() {
 
     // SSE: refresh enclave list on any enclave update
     useSSE(useCallback(() => { load(); }, [load]));
+
+    // Load the cloud-provider reference list once (drives the Provider dropdown).
+    useEffect(() => {
+        if (!session?.accessToken) return;
+        adminListCloudProviders(session.accessToken)
+            .then(r => { setCloudProviders(r.providers); setRegionsMeta(r.meta); })
+            .catch(() => { /* dropdown falls back to Other/manual */ });
+    }, [session?.accessToken]);
+
+    // Load the selected provider's regions (drives the Region dropdown).
+    useEffect(() => {
+        if (!session?.accessToken || !providerSel || providerSel === OTHER_PROVIDER) { setCloudRegions([]); return; }
+        let alive = true;
+        adminListCloudRegions(session.accessToken, providerSel)
+            .then(r => { if (alive) setCloudRegions(r.regions); })
+            .catch(() => { if (alive) setCloudRegions([]); });
+        return () => { alive = false; };
+    }, [session?.accessToken, providerSel]);
+
+    // applyRegion pre-fills the location fields from a matched/selected region.
+    // The admin can still edit any field afterwards; a new match overwrites.
+    const applyRegion = useCallback((m: CloudRegion, seedZone?: boolean) => {
+        setMatched(m);
+        setMatchState('matched');
+        setForm(f => ({
+            ...f,
+            country: m.country_code,
+            country_code: m.country_code,
+            region: m.region_label,
+            city: m.city,
+            continent: m.continent,
+            cloud_region_code: m.region_code,
+            gps_lat: m.latitude,
+            gps_lon: m.longitude,
+            ...(seedZone ? { zone: m.region_code } : {})
+        }));
+    }, []);
+
+    // Debounced zone→region match: typing a zone (e.g. europe-west4-c) resolves
+    // it to the provider's region and pre-fills the location metadata.
+    useEffect(() => {
+        if (!session?.accessToken || !showForm) return;
+        const zone = form.zone?.trim() ?? '';
+        if (!providerSel || providerSel === OTHER_PROVIDER || !zone) { setMatchState('idle'); setMatched(null); return; }
+        setMatchState('checking');
+        const t = setTimeout(() => {
+            adminMatchCloudRegion(session.accessToken!, providerSel, zone)
+                .then(m => applyRegion(m))
+                .catch(() => { setMatched(null); setMatchState('none'); });
+        }, 400);
+        return () => clearTimeout(t);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [session?.accessToken, showForm, providerSel, form.zone]);
+
+    async function handleRefreshRegions() {
+        if (!session?.accessToken) return;
+        setRefreshing(true);
+        setRefreshMsg(null);
+        try {
+            const r = await adminRefreshCloudRegions(session.accessToken);
+            setRegionsMeta(r.meta);
+            setRefreshMsg(`${r.providers} providers · ${r.regions} regions · source v${r.meta.source_version} (${r.meta.source_updated})`);
+            const p = await adminListCloudProviders(session.accessToken);
+            setCloudProviders(p.providers);
+        } catch (e) {
+            setRefreshMsg(e instanceof Error ? e.message : 'Refresh failed');
+        } finally {
+            setRefreshing(false);
+        }
+    }
 
     async function checkHealth(enc: Enclave) {
         if (!session?.accessToken) return;
@@ -123,8 +232,20 @@ export default function AdminEnclavePage() {
     // Reset page when filters change
     useEffect(() => { setPage(0); }, [search, filterCountry, filterProvider, filterStatus, filterOwner, filterTeeType]);
 
+    // resolveProviderSel maps a stored provider string back to a dataset
+    // provider id ("GCP"→gcp, "OVHcloud"→ovh) or OTHER_PROVIDER.
+    function resolveProviderSel(provider: string): string {
+        const p = provider.trim().toLowerCase();
+        if (!p) return '';
+        const hit = cloudProviders.find(cp => cp.id.toLowerCase() === p || cp.name.toLowerCase() === p);
+        return hit ? hit.id : OTHER_PROVIDER;
+    }
+
     function openCreate() {
         setForm({ ...EMPTY_FORM });
+        setProviderSel('');
+        setMatched(null);
+        setMatchState('idle');
         setEditingId(null);
         setShowForm(true);
     }
@@ -133,8 +254,13 @@ export default function AdminEnclavePage() {
         setForm({
             name: enc.name, port: enc.port, gateway_host: enc.gateway_host ?? '', tee_type: enc.tee_type || 'sgx', mr_enclave: enc.mr_enclave,
             country: enc.country, region: enc.region, zone: enc.zone ?? '', gps_lat: enc.gps_lat, gps_lon: enc.gps_lon,
-            provider: enc.provider, owner: enc.owner, max_apps: enc.max_apps, os_release_url: enc.os_release_url ?? '',
+            provider: enc.provider, owner: enc.owner,
+            city: enc.city ?? '', country_code: enc.country_code ?? '', continent: enc.continent ?? '', cloud_region_code: enc.cloud_region_code ?? '',
+            max_apps: enc.max_apps, os_release_url: enc.os_release_url ?? '',
         });
+        setProviderSel(resolveProviderSel(enc.provider));
+        setMatched(null);
+        setMatchState('idle');
         setEditingId(enc.id);
         setShowForm(true);
     }
@@ -170,10 +296,25 @@ export default function AdminEnclavePage() {
             setError('IP address is required — the management service connects to the enclave by IP, not by DNS name.');
             return;
         }
+        if (!form.owner?.trim()) {
+            setError('Owner is required.');
+            return;
+        }
+        if (!form.provider?.trim()) {
+            setError('Provider is required.');
+            return;
+        }
         setSaving(true);
         setError(null);
         try {
-            const payload = { ...form, region: regionForCountry(form.country ?? ''), zone: form.zone?.trim() || undefined, gateway_host: form.gateway_host || undefined };
+            // Region: the matched region label when a cloud-region match filled it,
+            // else derived from the country (the pre-dataset behaviour).
+            const payload = {
+                ...form,
+                region: form.region?.trim() || regionForCountry(form.country ?? ''),
+                zone: form.zone?.trim() || undefined,
+                gateway_host: form.gateway_host || undefined
+            };
             if (editingId) {
                 await adminUpdateEnclave(session.accessToken, editingId, payload);
             } else {
@@ -214,10 +355,24 @@ export default function AdminEnclavePage() {
                         {filtered.length !== enclaves.length && ` · ${filtered.length} shown`}
                     </p>
                 </div>
-                <button onClick={openCreate}
-                    className="px-4 py-2 text-sm font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-80 transition-opacity">
-                    Add enclave
-                </button>
+                <div className="flex items-center gap-2">
+                    <div className="text-right">
+                        <button onClick={handleRefreshRegions} disabled={refreshing}
+                            title="Re-import the cloud provider/region reference data from the upstream dataset"
+                            className="px-3 py-2 text-xs font-medium rounded-lg border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-40 transition-colors">
+                            {refreshing ? 'Refreshing…' : 'Refresh cloud regions'}
+                        </button>
+                        {(refreshMsg || regionsMeta?.source_version) && (
+                            <div className="mt-1 text-[10px] text-black/35 dark:text-white/35">
+                                {refreshMsg ?? `regions dataset v${regionsMeta!.source_version} (${regionsMeta!.source_updated})`}
+                            </div>
+                        )}
+                    </div>
+                    <button onClick={openCreate}
+                        className="px-4 py-2 text-sm font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-80 transition-opacity">
+                        Add enclave
+                    </button>
+                </div>
             </div>
 
             {error && (
@@ -248,37 +403,48 @@ export default function AdminEnclavePage() {
                                 className={INPUT_CLS} />
                         </div>
                         <div className="col-span-2">
-                            <label className="block text-xs font-medium mb-1">IP address *</label>
+                            <FieldLabel label="IP address" required
+                                help="The management service connects to this IP directly. For Spot VMs with rotating IPs, just edit this field and save — no restart needed." />
                             <input required value={form.gateway_host ?? ''} onChange={e => setForm(f => ({ ...f, gateway_host: e.target.value }))}
                                 placeholder="e.g. 34.32.151.96"
                                 className={INPUT_CLS} />
-                            <p className="mt-1 text-xs text-black/40 dark:text-white/40">
-                                The management service connects to this IP directly. For Spot VMs
-                                with rotating IPs, just edit this field and save — no restart needed.
-                            </p>
                         </div>
                         <div>
-                            <label className="block text-xs font-medium mb-1" title="Default 10. Higher for multi-tenant nodes. 0 = unlimited (use with care: a single 1-GPU box typically can't run more than ~3 model containers).">
-                                Max apps <span className="text-black/40 dark:text-white/40">(0 = unlimited)</span>
-                            </label>
+                            <FieldLabel label="Max apps (0 = unlimited)"
+                                help="Default 10. A single-GPU node typically tops out at ~3 model containers; raise for multi-tenant nodes." />
                             <input type="number" value={form.max_apps ?? 10} onChange={e => setForm(f => ({ ...f, max_apps: parseInt(e.target.value) || 0 }))}
                                 className={INPUT_CLS} />
-                            <p className="mt-1 text-xs text-black/40 dark:text-white/40">
-                                Default 10. A single-GPU node typically tops out at ~3 model
-                                containers; raise for multi-tenant nodes.
-                            </p>
                         </div>
                         <div>
-                            <label className="block text-xs font-medium mb-1">Owner</label>
-                            <input value={form.owner ?? ''} onChange={e => setForm(f => ({ ...f, owner: e.target.value }))}
+                            <FieldLabel label="Owner" required help="Who operates this enclave (shown to app owners when they pick a deployment location)." />
+                            <input required value={form.owner ?? ''} onChange={e => setForm(f => ({ ...f, owner: e.target.value }))}
                                 placeholder="e.g. Privasys, Acme Corp"
                                 className={INPUT_CLS} />
                         </div>
                         <div>
-                            <label className="block text-xs font-medium mb-1">Provider</label>
-                            <input value={form.provider ?? ''} onChange={e => setForm(f => ({ ...f, provider: e.target.value }))}
-                                placeholder="e.g. OVH, Azure, AWS"
-                                className={INPUT_CLS} />
+                            <FieldLabel label="Provider" required
+                                help="The cloud the machine runs on. Picking a known provider lets the cloud zone pre-fill the location metadata; pick Other for anything outside the list and fill the location manually." />
+                            <select required value={providerSel} onChange={e => {
+                                const sel = e.target.value;
+                                setProviderSel(sel);
+                                setMatched(null);
+                                setMatchState('idle');
+                                if (sel && sel !== OTHER_PROVIDER) {
+                                    const p = cloudProviders.find(cp => cp.id === sel);
+                                    setForm(f => ({ ...f, provider: p?.name ?? sel }));
+                                } else {
+                                    setForm(f => ({ ...f, provider: '' }));
+                                }
+                            }} className={INPUT_CLS}>
+                                <option value="">Select a provider…</option>
+                                {cloudProviders.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                <option value={OTHER_PROVIDER}>Other…</option>
+                            </select>
+                            {providerSel === OTHER_PROVIDER && (
+                                <input required value={form.provider ?? ''} onChange={e => setForm(f => ({ ...f, provider: e.target.value }))}
+                                    placeholder="Provider name"
+                                    className={`${INPUT_CLS} mt-2`} />
+                            )}
                         </div>
                         {form.tee_type !== 'tdx' && (
                             <div className="col-span-3">
@@ -295,50 +461,77 @@ export default function AdminEnclavePage() {
                             </div>
                         )}
                         <div className="col-span-3">
-                            <label className="block text-xs font-medium mb-1">Enclave OS release</label>
+                            <FieldLabel label="Enclave OS release"
+                                help="Link to the official GitHub release this enclave runs. Checked on save and stamped onto every attestation so users can verify the running Enclave OS instantly. Use enclave-os-mini for SGX/WASM, enclave-os-virtual for TDX/containers." />
                             <input value={form.os_release_url ?? ''} onChange={e => setForm(f => ({ ...f, os_release_url: e.target.value }))}
                                 placeholder="https://github.com/Privasys/enclave-os-mini/releases/tag/v0.20.3"
                                 className={`${INPUT_CLS} font-mono text-xs`} />
-                            <p className="mt-1 text-xs text-black/40 dark:text-white/40">
-                                Link to the official GitHub release this enclave runs. Checked on save and stamped
-                                onto every attestation so users can verify the running Enclave OS instantly. Use
-                                enclave-os-mini for SGX/WASM, enclave-os-virtual for TDX/containers.
-                            </p>
                         </div>
                         <div>
-                            <label className="block text-xs font-medium mb-1">Country</label>
-                            <select value={form.country ?? ''} onChange={e => setForm(f => ({ ...f, country: e.target.value }))}
-                                className={INPUT_CLS}>
-                                <option value="">Select a country…</option>
-                                {COUNTRIES.map(c => <option key={c.code} value={c.code}>{c.name}</option>)}
-                            </select>
-                        </div>
-                        <div>
-                            <div className="text-xs font-medium mb-1">Region</div>
-                            <div className="px-3 py-2 text-sm text-black/60 dark:text-white/60">
-                                {form.country ? regionForCountry(form.country) : <span className="text-black/30 dark:text-white/30">— (derived from country)</span>}
-                            </div>
-                        </div>
-                        <div>
-                            <label className="block text-xs font-medium mb-1">
-                                Cloud zone {form.tee_type === 'tdx' ? '*' : '(optional for SGX)'}
-                            </label>
+                            <FieldLabel label={`Cloud zone${form.tee_type === 'tdx' ? '' : ' (optional for SGX)'}`} required={form.tee_type === 'tdx'}
+                                help="The zonal value the machine actually runs in (TDX cloud-image deployments use a zonal GCE disk and need it). With a known provider, typing the zone looks up the region and pre-fills the location fields below." />
                             <input required={form.tee_type === 'tdx'} value={form.zone ?? ''} onChange={e => setForm(f => ({ ...f, zone: e.target.value }))}
                                 placeholder="e.g. europe-west4-c"
                                 className={INPUT_CLS} />
-                            <p className="mt-1 text-xs text-black/40 dark:text-white/40">
-                                Required for TDX enclaves: cloud-image deployments use a zonal
-                                GCE disk and need this hint to find it.
-                            </p>
+                            {matchState === 'checking' && (
+                                <p className="mt-1 text-[11px] text-black/35 dark:text-white/35 animate-pulse">Looking up zone…</p>
+                            )}
+                            {matchState === 'matched' && matched && (
+                                <p className="mt-1 text-[11px] text-emerald-600 dark:text-emerald-400">
+                                    Matched {matched.provider}/{matched.region_code} — {matched.city}, {matched.display_country}
+                                </p>
+                            )}
+                            {matchState === 'none' && (
+                                <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">
+                                    Unknown zone for this provider — fill the location manually.
+                                </p>
+                            )}
+                        </div>
+                        <div>
+                            <FieldLabel label="Region"
+                                help="Pick the provider region to pre-fill the location (an alternative to typing the zone). The region label shown on enclaves is derived automatically: Europe (EU) for EU member states, else the continent." />
+                            {providerSel && providerSel !== OTHER_PROVIDER && cloudRegions.length > 0 ? (
+                                <select value={form.cloud_region_code ?? ''} onChange={e => {
+                                    const r = cloudRegions.find(cr => cr.region_code === e.target.value);
+                                    if (r) applyRegion(r, !form.zone?.trim());
+                                }} className={INPUT_CLS}>
+                                    <option value="">Select a region…</option>
+                                    {cloudRegions.map(r => (
+                                        <option key={r.region_code} value={r.region_code}>
+                                            {r.region_code} — {r.city}, {r.country}
+                                        </option>
+                                    ))}
+                                </select>
+                            ) : (
+                                <div className="px-3 py-2 text-sm text-black/60 dark:text-white/60">
+                                    {form.region || (form.country ? regionForCountry(form.country) : <span className="text-black/30 dark:text-white/30">— (derived)</span>)}
+                                </div>
+                            )}
+                        </div>
+                        <div>
+                            <FieldLabel label="Country" help="Pre-filled from the cloud zone for known providers; EU member states show with an (EU) postfix." />
+                            <select value={form.country ?? ''} onChange={e => {
+                                const code = e.target.value;
+                                setForm(f => ({ ...f, country: code, country_code: code, region: regionForCountry(code) }));
+                            }} className={INPUT_CLS}>
+                                <option value="">Select a country…</option>
+                                {COUNTRIES.map(c => <option key={c.code} value={c.code}>{displayCountryName(c.code)}</option>)}
+                            </select>
+                        </div>
+                        <div>
+                            <FieldLabel label="City" help="Datacentre city; pre-filled from the cloud zone for known providers." />
+                            <input value={form.city ?? ''} onChange={e => setForm(f => ({ ...f, city: e.target.value }))}
+                                placeholder="e.g. Eemshaven"
+                                className={INPUT_CLS} />
                         </div>
                         <div className="grid grid-cols-2 gap-4">
                             <div>
-                                <label className="block text-xs font-medium mb-1">GPS Lat</label>
+                                <FieldLabel label="GPS Lat" />
                                 <input type="number" step="any" value={form.gps_lat ?? ''} onChange={e => setForm(f => ({ ...f, gps_lat: e.target.value ? parseFloat(e.target.value) : undefined }))}
                                     className={INPUT_CLS} />
                             </div>
                             <div>
-                                <label className="block text-xs font-medium mb-1">GPS Lon</label>
+                                <FieldLabel label="GPS Lon" />
                                 <input type="number" step="any" value={form.gps_lon ?? ''} onChange={e => setForm(f => ({ ...f, gps_lon: e.target.value ? parseFloat(e.target.value) : undefined }))}
                                     className={INPUT_CLS} />
                             </div>
@@ -447,7 +640,7 @@ export default function AdminEnclavePage() {
                                                 <code className="text-xs">{enc.gateway_host || '—'}:{enc.port}</code>
                                             </td>
                                             <td className="px-4 py-3 text-black/60 dark:text-white/60">
-                                                {enc.country ? countryName(enc.country) : '—'}{enc.region ? ` · ${enc.region}` : ''}
+                                                {enc.city ? `${enc.city}, ` : ''}{enc.country ? displayCountryName(enc.country) : '—'}{enc.region ? ` · ${enc.region}` : ''}
                                             </td>
                                             <td className="px-4 py-3 text-black/60 dark:text-white/60">
                                                 {enc.owner || '—'}
