@@ -86,6 +86,10 @@ export default function AdminEnclavePage() {
 
     const isManager = hasManagerRole(session?.roles);
 
+    // Location fields (country/city/GPS) are dataset-managed while a known
+    // provider's region is selected; "Custom location…" in Region unlocks them.
+    const regionLocked = !!providerSel && providerSel !== OTHER_PROVIDER && !!form.cloud_region_code?.trim();
+
     const load = useCallback(async () => {
         if (!session?.accessToken) return;
         setError(null);
@@ -415,6 +419,13 @@ export default function AdminEnclavePage() {
                             <input type="number" value={form.max_apps ?? 10} onChange={e => setForm(f => ({ ...f, max_apps: parseInt(e.target.value) || 0 }))}
                                 className={INPUT_CLS} />
                         </div>
+                        <div className="col-span-3">
+                            <FieldLabel label="Enclave OS release"
+                                help="Link to the official GitHub release this enclave runs. Checked on save and stamped onto every attestation so users can verify the running Enclave OS instantly. Use enclave-os-mini for SGX/WASM, enclave-os-virtual for TDX/containers." />
+                            <input value={form.os_release_url ?? ''} onChange={e => setForm(f => ({ ...f, os_release_url: e.target.value }))}
+                                placeholder="https://github.com/Privasys/enclave-os-mini/releases/tag/v0.20.3"
+                                className={`${INPUT_CLS} font-mono text-xs`} />
+                        </div>
                         <div>
                             <FieldLabel label="Owner" required help="Who operates this enclave (shown to app owners when they pick a deployment location)." />
                             <input required value={form.owner ?? ''} onChange={e => setForm(f => ({ ...f, owner: e.target.value }))}
@@ -460,42 +471,23 @@ export default function AdminEnclavePage() {
                                 </div>
                             </div>
                         )}
-                        <div className="col-span-3">
-                            <FieldLabel label="Enclave OS release"
-                                help="Link to the official GitHub release this enclave runs. Checked on save and stamped onto every attestation so users can verify the running Enclave OS instantly. Use enclave-os-mini for SGX/WASM, enclave-os-virtual for TDX/containers." />
-                            <input value={form.os_release_url ?? ''} onChange={e => setForm(f => ({ ...f, os_release_url: e.target.value }))}
-                                placeholder="https://github.com/Privasys/enclave-os-mini/releases/tag/v0.20.3"
-                                className={`${INPUT_CLS} font-mono text-xs`} />
-                        </div>
-                        <div>
-                            <FieldLabel label={`Cloud zone${form.tee_type === 'tdx' ? '' : ' (optional for SGX)'}`} required={form.tee_type === 'tdx'}
-                                help="The zonal value the machine actually runs in (TDX cloud-image deployments use a zonal GCE disk and need it). With a known provider, typing the zone looks up the region and pre-fills the location fields below." />
-                            <input required={form.tee_type === 'tdx'} value={form.zone ?? ''} onChange={e => setForm(f => ({ ...f, zone: e.target.value }))}
-                                placeholder="e.g. europe-west4-c"
-                                className={INPUT_CLS} />
-                            {matchState === 'checking' && (
-                                <p className="mt-1 text-[11px] text-black/35 dark:text-white/35 animate-pulse">Looking up zone…</p>
-                            )}
-                            {matchState === 'matched' && matched && (
-                                <p className="mt-1 text-[11px] text-emerald-600 dark:text-emerald-400">
-                                    Matched {matched.provider}/{matched.region_code} — {matched.city}, {matched.display_country}
-                                </p>
-                            )}
-                            {matchState === 'none' && (
-                                <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">
-                                    Unknown zone for this provider — fill the location manually.
-                                </p>
-                            )}
-                        </div>
                         <div>
                             <FieldLabel label="Region"
-                                help="Pick the provider region to pre-fill the location (an alternative to typing the zone). The region label shown on enclaves is derived automatically: Europe (EU) for EU member states, else the continent." />
+                                help="The provider region: picking one fills country, city, GPS and continent from the regions dataset (those fields lock; choose 'Custom location…' to edit them manually). The region label shown on enclaves derives automatically: Europe (EU) for EU member states, else the continent." />
                             {providerSel && providerSel !== OTHER_PROVIDER && cloudRegions.length > 0 ? (
                                 <select value={form.cloud_region_code ?? ''} onChange={e => {
-                                    const r = cloudRegions.find(cr => cr.region_code === e.target.value);
-                                    if (r) applyRegion(r, !form.zone?.trim());
+                                    const rc = e.target.value;
+                                    if (!rc) {
+                                        // Custom location: unlock the linked fields, keep current values.
+                                        setForm(f => ({ ...f, cloud_region_code: '' }));
+                                        setMatched(null);
+                                        setMatchState('idle');
+                                        return;
+                                    }
+                                    const r = cloudRegions.find(cr => cr.region_code === rc);
+                                    if (r) applyRegion(r, form.tee_type === 'tdx' && !form.zone?.trim());
                                 }} className={INPUT_CLS}>
-                                    <option value="">Select a region…</option>
+                                    <option value="">Custom location…</option>
                                     {cloudRegions.map(r => (
                                         <option key={r.region_code} value={r.region_code}>
                                             {r.region_code} — {r.city}, {r.country}
@@ -508,34 +500,61 @@ export default function AdminEnclavePage() {
                                 </div>
                             )}
                         </div>
+                        {form.tee_type === 'tdx' && (
+                            <div>
+                                <FieldLabel label="Cloud zone" required
+                                    help="The zonal value this TDX machine runs in — cloud-image deployments resolve a zonal GCE disk from it, so the region alone is not enough. Typing it selects the matching region automatically." />
+                                <input required value={form.zone ?? ''} onChange={e => setForm(f => ({ ...f, zone: e.target.value }))}
+                                    placeholder="e.g. europe-west4-c"
+                                    className={INPUT_CLS} />
+                                {matchState === 'checking' && (
+                                    <p className="mt-1 text-[11px] text-black/35 dark:text-white/35 animate-pulse">Looking up zone…</p>
+                                )}
+                                {matchState === 'matched' && matched && (
+                                    <p className="mt-1 text-[11px] text-emerald-600 dark:text-emerald-400">
+                                        Matched {matched.provider}/{matched.region_code} — {matched.city}, {matched.display_country}
+                                    </p>
+                                )}
+                                {matchState === 'none' && (
+                                    <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">
+                                        Unknown zone for this provider — pick a region or fill the location manually.
+                                    </p>
+                                )}
+                            </div>
+                        )}
                         <div>
-                            <FieldLabel label="Country" help="Pre-filled from the cloud zone for known providers; EU member states show with an (EU) postfix." />
-                            <select value={form.country ?? ''} onChange={e => {
+                            <FieldLabel label="Country" help="Filled from the region for known providers (locked while a region is selected); EU member states show with an (EU) postfix." />
+                            <select value={form.country ?? ''} disabled={regionLocked} onChange={e => {
                                 const code = e.target.value;
                                 setForm(f => ({ ...f, country: code, country_code: code, region: regionForCountry(code) }));
-                            }} className={INPUT_CLS}>
+                            }} className={`${INPUT_CLS} disabled:opacity-60 disabled:cursor-not-allowed`}>
                                 <option value="">Select a country…</option>
                                 {COUNTRIES.map(c => <option key={c.code} value={c.code}>{displayCountryName(c.code)}</option>)}
                             </select>
                         </div>
                         <div>
-                            <FieldLabel label="City" help="Datacentre city; pre-filled from the cloud zone for known providers." />
-                            <input value={form.city ?? ''} onChange={e => setForm(f => ({ ...f, city: e.target.value }))}
+                            <FieldLabel label="City" help="Datacentre city; filled from the region for known providers (locked while a region is selected)." />
+                            <input value={form.city ?? ''} readOnly={regionLocked} onChange={e => setForm(f => ({ ...f, city: e.target.value }))}
                                 placeholder="e.g. Eemshaven"
-                                className={INPUT_CLS} />
+                                className={`${INPUT_CLS} ${regionLocked ? 'opacity-60 cursor-not-allowed' : ''}`} />
                         </div>
                         <div className="grid grid-cols-2 gap-4">
                             <div>
                                 <FieldLabel label="GPS Lat" />
-                                <input type="number" step="any" value={form.gps_lat ?? ''} onChange={e => setForm(f => ({ ...f, gps_lat: e.target.value ? parseFloat(e.target.value) : undefined }))}
-                                    className={INPUT_CLS} />
+                                <input type="number" step="any" value={form.gps_lat ?? ''} readOnly={regionLocked} onChange={e => setForm(f => ({ ...f, gps_lat: e.target.value ? parseFloat(e.target.value) : undefined }))}
+                                    className={`${INPUT_CLS} ${regionLocked ? 'opacity-60 cursor-not-allowed' : ''}`} />
                             </div>
                             <div>
                                 <FieldLabel label="GPS Lon" />
-                                <input type="number" step="any" value={form.gps_lon ?? ''} onChange={e => setForm(f => ({ ...f, gps_lon: e.target.value ? parseFloat(e.target.value) : undefined }))}
-                                    className={INPUT_CLS} />
+                                <input type="number" step="any" value={form.gps_lon ?? ''} readOnly={regionLocked} onChange={e => setForm(f => ({ ...f, gps_lon: e.target.value ? parseFloat(e.target.value) : undefined }))}
+                                    className={`${INPUT_CLS} ${regionLocked ? 'opacity-60 cursor-not-allowed' : ''}`} />
                             </div>
                         </div>
+                        {regionLocked && (
+                            <div className="col-span-3 -mt-2 text-[11px] text-black/35 dark:text-white/35">
+                                Location fields are filled from the selected region. Choose &ldquo;Custom location…&rdquo; in Region to edit them manually.
+                            </div>
+                        )}
                     </div>
                     <div className="flex gap-3 pt-2">
                         <button type="submit" disabled={saving}
