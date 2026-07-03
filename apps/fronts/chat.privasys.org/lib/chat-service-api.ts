@@ -74,11 +74,18 @@ async function call<T>(
     path: string,
     body?: unknown
 ): Promise<T> {
-    const res: SealedResponse = await session.request(method, path, body, {
-        headers: { Authorization: `Bearer ${token}` }
-    });
-    const text = res.body && res.body.byteLength ? decoder.decode(res.body) : '';
-    if (res.status < 200 || res.status >= 300) {
+    // Identity note: chat-service authenticates the SEALED SESSION itself —
+    // the enclave relay asserts the wallet-vouched sub (X-Privasys-Sub)
+    // toward the app, so no bearer needs to travel. The Authorization set
+    // here is overwritten by the sealed transport's session scheme anyway;
+    // `token` is kept in the signature as the caller-side "signed in" gate.
+    void token;
+    const res: SealedResponse = await session.request(method, path, body);
+    // A missing/odd status must never read as success (a `status` of
+    // undefined passes both range checks vacuously and would surface
+    // phantom empty objects as created resources).
+    if (typeof res.status !== 'number' || res.status < 200 || res.status >= 300) {
+        const text = res.body && res.body.byteLength ? decoder.decode(res.body) : '';
         let msg = `${res.status}`;
         try {
             const j = text ? (JSON.parse(text) as { error?: string }) : null;
@@ -88,6 +95,7 @@ async function call<T>(
         }
         throw new Error(msg);
     }
+    const text = res.body && res.body.byteLength ? decoder.decode(res.body) : '';
     return (text ? JSON.parse(text) : {}) as T;
 }
 
@@ -103,7 +111,13 @@ export async function addUserTool(
     token: string,
     input: AddUserToolInput
 ): Promise<UserTool> {
-    return call<UserTool>(session, token, 'POST', '/api/v1/me/tools', input);
+    const created = await call<UserTool>(session, token, 'POST', '/api/v1/me/tools', input);
+    // Guard against a malformed success: appending a shapeless object would
+    // render a nameless, un-deletable ghost row in the tools panel.
+    if (!created?.id || !created?.name) {
+        throw new Error('The tools back-end returned an unexpected response. Please try again.');
+    }
+    return created;
 }
 
 /** Enable/disable a tool. */
