@@ -155,8 +155,16 @@ export async function fetchToolGrant(
             'POST',
             `/api/v1/instances/${encodeURIComponent(instanceId)}/tool-grant`
         );
-        return data.grant ?? null;
-    } catch {
+        if (!data.grant) {
+            console.warn('[chat-tools] tool-grant response carried no grant');
+            return null;
+        }
+        return data.grant;
+    } catch (e) {
+        // Degrade to admin-only tools, but SAY SO: a silent null here made
+        // "the model can't see my tool" undiagnosable — every server-side
+        // link verified green while the grant never left the browser.
+        console.warn('[chat-tools] tool-grant fetch failed (user tools will be unavailable this turn):', (e as Error)?.message ?? e);
         return null;
     }
 }

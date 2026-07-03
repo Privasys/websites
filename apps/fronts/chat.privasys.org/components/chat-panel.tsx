@@ -264,8 +264,17 @@ export function ChatPanel({
         // Best-effort: no chat session / no grant just means only the fleet's
         // admin tools are available.
         let toolGrant: string | undefined;
+        const wantsUserTools = (userTools ?? []).some((t) => t.enabled);
         if (chatSession && token && enabledTools && enabledTools.length > 0) {
             toolGrant = (await fetchToolGrant(chatSession, token, instance.id)) ?? undefined;
+            console.debug(`[chat-tools] turn grant: ${toolGrant ? 'attached' : 'ABSENT'} (tools: ${enabledTools.join(',')})`);
+        } else if (wantsUserTools) {
+            // User tools are toggled on but we cannot mint their grant —
+            // without it the enclave only serves the fleet's admin tools.
+            console.warn(
+                '[chat-tools] user tools enabled but no grant possible: ' +
+                `chatSession=${!!chatSession} token=${!!token} enabledTools=${enabledTools?.length ?? 'undefined'}`
+            );
         }
 
         // The authoritative final text of the assistant turn, set by the
