@@ -170,17 +170,23 @@ export function ChatPanel({
     useEffect(() => { sealedSessionRef.current = sealedSession; }, [sealedSession]);
 
     // Sync internal state when the parent switches conversation.
-    // - null → string (first message persisted): keep local state,
-    //   just record the new id. Critical: must NOT clobber `messages`
+    // - first-message mint: persist() records the minted id in
+    //   localConvIdRef synchronously, so by the time the parent's
+    //   setCurrentId re-render runs this effect, prev === conversationId
+    //   and we keep local state. Critical: must NOT clobber `messages`
     //   while a stream is in flight — onDelta is appending to it.
-    // - string → different string: parent picked another conversation;
-    //   reset our state to the new initialMessages. Skipped while a
-    //   stream is in flight so we don't lose the assistant turn.
+    // - any OTHER id change (another conversation picked, or storage
+    //   hydration selecting the most recent one after a reload): reset
+    //   our state to the new initialMessages. A blanket "null → id is a
+    //   mint" skip here once made every post-reload hydration keep the
+    //   empty hero while conversation 1 was selected — typing then
+    //   OVERWROTE that conversation, and clicking it was a no-op.
+    //   Skipped while a stream is in flight so we don't lose the
+    //   assistant turn.
     useEffect(() => {
         const prev = localConvIdRef.current;
         localConvIdRef.current = conversationId;
         if (prev === conversationId) return;
-        if (prev === null && conversationId !== null) return; // first-message mint
         if (streamingRef.current) return;
         setMessages(initialMessages.map((m) => ({ ...m })));
         setInput('');
