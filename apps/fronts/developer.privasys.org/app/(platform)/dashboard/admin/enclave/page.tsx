@@ -308,6 +308,10 @@ export default function AdminEnclavePage() {
             setError('Provider is required.');
             return;
         }
+        if (!form.os_release_url?.trim()) {
+            setError('Enclave OS release is required — link the GitHub release this enclave runs.');
+            return;
+        }
         setSaving(true);
         setError(null);
         try {
@@ -420,9 +424,9 @@ export default function AdminEnclavePage() {
                                 className={INPUT_CLS} />
                         </div>
                         <div className="col-span-3">
-                            <FieldLabel label="Enclave OS release"
-                                help="Link to the official GitHub release this enclave runs. Checked on save and stamped onto every attestation so users can verify the running Enclave OS instantly. Use enclave-os-mini for SGX/WASM, enclave-os-virtual for TDX/containers." />
-                            <input value={form.os_release_url ?? ''} onChange={e => setForm(f => ({ ...f, os_release_url: e.target.value }))}
+                            <FieldLabel label="Enclave OS release" required
+                                help="Link to the official GitHub release this enclave runs. On save, the management service verifies the enclave's measurements against the release (SGX: MRENCLAVE vs the mrenclave.txt asset; TDX: reported RTMR[1]/[2] vs the Predicted RTMRs in the notes — a TDX enclave that hasn't booted yet is accepted and verified on its next save). Stamped onto every attestation. Use enclave-os-mini for SGX/WASM, enclave-os-virtual for TDX/containers." />
+                            <input required value={form.os_release_url ?? ''} onChange={e => setForm(f => ({ ...f, os_release_url: e.target.value }))}
                                 placeholder="https://github.com/Privasys/enclave-os-mini/releases/tag/v0.20.3"
                                 className={`${INPUT_CLS} font-mono text-xs`} />
                         </div>
