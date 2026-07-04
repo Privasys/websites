@@ -29,19 +29,22 @@ export function AppSidebar({
     onDeleteConversation,
     onRenameConversation,
     onShowSecurity,
+    onShowTools,
     onShowSignIn
 }: {
     instance: Instance | null;
     conversations: Conversation[];
     activeConversationId: string | null;
-    /** Aggregate verification status from the always-mounted SecurityView.
-     *  Drives the color of the "Secure enclaves attestations" pill. */
+    /** Verification status of the CONFIDENTIAL-AI enclave alone (from the
+     *  always-mounted SecurityView). Drives the "Secure enclave" pill —
+     *  tools are attested separately and never affect it. */
     attestationStatus?: AggregateAttestationStatus;
     onNewChat: () => void;
     onSelectConversation: (id: string) => void;
     onDeleteConversation: (id: string) => void;
     onRenameConversation: (id: string, title: string) => void;
     onShowSecurity: () => void;
+    onShowTools?: () => void;
     onShowSignIn: () => void;
 }) {
     const { session, signOut } = useAuth();
@@ -116,6 +119,17 @@ export function AppSidebar({
             </div>
 
             <div className="border-t border-[var(--color-border-dark)] px-3 py-3">
+                {session && onShowTools && (
+                    <button
+                        type="button"
+                        onClick={onShowTools}
+                        disabled={!secureEnabled}
+                        className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-surface-2)]/60 disabled:opacity-50"
+                    >
+                        <WrenchIcon />
+                        <span className="flex-1">AI Tools</span>
+                    </button>
+                )}
                 {session && (
                     <button
                         type="button"
@@ -124,7 +138,7 @@ export function AppSidebar({
                         className={`flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm transition-colors hover:bg-[var(--color-surface-2)]/60 disabled:opacity-50 ${attestationPillClass(attestationStatus, secureEnabled)}`}
                     >
                         <ShieldIcon />
-                        <span className="flex-1">Secure enclaves attestations</span>
+                        <span className="flex-1">{attestationPillLabel(attestationStatus, secureEnabled)}</span>
                     </button>
                 )}
 
@@ -246,9 +260,9 @@ function BuildLine({ prefix, label, href }: { prefix: string; label: string; hre
     );
 }
 
-// Pill color reflects real attestation result: green only when every
-// component verified, red when any failed, muted while in flight or
-// when there is no endpoint to attest.
+// Pill color reflects the INFERENCE ENCLAVE's attestation alone: green
+// when it verified, red when it failed, muted while in flight or when
+// there is no endpoint to attest. Tools never affect it.
 function attestationPillClass(
     status: AggregateAttestationStatus | undefined,
     secureEnabled: boolean
@@ -257,6 +271,17 @@ function attestationPillClass(
     if (status === 'verified') return 'text-[var(--color-primary-green)]';
     if (status === 'failed') return 'text-red-600 dark:text-red-400';
     return 'text-[var(--color-text-muted)]';
+}
+
+// Pill wording matches the promise being made: a state, not a menu label.
+function attestationPillLabel(
+    status: AggregateAttestationStatus | undefined,
+    secureEnabled: boolean
+): string {
+    if (!secureEnabled) return 'Secure enclave';
+    if (status === 'verified') return 'Secure enclave verified';
+    if (status === 'failed') return 'Secure enclave not verified';
+    return 'Verifying secure enclave…';
 }
 
 interface DisplayInfo {
@@ -435,6 +460,14 @@ function ShieldIcon() {
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
             <path d="m9 12 2 2 4-4" />
+        </svg>
+    );
+}
+
+function WrenchIcon() {
+    return (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
         </svg>
     );
 }

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import type { AvailableModel, Instance } from '~/lib/types';
 import type { SamplingParams } from '~/lib/sampling';
-import type { AddUserToolInput, UserTool } from '~/lib/chat-service-api';
+import type { UserTool } from '~/lib/chat-service-api';
 import { ModelPicker } from './model-picker';
 import { SamplingEditor } from './sampling-editor';
 
@@ -34,10 +34,8 @@ export function Composer({
     onToggleTool,
     userTools,
     onToggleUserTool,
-    onAddTool,
+    onManageTools,
     onRemoveUserTool,
-    addAwaitingApproval,
-    toolPolicy,
     placeholder,
     autoFocus,
     disabledReason
@@ -69,12 +67,10 @@ export function Composer({
     /** The user's own persistent tools (from chat-service). */
     userTools?: UserTool[];
     onToggleUserTool?: (id: string, enabled: boolean) => void | Promise<void>;
-    onAddTool?: (input: AddUserToolInput) => Promise<void>;
+    /** Navigate to the AI Tools management view. */
+    onManageTools?: () => void;
     onRemoveUserTool?: (id: string) => void | Promise<void>;
-    /** True while an add is blocked on a wallet push approval. */
-    addAwaitingApproval?: boolean;
     /** Fleet governance: 'locked' | 'enclave_only' | 'open'. Gates adding. */
-    toolPolicy?: string;
     placeholder?: string;
     autoFocus?: boolean;
     /**
@@ -90,9 +86,9 @@ export function Composer({
     const advancedAvailable = !!sampling && !!onSamplingChange;
     const availableTools = instance.available_tools ?? [];
     const myTools = userTools ?? [];
-    const canAddTool = !!onAddTool && !!toolPolicy && toolPolicy !== 'locked';
+    const canManageTools = !!onManageTools;
     const toolsAvailable =
-        (availableTools.length > 0 && !!onToggleTool) || myTools.length > 0 || canAddTool;
+        (availableTools.length > 0 && !!onToggleTool) || myTools.length > 0 || canManageTools;
     const enabledCount =
         availableTools.reduce((n, t) => (enabledTools?.has(t.name) ? n + 1 : n), 0) +
         myTools.reduce((n, t) => (t.enabled ? n + 1 : n), 0);
@@ -228,13 +224,15 @@ export function Composer({
                                                 </>
                                             )}
 
-                                            {canAddTool && onAddTool && (
-                                                <AddToolForm
-                                                    instanceId={instance.id}
-                                                    allowExternal={toolPolicy === 'open'}
-                                                    onAdd={onAddTool}
-                                                    awaitingApproval={addAwaitingApproval}
-                                                />
+                                            {canManageTools && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => { setShowTools(false); onManageTools?.(); }}
+                                                    className="flex w-full items-center gap-2 border-t border-[var(--color-border-dark)] px-3 py-2.5 text-left text-sm text-[var(--color-primary-blue)] hover:bg-[var(--color-surface-2)]/60"
+                                                >
+                                                    <PlusGlyph />
+                                                    Manage tools…
+                                                </button>
                                             )}
                                         </div>
                                     </div>
@@ -422,8 +420,6 @@ function ChevronDownIcon() {
     );
 }
 
-const toolInputCls =
-    'w-full rounded-md border border-[var(--color-border-dark)] bg-transparent px-2 py-1.5 text-sm text-[var(--color-text-primary)] outline-none focus:border-[var(--color-primary-blue)]/60';
 
 function ToolSectionLabel({ children }: { children: ReactNode }) {
     return (
@@ -486,163 +482,7 @@ function ToolRow({
     );
 }
 
-function KindTab({
-    active,
-    onClick,
-    children
-}: {
-    active: boolean;
-    onClick: () => void;
-    children: ReactNode;
-}) {
-    return (
-        <button
-            type="button"
-            onClick={onClick}
-            className={`flex-1 rounded px-2 py-1 ${active ? 'bg-[var(--color-surface-1)] text-[var(--color-text-primary)] shadow-sm' : 'text-[var(--color-text-muted)]'}`}
-        >
-            {children}
-        </button>
-    );
-}
 
-// Inline "Add a tool" form. Enclave (Privasys app) is the default and only
-// option under enclave_only; external is offered when the fleet policy is
-// open, behind an explicit off-platform acknowledgement.
-function AddToolForm({
-    instanceId,
-    allowExternal,
-    onAdd,
-    awaitingApproval
-}: {
-    instanceId: string;
-    allowExternal: boolean;
-    onAdd: (input: AddUserToolInput) => Promise<void>;
-    awaitingApproval?: boolean;
-}) {
-    const [open, setOpen] = useState(false);
-    const [kind, setKind] = useState<'enclave' | 'external'>('enclave');
-    const [ref, setRef] = useState('');
-    const [name, setName] = useState('');
-    const [ack, setAck] = useState(false);
-    const [busy, setBusy] = useState(false);
-    const [err, setErr] = useState<string | undefined>();
-
-    const submit = async () => {
-        setErr(undefined);
-        if (!/^[a-zA-Z0-9_]+$/.test(name)) {
-            setErr('Name must be letters, numbers, or underscores.');
-            return;
-        }
-        if (!ref.trim()) {
-            setErr(kind === 'enclave' ? 'Enter the app id or alias.' : 'Enter the server URL.');
-            return;
-        }
-        if (kind === 'external' && !ack) {
-            setErr('Please acknowledge the off-platform notice.');
-            return;
-        }
-        setBusy(true);
-        try {
-            await onAdd({
-                kind,
-                ref: ref.trim(),
-                name,
-                acknowledged: kind === 'external' ? ack : undefined,
-                instance_id: instanceId
-            });
-            setRef('');
-            setName('');
-            setAck(false);
-            setOpen(false);
-        } catch (e) {
-            setErr(e instanceof Error ? e.message : 'Failed to add tool.');
-        } finally {
-            setBusy(false);
-        }
-    };
-
-    if (!open) {
-        return (
-            <button
-                type="button"
-                onClick={() => setOpen(true)}
-                className="flex w-full items-center gap-2 border-t border-[var(--color-border-dark)] px-3 py-2.5 text-left text-sm text-[var(--color-primary-blue)] hover:bg-[var(--color-surface-2)]/60"
-            >
-                <PlusGlyph />
-                Add a tool…
-            </button>
-        );
-    }
-
-    return (
-        <div className="flex flex-col gap-2 border-t border-[var(--color-border-dark)] p-3">
-            {allowExternal && (
-                <div className="flex gap-1 rounded-md bg-[var(--color-surface-2)]/50 p-0.5 text-xs">
-                    <KindTab active={kind === 'enclave'} onClick={() => setKind('enclave')}>
-                        Privasys app
-                    </KindTab>
-                    <KindTab active={kind === 'external'} onClick={() => setKind('external')}>
-                        External
-                    </KindTab>
-                </div>
-            )}
-            <input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Name (e.g. my_rag)"
-                className={toolInputCls}
-            />
-            <input
-                value={ref}
-                onChange={(e) => setRef(e.target.value)}
-                placeholder={kind === 'enclave' ? 'App id or alias' : 'https://server.example.com'}
-                className={toolInputCls}
-            />
-            {kind === 'external' && (
-                <label className="flex items-start gap-2 text-[11px] text-[var(--color-text-muted)]">
-                    <input
-                        type="checkbox"
-                        className="mt-0.5"
-                        checked={ack}
-                        onChange={(e) => setAck(e.target.checked)}
-                    />
-                    <span>
-                        This server runs outside Privasys. Data sent to it leaves the enclave
-                        and is not attested or protected.
-                    </span>
-                </label>
-            )}
-            {err && <p className="text-[11px] text-red-400">{err}</p>}
-            {awaitingApproval && (
-                <p className="flex items-center gap-1.5 text-[11px] text-[var(--color-primary-blue)]">
-                    <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--color-primary-blue)]" />
-                    Approve adding this tool on your phone…
-                </p>
-            )}
-            <div className="flex justify-end gap-2">
-                <button
-                    type="button"
-                    onClick={() => {
-                        setOpen(false);
-                        setErr(undefined);
-                    }}
-                    className="text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
-                >
-                    Cancel
-                </button>
-                <button
-                    type="button"
-                    onClick={() => void submit()}
-                    disabled={busy}
-                    className="rounded-md bg-[var(--color-primary-blue)] px-3 py-1 text-xs font-medium text-white disabled:opacity-50"
-                >
-                    {busy ? (awaitingApproval ? 'Waiting for phone…' : 'Adding…') : 'Add'}
-                </button>
-            </div>
-        </div>
-    );
-}
 
 function PlusGlyph() {
     return (
