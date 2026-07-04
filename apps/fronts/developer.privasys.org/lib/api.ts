@@ -1027,6 +1027,9 @@ export function stopDeployment(token: string, appId: string, deploymentId: strin
 }
 
 export interface StoreListingUpdate {
+    // Optional title (display_name). Omit to leave a custom title untouched;
+    // when set it must reduce to the canonical app name (server-enforced).
+    display_name?: string;
     store_tagline: string;
     store_description: string;
     store_category: string;

@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '~/lib/privasys-auth';
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { createApp, uploadCwasm, checkAppName, detectAppType, listCachedImages, previewManifest, updateStoreListing } from '~/lib/api';
+import { slugifyDisplayName, displayNameError } from '~/lib/appName';
 import type { AppType, CachedImage } from '~/lib/types';
 import type { ManifestStore } from '~/lib/api';
 
@@ -34,29 +35,6 @@ function imageToAppName(image: string): string {
     const withoutTag = image.split(':')[0];
     const last = withoutTag.split('/').pop() || '';
     return last.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 63);
-}
-
-// A friendly name (e.g. "Web Search (Brave)") reduces to the canonical app name
-// by: lowercase → spaces to hyphens → drop anything not [a-z0-9-]. This is the
-// contract the create form enforces so the two names always correspond.
-function slugifyFriendly(s: string): string {
-    return s.trim().toLowerCase().replace(/ /g, '-').replace(/[^a-z0-9-]/g, '');
-}
-
-// friendlyNameError validates a friendly name against the canonical name it
-// must reduce to. Returns a message, or '' when valid (or the field is blank).
-// Structural slug faults that also make the canonical invalid (edge hyphens)
-// are left to the canonical name's own availability check; here we flag the
-// user-facing rules and the "these two don't correspond" case.
-function friendlyNameError(friendly: string, canonical: string): string {
-    const f = friendly.trim();
-    if (!f) return '';
-    if (/ {2,}/.test(f)) return 'No double spaces.';
-    const slug = slugifyFriendly(f);
-    if (!slug) return 'Friendly name must contain letters or numbers.';
-    if (/--/.test(slug)) return 'No double hyphens.';
-    if (canonical && slug !== canonical) return `Reduces to “${slug}”, but the app name is “${canonical}”.`;
-    return '';
 }
 
 // ── Shared icons ──
@@ -196,7 +174,7 @@ export default function NewApplicationPage() {
 
     // Step 3: Name — a canonical unique slug plus an optional friendly display
     // name (display_name). The friendly name drives the canonical (slug follows
-    // it) and must reduce to it via slugifyFriendly.
+    // it) and must reduce to it via slugifyDisplayName.
     const [friendlyName, setFriendlyName] = useState('');
     const [name, setName] = useState('');
     const [nameStatus, setNameStatus] = useState<NameStatus>('idle');
@@ -234,8 +212,8 @@ export default function NewApplicationPage() {
 
     // Friendly-name validation + the derived slug (used to offer a one-click
     // "align the app name" fix when the two have been made to diverge).
-    const friendlyDerived = slugifyFriendly(friendlyName);
-    const friendlyError = friendlyNameError(friendlyName, name);
+    const friendlyDerived = slugifyDisplayName(friendlyName);
+    const friendlyError = displayNameError(friendlyName, name);
     const canUseDerived = !!friendlyError && friendlyDerived !== name
         && /^[a-z][a-z0-9-]{1,61}[a-z0-9]$/.test(friendlyDerived);
 
@@ -266,7 +244,7 @@ export default function NewApplicationPage() {
         // the canonical slug follows what the user types, until they hand-edit it.
         let inferred = '';
         if (friendlyName.trim()) {
-            inferred = slugifyFriendly(friendlyName);
+            inferred = slugifyDisplayName(friendlyName);
         } else if (sourceMode === 'github' && parsed) {
             inferred = repoToAppName(parsed.repo);
         } else if (sourceMode === 'package' && containerImage) {
@@ -371,7 +349,7 @@ export default function NewApplicationPage() {
 
         const appName = name.trim();
         if (!appName) return;
-        if (friendlyNameError(friendlyName, appName)) return;
+        if (displayNameError(friendlyName, appName)) return;
 
         if (sourceMode === 'github' && !parsed) return;
         if (sourceMode === 'upload' && !file) return;
