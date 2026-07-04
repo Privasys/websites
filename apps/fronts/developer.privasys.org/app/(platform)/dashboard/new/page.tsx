@@ -36,6 +36,29 @@ function imageToAppName(image: string): string {
     return last.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 63);
 }
 
+// A friendly name (e.g. "Web Search (Brave)") reduces to the canonical app name
+// by: lowercase → spaces to hyphens → drop anything not [a-z0-9-]. This is the
+// contract the create form enforces so the two names always correspond.
+function slugifyFriendly(s: string): string {
+    return s.trim().toLowerCase().replace(/ /g, '-').replace(/[^a-z0-9-]/g, '');
+}
+
+// friendlyNameError validates a friendly name against the canonical name it
+// must reduce to. Returns a message, or '' when valid (or the field is blank).
+// Structural slug faults that also make the canonical invalid (edge hyphens)
+// are left to the canonical name's own availability check; here we flag the
+// user-facing rules and the "these two don't correspond" case.
+function friendlyNameError(friendly: string, canonical: string): string {
+    const f = friendly.trim();
+    if (!f) return '';
+    if (/ {2,}/.test(f)) return 'No double spaces.';
+    const slug = slugifyFriendly(f);
+    if (!slug) return 'Friendly name must contain letters or numbers.';
+    if (/--/.test(slug)) return 'No double hyphens.';
+    if (canonical && slug !== canonical) return `Reduces to “${slug}”, but the app name is “${canonical}”.`;
+    return '';
+}
+
 // ── Shared icons ──
 
 function CheckIcon({ className = 'w-4 h-4' }: { className?: string }) {
@@ -171,7 +194,10 @@ export default function NewApplicationPage() {
     const [cloudImageName, setCloudImageName] = useState('');
     const [cloudImageChannel, setCloudImageChannel] = useState('prod');
 
-    // Step 3: Name
+    // Step 3: Name — a canonical unique slug plus an optional friendly display
+    // name (display_name). The friendly name drives the canonical (slug follows
+    // it) and must reduce to it via slugifyFriendly.
+    const [friendlyName, setFriendlyName] = useState('');
     const [name, setName] = useState('');
     const [nameStatus, setNameStatus] = useState<NameStatus>('idle');
     const [nameReason, setNameReason] = useState('');
@@ -206,7 +232,14 @@ export default function NewApplicationPage() {
                 : sourceMode === 'upload' ? !!file
                     : false;
 
-    const isNameComplete = name.trim().length >= 3 && nameStatus === 'available';
+    // Friendly-name validation + the derived slug (used to offer a one-click
+    // "align the app name" fix when the two have been made to diverge).
+    const friendlyDerived = slugifyFriendly(friendlyName);
+    const friendlyError = friendlyNameError(friendlyName, name);
+    const canUseDerived = !!friendlyError && friendlyDerived !== name
+        && /^[a-z][a-z0-9-]{1,61}[a-z0-9]$/.test(friendlyDerived);
+
+    const isNameComplete = name.trim().length >= 3 && nameStatus === 'available' && !friendlyError;
     const isListingComplete = description.trim().length > 0 && category.trim().length > 0;
 
     const canSubmit = appType !== null && isSourceComplete && isNameComplete && isListingComplete && !submitting;
@@ -229,8 +262,12 @@ export default function NewApplicationPage() {
 
     const prevInferred = useRef('');
     useEffect(() => {
+        // A friendly name (if given) takes priority over the source-derived name:
+        // the canonical slug follows what the user types, until they hand-edit it.
         let inferred = '';
-        if (sourceMode === 'github' && parsed) {
+        if (friendlyName.trim()) {
+            inferred = slugifyFriendly(friendlyName);
+        } else if (sourceMode === 'github' && parsed) {
             inferred = repoToAppName(parsed.repo);
         } else if (sourceMode === 'package' && containerImage) {
             inferred = imageToAppName(containerImage);
@@ -241,7 +278,7 @@ export default function NewApplicationPage() {
             setName(inferred);
         }
         prevInferred.current = inferred;
-    }, [sourceMode, parsed?.repo, containerImage, cloudImageName]);
+    }, [sourceMode, parsed?.repo, containerImage, cloudImageName, friendlyName]);
 
     // Load cached images when the user selects the cloud_image source.
     // We deliberately fetch lazily so non-cloud-image flows incur no GCE
@@ -334,6 +371,7 @@ export default function NewApplicationPage() {
 
         const appName = name.trim();
         if (!appName) return;
+        if (friendlyNameError(friendlyName, appName)) return;
 
         if (sourceMode === 'github' && !parsed) return;
         if (sourceMode === 'upload' && !file) return;
@@ -349,6 +387,9 @@ export default function NewApplicationPage() {
         try {
             const app = await createApp(session.accessToken, {
                 name: appName,
+                // Optional human-readable name; the server defaults it to `name`
+                // when blank. The form guarantees it reduces to `name`.
+                display_name: friendlyName.trim() || undefined,
                 source_type: sourceMode === 'github' ? 'github'
                     : sourceMode === 'package' ? 'package'
                         : sourceMode === 'cloud_image' ? 'cloud_image'
@@ -393,7 +434,7 @@ export default function NewApplicationPage() {
             setError(e instanceof Error ? e.message : 'Something went wrong');
             setSubmitting(false);
         }
-    }, [session?.accessToken, sourceMode, name, parsed, file, commitUrl, submitting, appType, containerImage, cloudImageName, cloudImageChannel, description, category, tagline, storeExtra]);
+    }, [session?.accessToken, sourceMode, name, friendlyName, parsed, file, commitUrl, submitting, appType, containerImage, cloudImageName, cloudImageChannel, description, category, tagline, storeExtra]);
 
 
     // ── Wizard ──
@@ -669,11 +710,54 @@ export default function NewApplicationPage() {
                     onEdit={() => setCurrentStep(3)}
                 >
                     <div className="space-y-3">
-                        <NameInput
-                            name={name} setName={setName}
-                            nameStatus={nameStatus} nameReason={nameReason}
-                            disabled={submitting}
-                        />
+                        <div>
+                            <label className="block text-xs font-medium text-black/60 dark:text-white/60 mb-1">
+                                Friendly name <span className="text-black/30 dark:text-white/30 font-normal">(optional)</span>
+                            </label>
+                            <input
+                                type="text"
+                                value={friendlyName}
+                                onChange={e => setFriendlyName(e.target.value)}
+                                disabled={submitting}
+                                placeholder="Web Search (Brave)"
+                                className={`w-full px-3 py-2 rounded-lg border bg-transparent text-sm focus:outline-none focus:ring-2 disabled:opacity-50 ${
+                                    friendlyError
+                                        ? 'border-red-400 focus:ring-red-300'
+                                        : 'border-black/10 dark:border-white/10 focus:ring-black/20 dark:focus:ring-white/20'
+                                }`}
+                            />
+                            {friendlyError ? (
+                                <p className="mt-1 text-xs text-red-500">
+                                    {friendlyError}
+                                    {canUseDerived && (
+                                        <>
+                                            {' '}
+                                            <button
+                                                type="button"
+                                                onClick={() => { setName(friendlyDerived); prevInferred.current = friendlyDerived; }}
+                                                className="underline hover:no-underline"
+                                            >
+                                                Use “{friendlyDerived}”
+                                            </button>
+                                        </>
+                                    )}
+                                </p>
+                            ) : (
+                                <p className="mt-1 text-xs text-black/40 dark:text-white/40">
+                                    Human-readable name shown in the App Store. Reduces to the app name below (lowercase, spaces become hyphens, other characters dropped).
+                                </p>
+                            )}
+                        </div>
+                        <div>
+                            <label className="block text-xs font-medium text-black/60 dark:text-white/60 mb-1">
+                                App name <span className="text-red-500">*</span>
+                            </label>
+                            <NameInput
+                                name={name} setName={setName}
+                                nameStatus={nameStatus} nameReason={nameReason}
+                                disabled={submitting}
+                            />
+                        </div>
                         <button
                             type="button"
                             onClick={() => setCurrentStep(4)}
