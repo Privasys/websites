@@ -11,6 +11,7 @@ const STORE_BASE_URL = 'https://store.privasys.org';
 import type { CreateVersionBody } from '~/lib/api';
 import { isApiStatus } from '~/lib/api';
 import { versionLabel, versionSemverStr, isStrictlyNewer } from '~/lib/version';
+import { displayNameError } from '~/lib/appName';
 import type { AppSchema, ConfigureSection, FunctionSchema, JsonSchemaProp, ActionProgress, WitType, McpManifest, AppTeam, AppCommit, AppApiKey, CreatedApiKey } from '~/lib/api';
 import { useSSE } from '~/lib/sse-context';
 import { useBalance } from '~/lib/use-balance';
@@ -1068,6 +1069,10 @@ function AppStoreTab({ app, token, deployed, hostname, onSave, deleting, onDelet
     const [saved, setSaved] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
+    // Title (display_name). Editable, but it must still reduce to the canonical
+    // app name (app.name), which is immutable.
+    const [title, setTitle] = useState(app.display_name || app.name);
+    const titleError = displayNameError(title, app.name);
     const [tagline, setTagline] = useState(app.store_tagline);
     const [description, setDescription] = useState(app.store_description);
     const [category, setCategory] = useState(app.store_category);
@@ -1163,11 +1168,13 @@ function AppStoreTab({ app, token, deployed, hostname, onSave, deleting, onDelet
     }
 
     async function handleSave() {
+        if (titleError) { setError(titleError); return; }
         setSaving(true);
         setError(null);
         setSaved(false);
         try {
             const updated = await updateStoreListing(token, app.id, {
+                display_name: title.trim() || app.name,
                 store_tagline: tagline,
                 store_description: description,
                 store_category: category,
@@ -1198,6 +1205,7 @@ function AppStoreTab({ app, token, deployed, hostname, onSave, deleting, onDelet
     // presentation IS the section; the pencil flips it into an editor.
     const [editing, setEditing] = useState<null | 'identity' | 'about' | 'media' | 'links'>(null);
     function resetFields() {
+        setTitle(app.display_name || app.name);
         setTagline(app.store_tagline);
         setDescription(app.store_description);
         setCategory(app.store_category);
@@ -1222,7 +1230,7 @@ function AppStoreTab({ app, token, deployed, hostname, onSave, deleting, onDelet
 
     const editFooter = (
         <div className="flex items-center gap-2 mt-4">
-            <button onClick={handleSave} disabled={saving} className="px-4 py-1.5 text-sm font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-80 disabled:opacity-40 transition-opacity">{saving ? 'Saving…' : 'Save'}</button>
+            <button onClick={handleSave} disabled={saving || (editing === 'identity' && !!titleError)} className="px-4 py-1.5 text-sm font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-80 disabled:opacity-40 transition-opacity">{saving ? 'Saving…' : 'Save'}</button>
             <button onClick={cancelEdit} disabled={saving} className="px-4 py-1.5 text-sm rounded-lg border border-black/15 dark:border-white/15 hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-40 transition-colors">Cancel</button>
             {saved && <span className="text-xs text-emerald-600 dark:text-emerald-400">Saved</span>}
         </div>
@@ -1287,6 +1295,16 @@ function AppStoreTab({ app, token, deployed, hostname, onSave, deleting, onDelet
                                 <input type="text" value={iconURL} onChange={e => setIconURL(e.target.value)} placeholder="or paste URL" className={`${inputClass} mt-1 !text-[11px] !py-1 w-24`} />
                             </div>
                             <div className="flex-1 space-y-3">
+                                <div>
+                                    <label className={labelClass}>Title</label>
+                                    <input type="text" value={title} onChange={e => setTitle(e.target.value)} placeholder={app.name} maxLength={120}
+                                        className={`${inputClass}${titleError ? ' !border-red-400 focus:!ring-red-300' : ''}`} />
+                                    {titleError ? (
+                                        <p className="mt-1 text-xs text-red-500">{titleError}</p>
+                                    ) : (
+                                        <p className="mt-1 text-[11px] text-black/40 dark:text-white/40">Shown in the store. Must reduce to the app name <span className="font-mono">{app.name}</span> (lowercase, spaces become hyphens).</p>
+                                    )}
+                                </div>
                                 <div>
                                     <label className={labelClass}>Tagline</label>
                                     <input type="text" value={tagline} onChange={e => setTagline(e.target.value)} placeholder="A short, catchy one-liner" maxLength={120} className={inputClass} />
