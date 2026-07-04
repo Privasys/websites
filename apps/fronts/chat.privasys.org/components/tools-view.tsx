@@ -1,10 +1,15 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Instance } from '~/lib/types';
 import type { UserToolsState } from '~/lib/use-user-tools';
 import type { UserTool } from '~/lib/chat-service-api';
-import { looksLikeUrl, resolveApp, type ResolvedApp } from '~/lib/resolve-app';
+import {
+    fetchToolDirectory,
+    parseExternalRef,
+    privasysAppFromUrl,
+    type ToolDirectoryEntry
+} from '~/lib/resolve-app';
 
 // Full-pane AI Tools management view (chat-shell 'tools' view).
 //
@@ -12,17 +17,20 @@ import { looksLikeUrl, resolveApp, type ResolvedApp } from '~/lib/resolve-app';
 // CONFIGURING tools lives here:
 //   - the user's saved tools, each showing what kind of thing it is
 //     (attested enclave app vs external server) and its trust anchors;
-//   - the add flow, which AUTO-DETECTS the kind from the single ref input:
-//     an app name resolves against the public app directory and shows a
-//     preview of what is about to be trusted (display name, TEE, attested
-//     digest) BEFORE the user confirms; a URL is an external tool, gated
-//     by the fleet policy behind an explicit acknowledgement.
+//   - the add flow. Platform tools are SEARCH-AND-SELECT from the tools
+//     directory (public apps + the user's own team's apps), showing the
+//     trust anchors before the add. External MCP servers are added from
+//     a URL or a standard mcpServers config snippet, policy-gated behind
+//     an explicit acknowledgement — and a pasted URL that is actually a
+//     Privasys app endpoint is auto-upgraded to the attested enclave path.
 export function ToolsView({
     instance,
-    userTools
+    userTools,
+    token
 }: {
     instance: Instance;
     userTools: UserToolsState;
+    token?: string;
 }) {
     const policy = instance.tool_policy ?? 'enclave_only';
     const canAdd = policy !== 'locked';
@@ -68,10 +76,17 @@ export function ToolsView({
                 </section>
 
                 {canAdd && (
-                    <AddToolPanel
+                    <PlatformToolPicker
                         instanceId={instance.id}
-                        allowExternal={allowExternal}
                         userTools={userTools}
+                        token={token}
+                    />
+                )}
+                {canAdd && allowExternal && (
+                    <ExternalToolPanel
+                        instanceId={instance.id}
+                        userTools={userTools}
+                        token={token}
                     />
                 )}
             </div>
@@ -125,167 +140,302 @@ function ToolRow({
     );
 }
 
-// The add flow. One ref input; the kind is detected, never asked:
-//   app name  → live resolve → preview card → confirm
-//   URL       → external path (policy-gated, acknowledgement required)
-function AddToolPanel({
+/** Sanitise an app name into a valid tool name (letters/digits/underscore). */
+function toToolName(appName: string): string {
+    return appName.replace(/[^a-zA-Z0-9_]+/g, '_').replace(/^_+|_+$/g, '');
+}
+
+// Search-and-select over the tools directory: the user's own apps first,
+// then the public catalogue — trust anchors visible before the add.
+function PlatformToolPicker({
     instanceId,
-    allowExternal,
-    userTools
+    userTools,
+    token
 }: {
     instanceId: string;
-    allowExternal: boolean;
     userTools: UserToolsState;
+    token?: string;
 }) {
-    const [ref, setRef] = useState('');
+    const [entries, setEntries] = useState<ToolDirectoryEntry[] | null>(null);
+    const [dirErr, setDirErr] = useState<string | undefined>();
+    const [query, setQuery] = useState('');
+    const [selected, setSelected] = useState<ToolDirectoryEntry | null>(null);
     const [name, setName] = useState('');
-    const [ack, setAck] = useState(false);
     const [busy, setBusy] = useState(false);
     const [err, setErr] = useState<string | undefined>();
-    const [resolved, setResolved] = useState<ResolvedApp | null>(null);
-    const [resolveErr, setResolveErr] = useState<string | undefined>();
-    const [resolving, setResolving] = useState(false);
-    const resolveSeq = useRef(0);
 
-    const isUrl = looksLikeUrl(ref);
-
-    // Debounced live resolution of app-name refs.
     useEffect(() => {
-        setResolved(null);
-        setResolveErr(undefined);
-        const v = ref.trim();
-        if (!v || looksLikeUrl(v)) return;
-        const seq = ++resolveSeq.current;
-        setResolving(true);
-        const timer = setTimeout(() => {
-            void resolveApp(v).then((r) => {
-                if (seq !== resolveSeq.current) return;
-                setResolving(false);
-                if (r.ok) setResolved(r.app);
-                else setResolveErr(r.error);
-            });
-        }, 400);
-        return () => clearTimeout(timer);
-    }, [ref]);
+        if (!token) return;
+        let cancelled = false;
+        fetchToolDirectory(token)
+            .then((t) => { if (!cancelled) setEntries(t); })
+            .catch((e) => { if (!cancelled) setDirErr((e as Error).message); });
+        return () => { cancelled = true; };
+    }, [token]);
 
-    const submit = useCallback(async () => {
+    const filtered = useMemo(() => {
+        if (!entries) return [];
+        const q = query.trim().toLowerCase();
+        const match = (e: ToolDirectoryEntry) =>
+            !q ||
+            e.name.toLowerCase().includes(q) ||
+            e.display_name.toLowerCase().includes(q) ||
+            (e.tagline ?? '').toLowerCase().includes(q);
+        return {
+            mine: entries.filter((e) => e.mine && match(e)),
+            pub: entries.filter((e) => !e.mine && e.public && match(e))
+        };
+    }, [entries, query]) as { mine: ToolDirectoryEntry[]; pub: ToolDirectoryEntry[] } | never[];
+
+    const groups = Array.isArray(filtered) ? { mine: [], pub: [] } : filtered;
+
+    const pick = useCallback((e: ToolDirectoryEntry) => {
+        setSelected(e);
+        setName(toToolName(e.name));
+        setErr(undefined);
+    }, []);
+
+    const add = useCallback(async () => {
+        if (!selected) return;
         setErr(undefined);
         if (!/^[a-zA-Z0-9_]+$/.test(name)) {
             setErr('Tool name must be letters, numbers, or underscores.');
             return;
         }
-        if (!ref.trim()) {
-            setErr('Enter an app name or a server URL.');
-            return;
-        }
-        if (isUrl && !allowExternal) {
-            setErr('This fleet only allows attested enclave tools.');
-            return;
-        }
-        if (isUrl && !ack) {
-            setErr('Please acknowledge the off-platform notice.');
-            return;
-        }
-        if (!isUrl && !resolved) {
-            setErr(resolveErr ?? 'The app has not resolved yet.');
-            return;
-        }
         setBusy(true);
         try {
             await userTools.add({
-                kind: isUrl ? 'external' : 'enclave',
-                ref: ref.trim(),
+                kind: 'enclave',
+                ref: selected.name,
                 name,
-                acknowledged: isUrl ? ack : undefined,
                 instance_id: instanceId
             });
-            setRef('');
-            setName('');
-            setAck(false);
-            setResolved(null);
+            setSelected(null);
+            setQuery('');
         } catch (e) {
             setErr(e instanceof Error ? e.message : 'Failed to add tool.');
         } finally {
             setBusy(false);
         }
-    }, [name, ref, isUrl, allowExternal, ack, resolved, resolveErr, userTools, instanceId]);
+    }, [selected, name, userTools, instanceId]);
+
+    return (
+        <section className='mb-8'>
+            <h2 className='mb-3 text-sm font-semibold uppercase tracking-wide text-[var(--color-text-muted)]'>
+                Add a Privasys tool
+            </h2>
+            <div className='rounded-xl border border-[var(--color-border-dark)] p-4'>
+                <input
+                    value={query}
+                    onChange={(e) => { setQuery(e.target.value); setSelected(null); }}
+                    placeholder='Search apps (yours and public)…'
+                    className={inputCls + ' w-full'}
+                />
+                {dirErr && <p className='mt-2 text-xs text-amber-500'>Directory unavailable: {dirErr}</p>}
+                {!token && <p className='mt-2 text-xs text-[var(--color-text-muted)]'>Sign in to browse tools.</p>}
+                {entries && groups.mine.length === 0 && groups.pub.length === 0 && (
+                    <p className='mt-2 text-xs text-[var(--color-text-muted)]'>No matching apps.</p>
+                )}
+
+                {groups.mine.length > 0 && (
+                    <DirectoryGroup label='Your apps' entries={groups.mine} selected={selected} onPick={pick} />
+                )}
+                {groups.pub.length > 0 && (
+                    <DirectoryGroup label='Public apps' entries={groups.pub} selected={selected} onPick={pick} />
+                )}
+
+                {selected && (
+                    <div className='mt-3 rounded-lg border border-emerald-300/40 bg-emerald-50/30 p-3 text-xs dark:border-emerald-500/20 dark:bg-emerald-900/10'>
+                        <div className='flex flex-wrap items-center gap-2'>
+                            <span className='font-medium text-[var(--color-text-primary)]'>{selected.display_name}</span>
+                            <KindBadge enclave />
+                            <span className='rounded bg-[var(--color-surface-2)] px-1.5 py-0.5 font-mono text-[10px] uppercase text-[var(--color-text-muted)]'>
+                                {selected.app_type}{selected.tee_type ? ` · ${selected.tee_type}` : ''}
+                            </span>
+                        </div>
+                        <p className='mt-1 text-[var(--color-text-secondary)]'>host {selected.hostname}</p>
+                        {selected.image_digest && (
+                            <p className='mt-0.5 font-mono text-[11px] text-[var(--color-text-muted)]'>
+                                attested digest {selected.image_digest.slice(0, 20)}…
+                            </p>
+                        )}
+                        <label className='mt-2 flex flex-col gap-1 text-[11px] text-[var(--color-text-secondary)]'>
+                            Tool name (what the assistant will call it)
+                            <input value={name} onChange={(e) => setName(e.target.value)} className={inputCls} />
+                        </label>
+                        {err && <p className='mt-2 text-red-400'>{err}</p>}
+                        {userTools.awaitingApproval && <ApprovalHint />}
+                        <button
+                            type='button'
+                            disabled={busy}
+                            onClick={() => void add()}
+                            className='mt-3 rounded-lg bg-[var(--color-primary-blue)] px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50'
+                        >
+                            {busy ? 'Adding…' : `Add ${name || 'tool'}`}
+                        </button>
+                    </div>
+                )}
+            </div>
+        </section>
+    );
+}
+
+function DirectoryGroup({
+    label,
+    entries,
+    selected,
+    onPick
+}: {
+    label: string;
+    entries: ToolDirectoryEntry[];
+    selected: ToolDirectoryEntry | null;
+    onPick: (_e: ToolDirectoryEntry) => void;
+}) {
+    return (
+        <div className='mt-3'>
+            <p className='mb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]'>{label}</p>
+            <ul className='flex flex-col gap-1'>
+                {entries.map((e) => (
+                    <li key={e.name}>
+                        <button
+                            type='button'
+                            onClick={() => onPick(e)}
+                            className={`flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm transition-colors ${selected?.name === e.name ? 'border-[var(--color-primary-blue)] bg-[var(--color-primary-blue)]/5' : 'border-transparent hover:bg-[var(--color-surface-2)]/60'}`}
+                        >
+                            <span className='min-w-0 flex-1'>
+                                <span className='block truncate font-medium text-[var(--color-text-primary)]'>{e.display_name}</span>
+                                {e.tagline && (
+                                    <span className='block truncate text-xs text-[var(--color-text-muted)]'>{e.tagline}</span>
+                                )}
+                            </span>
+                            <span className='shrink-0 rounded bg-[var(--color-surface-2)] px-1.5 py-0.5 font-mono text-[10px] uppercase text-[var(--color-text-muted)]'>
+                                {e.app_type}
+                            </span>
+                            {!e.public && (
+                                <span className='shrink-0 rounded-full bg-[var(--color-surface-2)] px-2 py-0.5 text-[10px] text-[var(--color-text-muted)]'>private</span>
+                            )}
+                        </button>
+                    </li>
+                ))}
+            </ul>
+        </div>
+    );
+}
+
+// External MCP servers: a URL or a standard mcpServers config snippet.
+// A pasted URL that is actually a Privasys app endpoint is redirected to
+// the attested enclave path instead of being added unattested.
+function ExternalToolPanel({
+    instanceId,
+    userTools,
+    token
+}: {
+    instanceId: string;
+    userTools: UserToolsState;
+    token?: string;
+}) {
+    const [raw, setRaw] = useState('');
+    const [name, setName] = useState('');
+    const [ack, setAck] = useState(false);
+    const [busy, setBusy] = useState(false);
+    const [err, setErr] = useState<string | undefined>();
+    const [added, setAdded] = useState(false);
+
+    const parsed = useMemo(() => parseExternalRef(raw), [raw]);
+    const privasysApp = parsed ? privasysAppFromUrl(parsed.url) : null;
+
+    // Pre-fill the tool name from the snippet's server key.
+    useEffect(() => {
+        if (parsed?.name && !name) setName(toToolName(parsed.name));
+
+    }, [parsed?.name]);
+
+    const add = useCallback(async () => {
+        setErr(undefined);
+        setAdded(false);
+        if (!parsed) {
+            setErr('Enter an https:// URL or paste an mcpServers config snippet.');
+            return;
+        }
+        if (!/^[a-zA-Z0-9_]+$/.test(name)) {
+            setErr('Tool name must be letters, numbers, or underscores.');
+            return;
+        }
+        setBusy(true);
+        try {
+            if (privasysApp) {
+                // The URL is a Privasys app endpoint: add it as an ATTESTED
+                // enclave tool (never as unattested-external).
+                await userTools.add({ kind: 'enclave', ref: privasysApp, name, instance_id: instanceId });
+            } else {
+                if (!ack) {
+                    setErr('Please acknowledge the off-platform notice.');
+                    return;
+                }
+                await userTools.add({ kind: 'external', ref: parsed.url, name, acknowledged: true, instance_id: instanceId });
+            }
+            setRaw('');
+            setName('');
+            setAck(false);
+            setAdded(true);
+        } catch (e) {
+            setErr(e instanceof Error ? e.message : 'Failed to add tool.');
+        } finally {
+            setBusy(false);
+        }
+    }, [parsed, privasysApp, name, ack, userTools, instanceId]);
 
     return (
         <section>
             <h2 className='mb-3 text-sm font-semibold uppercase tracking-wide text-[var(--color-text-muted)]'>
-                Add a tool
+                Add an external MCP server
             </h2>
             <div className='flex flex-col gap-3 rounded-xl border border-[var(--color-border-dark)] p-4'>
                 <label className='flex flex-col gap-1 text-xs text-[var(--color-text-secondary)]'>
-                    Tool name (what the assistant will call it)
-                    <input
-                        value={name}
-                        onChange={(e) => setName(e.target.value)}
-                        placeholder='e.g. kv_store'
-                        className={inputCls}
+                    Server URL — or paste an mcpServers config snippet
+                    <textarea
+                        value={raw}
+                        onChange={(e) => setRaw(e.target.value)}
+                        rows={3}
+                        placeholder={'https://mcp.example.com\nor { "mcpServers": { "my_tool": { "url": "https://…" } } }'}
+                        className={inputCls + ' resize-y font-mono text-xs'}
                     />
                 </label>
                 <label className='flex flex-col gap-1 text-xs text-[var(--color-text-secondary)]'>
-                    Privasys app name{allowExternal ? ' — or an external MCP server URL' : ''}
-                    <input
-                        value={ref}
-                        onChange={(e) => setRef(e.target.value)}
-                        placeholder={allowExternal ? 'wasm-app-example or https://mcp.example.com' : 'wasm-app-example'}
-                        className={inputCls}
-                    />
+                    Tool name (what the assistant will call it)
+                    <input value={name} onChange={(e) => setName(e.target.value)} placeholder='e.g. my_tool' className={inputCls} />
                 </label>
 
-                {/* Detection outcome */}
-                {!isUrl && resolving && (
-                    <p className='text-xs text-[var(--color-text-muted)]'>Looking up app…</p>
+                {privasysApp && (
+                    <div className='rounded-lg border border-emerald-300/40 bg-emerald-50/30 p-3 text-xs text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-900/10 dark:text-emerald-300'>
+                        This is the Privasys app <span className='font-mono'>{privasysApp}</span> — it will be
+                        added as an attested enclave tool, not an external one.
+                    </div>
                 )}
-                {!isUrl && resolveErr && ref.trim() && (
-                    <p className='text-xs text-amber-500'>
-                        Not a deployed Privasys app: {resolveErr}
-                        {allowExternal ? ' — to add an external server, paste its full https:// URL.' : ''}
-                    </p>
-                )}
-                {!isUrl && resolved && <ResolvePreview app={resolved} />}
-
-                {isUrl && (
+                {parsed && !privasysApp && (
                     <div className='rounded-lg border border-amber-300/40 bg-amber-50/30 p-3 text-xs text-amber-700 dark:border-amber-500/20 dark:bg-amber-900/10 dark:text-amber-200'>
                         <p className='font-medium'>External tool</p>
                         <p className='mt-1'>
-                            This server runs outside Privasys. Data the assistant
-                            sends to it leaves the enclave and is not attested or
-                            protected.
+                            This server runs outside Privasys. Data the assistant sends to it
+                            leaves the enclave and is not attested or protected.
                         </p>
-                        {allowExternal ? (
-                            <label className='mt-2 flex items-start gap-2'>
-                                <input
-                                    type='checkbox'
-                                    className='mt-0.5'
-                                    checked={ack}
-                                    onChange={(e) => setAck(e.target.checked)}
-                                />
-                                <span>I understand and want to add it anyway.</span>
-                            </label>
-                        ) : (
-                            <p className='mt-2 font-medium'>
-                                This fleet only allows attested enclave tools.
-                            </p>
-                        )}
+                        <label className='mt-2 flex items-start gap-2'>
+                            <input type='checkbox' className='mt-0.5' checked={ack} onChange={(e) => setAck(e.target.checked)} />
+                            <span>I understand and want to add it anyway.</span>
+                        </label>
                     </div>
                 )}
 
                 {err && <p className='text-xs text-red-400'>{err}</p>}
-                {userTools.awaitingApproval && (
-                    <p className='flex items-center gap-1.5 text-xs text-[var(--color-primary-blue)]'>
-                        <span className='inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--color-primary-blue)]' />
-                        Approve adding this tool on your phone…
-                    </p>
-                )}
+                {added && <p className='text-xs text-emerald-500'>Tool added.</p>}
+                {userTools.awaitingApproval && <ApprovalHint />}
+                {!token && <p className='text-xs text-[var(--color-text-muted)]'>Sign in to add tools.</p>}
 
                 <div>
                     <button
                         type='button'
-                        disabled={busy || (!isUrl && !resolved)}
-                        onClick={() => void submit()}
+                        disabled={busy || !parsed}
+                        onClick={() => void add()}
                         className='rounded-lg bg-[var(--color-primary-blue)] px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50'
                     >
                         {busy ? 'Adding…' : 'Add tool'}
@@ -296,29 +446,12 @@ function AddToolPanel({
     );
 }
 
-// What the user is about to trust, shown BEFORE confirming the add.
-function ResolvePreview({ app }: { app: ResolvedApp }) {
+function ApprovalHint() {
     return (
-        <div className='rounded-lg border border-emerald-300/40 bg-emerald-50/30 p-3 text-xs dark:border-emerald-500/20 dark:bg-emerald-900/10'>
-            <div className='flex flex-wrap items-center gap-2'>
-                <span className='font-medium text-[var(--color-text-primary)]'>
-                    {app.display_name || app.name}
-                </span>
-                <KindBadge enclave />
-                <span className='rounded bg-[var(--color-surface-2)] px-1.5 py-0.5 font-mono text-[10px] uppercase text-[var(--color-text-muted)]'>
-                    {app.app_type}{app.tee_type ? ` · ${app.tee_type}` : ''}
-                </span>
-            </div>
-            <p className='mt-1 text-[var(--color-text-secondary)]'>host {app.hostname}</p>
-            <p className='mt-0.5 font-mono text-[11px] text-[var(--color-text-muted)]'>
-                attested digest {app.image_digest.slice(0, 20)}…
-            </p>
-            {!app.has_mcp && (
-                <p className='mt-1 text-amber-500'>
-                    This app does not expose an MCP tool interface.
-                </p>
-            )}
-        </div>
+        <p className='flex items-center gap-1.5 text-xs text-[var(--color-primary-blue)]'>
+            <span className='inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--color-primary-blue)]' />
+            Approve adding this tool on your phone…
+        </p>
     );
 }
 
@@ -344,7 +477,7 @@ function Toggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
             className={`relative mt-0.5 h-5 w-9 shrink-0 rounded-full transition-colors ${on ? 'bg-[var(--color-primary-blue)]' : 'bg-[var(--color-surface-2)]'}`}
         >
             <span
-                className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${on ? 'translate-x-4.5 left-0.5' : 'left-0.5'}`}
+                className='absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform'
                 style={{ transform: on ? 'translateX(16px)' : 'translateX(0)' }}
             />
         </button>
