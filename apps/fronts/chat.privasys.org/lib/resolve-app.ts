@@ -48,3 +48,69 @@ export function looksLikeUrl(ref: string): boolean {
     const v = ref.trim().toLowerCase();
     return v.startsWith('http://') || v.startsWith('https://') || v.includes('://');
 }
+
+// ── Tools directory (search-and-select picker) ─────────────────────────
+
+export interface ToolDirectoryEntry {
+    name: string;
+    display_name: string;
+    tagline?: string;
+    icon_url?: string;
+    app_type: string;
+    hostname: string;
+    image_digest: string;
+    tee_type?: string;
+    attest_url: string;
+    mine: boolean;
+    public: boolean;
+}
+
+/** Fetch the tool apps the signed-in user may discover: every public app
+ *  plus their own team's. */
+export async function fetchToolDirectory(token: string): Promise<ToolDirectoryEntry[]> {
+    const r = await fetch(`${API_BASE_URL}/api/v1/tools/directory`, {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: 'no-store'
+    });
+    if (!r.ok) throw new Error(`directory unavailable (${r.status})`);
+    const body = (await r.json()) as { tools?: ToolDirectoryEntry[] };
+    return body.tools ?? [];
+}
+
+/** If `url` is a Privasys app endpoint (<app>.apps[-env].privasys.org),
+ *  return the app name so the add flow can upgrade it to the attested
+ *  enclave path; null for anything else. */
+export function privasysAppFromUrl(url: string): string | null {
+    try {
+        const u = new URL(url.trim());
+        const m = u.hostname.toLowerCase().match(/^([a-z0-9-]+)\.apps(-[a-z0-9]+)?\.privasys\.org$/);
+        return m ? m[1] : null;
+    } catch {
+        return null;
+    }
+}
+
+/** Parse an external-tool ref "the standard way": either a bare URL or a
+ *  pasted MCP config snippet ({"mcpServers":{"name":{"url":...}}}). */
+export function parseExternalRef(raw: string): { url: string; name?: string } | null {
+    const v = raw.trim();
+    if (!v) return null;
+    if (v.startsWith('{')) {
+        try {
+            const parsed = JSON.parse(v) as {
+                mcpServers?: Record<string, { url?: string }>;
+                url?: string;
+            };
+            if (parsed.mcpServers) {
+                for (const [name, spec] of Object.entries(parsed.mcpServers)) {
+                    if (spec?.url) return { url: spec.url, name };
+                }
+            }
+            if (parsed.url) return { url: parsed.url };
+            return null;
+        } catch {
+            return null;
+        }
+    }
+    return looksLikeUrl(v) ? { url: v } : null;
+}
