@@ -9,6 +9,7 @@ import { modelLabel } from '~/lib/model-label';
 import { useConversations } from '~/lib/use-conversations';
 import { useEnabledTools } from '~/lib/use-enabled-tools';
 import { useUserTools } from '~/lib/use-user-tools';
+import { ToolsView } from './tools-view';
 import { chatServiceHost } from '~/lib/chat-service-api';
 import { probeInstanceHealth } from '~/lib/instance-api';
 import { isTransportError } from '~/lib/transport';
@@ -18,7 +19,7 @@ import { ChatPanel } from './chat-panel';
 import { SecurityView } from './security-view';
 import { SignInView } from './signin-view';
 
-type ShellView = 'chat' | 'security' | 'signin';
+type ShellView = 'chat' | 'security' | 'tools' | 'signin';
 
 type TransportState = 'ok' | 'reconnecting' | 'stale';
 
@@ -335,6 +336,7 @@ export function ChatShell({
                 onDeleteConversation={conv.remove}
                 onRenameConversation={conv.rename}
                 onShowSecurity={() => setView('security')}
+                onShowTools={() => setView('tools')}
                 onShowSignIn={() => setView('signin')}
             />
             <div className="flex min-w-0 flex-1 flex-col">
@@ -359,7 +361,10 @@ export function ChatShell({
                 </header>
 
                 {view === 'security' && instance.endpoint && session && (
-                    <SecurityView instance={instance} onStatus={setAttestationStatus} />
+                    <SecurityView instance={instance} userTools={userTools.tools} onStatus={setAttestationStatus} />
+                )}
+                {view === 'tools' && session && (
+                    <ToolsView instance={instance} userTools={userTools} />
                 )}
                 {view !== 'security' && instance.endpoint && session && (
                     // Keep the attestation pipeline running in the
@@ -371,7 +376,7 @@ export function ChatShell({
                     // rejects with "no active session iframe; call
                     // getSession() first".
                     <div className="hidden" aria-hidden="true">
-                        <SecurityView instance={instance} onStatus={setAttestationStatus} />
+                        <SecurityView instance={instance} userTools={userTools.tools} onStatus={setAttestationStatus} />
                     </div>
                 )}
 
@@ -401,10 +406,8 @@ export function ChatShell({
                         onToggleTool={showTools ? tools.toggle : undefined}
                         userTools={userTools.tools}
                         onToggleUserTool={userTools.setEnabled}
-                        onAddTool={userTools.add}
-                        addAwaitingApproval={userTools.awaitingApproval}
+                        onManageTools={() => setView('tools')}
                         onRemoveUserTool={userTools.remove}
-                        toolPolicy={instance.tool_policy}
                         chatSession={chatSession}
                         transport={transport}
                         staleReason={staleReason}
@@ -421,6 +424,8 @@ function viewTitle(view: ShellView, fallback: string): string {
     switch (view) {
         case 'security':
             return 'Security';
+        case 'tools':
+            return 'AI Tools';
         case 'signin':
             return 'Sign in';
         default:

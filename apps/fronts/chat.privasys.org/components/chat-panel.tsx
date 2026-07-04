@@ -9,7 +9,7 @@ import {
 import { DEFAULT_SAMPLING, type SamplingParams } from '~/lib/sampling';
 import { modelLabel } from '~/lib/model-label';
 import type { PersistedMessage, Rating, ToolInvocation } from '~/lib/conversations';
-import type { AddUserToolInput, UserTool } from '~/lib/chat-service-api';
+import type { UserTool } from '~/lib/chat-service-api';
 import type { SealedSession } from '@privasys/auth';
 import type { SealedStaleReason } from '~/lib/privasys-auth';
 import { clearFeedback, recordFeedback } from '~/lib/pending-feedback';
@@ -73,10 +73,8 @@ export function ChatPanel({
     onToggleTool,
     userTools,
     onToggleUserTool,
-    onAddTool,
+    onManageTools,
     onRemoveUserTool,
-    addAwaitingApproval,
-    toolPolicy,
     chatSession,
     transport = 'ok',
     staleReason = null,
@@ -118,12 +116,10 @@ export function ChatPanel({
     /** The user's persistent tools (from chat-service). */
     userTools?: UserTool[];
     onToggleUserTool?: (id: string, enabled: boolean) => void | Promise<void>;
-    onAddTool?: (input: AddUserToolInput) => Promise<void>;
-    /** True while an add is blocked on a wallet push approval. */
-    addAwaitingApproval?: boolean;
+    /** Navigate to the AI Tools management view (configuration lives
+     *  there; the composer popover only toggles). */
+    onManageTools?: () => void;
     onRemoveUserTool?: (id: string) => void | Promise<void>;
-    /** Fleet governance mode, gates the add-tool affordance. */
-    toolPolicy?: string;
     /** Dedicated sealed session to chat-service, for minting tool-grants. */
     chatSession?: SealedSession | null;
     /** Enclave transport health, owned by the shell. Drives the reconnect
@@ -719,10 +715,8 @@ export function ChatPanel({
             onToggleTool={onToggleTool}
             userTools={userTools}
             onToggleUserTool={onToggleUserTool}
-            onAddTool={onAddTool}
+            onManageTools={onManageTools}
             onRemoveUserTool={onRemoveUserTool}
-            addAwaitingApproval={addAwaitingApproval}
-            toolPolicy={toolPolicy}
             placeholder={
                 model
                     ? `Message ${modelLabel(model)}\u2026`
