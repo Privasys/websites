@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { Instance } from '~/lib/types';
+import type { AvailableTool, Instance } from '~/lib/types';
 import type { UserToolsState } from '~/lib/use-user-tools';
 import type { UserTool } from '~/lib/chat-service-api';
 import {
@@ -26,11 +26,16 @@ import {
 export function ToolsView({
     instance,
     userTools,
-    token
+    token,
+    enabledToolNames,
+    onToggleFleetTool
 }: {
     instance: Instance;
     userTools: UserToolsState;
     token?: string;
+    /** Enabled-state of the fleet's built-in tools (composer toggles). */
+    enabledToolNames?: Set<string>;
+    onToggleFleetTool?: (_name: string, _on: boolean) => void;
 }) {
     const policy = instance.tool_policy ?? 'enclave_only';
     const canAdd = policy !== 'locked';
@@ -49,6 +54,28 @@ export function ToolsView({
                         run outside the platform and are not attested.
                     </p>
                 </header>
+
+                {(instance.available_tools?.length ?? 0) > 0 && (
+                    <section className='mb-8'>
+                        <h2 className='mb-3 text-sm font-semibold uppercase tracking-wide text-[var(--color-text-muted)]'>
+                            Fleet tools — included with this instance
+                        </h2>
+                        <ul className='flex flex-col gap-2'>
+                            {(instance.available_tools ?? []).map((t) => (
+                                <FleetToolRow
+                                    key={t.name}
+                                    tool={t}
+                                    on={enabledToolNames?.has(t.name) ?? false}
+                                    onToggle={
+                                        onToggleFleetTool
+                                            ? () => onToggleFleetTool(t.name, !(enabledToolNames?.has(t.name) ?? false))
+                                            : undefined
+                                    }
+                                />
+                            ))}
+                        </ul>
+                    </section>
+                )}
 
                 <section className='mb-8'>
                     <h2 className='mb-3 text-sm font-semibold uppercase tracking-wide text-[var(--color-text-muted)]'>
@@ -136,6 +163,42 @@ function ToolRow({
             >
                 <TrashIcon />
             </button>
+        </li>
+    );
+}
+
+// A fleet-provided tool: attested like every enclave tool, toggleable,
+// but not removable — the fleet admin decides what ships with the
+// instance; the user only decides whether the model may use it.
+function FleetToolRow({
+    tool,
+    on,
+    onToggle
+}: {
+    tool: AvailableTool;
+    on: boolean;
+    onToggle?: () => void;
+}) {
+    return (
+        <li className='flex items-start gap-3 rounded-xl border border-[var(--color-border-dark)] p-4'>
+            <div className='min-w-0 flex-1'>
+                <div className='flex flex-wrap items-center gap-2'>
+                    <span className='text-sm font-medium text-[var(--color-text-primary)]'>
+                        {tool.label || tool.name}
+                    </span>
+                    <KindBadge enclave />
+                    <span className='rounded-full bg-[var(--color-surface-2)] px-2 py-0.5 text-[10px] text-[var(--color-text-muted)]'>fleet</span>
+                </div>
+                {tool.description && (
+                    <p className='mt-0.5 truncate text-xs text-[var(--color-text-muted)]'>{tool.description}</p>
+                )}
+                {tool.expected_digest && (
+                    <p className='mt-0.5 font-mono text-[11px] text-[var(--color-text-muted)]'>
+                        digest {tool.expected_digest.slice(0, 16)}…
+                    </p>
+                )}
+            </div>
+            {onToggle && <Toggle on={on} onToggle={onToggle} />}
         </li>
     );
 }

@@ -9,11 +9,12 @@ export interface SamplingParams {
     max_tokens?: number;
 }
 
-// Defaults match what the confidential-ai proxy injects today
-// (see internal/handler/handler.go: seed=0, temperature=1.0,
-// top_p=1.0). max_tokens is left unset to mean "model default".
+// Defaults. `seed` is deliberately UNSET: the confidential-ai proxy
+// picks a random seed per request and returns it in the reproducibility
+// block, so a replay can pin it — sending seed=0 from the UI silently
+// pinned every conversation to the same seed and defeated that flow.
+// Set a seed here (Advanced panel) only to force a specific replay.
 export const DEFAULT_SAMPLING: SamplingParams = {
-    seed: 0,
     temperature: 1.0,
     top_p: 1.0
 };

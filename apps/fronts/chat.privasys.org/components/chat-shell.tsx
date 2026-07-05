@@ -364,7 +364,13 @@ export function ChatShell({
                     <SecurityView instance={instance} userTools={userTools.tools} onStatus={setAttestationStatus} />
                 )}
                 {view === 'tools' && session && (
-                    <ToolsView instance={instance} userTools={userTools} token={session?.accessToken} />
+                    <ToolsView
+                        instance={instance}
+                        userTools={userTools}
+                        token={session?.accessToken}
+                        enabledToolNames={tools.enabled}
+                        onToggleFleetTool={tools.toggle}
+                    />
                 )}
                 {view !== 'security' && instance.endpoint && session && (
                     // Keep the attestation pipeline running in the
