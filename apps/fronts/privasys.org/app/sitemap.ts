@@ -5,9 +5,6 @@ export const dynamic = 'force-static';
 
 const BASE = 'https://privasys.org';
 
-const SUPPORTED_COUNTRIES = ['uk', 'us', 'eu', 'fr', 'de', 'sg', 'jp', 'au'];
-const APP_SLUGS = ['confidential-vault', 'private-inference', 'secure-analytics'];
-
 export default function sitemap(): MetadataRoute.Sitemap {
     const staticPages: MetadataRoute.Sitemap = [
         { url: `${BASE}/`, changeFrequency: 'weekly', priority: 1.0 },
@@ -32,18 +29,5 @@ export default function sitemap(): MetadataRoute.Sitemap {
         priority: 0.7
     }));
 
-    const countryPages: MetadataRoute.Sitemap = SUPPORTED_COUNTRIES.flatMap((country) => [
-        {
-            url: `${BASE}/${country}/apps/`,
-            changeFrequency: 'weekly' as const,
-            priority: 0.6
-        },
-        ...APP_SLUGS.map((slug) => ({
-            url: `${BASE}/${country}/apps/${slug}/`,
-            changeFrequency: 'monthly' as const,
-            priority: 0.5
-        }))
-    ]);
-
-    return [...staticPages, ...blogPosts, ...countryPages];
+    return [...staticPages, ...blogPosts];
 }
