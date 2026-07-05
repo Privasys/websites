@@ -47,6 +47,12 @@ function looksLikeModelLoading(status: number, body: string): boolean {
 // platform/confidential-ai/internal/reproducibility/.
 export interface Reproducibility {
     seed?: number;
+    /** The exact per-request context block (wall clock) injected into the
+     *  system prompt. A faithful replay MUST send it back via the
+     *  X-Privasys-Dynamic-Context header: same seed with a fresh clock is
+     *  a DIFFERENT prompt and produces different tokens. */
+    dynamic_context?: string;
+    request_id?: string;
     temperature?: number;
     top_p?: number;
     top_k?: number;
@@ -158,6 +164,10 @@ export interface StreamChatArgs {
      * signature; the browser never names a server URL itself.
      */
     toolGrant?: string;
+    /** Replay pin: the recorded dynamic context, sent back as
+     *  X-Privasys-Dynamic-Context so the prompt is reconstructed
+     *  byte-for-byte (same seed + fresh clock = different prompt). */
+    dynamicContext?: string;
     /**
      * Thinking mode. When false (the "Fast" mode, and the chat default),
      * the request carries `chat_template_kwargs: {enable_thinking: false}`
@@ -214,6 +224,9 @@ export async function streamChatCompletion(args: StreamChatArgs): Promise<void> 
     if (args.toolGrant) {
         headers['X-Privasys-Tool-Grant'] = args.toolGrant;
     }
+    if (args.dynamicContext) {
+        headers['X-Privasys-Dynamic-Context'] = args.dynamicContext;
+    }
 
     const body: Record<string, unknown> = {
         model: args.model,
@@ -258,7 +271,8 @@ export async function streamChatCompletion(args: StreamChatArgs): Promise<void> 
                     ...(args.enabledTools !== undefined
                         ? { 'X-Privasys-Tools': args.enabledTools.join(',') }
                         : {}),
-                    ...(args.toolGrant ? { 'X-Privasys-Tool-Grant': args.toolGrant } : {})
+                    ...(args.toolGrant ? { 'X-Privasys-Tool-Grant': args.toolGrant } : {}),
+                    ...(args.dynamicContext ? { 'X-Privasys-Dynamic-Context': args.dynamicContext } : {})
                 }
             });
             if (sealed.status >= 400) {

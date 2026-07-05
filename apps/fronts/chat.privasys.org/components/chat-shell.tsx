@@ -15,7 +15,7 @@ import { probeInstanceHealth } from '~/lib/instance-api';
 import { isTransportError } from '~/lib/transport';
 import type { SealedSession } from '@privasys/auth';
 import { AppSidebar } from './app-sidebar';
-import { ChatPanel } from './chat-panel';
+import { ChatPanel, type PendingReplay } from './chat-panel';
 import { SecurityView } from './security-view';
 import { SignInView } from './signin-view';
 
@@ -318,6 +318,36 @@ export function ChatShell({
 
     const goChat = () => setView('chat');
 
+    // Faithful replay of an assistant turn: branch a fresh conversation
+    // ending at the turn's user prompt, then hand the panel the RECORDED
+    // pins (seed, sampling, thinking mode, dynamic context). Same seed
+    // with a fresh wall clock is a different prompt — the recorded
+    // X-Privasys-Dynamic-Context is what makes the replay byte-faithful.
+    const [pendingReplay, setPendingReplay] = useState<PendingReplay | null>(null);
+    const replayFromMessage = useCallback((assistantMsgId: string) => {
+        const msgs = conv.current?.messages ?? [];
+        const i = msgs.findIndex((m) => m.id === assistantMsgId);
+        if (i < 1) return;
+        const userMsg = msgs[i - 1];
+        const turn = msgs[i];
+        if (userMsg.role !== 'user' || !turn.meta || turn.meta.seed === undefined) return;
+        const newConvId = conv.branchFromMessage(userMsg.id);
+        if (!newConvId) return;
+        setPendingReplay({
+            conversationId: newConvId,
+            prompt: userMsg.content,
+            sampling: {
+                seed: turn.meta.seed,
+                temperature: turn.meta.temperature,
+                top_p: turn.meta.top_p,
+                max_tokens: turn.meta.max_tokens
+            },
+            thinking: turn.thinking ?? false,
+            dynamicContext: turn.meta.dynamic_context
+        });
+        goChat();
+    }, [conv]);
+
     return (
         <div className="flex flex-1">
             <AppSidebar
@@ -407,6 +437,9 @@ export function ChatShell({
                             conv.branchFromMessage(messageId);
                             goChat();
                         }}
+                        onReplayFromMessage={replayFromMessage}
+                        pendingReplay={pendingReplay}
+                        onReplayConsumed={() => setPendingReplay(null)}
                         enabledTools={showTools ? enabledToolsArray : undefined}
                         enabledToolNames={showTools ? tools.enabled : undefined}
                         onToggleTool={showTools ? tools.toggle : undefined}

@@ -38,6 +38,18 @@ interface DisplayMessage extends PersistedMessage {
     reconnecting?: { startedAt: number };
 }
 
+// A queued faithful replay: the shell branched a fresh conversation
+// ending at the original user prompt; the panel re-sends it with the
+// RECORDED sampling (incl. seed) and dynamic context so the enclave
+// reconstructs a byte-identical prompt.
+export interface PendingReplay {
+    conversationId: string;
+    prompt: string;
+    sampling: SamplingParams;
+    thinking: boolean;
+    dynamicContext?: string;
+}
+
 // How many times a single send re-tries through a transport reconnect before
 // giving up with a soft error. Each attempt waits out the full recovery window.
 const MAX_TRANSPORT_RETRIES = 3;
@@ -68,6 +80,9 @@ export function ChatPanel({
     conversationId,
     onMessagesChange,
     onBranchFromMessage,
+    onReplayFromMessage,
+    pendingReplay,
+    onReplayConsumed,
     enabledTools,
     enabledToolNames,
     onToggleTool,
@@ -104,6 +119,12 @@ export function ChatPanel({
      *  selecting the new conversation. The shell handles persistence
      *  + view routing; we just expose the action to MessageActions. */
     onBranchFromMessage?: (messageId: string) => void;
+    /** Faithful replay of an assistant turn: the shell branches a new
+     *  conversation ending at the turn's user prompt and hands us the
+     *  recorded pins via `pendingReplay`. */
+    onReplayFromMessage?: (messageId: string) => void;
+    pendingReplay?: PendingReplay | null;
+    onReplayConsumed?: () => void;
     /** When set, sent verbatim as the X-Privasys-Tools header to the
      *  proxy so the agentic loop is restricted to those MCP servers
      *  for this conversation. `undefined` keeps the proxy default. */
@@ -224,15 +245,22 @@ export function ChatPanel({
     // is appended to — `send()` passes the full current list, while
     // `editMessage()` passes a truncated one (everything before the edited
     // message), which is how editing "replaces all chat after the prompt".
-    const sendWith = useCallback(async (text: string, baseHistory: DisplayMessage[]) => {
+    const sendWith = useCallback(async (
+        text: string,
+        baseHistory: DisplayMessage[],
+        // Replay pins: exact sampling + the recorded dynamic context so
+        // the reconstructed prompt is byte-identical (same seed with a
+        // fresh wall clock is a DIFFERENT prompt).
+        replay?: { sampling: SamplingParams; thinking: boolean; dynamicContext?: string }
+    ) => {
         if (!text || streaming || !model) return;
 
         const userMsg: DisplayMessage = { id: newId(), role: 'user', content: text };
         const assistantId = newId();
         const history = [...baseHistory, userMsg];
         const startedAt = Date.now();
-        const samplingSnapshot: SamplingParams = { ...sampling };
-        const thinkingSnapshot = mode === 'thinking';
+        const samplingSnapshot: SamplingParams = replay ? { ...replay.sampling } : { ...sampling };
+        const thinkingSnapshot = replay ? replay.thinking : mode === 'thinking';
 
         const initial: DisplayMessage[] = [
             ...history,
@@ -242,6 +270,7 @@ export function ChatPanel({
                 content: '',
                 streaming: true,
                 sampling: samplingSnapshot,
+                thinking: thinkingSnapshot,
                 startedAt
             }
         ];
@@ -342,6 +371,7 @@ export function ChatPanel({
                 signal: ctrl.signal,
                 enabledTools,
                 toolGrant,
+                dynamicContext: replay?.dynamicContext,
                 // Fast mode (the default) asks the chat template to skip the
                 // thinking block; Thinking leaves the server default.
                 thinking: thinkingSnapshot ? undefined : false,
@@ -639,6 +669,23 @@ export function ChatPanel({
         }
     }, [streaming, model, instance.endpoint, instance.id, instance.session_relay, token, sampling, mode, persist, chatSession, enabledTools, onStreamError]);
 
+    // Dispatch a queued replay once its branched conversation is hydrated
+    // (last message = the original user prompt). Consumed exactly once.
+    useEffect(() => {
+        if (!pendingReplay || streaming) return;
+        if (conversationId !== pendingReplay.conversationId) return;
+        const last = messages[messages.length - 1];
+        if (!last || last.role !== 'user' || last.content !== pendingReplay.prompt) return;
+        onReplayConsumed?.();
+        void sendWith(pendingReplay.prompt, messages.slice(0, -1), {
+            sampling: pendingReplay.sampling,
+            thinking: pendingReplay.thinking,
+            dynamicContext: pendingReplay.dynamicContext
+        });
+
+    }, [pendingReplay, conversationId, messages, streaming]);
+
+
     const send = useCallback(async () => {
         const text = input.trim();
         if (!text || streaming || !model) return;
@@ -800,6 +847,14 @@ export function ChatPanel({
                                     ? () => onBranchFromMessage(m.id)
                                     : undefined
                             }
+                            onReplay={
+                                onReplayFromMessage &&
+                                m.role === 'assistant' &&
+                                m.meta?.seed !== undefined &&
+                                m.meta?.dynamic_context
+                                    ? () => onReplayFromMessage(m.id)
+                                    : undefined
+                            }
                             onConsentDecision={(callId, allowed) => {
                                 // Optimistically reflect the decision in
                                 // the local card immediately; the SSE
@@ -864,6 +919,7 @@ function Message({
     onRate,
     onEdit,
     onBranch,
+    onReplay,
     onConsentDecision
 }: {
     message: DisplayMessage;
@@ -871,6 +927,7 @@ function Message({
     token?: string;
     onShowMeta: () => void;
     onRate: (rating: Rating | null, comment?: string) => void;
+    onReplay?: () => void;
     /** Present on user messages when editing is allowed (not streaming).
      *  Invoking it replaces this message and everything after it. */
     onEdit?: (newText: string) => void;
@@ -927,6 +984,7 @@ function Message({
                     onShowMeta={onShowMeta}
                     onRate={onRate}
                     onBranch={onBranch}
+                    onReplay={onReplay}
                 />
             )}
         </div>
@@ -1025,12 +1083,16 @@ function MessageActions({
     message,
     onShowMeta,
     onRate,
-    onBranch
+    onBranch,
+    onReplay
 }: {
     message: DisplayMessage;
     onShowMeta: () => void;
     onRate: (rating: Rating | null, comment?: string) => void;
     onBranch?: () => void;
+    /** Faithful replay: re-run this turn with the recorded seed AND the
+     *  recorded dynamic context (fresh clock = different prompt). */
+    onReplay?: () => void;
 }) {
     const [copied, setCopied] = useState(false);
     const [showCommentBox, setShowCommentBox] = useState(false);
@@ -1091,6 +1153,16 @@ function MessageActions({
                         title='Fork this chat from here into a new conversation'
                     >
                         Branch
+                    </button>
+                )}
+                {onReplay && (
+                    <button
+                        type='button'
+                        onClick={onReplay}
+                        className='inline-flex items-center gap-1 hover:text-[var(--color-text-primary)]'
+                        title='Reproduce this reply: replay the same prompt with the recorded seed and context in a new conversation'
+                    >
+                        Replay
                     </button>
                 )}
                 <button

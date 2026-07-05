@@ -57,6 +57,8 @@ export interface PersistedMessage extends ChatMessage {
     finishedAt?: number;
     /** Reproducibility metadata sent by the model proxy. */
     meta?: Reproducibility;
+    /** Whether this assistant turn ran in Thinking mode (replay fidelity). */
+    thinking?: boolean;
     /** Sampling snapshot used for this turn. */
     sampling?: SamplingParams;
     /** Streaming or send error surfaced to the user. */
