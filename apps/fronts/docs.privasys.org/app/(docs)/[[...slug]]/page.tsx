@@ -38,7 +38,54 @@ const folderRedirects: Record<string, string> = {
     'solutions/enclave-vaults': '/solutions/enclave-vaults/overview',
     'solutions/enclave-agent': '/solutions/enclave-agent/overview',
     'solutions/platform': '/solutions/platform/overview',
-    'solutions/platform/developer-platform': '/solutions/platform/developer-platform/getting-started'
+    'solutions/platform/developer-platform': '/solutions/platform/developer-platform/getting-started',
+
+    // Legacy path redirects. The docs were reorganised from a flat layout into
+    // the introduction/technology/solutions hierarchy. These map the old URLs
+    // (still held by search engines and external links) to their new homes so
+    // they consolidate instead of returning 404.
+    'why-privasys': '/introduction/overview',
+    'confidential-computing': '/technology/confidential-computing/overview',
+    'confidential-computing/presentation': '/technology/confidential-computing/overview',
+    'confidential-computing/attestation': '/technology/attestation/remote-attestation',
+    'confidential-computing/trust-model': '/technology/confidential-computing/trust-model',
+    'confidential-computing/ra-tls': '/solutions/enclave-os/attestation/ra-tls',
+    'enclave-os/architecture': '/solutions/enclave-os/architecture',
+    'enclave-os/config-and-merkle-tree': '/solutions/enclave-os/attestation/merkle-tree',
+    'enclave-os/ra-tls': '/solutions/enclave-os/attestation/ra-tls',
+    'enclave-os/rpc-and-circular-buffers': '/solutions/enclave-os/enclave-os-mini/rpc-and-circular-buffers',
+    'enclave-os/rust-and-teaclave': '/solutions/enclave-os/enclave-os-mini/rust-and-teaclave',
+    'enclave-os/sealing-and-kv-store': '/solutions/enclave-os/enclave-os-mini/sealing-and-kv-store',
+    'enclave-os/wasm-runtime': '/solutions/enclave-os/enclave-os-mini/wasm-runtime',
+    'ra-tls-clients': '/solutions/platform/verification-libraries',
+    'caddy-ra-tls': '/solutions/platform/overview',
+    'cli': '/solutions/cli',
+    'cli/agents': '/solutions/cli/agents',
+    'cli/apps': '/solutions/cli/apps',
+    'cli/authentication': '/solutions/cli/authentication',
+    'cli/install': '/solutions/cli/install',
+    'cli/scripting': '/solutions/cli/scripting',
+    'cli/vault': '/solutions/cli/vault',
+    'guides/attestation-server': '/technology/attestation/attestation-server',
+    'guides/enclave-os/build-wasm-app': '/solutions/enclave-os/enclave-os-mini/guides/build-wasm-app',
+    'guides/enclave-os/deploy': '/solutions/enclave-os/enclave-os-mini/guides/deploy',
+    'guides/enclave-os/layer4-proxy': '/solutions/enclave-os/enclave-os-mini/guides/layer4-proxy',
+    'guides/deploy-caddy-ra-tls/azure': '/solutions/platform/overview',
+    'guides/deploy-caddy-ra-tls/google-cloud': '/solutions/platform/overview',
+    'guides/deploy-caddy-ra-tls/ovh-cloud': '/solutions/platform/overview',
+    'solutions/wallet/overview': '/solutions/privasys-id/wallet',
+    'solutions/privasys-id/session-relay': '/technology/sealed-session',
+    'solutions/confidential-containers/concept': '/solutions/platform/overview',
+    'solutions/confidential-containers/caddy-ra-tls': '/solutions/platform/overview',
+    'solutions/clients/ra-tls-clients': '/solutions/platform/verification-libraries',
+    'solutions/enclave-os/rpc-and-circular-buffers': '/solutions/enclave-os/enclave-os-mini/rpc-and-circular-buffers',
+    'solutions/enclave-os/rust-and-teaclave': '/solutions/enclave-os/enclave-os-mini/rust-and-teaclave',
+    'solutions/enclave-os/sealing-and-kv-store': '/solutions/enclave-os/enclave-os-mini/sealing-and-kv-store',
+    'solutions/enclave-os/wasm-runtime': '/solutions/enclave-os/enclave-os-mini/wasm-runtime',
+    'solutions/enclave-os/ra-tls': '/solutions/enclave-os/attestation/ra-tls',
+    'solutions/platform/deploy/azure': '/solutions/platform/overview',
+    'solutions/platform/deploy/google-cloud': '/solutions/platform/overview',
+    'solutions/platform/deploy/ovh-cloud': '/solutions/platform/overview'
 };
 
 export default async function Page(props: {
