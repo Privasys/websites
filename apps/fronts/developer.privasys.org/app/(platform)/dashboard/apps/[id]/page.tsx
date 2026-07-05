@@ -1187,6 +1187,9 @@ function AppStoreTab({ app, token, deployed, hostname, onSave, deleting, onDelet
                 store_keywords: keywords
             });
             onSave(updated);
+            // Refresh the sidebar app list so a title (display_name) change shows
+            // immediately, not only on the next page load.
+            window.dispatchEvent(new Event('apps:changed'));
             setEditing(null);
             setSaved(true);
             setTimeout(() => setSaved(false), 3000);
