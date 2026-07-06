@@ -58,8 +58,6 @@ So a compromised platform cannot quietly rotate your key to one it controls, for
 
 ## The boundaries
 
-A few things are worth stating plainly.
-
 Routine rotation re-wraps the key. It does not re-encrypt the data, and it is not a substitute for doing so. If you have reason to believe the at-rest cipher key itself is compromised, you want the expensive procedure, and we keep it available and kept deliberately separate from the everyday path.
 
 Rotation is online but it is not invisible. The application keeps serving while the keyslots change underneath it, but a rotation is still an owner action that leaves an audit trail. It does not happen behind your back, and the friction of approving it sits where the authority over the data sits.
