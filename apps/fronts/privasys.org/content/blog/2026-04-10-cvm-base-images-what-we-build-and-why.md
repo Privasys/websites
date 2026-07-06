@@ -9,7 +9,7 @@ a few hundred megabytes of Ubuntu, packed into a read-only erofs
 filesystem, signed end-to-end, and measured into the TEE before
 `/sbin/init` ever sees a syscall. We publish the recipe at
 [Privasys/cvm-images](https://github.com/Privasys/cvm-images). It is
-not glamorous code. It is, however, the single piece of software whose
+unglamorous code, and also the single piece of software whose
 correctness everything else in our stack assumes.
 
 This post explains what is actually in those images, why we ship our
@@ -26,7 +26,7 @@ guest agent already wired up. Boot it, attest it, you're done.
 
 In practice the image you get is the same general-purpose Ubuntu the
 provider ships everywhere else, minus a few tweaks. To pick on Google
-specifically — their "Confidential Ubuntu 24.04 LTS NVIDIA 580" image
+specifically, their "Confidential Ubuntu 24.04 LTS NVIDIA 580" image
 is roughly 6 GB, 2,000+ packages, ext4 root mounted read-write, no
 dm-verity, no kernel lockdown, no Secure Boot enforcement on every
 stage. Anyone with root on the running guest can install a kernel
@@ -48,7 +48,7 @@ We ship four images, all built with [mkosi](https://github.com/systemd/mkosi):
 | `sev-snp-gpu`  | AMD SEV-SNP + H100 | Confidential AI inference on AMD     |
 
 They share a single security architecture. The TEE attests the
-firmware. UEFI Secure Boot — *enforced*, not merely "available" —
+firmware. UEFI Secure Boot, *enforced* rather than merely "available",
 verifies the bootloader. GRUB measures the kernel, the initrd, and
 the kernel command line into the TEE's runtime measurement registers.
 The kernel command line includes the dm-verity root hash for the
@@ -89,7 +89,7 @@ modules, no writing to `/dev/mem` or `/dev/kmem`, no kexec to an
 unsigned kernel, no kernel debugging interfaces that would let an
 attacker peek at memory the TEE just spent transistors hiding.
 
-## The patch nobody else seems to ship: BadAML
+## The patch we carry that others don't: BadAML
 
 Here is the most consequential change we make to the upstream kernel,
 and the one that motivates the bulk of our reproducibility work.
@@ -99,7 +99,7 @@ hands the guest a set of ACPI tables, including SSDTs, and the kernel's
 ACPICA interpreter executes the AML bytecode in those tables in
 ring 0. AML can declare `SystemMemory` operation regions that name
 arbitrary guest physical addresses. On a non-confidential VM that's
-fine — there is nothing in guest memory the host doesn't already see.
+fine, because there is nothing in guest memory the host doesn't already see.
 On a confidential VM it is a complete bypass: the hypervisor writes
 malicious AML, the AML reads or writes private (encrypted) guest
 pages, the TDX/SEV memory encryption is irrelevant because the
@@ -111,8 +111,8 @@ attack was published in 2024 as
 
 Our patch lives at
 [`patches/0001-acpi-deny-aml-access-to-cvm-private-memory.patch`](https://github.com/Privasys/cvm-images/blob/main/patches/0001-acpi-deny-aml-access-to-cvm-private-memory.patch).
-It hooks `acpi_ex_system_memory_space_handler()` — the function that
-serves AML's SystemMemory reads and writes — and, when running on a
+It hooks `acpi_ex_system_memory_space_handler()` (the function that
+serves AML's SystemMemory reads and writes) and, when running on a
 platform with `CC_ATTR_MEM_ENCRYPT` set, walks the page tables of the
 target virtual address. If the resolved physical page is marked
 encrypted (i.e. private to the VM), the access is denied and AML
@@ -125,7 +125,7 @@ Until it lands, every confidential VM running a stock kernel is a
 single malicious SSDT away from having its private memory read by the
 host. A surprising number of production deployments still are.
 
-## Why the cloud's image is not enough — even if you trust the cloud
+## Why the cloud's image is not enough, even if you trust the cloud
 
 The objection we hear most often is: "Doesn't the cloud provider also
 attest the guest kernel? Why does the *image* need to be hardened?".
@@ -134,7 +134,7 @@ The TDX quote you get back says *what* you booted. If what you booted
 is a writable, fully-featured Ubuntu, the quote will faithfully record
 that fact and you, the verifier, then have to decide what it means.
 There is no policy that turns a measurement of an unhardened image
-into a meaningful security guarantee — that's your job.
+into a meaningful security guarantee; that part is your job.
 
 By restricting the image to one rootfs hash and one kernel command
 line, with everything mutable accounted for, we make the verifier's
@@ -145,8 +145,8 @@ serviced your request. If it doesn't, you stop talking to the box.
 ## What's next
 
 The base images are deliberately a thin foundation. The bulk of the
-useful behaviour — RA-TLS, the sealed session relay, container
-orchestration, persistent encrypted volumes keyed to the enclave —
+useful behaviour (RA-TLS, the sealed session relay, container
+orchestration, persistent encrypted volumes keyed to the enclave)
 is in
 [Enclave OS Virtual](https://docs.privasys.org/solutions/enclave-os/presentation/),
 which builds on top of these images. The next post in this series

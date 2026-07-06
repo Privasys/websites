@@ -31,7 +31,7 @@ world example {
 }
 ```
 
-This is not documentation. It is the actual contract that the WASM runtime enforces at the binary level. The enclave will reject a call with the wrong number of parameters, the wrong types, or a missing function name. The types are not advisory. They are the API.
+This is the actual contract that the WASM runtime enforces at the binary level, not documentation. The enclave will reject a call with the wrong number of parameters, the wrong types, or a missing function name. The types are the API, not advisory.
 
 For twenty years, API contracts have been a second-class citizen. OpenAPI specs drift from the code. Protobuf definitions live in a separate repo from the server. GraphQL schemas are maintained by hand. The contract is always a *description* of the real thing, never the real thing itself.
 
@@ -39,7 +39,7 @@ WIT is different. **The contract is the code.** The `.wasm` binary carries its o
 
 And because WIT supports records, enums, variants, options, results, lists, tuples, and flags, it can express APIs that are far richer than what you typically see in REST endpoints. A function can accept a `result<list<record { name: string, score: f64 }>, error-code>` and the runtime knows exactly how to serialise and deserialise it.
 
-The Component Model was designed for exactly this scenario: two pieces of code, written by different authors, in different languages, that need to exchange data safely. Each component declares its imports and exports in WIT, and the runtime validates the contracts at link time. No shared memory, no ABI guessing, no unsafe casts. In an enclave, this matters even more. The trust boundary is not just an interface. It is a hardware boundary. Data crossing that boundary must be correctly typed, correctly serialised, and correctly validated. WIT guarantees this at the binary level.
+The Component Model was designed for exactly this scenario: two pieces of code, written by different authors, in different languages, that need to exchange data safely. Each component declares its imports and exports in WIT, and the runtime validates the contracts at link time. No shared memory, no ABI guessing, no unsafe casts. In an enclave, this matters even more. The trust boundary is a hardware boundary, not just an interface. Data crossing that boundary must be correctly typed, correctly serialised, and correctly validated. WIT guarantees this at the binary level.
 
 The question is: why should this type information stop at the enclave boundary?
 
@@ -95,7 +95,7 @@ And it generates **type-aware input controls** for each parameter:
 | `enum` | Dropdown select with variants |
 | `list`, `record`, `variant`, `option` | JSON editor |
 
-This is not a generic JSON form. It is generated from the WIT schema. If your function takes a `record { name: string, age: u32 }`, the UI knows about `name` and `age`. If it takes an `enum { red, green, blue }`, the UI renders a dropdown with exactly those three options.
+This is generated from the WIT schema, not a generic JSON form. If your function takes a `record { name: string, age: u32 }`, the UI knows about `name` and `age`. If it takes an `enum { red, green, blue }`, the UI renders a dropdown with exactly those three options.
 
 Default values are inferred from types: strings default to `""`, numbers to `0`, booleans to `false`, lists to `[]`, options to `null`. You click **Send**, the call travels over RA-TLS to the enclave, and the response appears with status, timing, and formatted JSON.
 
@@ -103,13 +103,13 @@ This is the development loop we wanted: write a WIT interface, compile to WASM, 
 
 ### Typed Clients for Every Platform
 
-The schema endpoint is not just for the dashboard. It is a public, authenticated API that any tooling can consume.
+The schema endpoint is a public, authenticated API that any tooling can consume, not just something for the dashboard.
 
 Because the schema is a structured JSON representation of WIT types, it can drive code generation for any client that needs to talk to the enclave. A TypeScript developer building a browser frontend can generate typed fetch wrappers from the schema. A Swift developer building an iOS app can generate Codable structs that match the enclave's function signatures. A Go service that orchestrates calls across multiple enclaves can generate typed clients for each one.
 
 The pattern is the same one that made OpenAPI and Protobuf successful: a machine-readable contract that tools can consume to produce typed bindings. The difference is that the contract comes from the deployed binary itself, not from a file that someone remembered to update.
 
-This also applies to enclave-to-enclave communication. When one enclave needs to call another, the schema endpoint tells it exactly what the target exports. In a multi-enclave architecture where services are composed across trust boundaries, this kind of type safety is not a convenience. It is a requirement.
+This also applies to enclave-to-enclave communication. When one enclave needs to call another, the schema endpoint tells it exactly what the target exports. In a multi-enclave architecture where services are composed across trust boundaries, this kind of type safety is a requirement, not a convenience.
 
 ## The Full Type System
 
@@ -181,7 +181,7 @@ MCP tool servers exist today. What does not exist is an MCP server where the AI 
 
 When an agent calls a Privasys enclave over MCP, the connection carries an SGX attestation quote. The agent, or the infrastructure on its behalf, can verify the enclave's identity, its code measurement, and its configuration before sending a single byte of data. This is the same RA-TLS guarantee that protects human users, extended to AI workflows.
 
-Consider a clinical decision-support agent that calls a medical inference model. The patient data flowing into that model is sensitive. Today, the agent has to trust that the tool server handles the data correctly. With an attested enclave, the agent can cryptographically verify that the model runs in a secure environment with a known code measurement. The trust is not based on a promise. It is based on a hardware quote.
+Consider a clinical decision-support agent that calls a medical inference model. The patient data flowing into that model is sensitive. Today, the agent has to trust that the tool server handles the data correctly. With an attested enclave, the agent can cryptographically verify that the model runs in a secure environment with a known code measurement. The trust is based on a hardware quote, not a promise.
 
 Or consider a compliance workflow that calls a financial risk engine across organisational boundaries. The enclave provides the confidentiality. WIT provides the type safety. MCP provides the discoverability. Attestation provides the proof.
 

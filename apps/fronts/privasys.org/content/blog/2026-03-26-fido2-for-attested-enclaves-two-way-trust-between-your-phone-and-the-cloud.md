@@ -108,7 +108,7 @@ This is the digital equivalent of checking that the bank's SSL certificate has n
 
 The thesis behind Privasys Wallet is simple: **authentication without verification is incomplete trust**.
 
-In a world where cloud services process our most sensitive data (financial records, medical histories, legal documents, AI conversations) the ability to verify what is on the other side of the connection is not a nice-to-have. It is a fundamental requirement.
+In a world where cloud services process our most sensitive data (financial records, medical histories, legal documents, AI conversations) the ability to verify what is on the other side of the connection is a fundamental requirement, not a nice-to-have.
 
 FIDO2 gives us phishing-resistant, hardware-bound authentication. RA-TLS gives us cryptographic proof of the server's identity. Privasys Wallet combines them to create the first authentication flow where both parties prove their identity through hardware, and neither can impersonate the other.
 

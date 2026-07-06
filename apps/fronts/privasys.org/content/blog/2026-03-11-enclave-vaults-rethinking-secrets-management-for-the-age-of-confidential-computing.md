@@ -24,7 +24,7 @@ Every approach discussed below gives a different answer. But they all share a st
 
 The Hardware Security Module (HSM) has been the industry's answer for decades. An HSM is a purpose-built device, typically a PCIe card or rack-mounted appliance, that stores the LMK in tamper-resistant silicon. Cryptographic operations are performed on-chip. The key never leaves the device.
 
-HSMs are trusted because they are physically isolated and rigorously certified. The FIPS 140-2 and 140-3 programmes test them against probing, voltage glitching, and side-channel analysis. A Level 3 certified HSM will zeroize its keys if it detects physical tampering.
+HSMs are trusted because they are physically isolated and rigorously certified. The FIPS 140-2 and 140-3 programmes test them against probing, voltage glitching, and side-channel analysis. A Level 3 certified HSM will zeroise its keys if it detects physical tampering.
 
 The LMK itself is typically protected with Shamir's Secret Sharing. During the initial key ceremony, the master key is split into $n$ shares distributed across smart cards held by different custodians. No single custodian holds the full key. Reconstructing it requires a quorum of $k$ custodians to convene physically, which is expensive and slow to organise.
 
@@ -162,7 +162,7 @@ Enclave Vaults runs on [Enclave OS (Mini)](https://github.com/Privasys/enclave-o
 
 ### The Honest Boundaries
 
-Enclave Vaults is **not a FIPS 140-3 certified HSM.** It does not have tamper-evident enclosures or zeroization mechanisms. Organisations that require specific FIPS certification levels need physical HSMs or certified vHSMs (some TEE-based products, like Fortanix, do carry FIPS certification). The TEE side-channel limitations discussed above apply equally here: the security model rests on SGX isolation, not on a purpose-built cryptographic device.
+Enclave Vaults is **not a FIPS 140-3 certified HSM.** It does not have tamper-evident enclosures or zeroisation mechanisms. Organisations that require specific FIPS certification levels need physical HSMs or certified vHSMs (some TEE-based products, like Fortanix, do carry FIPS certification). The TEE side-channel limitations discussed above apply equally here: the security model rests on SGX isolation, not on a purpose-built cryptographic device.
 
 Architecturally, Enclave Vaults sits closer to the distributed key management designs emerging in the web3 world (threshold signatures, MPC wallets, distributed validator technology) than to the traditional HSM paradigm. The two approaches serve different points on the trust spectrum. Where FIPS certification is a hard legal requirement, or where the threat model includes nation-state physical attacks on silicon, dedicated HSMs remain the right choice. Enclave Vaults is for the many systems where distributing trust across independently verifiable machines is a better fit than concentrating it in a few heavily certified ones.
 
