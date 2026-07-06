@@ -67,12 +67,12 @@ conversation instead of a cache that grows with every token, which
 brings us to the headline number below.
 
 **The vendor ships FP8.** The official fine-grained FP8 checkpoint
-runs natively on the H100's hardware FP8 path and is the artifact we
+runs natively on the H100's hardware FP8 path and is the artefact we
 measure, publish, and attest. No repacking, no provenance gap. FP8 is
 also our floor, for reasons that stack neatly: the H100's tensor cores
 compute natively in FP8 but have no 4-bit path (hardware FP4 arrives
 with the next GPU generation), so sub-8-bit formats on this card are
-storage tricks that dequantize on the fly; the artifacts are
+storage tricks that dequantise on the fly; the artefacts are
 third-party repacks rather than vendor-signed checkpoints; and the
 model fits comfortably at FP8 anyway, so there is nothing to buy by
 going lower.

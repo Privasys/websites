@@ -1,5 +1,5 @@
 ---
-title: "Confidential AI on H100: The CPU/GPU Ceremony, and the Patches Nobody Talks About"
+title: "Confidential AI on H100: The CPU/GPU Ceremony and the Driver Patches Behind It"
 author: "B Foing"
 date: "2026-04-17"
 ---
@@ -30,7 +30,7 @@ A confidential AI deployment has three secrets in flight at once:
    from the browser to the enclave. Inside the enclave they live in
    CPU memory until the inference batch reaches the GPU.
 3. **The KV-cache and intermediate activations.** Generated entirely
-   inside the GPU, but materially derived from the prompt — leaking
+   inside the GPU, but materially derived from the prompt, and leaking
    them is roughly equivalent to leaking the prompt itself.
 
 TDX takes care of (1) and (2) while they're in CPU RAM and across the
@@ -96,8 +96,8 @@ infrastructure is roughly two minutes, almost all of it spent in steps
 ## The page-flip trick: TDX-private → TDX-shared
 
 The single most important patch against the open-source NVIDIA driver
-is the one nobody talks about. By default, in a TDX guest, all of guest
-RAM is *private* — encrypted with a per-VM key the host never sees.
+changes how guest memory is shared with the GPU. By default, in a TDX guest, all of guest
+RAM is *private*, encrypted with a per-VM key the host never sees.
 That is exactly what you want for ordinary memory, but it is exactly
 what you do NOT want for memory you're about to hand to a PCIe device.
 The H100, even in CC mode, cannot see TDX-private pages directly. The
@@ -115,7 +115,7 @@ The faster way, which the patched driver takes, is to ask the kernel to
 buffers (weight staging, copy-engine buffers, GSP message queues),
 call `set_memory_decrypted()` on them, and the TDX-module-mediated
 machinery converts those pages from private to shared. The page now
-lives in untrusted memory — but everything written to it from the
+lives in untrusted memory, but everything written to it from the
 host driver is already AES-GCM-wrapped under the CCSL key before
 DMA, and everything written into it by the GPU is encrypted with the
 same key. The plaintext only exists inside the H100. The TDX module
@@ -138,7 +138,7 @@ Our patches that make this work live at
   at all.
 - **0003-pmc-boot-42-synthesis.** On GCP A3 confidential VMs,
   reading the H100's `PMC_BOOT_42` register through PCIe BAR0 returns
-  zero — the hypervisor's PCI config emulation doesn't pass it
+  zero, because the hypervisor's PCI config emulation doesn't pass it
   through. Without that register, GSP-RM cannot identify itself as
   a GH100 and refuses to initialise. We synthesise BOOT_42 from the
   still-readable BOOT_0 register in the three RM functions that read
@@ -163,12 +163,12 @@ incompatible with TDX. Locking the driver into the dm-verity-protected
 rootfs is meaningful only if we know what is in the binary; with the
 open driver we do.
 
-The catch — which cost us a week of debugging the first time we hit
-it — is that the Ubuntu-shipped open kernel modules
+The catch (which cost us a week of debugging the first time we hit
+it) is that the Ubuntu-shipped open kernel modules
 (`nvidia-driver-590-server-open`) do not include the GH100 GSP
 firmware. Only `gsp_ga10x.bin` and `gsp_tu10x.bin` are bundled. On
 H100 the driver loads, then immediately refuses with "Disabling GSP
-offload — GPU not supported", silently ignores
+offload: GPU not supported", silently ignores
 `NVreg_ConfidentialComputing=1`, and you get a non-CC GPU that CUDA
 won't talk to anyway. We carry the GH100 GSP firmware ourselves
 alongside our patched build of the open driver.
@@ -180,7 +180,7 @@ we strip out, the smaller the verifier's job and the smaller the
 attack surface. Concretely:
 
 - **No CUDA toolkit, no `nvcc`, no developer libraries** in the
-  runtime image. The image runs *one* binary that uses CUDA — vLLM —
+  runtime image. The image runs *one* binary that uses CUDA (vLLM)
   and ships only the runtime libraries it actually links against.
 - **No `nvidia-fabricmanager`, no nvlink-related tooling.** Single-GPU
   inference, no cross-GPU paths to attack.
@@ -216,8 +216,8 @@ each time KV-cache is moved between the CPU and the GPU.
 
 ## What you can verify
 
-The point of all of this — the read-only image, the BadAML patch, the
-CC ceremony, the page-flip, the TDISP lock — is that a verifier
+The point of all of this (the read-only image, the BadAML patch, the
+CC ceremony, the page-flip, the TDISP lock) is that a verifier
 asking the chat front-end for an RA-TLS handshake gets back a single
 quote that says: this exact firmware, this exact kernel with these
 exact patches, this exact rootfs hash, this exact NVIDIA driver build,

@@ -23,7 +23,7 @@ perfectly, against the wrong baseline.
 Starting with this week's releases of
 [cvm-images](https://github.com/Privasys/cvm-images), we close that
 loop. Every release now ships the measurements a TDX machine *will*
-produce when it boots that image, **computed from the disk artifact
+produce when it boots that image, **computed from the disk artefact
 alone, before any VM exists**. No reference boot, no trusted first
 machine, no circularity.
 
@@ -87,15 +87,15 @@ end of "boot it and see" as a verification methodology.
 
 `MRTD` and `RTMR[0]` (the firmware itself and its configuration) are
 the hypervisor's contribution, not the image's, so they are observed
-per platform rather than predicted from the artifact. The split is the
+per platform rather than predicted from the artefact. The split is the
 honest one: we publish what the image determines; the platform
 attests what the cloud determines.
 
 ## Pinned inputs: the build is now a fixed point
 
-Predicting measurements from the artifact is only half of
+Predicting measurements from the artefact is only half of
 transparency. The other half is being able to say what went *into* the
-artifact. As of these releases, every image build pulls its packages
+artefact. As of these releases, every image build pulls its packages
 from [snapshot.ubuntu.com](https://snapshot.ubuntu.com) at a timestamp
 pinned in the repository, not from the moving `archive.ubuntu.com`.
 Two builds of the same tag see the same package universe, down to the
@@ -152,5 +152,5 @@ Attestation tells you what booted. As of this release, you can know
 what *should* boot, from source, ahead of time, byte for byte. That
 is the difference between checking a measurement and actually
 verifying one, and it is what this level of transparency has always
-been about for us: the expected value is not something we hand you,
-it is something you can compute yourself.
+been about for us: the expected value is something you can compute yourself, not
+something we hand you.

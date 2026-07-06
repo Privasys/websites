@@ -42,7 +42,7 @@ The upgrade gate rotates **who may unwrap** the key. The code's measurement chan
 
 ## Doing it without a window where the data is unreachable
 
-The hard part of rotation is not the cryptography. It is the sequencing, because at no instant may a crash leave the data locked. Rotation touches two pieces of state, the lock on the disk and the record of which key opens it, and the order in which you change them is the whole game.
+The hard part of rotation is the sequencing, not the cryptography, because at no instant may a crash leave the data locked. Rotation touches two pieces of state, the lock on the disk and the record of which key opens it, and the order in which you change them is the whole game.
 
 The rule we hold to is that **the volume must be openable with both the old key and the new key throughout the switch**. Concretely: provision a fresh key generation in the constellation; have the enclave reconstruct both the old and the new key and add the new one to a second LUKS keyslot, so that both now open the volume; only then advance the pointer that records which key is live; and only after that retire the old keyslot and delete the old generation. Walk through any point at which the process could die and the volume still opens. Before the pointer moves, the old key works. After it moves, the new key works. In the overlap between adding the new slot and killing the old, either key works.
 

@@ -16,7 +16,7 @@ The first instinct, when measurement and data are this tightly coupled, is to av
 
 This does not survive contact with reality. The CVE that lands next quarter does not care that your measurement is convenient. The cryptographic library you depend on will issue a fix, and "we chose not to apply it because upgrades are hard" is not a sentence you want to read in an incident report. Beyond security, software that cannot evolve is software that slowly dies: no new capabilities, no performance work, no response to what users actually ask for.
 
-So upgrades are not optional. The question is not whether a confidential app changes its measurement over its lifetime. It is what happens to the data the moment it does.
+So upgrades are not optional. The question is not whether a confidential app changes its measurement over its lifetime but what happens to the data the moment it does.
 
 ## What actually breaks on an upgrade
 

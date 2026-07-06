@@ -51,13 +51,13 @@ world diagnostic {
 
 Three policy levels:
 
-- **`@auth public`** — no authentication required. Anyone who can reach the enclave can call this function.
-- **`@auth authenticated`** — the caller must present a valid FIDO2 session token or OIDC JWT. Identity is verified, but no specific role is required.
-- **`@auth role(compliance-officer)`** — the caller must be authenticated *and* hold at least one of the listed roles. Multiple roles are comma-separated: `@auth role(admin, compliance-officer)`.
+- **`@auth public`**: no authentication required. Anyone who can reach the enclave can call this function.
+- **`@auth authenticated`**: the caller must present a valid FIDO2 session token or OIDC JWT. Identity is verified, but no specific role is required.
+- **`@auth role(compliance-officer)`**: the caller must be authenticated *and* hold at least one of the listed roles. Multiple roles are comma-separated: `@auth role(admin, compliance-officer)`.
 
 The `@default-auth` annotation at the world level sets the policy for any export that does not have an explicit `@auth`. If neither is present, functions default to `public`.
 
-This is not a convention. It is not a linter rule. It is an authorisation contract that the enclave runtime enforces before your function is ever called.
+This is an authorisation contract that the enclave runtime enforces before your function is ever called, not a convention and not a linter rule.
 
 ## How Annotations Become Runtime Policy
 
@@ -99,13 +99,13 @@ The enclave accepts two kinds of authentication tokens, and both are checked aga
 
 ### FIDO2 Session Tokens
 
-If you have read our [Privasys Wallet announcement](/blog/fido2-for-attested-enclaves-two-way-trust-between-your-phone-and-the-cloud), you know the flow: the wallet verifies the enclave's attestation, then completes a FIDO2 ceremony. The enclave issues a session token — 32 random bytes, hex-encoded, valid for one hour.
+If you have read our [Privasys Wallet announcement](/blog/fido2-for-attested-enclaves-two-way-trust-between-your-phone-and-the-cloud), you know the flow: the wallet verifies the enclave's attestation, then completes a FIDO2 ceremony. The enclave issues a session token: 32 random bytes, hex-encoded, valid for one hour.
 
 When a subsequent request includes this token in the `app_auth` field, the enclave looks it up in its in-memory session store and retrieves the associated user identity. No network call. No external token service. The session store lives entirely inside the TEE.
 
 ### OIDC JWTs
 
-For applications that integrate with existing identity providers — Okta, Auth0, Azure AD, Keycloak — the enclave can verify standard OIDC JWTs. The app developer configures their provider's issuer URL and audience at deploy time. The enclave fetches the JWKS keys and verifies tokens independently.
+For applications that integrate with existing identity providers (Okta, Auth0, Azure AD, Keycloak), the enclave can verify standard OIDC JWTs. The app developer configures their provider's issuer URL and audience at deploy time. The enclave fetches the JWKS keys and verifies tokens independently.
 
 ### Automatic Detection
 
@@ -125,7 +125,7 @@ This means an application can support both Privasys Wallet users (FIDO2, hardwar
 
 ## Enclave-Managed Roles: RBAC Without an External Server
 
-OIDC JWTs carry roles in their claims. FIDO2 tokens do not — they are opaque session identifiers with no embedded claims. If you use `@auth role(...)` with FIDO2 users, where do the roles come from?
+OIDC JWTs carry roles in their claims. FIDO2 tokens do not; they are opaque session identifiers with no embedded claims. If you use `@auth role(...)` with FIDO2 users, where do the roles come from?
 
 The answer is inside the enclave.
 
@@ -194,7 +194,7 @@ If an unauthenticated caller tries to invoke `auth-hello`, the runtime rejects t
 
 One detail that matters for trust: the per-function policy is included in the enclave's attestation evidence.
 
-When an application is loaded, the runtime computes a SHA-256 hash of the complete configuration — the merged auth policies from WIT annotations, the OIDC provider settings, the FIDO2 configuration — and embeds it in the application's RA-TLS certificate under a custom OID (`1.3.6.1.4.1.65230.3.5`).
+When an application is loaded, the runtime computes a SHA-256 hash of the complete configuration (the merged auth policies from WIT annotations, the OIDC provider settings, the FIDO2 configuration) and embeds it in the application's RA-TLS certificate under a custom OID (`1.3.6.1.4.1.65230.3.5`).
 
 This means a remote client can verify not just that the enclave is running the expected code, but that the authorisation policy matches what they expect. If the developer annotated `purge-records` as `@auth role(compliance-officer)`, and the attestation confirms the configuration hash, the client has hardware-backed proof that the access control is enforced.
 

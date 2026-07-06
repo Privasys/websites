@@ -17,8 +17,7 @@ re-runs it against the same model, and gets a different answer. Then a
 third answer. The output that caused the damage cannot be reproduced, so
 it cannot be examined, defended, or even properly understood. The person
 who was nominally "in control" of the agent is left holding responsibility
-for a process they cannot reconstruct. That is not an audit trail. That is
-a roulette table, and when the wheel lands badly there is no way to prove
+for a process they cannot reconstruct. That is a roulette table, not an audit trail, and when the wheel lands badly there is no way to prove
 which numbers were even in play.
 
 ## An audit you cannot replay is just a log
@@ -164,7 +163,7 @@ that a client can check on every RA-TLS handshake.
 So the statement "this model, running this code, with this configuration,
 produced this output for this input" is not something Privasys asserts. It
 is something the silicon attests and any third party can recompute and
-replay. Trust is not requested. It is removed from the equation.
+replay. Trust is removed from the equation, not requested.
 
 ## Why this changes enterprise automation
 

@@ -70,7 +70,7 @@ We solved this with a two-tier certificate hierarchy:
 1. **The Enclave CA certificate** carries the SGX quote and the enclave-wide Merkle root. This proves the hardware identity and the platform configuration.
 2. **Per-app leaf certificates** are signed by the Enclave CA and carry app-specific OIDs: the app's code hash and its own independent Merkle root.
 
-When a client connects, the TLS handshake uses SNI (Server Name Indication) to select the right leaf certificate. A client connecting to `payments-api.enclave.example.com` receives a certificate that proves **exactly which code** that specific API is running — without revealing anything about other apps in the same enclave.
+When a client connects, the TLS handshake uses SNI (Server Name Indication) to select the right leaf certificate. A client connecting to `payments-api.enclave.example.com` receives a certificate that proves **exactly which code** that specific API is running, without revealing anything about other apps in the same enclave.
 
 This design gives us three properties that matter in production:
 
@@ -84,7 +84,7 @@ There is a philosophical point that underpins all of this. The enclave is an **h
 
 Service administrators can change the configuration: load different WASM apps, swap the CA, reconfigure the egress store. But the Merkle root will change accordingly, and any client pinning the expected root will immediately detect the change.
 
-This is not about preventing misconfiguration. It is about making misconfiguration **visible**. The enclave cannot lie about its state. The mathematics of the Merkle tree guarantee that.
+This is about making misconfiguration **visible**, not about preventing it. The enclave cannot lie about its state. The mathematics of the Merkle tree guarantee that.
 
 ## What This Means in Practice
 
@@ -118,7 +118,7 @@ We are working on several extensions to this model:
 - **Cross-TEE attestation**, enabling enclaves to verify each other's certificates and establish mutually attested channels.
 - **Merkle tree introspection API**, a new standard and core feature of Enclave OS, allowing any verifier to retrieve the full set of leaves from the enclave and recompute the Merkle root independently.
 
-Attestation is not an optional add-on. It is the mechanism that turns a hardware isolation primitive into a **verifiable trust relationship**. And configuration attestation is what makes that relationship precise enough to be useful in production.
+Attestation is the mechanism that turns a hardware isolation primitive into a **verifiable trust relationship**, not an optional add-on. And configuration attestation is what makes that relationship precise enough to be useful in production.
 
 ---
 
