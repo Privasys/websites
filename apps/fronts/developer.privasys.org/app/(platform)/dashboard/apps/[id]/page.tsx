@@ -2360,7 +2360,7 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                     <h2 className="text-sm font-semibold mb-3">Configuration and Actions</h2>
                     <div className="p-5 rounded-xl border border-black/10 dark:border-white/10">
                         {configure && (
-                            <ConfigureForm cfg={configure} appId={app.id} token={token} frozen={liveDeployment.container_state === 'awaiting_config'} />
+                            <ConfigureForm cfg={configure} appId={app.id} token={token} frozen={liveDeployment.container_state === 'awaiting_config'} onConfigured={onRefresh} />
                         )}
                         {!configure && configFns.length > 0 && (
                             <div>
@@ -2776,7 +2776,7 @@ function fieldEntries(fn: FunctionSchema): [string, JsonSchemaProp][] {
 // `configure` manifest section (not a tool). Owner-facing title + summary, an
 // amber warning while the app is frozen, the fields (label + placeholder + a
 // "Details" disclosure per field), and Apply — submitting lifts the freeze gate.
-function ConfigureForm({ cfg, appId, token, frozen }: { cfg: ConfigureSection; appId: string; token: string; frozen: boolean }) {
+function ConfigureForm({ cfg, appId, token, frozen, onConfigured }: { cfg: ConfigureSection; appId: string; token: string; frozen: boolean; onConfigured?: () => void }) {
     const props = cfg.inputSchema?.properties ?? {};
     const entries = Object.keys(props).sort().map(k => [k, props[k]] as [string, JsonSchemaProp]);
     const [values, setValues] = useState<Record<string, string>>({});
@@ -2803,6 +2803,11 @@ function ConfigureForm({ cfg, appId, token, frozen }: { cfg: ConfigureSection; a
             if (errMsg) { setError(errMsg); return; }
             setResult('Configuration applied.');
             setApplied(true);
+            // Reload deployments so the Frozen badge/tile clear immediately: the
+            // enclave lifts the freeze on this successful configure return and
+            // mgmt clears container_state, but the page holds a stale copy until
+            // the next fetch.
+            onConfigured?.();
         } catch (e) {
             setError((e as Error).message);
         } finally {
