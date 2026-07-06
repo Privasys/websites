@@ -57,7 +57,7 @@ The other interface is for organisations with existing key-management software a
 
 The gateway is itself a Privasys confidential workload, so it runs inside a TEE and authenticates to the vault with an attested identity minted by the measured platform manager. There is no plaintext hop between the client and the enclave, and a small proxy verifies the gateway's own attestation before a standard KMIP client sends anything through it. A regulated buyer can keep their tooling and still get a key manager whose custody rests on hardware they can verify.
 
-## The limit, stated plainly
+## The limit
 
 The same boundary applies to every standard interface here, and it is worth being precise about. A PKCS#11 or KMIP client authenticates with a certificate or a credential, and that is all it can present. It has no way to carry the two conditions from earlier that make this vault more than a key store: the fresh approval a person taps on their phone, and a check on which piece of attested code is calling. So a key whose policy asks for someone to approve the operation on their phone, or that answers only to one named enclave, will refuse those operations when the request arrives over PKCS#11 or KMIP. The standard client gets the operations it can safely be given; anything that depends on those extra conditions stays behind the native API, which is the one surface able to express them. We would rather a request fail cleanly than let a strong policy quietly weaken to fit a protocol that cannot carry it.
 

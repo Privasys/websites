@@ -70,8 +70,6 @@ This is, to us, the most interesting consequence of getting the upgrade gate rig
 
 ## The honest boundaries
 
-A few things are worth stating plainly.
-
 This does not make upgrades painless. It makes them deliberate. Someone has to review the new build and approve it, and if that someone is unavailable, the new version waits. We think that friction is correctly placed: the friction of approving access to data should sit exactly where the authority over that data sits. For adopters who genuinely want hands-off rollout on low-stakes workloads, there is an explicit opt-in that records intent and produces an audit entry without a human in the loop. It is off by default, and turning it on is itself a deliberate act.
 
 The TEE caveats from our earlier writing still apply. This is SGX-isolated key custody, not a FIPS 140-3 certified appliance, and the security rests on the constellation's distributed trust rather than on any single piece of tamper-resistant silicon. What it buys you is a property certified HSMs do not offer: every vault, and every app reaching for a key, proves its identity by attestation that anyone can verify in real time.

@@ -210,7 +210,7 @@ export default function EnclaveVaults() {
 
             <section className='mt-20 lg:mt-40'>
                 <h2 className='text-2xl lg:text-4xl'>
-                    <Balancer>The boundaries, stated plainly.</Balancer>
+                    <Balancer>The boundaries.</Balancer>
                 </h2>
                 <p className='mt-8 text-lg'>
                     Enclave Vaults is a virtual HSM, not a FIPS 140-3 certified appliance.
