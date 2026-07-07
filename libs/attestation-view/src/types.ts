@@ -74,12 +74,34 @@ export interface AppEvent {
     description: string;
 }
 
+// NVIDIA GPU Confidential-Computing attestation verdict, produced by the
+// attestation server when the enclave certificate carries GPU evidence
+// (the tdx-gpu combined case). Mirrors the attestation-server
+// GPUAttestationResult; populated by management-service AttestApp.
+export interface GPUAttestationResult {
+    verified: boolean;
+    // measurements_verified is true only once firmware/VBIOS measurements are
+    // matched against a signed NVIDIA RIM. verified can hold (genuine device,
+    // CC mode, authentic nonce-bound report) while this is still false.
+    measurements_verified: boolean;
+    gpu_uuid?: string;
+    driver?: string;
+    vbios?: string;
+    cc_environment?: string;
+    status?: string;
+    error?: string;
+}
+
 export interface AttestationResult {
     certificate: AttestationCertificate;
     pem: string;
     quote: AttestationQuote | null;
     extensions: AttestationExtension[];
     tls: AttestationTLS;
+    // NVIDIA GPU attestation verdict, present when the enclave certificate
+    // carries GPU evidence (OID 5.1) and it was verified by the attestation
+    // server. Renders a dedicated GPU section in the attestation view.
+    gpu_attestation?: GPUAttestationResult | null;
     // Per-workload (SNI) certificate data
     app_extensions?: AttestationExtension[];
     app_pem?: string;
@@ -122,7 +144,8 @@ export const PRIVASYS_OID = {
     APP_EVENTS: '1.3.6.1.4.1.65230.3.4',
     MODEL_DIGEST: '1.3.6.1.4.1.65230.3.5',
     MULTIMODAL_DIGEST: '1.3.6.1.4.1.65230.3.6',
-    TOOLS_DIGEST: '1.3.6.1.4.1.65230.3.7'
+    TOOLS_DIGEST: '1.3.6.1.4.1.65230.3.7',
+    GPU_EVIDENCE: '1.3.6.1.4.1.65230.5.1'
 } as const;
 
 // OIDs whose value bytes are UTF-8 strings, not raw hashes.

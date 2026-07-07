@@ -5,6 +5,7 @@ import type {
     AttestationExpectations,
     AttestationExtension,
     AttestationResult,
+    GPUAttestationResult,
     OsRelease,
     QuoteVerifyResult
 } from '../types';
@@ -50,7 +51,9 @@ const OID_DESCRIPTIONS: Record<string, string> = {
     'Workload Key Source':
         'Indicates how the workload\'s encryption keys are sourced and managed.',
     'Workload Permissions Hash':
-        'Hash of the security permissions granted to this workload.'
+        'Hash of the security permissions granted to this workload.',
+    'NVIDIA GPU Evidence':
+        'NVIDIA Confidential-Computing attestation evidence (SPDM report + certificate chain) collected from the GPU and bound to this certificate.'
 };
 
 export function AttestationResultView({
@@ -184,6 +187,10 @@ export function AttestationResultView({
                     challengeMode={result.challenge_mode}
                     osRelease={result.os_release}
                 />
+            )}
+
+            {result.gpu_attestation && (
+                <GPUSection gpu={result.gpu_attestation} />
             )}
 
             {extra}
@@ -508,6 +515,47 @@ function QuoteSection({
                             </div>
                         )}
                     </FieldRow>
+                ))}
+            </div>
+        </Section>
+    );
+}
+
+function GPUSection({ gpu }: { gpu: GPUAttestationResult }) {
+    const fields = useMemo(() => {
+        const rows: Array<{ label: string; value: string; description?: string }> = [];
+        if (gpu.driver) rows.push({ label: 'Driver', value: gpu.driver, description: 'NVIDIA driver version reported in the signed attestation report.' });
+        if (gpu.vbios) rows.push({ label: 'VBIOS', value: gpu.vbios, description: 'GPU VBIOS version reported in the signed attestation report.' });
+        if (gpu.cc_environment) rows.push({ label: 'CC Environment', value: gpu.cc_environment, description: 'Confidential-Computing environment (PRODUCTION means production silicon, not a debug/simulation part).' });
+        if (gpu.gpu_uuid) rows.push({ label: 'GPU UUID', value: gpu.gpu_uuid, description: 'Unique identifier of the attesting GPU.' });
+        return rows;
+    }, [gpu]);
+
+    return (
+        <Section
+            title='NVIDIA GPU (Confidential Computing)'
+            badge={
+                <>
+                    {gpu.verified
+                        ? <Badge tone='ok'>{'✓ Verified - genuine NVIDIA GPU, authentic nonce-bound report'}</Badge>
+                        : <Badge tone='err'>{`✗ ${gpu.error || 'GPU attestation failed'}`}</Badge>}
+                    {gpu.verified && (
+                        gpu.measurements_verified
+                            ? <Badge tone='ok'>{'✓ Measurements matched (RIM)'}</Badge>
+                            : <Badge tone='warn'>Measurements unverified</Badge>
+                    )}
+                </>
+            }
+        >
+            <p className='mb-3 text-xs text-black/40 dark:text-white/40'>
+                The GPU signed a fresh, nonce-bound SPDM attestation report whose certificate
+                chain roots at NVIDIA&rsquo;s Device Identity CA. The report data also binds this
+                GPU to the CPU enclave&rsquo;s certificate, proving the two are co-located.
+                {!gpu.measurements_verified && ' Firmware/VBIOS measurements are not yet matched against a signed NVIDIA reference manifest (RIM).'}
+            </p>
+            <div className='space-y-3'>
+                {fields.map((f) => (
+                    <FieldRow key={f.label} label={f.label} value={f.value} description={f.description} />
                 ))}
             </div>
         </Section>
