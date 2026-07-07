@@ -1253,3 +1253,85 @@ export function adminCheckVault(token: string, constellationId: string, vaultId:
         `/api/v1/admin/vault-constellations/${encodeURIComponent(constellationId)}/vaults/${encodeURIComponent(vaultId)}/check`,
         token, { method: 'POST' });
 }
+
+// ── Attribute marketplace ────────────────────────────────────────────────────
+
+export type AttributeProviderStatus = 'pending' | 'approved' | 'suspended';
+
+export interface AttributeProvider {
+    account_id: string;
+    namespace: string;
+    display_name: string;
+    issuer_url: string;
+    status: AttributeProviderStatus;
+    reviewed_by?: string;
+    reviewed_at?: string;
+    created_at: string;
+}
+
+export interface Attribute {
+    id: string;
+    namespace: string;
+    name: string;
+    key: string;
+    issuing_app_id?: string;
+    price_source: 'book' | 'manifest';
+    price_credits: number;
+    assurance: string;
+    status: 'active' | 'disabled';
+    description: string;
+}
+
+export interface UpsertAttributeRequest {
+    name: string;
+    price_source?: 'book' | 'manifest';
+    price_credits?: number;
+    assurance?: string;
+    status?: 'active' | 'disabled';
+    description?: string;
+    issuing_app_id?: string;
+}
+
+// The public catalog of consumable attributes (approved providers only).
+export function getAttributeCatalog(token: string): Promise<{ attributes: Attribute[] }> {
+    return request<{ attributes: Attribute[] }>('/api/v1/attributes', token);
+}
+
+// The caller's own provider registration plus its attributes (404 when the
+// account is not a provider).
+export function getMyProvider(token: string): Promise<{ provider: AttributeProvider; attributes: Attribute[] }> {
+    return request<{ provider: AttributeProvider; attributes: Attribute[] }>('/api/v1/attribute-providers/me', token);
+}
+
+export function registerAttributeProvider(
+    token: string, body: { namespace: string; display_name: string }
+): Promise<AttributeProvider> {
+    return request<AttributeProvider>('/api/v1/attribute-providers', token, {
+        method: 'POST',
+        body: JSON.stringify(body)
+    });
+}
+
+export function upsertAttribute(
+    token: string, namespace: string, body: UpsertAttributeRequest
+): Promise<{ attributes: Attribute[] }> {
+    return request<{ attributes: Attribute[] }>(
+        `/api/v1/attribute-providers/${encodeURIComponent(namespace)}/attributes`, token, {
+            method: 'POST',
+            body: JSON.stringify(body)
+        });
+}
+
+export function adminListAttributeProviders(token: string): Promise<{ providers: AttributeProvider[] }> {
+    return request<{ providers: AttributeProvider[] }>('/api/v1/admin/attribute-providers', token);
+}
+
+export function adminReviewAttributeProvider(
+    token: string, namespace: string, status: AttributeProviderStatus
+): Promise<AttributeProvider> {
+    return request<AttributeProvider>(
+        `/api/v1/admin/attribute-providers/${encodeURIComponent(namespace)}/review`, token, {
+            method: 'POST',
+            body: JSON.stringify({ status })
+        });
+}

@@ -30,6 +30,7 @@ const ADMIN_ITEMS = [
     { label: 'Gateway', href: '/dashboard/admin/gateway', icon: 'M13 10V3L4 14h7v7l9-11h-7z' },
     { label: 'AI fleets', href: '/dashboard/admin/fleets', icon: 'M9 17l-5-5 5-5M15 17l5-5-5-5' },
     { label: 'Vaults', href: '/dashboard/admin/vaults', icon: 'M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z' },
+    { label: 'Attribute providers', href: '/dashboard/admin/providers', icon: 'M7 7h.01M7 3h5a1.99 1.99 0 011.41.59l7 7a2 2 0 010 2.82l-5 5a2 2 0 01-2.82 0l-7-7A2 2 0 013 12V7a4 4 0 014-4z', adminOnly: true },
     { label: 'Users', href: '/dashboard/admin/users', icon: 'M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z', adminOnly: true },
     { label: 'Platform settings', href: '/dashboard/admin/settings', icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z', adminOnly: true }
 ];
@@ -146,6 +147,21 @@ function Sidebar() {
                         <path d="M3 10h18M3 10l1.5-5h15L21 10M3 10v9a1 1 0 001 1h16a1 1 0 001-1v-9M7 15h4" />
                     </svg>
                     Billing
+                </Link>
+
+                {/* Attributes */}
+                <Link
+                    href="/dashboard/attributes"
+                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
+                        pathname === '/dashboard/attributes'
+                            ? 'bg-black/5 dark:bg-white/10 font-medium'
+                            : 'hover:bg-black/3 dark:hover:bg-white/5 text-black/60 dark:text-white/60'
+                    }`}
+                >
+                    <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+                        <path d="M7 7h.01M7 3h5a1.99 1.99 0 011.41.59l7 7a2 2 0 010 2.82l-5 5a2 2 0 01-2.82 0l-7-7A2 2 0 013 12V7a4 4 0 014-4z" />
+                    </svg>
+                    Attributes
                 </Link>
 
                 {/* Settings */}
