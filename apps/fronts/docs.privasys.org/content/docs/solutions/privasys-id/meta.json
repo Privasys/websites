@@ -5,6 +5,7 @@
         "overview",
         "wallet",
         "idp",
-        "auth-sdk"
+        "auth-sdk",
+        "attribute-marketplace"
     ]
 }
