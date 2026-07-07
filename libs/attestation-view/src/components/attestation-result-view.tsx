@@ -12,6 +12,7 @@ import { PRIVASYS_OID, TEXT_OIDS } from '../types';
 import { hexToPrintableText } from '../internal/use-copy';
 import { verifyReportData } from '../use-attestation';
 import { FieldRow } from './field-row';
+import { Badge } from './badge';
 
 // Read-only renderer for an AttestationResult.
 //
@@ -626,25 +627,6 @@ function Stat({ label, value }: { label: string; value: string }) {
     );
 }
 
-function Badge({
-    tone,
-    children
-}: {
-    tone: 'ok' | 'warn' | 'err' | 'neutral';
-    children: React.ReactNode;
-}) {
-    const cls = {
-        ok: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
-        warn: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300',
-        err: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
-        neutral: 'bg-black/5 text-black/50 dark:bg-white/5 dark:text-white/50'
-    }[tone];
-    return (
-        <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${cls}`}>
-            {children}
-        </span>
-    );
-}
 
 function DebugLine({ label, value }: { label: string; value: string }) {
     return (
