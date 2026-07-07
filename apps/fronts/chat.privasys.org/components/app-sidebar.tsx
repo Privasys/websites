@@ -5,7 +5,7 @@ import { useAuth } from '~/lib/privasys-auth';
 import { fetchUserProfile, type UserProfile } from '~/lib/me-api';
 import type { Instance } from '~/lib/types';
 import type { Conversation } from '~/lib/conversations';
-import type { AggregateAttestationStatus } from '@privasys/attestation-view';
+import { AttestationStatusBadge, type AggregateAttestationStatus } from '@privasys/attestation-view';
 import { ThemeToggle } from './theme-toggle';
 
 // Gemini-style left sidebar.
@@ -263,7 +263,8 @@ function BuildLine({ prefix, label, href }: { prefix: string; label: string; hre
 
 // The "Secure enclave" label stays neutral; a status TAG beside it carries
 // the verdict of the INFERENCE ENCLAVE's attestation alone (tools are
-// verified separately in the AI Tools view and never affect this).
+// verified separately in the AI Tools view and never affect this). Uses
+// the shared attestation badge so it reads identically everywhere.
 function SecureEnclaveTag({
     status,
     enabled
@@ -272,24 +273,14 @@ function SecureEnclaveTag({
     enabled: boolean;
 }) {
     if (!enabled) return null;
-    if (status === 'verified') {
-        return (
-            <span className="shrink-0 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-[var(--color-primary-green)]">
-                ✓ Verified
-            </span>
-        );
-    }
-    if (status === 'failed') {
-        return (
-            <span className="shrink-0 rounded-full bg-red-500/10 px-2 py-0.5 text-[10px] font-medium text-red-600 dark:text-red-400">
-                ✕ Not verified
-            </span>
-        );
-    }
+    // AggregateAttestationStatus ('verifying' | 'verified' | 'failed') maps
+    // 1:1 onto the badge's status; default to 'verifying' before any result.
     return (
-        <span className="shrink-0 rounded-full bg-[var(--color-surface-2)] px-2 py-0.5 text-[10px] font-medium text-[var(--color-text-muted)]">
-            Verifying…
-        </span>
+        <AttestationStatusBadge
+            status={status ?? 'verifying'}
+            reason='Not verified'
+            className='shrink-0'
+        />
     );
 }
 

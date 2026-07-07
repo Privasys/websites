@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { AttestationResultView } from './attestation-result-view';
+import { AttestationStatusBadge, attestationStatusOf } from './badge';
 import { useAttestation, type AttestationState } from '../use-attestation';
 import type { AttestationExpectations } from '../types';
 
@@ -264,16 +265,8 @@ function ChevronIcon({ open }: { open: boolean }) {
 }
 
 function RowStatus({ summary }: { summary: RowSummary }) {
-    if (!summary.ready) {
-        return <span className='text-xs text-black/50 dark:text-white/50'>verifying...</span>;
-    }
-    if (summary.quoteOk && summary.digestsOk) {
-        return <span className='text-xs font-medium text-emerald-700 dark:text-emerald-300'>verified</span>;
-    }
-    if (!summary.quoteOk) {
-        return <span className='text-xs font-medium text-red-700 dark:text-red-300'>quote failed</span>;
-    }
-    return <span className='text-xs font-medium text-red-700 dark:text-red-300'>digest mismatch</span>;
+    const { status, reason } = attestationStatusOf(summary, true);
+    return <AttestationStatusBadge status={status} reason={reason} />;
 }
 
 /**

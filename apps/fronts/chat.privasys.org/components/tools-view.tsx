@@ -3,10 +3,12 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
     AttestationResultView,
+    AttestationStatusBadge,
+    Badge,
+    attestationStatusOf,
     computeAttestationSummary,
     useAttestation,
-    type AttestationExpectations,
-    type AttestationSummary
+    type AttestationExpectations
 } from '@privasys/attestation-view';
 import type { Instance } from '~/lib/types';
 import type { UserToolsState } from '~/lib/use-user-tools';
@@ -239,7 +241,10 @@ function AttestedToolRow({
                     <span className='min-w-0 flex-1'>
                         <span className='flex flex-wrap items-center gap-2'>
                             <span className='text-sm font-medium text-[var(--color-text-primary)]'>{label}</span>
-                            <AttestationBadge attestUrl={attestUrl} summary={summary} />
+                            <AttestationStatusBadge
+                                {...attestationStatusOf(summary, Boolean(attestUrl))}
+                                verifiedLabel='Enclave verified'
+                            />
                             {tags}
                         </span>
                         {sublabel && (
@@ -317,9 +322,7 @@ function ExternalToolRow({
                     <span className='text-sm font-medium text-[var(--color-text-primary)]'>
                         {tool.label || tool.name}
                     </span>
-                    <span className='rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400'>
-                        External · not attested
-                    </span>
+                    <Badge tone='warn'>External · not attested</Badge>
                 </div>
                 <p className='mt-0.5 truncate text-xs text-[var(--color-text-muted)]'>{tool.ref}</p>
                 <p className='mt-0.5 text-[11px] text-amber-500'>
@@ -339,41 +342,8 @@ function ExternalToolRow({
     );
 }
 
-// The dynamic enclave-verification badge — the live replacement for the
-// old static "Enclave · attested" tag.
-function AttestationBadge({ attestUrl, summary }: { attestUrl?: string; summary: AttestationSummary }) {
-    if (!attestUrl || !summary.ready) {
-        return (
-            <span className='inline-flex items-center gap-1 rounded-full bg-[var(--color-surface-2)] px-2 py-0.5 text-[10px] font-medium text-[var(--color-text-muted)]'>
-                <Spinner /> Verifying…
-            </span>
-        );
-    }
-    if (summary.quoteOk && summary.digestsOk) {
-        return (
-            <span className='rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-600 dark:text-emerald-400'>
-                ✓ Enclave verified
-            </span>
-        );
-    }
-    const why = summary.error
-        ? 'Attestation error'
-        : !summary.quoteOk
-            ? 'Quote failed'
-            : 'Digest mismatch';
-    return (
-        <span className='rounded-full bg-red-500/10 px-2 py-0.5 text-[10px] font-medium text-red-600 dark:text-red-400'>
-            ✕ {why}
-        </span>
-    );
-}
-
 function Tag({ children }: { children: ReactNode }) {
-    return (
-        <span className='rounded-full bg-[var(--color-surface-2)] px-2 py-0.5 text-[10px] text-[var(--color-text-muted)]'>
-            {children}
-        </span>
-    );
+    return <Badge tone='neutral'>{children}</Badge>;
 }
 
 function ChevronIcon({ open, muted }: { open: boolean; muted?: boolean }) {
@@ -385,15 +355,6 @@ function ChevronIcon({ open, muted }: { open: boolean; muted?: boolean }) {
             fill='currentColor'
         >
             <path d='M7.05 4.55a1 1 0 0 1 1.4 0l4 4a1 1 0 0 1 0 1.4l-4 4a1 1 0 1 1-1.4-1.4L10.3 9.25 7.05 6a1 1 0 0 1 0-1.45z' />
-        </svg>
-    );
-}
-
-function Spinner() {
-    return (
-        <svg className='h-2.5 w-2.5 animate-spin' viewBox='0 0 24 24' aria-hidden='true'>
-            <circle className='opacity-25' cx='12' cy='12' r='10' stroke='currentColor' strokeWidth='4' fill='none' />
-            <path className='opacity-75' fill='currentColor' d='M4 12a8 8 0 0 1 8-8v4a4 4 0 0 0-4 4H4Z' />
         </svg>
     );
 }
@@ -715,13 +676,9 @@ function ApprovalHint() {
 
 function KindBadge({ enclave }: { enclave: boolean }) {
     return enclave ? (
-        <span className='rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-600 dark:text-emerald-400'>
-            Enclave · attested
-        </span>
+        <Badge tone='ok'>Enclave</Badge>
     ) : (
-        <span className='rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400'>
-            External · not attested
-        </span>
+        <Badge tone='warn'>External · not attested</Badge>
     );
 }
 

@@ -11,3 +11,5 @@ export { AttestationResultView } from './components/attestation-result-view';
 export { CompositeAttestationView, computeAttestationSummary } from './components/composite-attestation-view';
 export type { AttestationTargetConfig, CompositeAttestationViewProps, AggregateAttestationStatus, AttestationSummary } from './components/composite-attestation-view';
 export { FieldRow } from './components/field-row';
+export { Badge, BadgeSpinner, AttestationStatusBadge, attestationStatusOf } from './components/badge';
+export type { BadgeTone, AttestationBadgeStatus } from './components/badge';
