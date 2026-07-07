@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { AttestationResultView } from './attestation-result-view';
-import { useAttestation } from '../use-attestation';
+import { useAttestation, type AttestationState } from '../use-attestation';
 import type { AttestationExpectations } from '../types';
 
 // One target the composite view should attest. Mirrors the inputs to
@@ -45,12 +45,21 @@ export interface CompositeAttestationViewProps {
     onAggregateStatus?: (_status: AggregateAttestationStatus) => void;
 }
 
-interface RowSummary {
+/**
+ * Per-target attestation verdict: the canonical roll-up of quote + digest
+ * checks for a single enclave. Exported so consumers can render their own
+ * status affordance (e.g. an inline badge co-located with a tool row)
+ * against exactly the same logic the composite view uses.
+ */
+export interface AttestationSummary {
     ready: boolean;     // an inspection has completed (success or hard error)
     quoteOk: boolean;   // verify-quote returned ok
     digestsOk: boolean; // every supplied expectation matched its OID
     error?: string;
 }
+
+// Back-compat internal alias.
+type RowSummary = AttestationSummary;
 
 export function CompositeAttestationView({ targets, autoInspect = true, attestToken, verifyQuoteAuth, onAggregateStatus }: CompositeAttestationViewProps) {
     const [rows, setRows] = useState<Record<string, RowSummary>>({});
@@ -167,7 +176,7 @@ function AttestationRow({
 
     // Compute the per-row summary on every render and notify the parent.
     // useAttestation already debounces network work; this is cheap.
-    const summary = computeSummary(state, target.expectations);
+    const summary = computeAttestationSummary(state, target.expectations);
     useEffect(() => {
         onSummary(summary);
     }, [onSummary, summary.ready, summary.quoteOk, summary.digestsOk, summary.error]);
@@ -267,10 +276,15 @@ function RowStatus({ summary }: { summary: RowSummary }) {
     return <span className='text-xs font-medium text-red-700 dark:text-red-300'>digest mismatch</span>;
 }
 
-function computeSummary(
-    state: ReturnType<typeof useAttestation>[0],
+/**
+ * Roll up a {@link useAttestation} state into an {@link AttestationSummary}:
+ * quote-signature validity AND every supplied expected digest matching its
+ * OID extension. Exported for consumers that render their own status UI.
+ */
+export function computeAttestationSummary(
+    state: AttestationState,
     expectations: AttestationExpectations | undefined
-): RowSummary {
+): AttestationSummary {
     const ready = Boolean(state.result || state.error);
     if (!ready) {
         return { ready: false, quoteOk: false, digestsOk: false };

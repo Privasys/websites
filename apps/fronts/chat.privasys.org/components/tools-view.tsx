@@ -1,13 +1,23 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { AvailableTool, Instance } from '~/lib/types';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import {
+    AttestationResultView,
+    computeAttestationSummary,
+    useAttestation,
+    type AttestationExpectations,
+    type AttestationSummary
+} from '@privasys/attestation-view';
+import type { Instance } from '~/lib/types';
 import type { UserToolsState } from '~/lib/use-user-tools';
 import type { UserTool } from '~/lib/chat-service-api';
+import { useAuth } from '~/lib/privasys-auth';
 import {
+    API_BASE_URL,
     fetchToolDirectory,
     parseExternalRef,
     privasysAppFromUrl,
+    resolveApp,
     type ToolDirectoryEntry
 } from '~/lib/resolve-app';
 
@@ -41,6 +51,42 @@ export function ToolsView({
     const canAdd = policy !== 'locked';
     const allowExternal = policy === 'open';
 
+    // Attestation plumbing so each enclave tool can verify itself, inline.
+    // The verify-quote leg (challenge mode) needs an aud=attestation-server
+    // token, minted lazily per call.
+    const { getTokenForAudience } = useAuth();
+    const verifyQuoteAuth = useCallback(
+        () => getTokenForAudience('attestation-server'),
+        [getTokenForAudience]
+    );
+    const verifyQuoteUrl = instance.attestation_server
+        ? `${instance.attestation_server.replace(/\/$/, '')}/verify-quote`
+        : undefined;
+
+    // User enclave tools store only the app name; resolve each to its
+    // public attest URL so the row can attest it like a fleet tool.
+    const enclaveUserTools = userTools.tools.filter((t) => t.kind === 'enclave');
+    const externalUserTools = userTools.tools.filter((t) => t.kind === 'external');
+    const [resolvedUrls, setResolvedUrls] = useState<Record<string, string>>({});
+    const enclaveRefs = enclaveUserTools.map((t) => t.ref).join(',');
+    useEffect(() => {
+        let cancelled = false;
+        for (const ref of enclaveRefs ? enclaveRefs.split(',') : []) {
+            if (resolvedUrls[ref] !== undefined) continue;
+            void resolveApp(ref).then((r) => {
+                if (cancelled) return;
+                setResolvedUrls((prev) => ({
+                    ...prev,
+                    [ref]: r.ok && r.app.attest_url ? r.app.attest_url : ''
+                }));
+            });
+        }
+        return () => { cancelled = true; };
+
+    }, [enclaveRefs]);
+
+    const absAttest = (u?: string) => (u ? new URL(u, API_BASE_URL).toString() : undefined);
+
     return (
         <div className='flex flex-1 flex-col overflow-y-auto'>
             <div className='mx-auto w-full max-w-3xl px-6 py-8'>
@@ -50,8 +96,9 @@ export function ToolsView({
                     </h1>
                     <p className='mt-1 text-sm text-[var(--color-text-secondary)]'>
                         Tools the assistant can call during your chats. Enclave
-                        tools run in attested Privasys enclaves; external tools
-                        run outside the platform and are not attested.
+                        tools run in attested Privasys enclaves — expand any tool
+                        to see its live hardware attestation. External tools run
+                        outside the platform and are not attested.
                     </p>
                 </header>
 
@@ -62,9 +109,15 @@ export function ToolsView({
                         </h2>
                         <ul className='flex flex-col gap-2'>
                             {(instance.available_tools ?? []).map((t) => (
-                                <FleetToolRow
+                                <AttestedToolRow
                                     key={t.name}
-                                    tool={t}
+                                    label={t.label || t.name}
+                                    sublabel={t.description}
+                                    attestUrl={absAttest(t.attest_url)}
+                                    verifyQuoteUrl={verifyQuoteUrl}
+                                    verifyQuoteAuth={verifyQuoteAuth}
+                                    expectations={t.expected_digest ? { workloadImageDigest: t.expected_digest } : undefined}
+                                    tags={<Tag>fleet</Tag>}
                                     on={enabledToolNames?.has(t.name) ?? false}
                                     onToggle={
                                         onToggleFleetTool
@@ -87,8 +140,22 @@ export function ToolsView({
                         </p>
                     ) : (
                         <ul className='flex flex-col gap-2'>
-                            {userTools.tools.map((t) => (
-                                <ToolRow
+                            {enclaveUserTools.map((t) => (
+                                <AttestedToolRow
+                                    key={t.id}
+                                    label={t.label || t.name}
+                                    sublabel={`app: ${t.ref}`}
+                                    attestUrl={resolvedUrls[t.ref] ? absAttest(resolvedUrls[t.ref]) : undefined}
+                                    verifyQuoteUrl={verifyQuoteUrl}
+                                    verifyQuoteAuth={verifyQuoteAuth}
+                                    expectations={t.expected_digest ? { workloadImageDigest: t.expected_digest } : undefined}
+                                    on={t.enabled}
+                                    onToggle={(on) => void userTools.setEnabled(t.id, on)}
+                                    onRemove={() => void userTools.remove(t.id)}
+                                />
+                            ))}
+                            {externalUserTools.map((t) => (
+                                <ExternalToolRow
                                     key={t.id}
                                     tool={t}
                                     onToggle={(on) => void userTools.setEnabled(t.id, on)}
@@ -121,7 +188,120 @@ export function ToolsView({
     );
 }
 
-function ToolRow({
+// An enclave tool row with its hardware attestation CO-LOCATED: the header
+// carries a live status badge ("✓ Enclave verified" / red on failure) and
+// expands to the full attestation detail. Used for both fleet and
+// user-added enclave tools; `onRemove` is present only for the latter.
+function AttestedToolRow({
+    label,
+    sublabel,
+    attestUrl,
+    verifyQuoteUrl,
+    verifyQuoteAuth,
+    expectations,
+    tags,
+    on,
+    onToggle,
+    onRemove
+}: {
+    label: string;
+    sublabel?: string;
+    attestUrl?: string;
+    verifyQuoteUrl?: string;
+    verifyQuoteAuth?: () => Promise<string>;
+    expectations?: AttestationExpectations;
+    tags?: ReactNode;
+    on: boolean;
+    onToggle?: (_on: boolean) => void;
+    onRemove?: () => void;
+}) {
+    const [state, actions] = useAttestation({
+        attestUrl: attestUrl ?? '',
+        verifyQuoteUrl,
+        verifyQuoteToken: verifyQuoteAuth,
+        autoInspect: Boolean(attestUrl),
+        autoVerifyQuote: Boolean(attestUrl && verifyQuoteUrl)
+    });
+    const summary = computeAttestationSummary(state, expectations);
+    const [open, setOpen] = useState(false);
+
+    return (
+        <li className='rounded-xl border border-[var(--color-border-dark)]'>
+            <div className='flex items-start gap-3 p-4'>
+                <button
+                    type='button'
+                    onClick={() => setOpen((o) => !o)}
+                    aria-expanded={open}
+                    disabled={!attestUrl}
+                    className='flex min-w-0 flex-1 items-start gap-2 text-left disabled:cursor-default'
+                >
+                    <ChevronIcon open={open} muted={!attestUrl} />
+                    <span className='min-w-0 flex-1'>
+                        <span className='flex flex-wrap items-center gap-2'>
+                            <span className='text-sm font-medium text-[var(--color-text-primary)]'>{label}</span>
+                            <AttestationBadge attestUrl={attestUrl} summary={summary} />
+                            {tags}
+                        </span>
+                        {sublabel && (
+                            <span className='mt-0.5 block truncate text-xs text-[var(--color-text-muted)]'>{sublabel}</span>
+                        )}
+                    </span>
+                </button>
+                {onToggle && <Toggle on={on} onToggle={() => onToggle(!on)} />}
+                {onRemove && (
+                    <button
+                        type='button'
+                        onClick={onRemove}
+                        title='Remove tool'
+                        className='rounded-md p-1.5 text-[var(--color-text-muted)] hover:bg-[var(--color-surface-2)]/60 hover:text-red-400'
+                    >
+                        <TrashIcon />
+                    </button>
+                )}
+            </div>
+            {open && attestUrl && (
+                <div className='border-t border-[var(--color-border-dark)] p-4'>
+                    {state.error && !state.result ? (
+                        <div className='space-y-3 text-sm text-red-600 dark:text-red-400'>
+                            <div>{state.error}</div>
+                            <button
+                                type='button'
+                                onClick={() => void actions.inspect()}
+                                className='rounded-lg border border-[var(--color-border-dark)] px-3 py-1.5 text-xs font-medium hover:bg-[var(--color-surface-2)]/60'
+                            >
+                                Retry
+                            </button>
+                        </div>
+                    ) : !state.result ? (
+                        <div className='text-sm text-[var(--color-text-muted)]'>Inspecting certificate…</div>
+                    ) : (
+                        <AttestationResultView
+                            result={state.result}
+                            quoteVerify={state.quoteVerify}
+                            quoteVerifying={state.verifying}
+                            quoteVerifyError={state.quoteVerifyError}
+                            expectations={expectations}
+                            loading={state.loading}
+                            challenge={state.challenge}
+                            onChallengeChange={actions.setChallenge}
+                            onRegenerateChallenge={actions.regenerateChallenge}
+                            onRefresh={() => void actions.inspect()}
+                            onReset={() => {
+                                actions.regenerateChallenge();
+                                void actions.inspect();
+                            }}
+                            verifyQuoteUrl={verifyQuoteUrl}
+                        />
+                    )}
+                </div>
+            )}
+        </li>
+    );
+}
+
+// An external (off-platform) tool: no attestation is possible, so it is
+// labelled as such — a category the user opted into, not a failure.
+function ExternalToolRow({
     tool,
     onToggle,
     onRemove
@@ -130,7 +310,6 @@ function ToolRow({
     onToggle: (_on: boolean) => void;
     onRemove: () => void;
 }) {
-    const enclave = tool.kind === 'enclave';
     return (
         <li className='flex items-start gap-3 rounded-xl border border-[var(--color-border-dark)] p-4'>
             <div className='min-w-0 flex-1'>
@@ -138,21 +317,14 @@ function ToolRow({
                     <span className='text-sm font-medium text-[var(--color-text-primary)]'>
                         {tool.label || tool.name}
                     </span>
-                    <KindBadge enclave={enclave} />
+                    <span className='rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400'>
+                        External · not attested
+                    </span>
                 </div>
-                <p className='mt-0.5 truncate text-xs text-[var(--color-text-muted)]'>
-                    {enclave ? `app: ${tool.ref}` : tool.ref}
+                <p className='mt-0.5 truncate text-xs text-[var(--color-text-muted)]'>{tool.ref}</p>
+                <p className='mt-0.5 text-[11px] text-amber-500'>
+                    Runs outside Privasys — data sent to it is not attested or protected.
                 </p>
-                {enclave && tool.expected_digest && (
-                    <p className='mt-0.5 font-mono text-[11px] text-[var(--color-text-muted)]'>
-                        digest {tool.expected_digest.slice(0, 16)}…
-                    </p>
-                )}
-                {!enclave && (
-                    <p className='mt-0.5 text-[11px] text-amber-500'>
-                        Runs outside Privasys — data sent to it is not attested or protected.
-                    </p>
-                )}
             </div>
             <Toggle on={tool.enabled} onToggle={() => onToggle(!tool.enabled)} />
             <button
@@ -167,39 +339,62 @@ function ToolRow({
     );
 }
 
-// A fleet-provided tool: attested like every enclave tool, toggleable,
-// but not removable — the fleet admin decides what ships with the
-// instance; the user only decides whether the model may use it.
-function FleetToolRow({
-    tool,
-    on,
-    onToggle
-}: {
-    tool: AvailableTool;
-    on: boolean;
-    onToggle?: () => void;
-}) {
+// The dynamic enclave-verification badge — the live replacement for the
+// old static "Enclave · attested" tag.
+function AttestationBadge({ attestUrl, summary }: { attestUrl?: string; summary: AttestationSummary }) {
+    if (!attestUrl || !summary.ready) {
+        return (
+            <span className='inline-flex items-center gap-1 rounded-full bg-[var(--color-surface-2)] px-2 py-0.5 text-[10px] font-medium text-[var(--color-text-muted)]'>
+                <Spinner /> Verifying…
+            </span>
+        );
+    }
+    if (summary.quoteOk && summary.digestsOk) {
+        return (
+            <span className='rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-600 dark:text-emerald-400'>
+                ✓ Enclave verified
+            </span>
+        );
+    }
+    const why = summary.error
+        ? 'Attestation error'
+        : !summary.quoteOk
+            ? 'Quote failed'
+            : 'Digest mismatch';
     return (
-        <li className='flex items-start gap-3 rounded-xl border border-[var(--color-border-dark)] p-4'>
-            <div className='min-w-0 flex-1'>
-                <div className='flex flex-wrap items-center gap-2'>
-                    <span className='text-sm font-medium text-[var(--color-text-primary)]'>
-                        {tool.label || tool.name}
-                    </span>
-                    <KindBadge enclave />
-                    <span className='rounded-full bg-[var(--color-surface-2)] px-2 py-0.5 text-[10px] text-[var(--color-text-muted)]'>fleet</span>
-                </div>
-                {tool.description && (
-                    <p className='mt-0.5 truncate text-xs text-[var(--color-text-muted)]'>{tool.description}</p>
-                )}
-                {tool.expected_digest && (
-                    <p className='mt-0.5 font-mono text-[11px] text-[var(--color-text-muted)]'>
-                        digest {tool.expected_digest.slice(0, 16)}…
-                    </p>
-                )}
-            </div>
-            {onToggle && <Toggle on={on} onToggle={onToggle} />}
-        </li>
+        <span className='rounded-full bg-red-500/10 px-2 py-0.5 text-[10px] font-medium text-red-600 dark:text-red-400'>
+            ✕ {why}
+        </span>
+    );
+}
+
+function Tag({ children }: { children: ReactNode }) {
+    return (
+        <span className='rounded-full bg-[var(--color-surface-2)] px-2 py-0.5 text-[10px] text-[var(--color-text-muted)]'>
+            {children}
+        </span>
+    );
+}
+
+function ChevronIcon({ open, muted }: { open: boolean; muted?: boolean }) {
+    return (
+        <svg
+            aria-hidden='true'
+            className={`mt-0.5 h-4 w-4 shrink-0 transition-transform ${open ? 'rotate-90' : ''} ${muted ? 'text-[var(--color-border-dark)]' : 'text-[var(--color-text-secondary)]'}`}
+            viewBox='0 0 20 20'
+            fill='currentColor'
+        >
+            <path d='M7.05 4.55a1 1 0 0 1 1.4 0l4 4a1 1 0 0 1 0 1.4l-4 4a1 1 0 1 1-1.4-1.4L10.3 9.25 7.05 6a1 1 0 0 1 0-1.45z' />
+        </svg>
+    );
+}
+
+function Spinner() {
+    return (
+        <svg className='h-2.5 w-2.5 animate-spin' viewBox='0 0 24 24' aria-hidden='true'>
+            <circle className='opacity-25' cx='12' cy='12' r='10' stroke='currentColor' strokeWidth='4' fill='none' />
+            <path className='opacity-75' fill='currentColor' d='M4 12a8 8 0 0 1 8-8v4a4 4 0 0 0-4 4H4Z' />
+        </svg>
     );
 }
 
