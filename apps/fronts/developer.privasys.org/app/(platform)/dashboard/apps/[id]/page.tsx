@@ -438,10 +438,7 @@ function AttestationTab({ appId, token, deployments, versions }: { appId: string
                     result={state.result}
                     quoteVerify={state.quoteVerify}
                     onRefresh={() => void actions.inspect()}
-                    onReset={() => {
-                        actions.reset();
-                        actions.regenerateChallenge();
-                    }}
+                    onReset={() => void actions.newChallenge()}
                     extra={(() => {
                         const r = state.result;
                         if (!r.event_log_events || !r.quote) return null;

@@ -53,9 +53,15 @@ export interface AttestationState {
 }
 
 export interface AttestationActions {
-    inspect: () => Promise<void>;
+    /** Attest with the current challenge (or an explicit override). */
+    inspect: (_overrideChallenge?: string) => Promise<void>;
     verifyQuoteSignature: () => Promise<void>;
     regenerateChallenge: () => void;
+    /** Generate a fresh challenge AND attest with it in one step, so the
+     *  editable nonce field and the "challenge sent" the enclave echoes
+     *  never desync (which they would if you regenerated then inspected
+     *  separately — inspect would still read the pre-update challenge). */
+    newChallenge: () => Promise<void>;
     setChallenge: (next: string) => void;
     reset: () => void;
 }
@@ -66,7 +72,7 @@ const CHALLENGE_RE = /^[0-9a-fA-F]{32,128}$/;
  *  Returns undefined when no token is configured so callers can omit
  *  the Authorization header entirely. */
 async function resolveToken(
-    spec: string | (() => Promise<string>) | undefined,
+    spec: string | (() => Promise<string>) | undefined
 ): Promise<string | undefined> {
     if (!spec) return undefined;
     if (typeof spec === 'string') return spec || undefined;
@@ -92,13 +98,16 @@ export function useAttestation(target: AttestationTarget): [AttestationState, At
     const [error, setError] = useState<string | null>(null);
     const [quoteVerifyError, setQuoteVerifyError] = useState<string | null>(null);
 
-    const inspect = useCallback(async () => {
+    const inspect = useCallback(async (overrideChallenge?: string) => {
         setLoading(true);
         setError(null);
         setQuoteVerify(null);
         setQuoteVerifyError(null);
         try {
-            const trimmed = challenge.trim();
+            // An explicit override lets a caller attest with a just-generated
+            // challenge WITHOUT waiting for the setChallenge state update to
+            // flush (see newChallenge), so the request and the field agree.
+            const trimmed = (overrideChallenge ?? challenge).trim();
             if (trimmed && !CHALLENGE_RE.test(trimmed)) {
                 throw new Error('Challenge must be 32-128 hex characters (16-64 bytes)');
             }
@@ -128,15 +137,15 @@ export function useAttestation(target: AttestationTarget): [AttestationState, At
         setQuoteVerifyError(null);
         try {
             const headers: Record<string, string> = {
-                Accept: 'application/json',
-                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
             };
             const tokenValue = await resolveToken(target.verifyQuoteToken ?? target.token);
             if (tokenValue) headers.Authorization = `Bearer ${tokenValue}`;
             const res = await fetch(target.verifyQuoteUrl, {
                 method: 'POST',
                 headers,
-                body: JSON.stringify({ quote: raw }),
+                body: JSON.stringify({ quote: raw })
             });
             if (!res.ok) {
                 throw new Error(`Verify request failed: ${res.status} ${res.statusText}`);
@@ -153,6 +162,15 @@ export function useAttestation(target: AttestationTarget): [AttestationState, At
     const regenerateChallenge = useCallback(() => {
         setChallenge(generateChallenge());
     }, []);
+
+    // Fresh challenge + attest atomically: set the field to `next` AND
+    // inspect with `next` in the same call, so the "challenge sent" the
+    // enclave binds into ReportData matches the nonce shown in the field.
+    const newChallenge = useCallback(async () => {
+        const next = generateChallenge();
+        setChallenge(next);
+        await inspect(next);
+    }, [inspect]);
 
     // Manual challenge override. We accept any string, strip non-hex and
     // lowercase it, but otherwise let the user paste / edit freely. The
@@ -196,7 +214,7 @@ export function useAttestation(target: AttestationTarget): [AttestationState, At
 
     return [
         { result, quoteVerify, challenge, loading, verifying, error, quoteVerifyError },
-        { inspect, verifyQuoteSignature, regenerateChallenge, setChallenge: setChallengeAction, reset },
+        { inspect, verifyQuoteSignature, regenerateChallenge, newChallenge, setChallenge: setChallengeAction, reset }
     ];
 }
 
@@ -226,7 +244,7 @@ export async function verifyReportData(args: {
         return {
             status: computed === actual ? 'match' : 'mismatch',
             computed,
-            actual,
+            actual
         };
     } catch {
         return { status: 'error' };
