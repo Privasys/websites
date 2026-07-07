@@ -46,10 +46,7 @@ export function AttestationDrawer({
                         result={state.result}
                         quoteVerify={state.quoteVerify}
                         onRefresh={() => void actions.inspect()}
-                        onReset={() => {
-                            actions.reset();
-                            actions.regenerateChallenge();
-                        }}
+                        onReset={() => void actions.newChallenge()}
                     />
                 )}
             </div>

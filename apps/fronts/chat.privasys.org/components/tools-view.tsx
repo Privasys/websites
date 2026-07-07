@@ -291,10 +291,7 @@ function AttestedToolRow({
                             onChallengeChange={actions.setChallenge}
                             onRegenerateChallenge={actions.regenerateChallenge}
                             onRefresh={() => void actions.inspect()}
-                            onReset={() => {
-                                actions.regenerateChallenge();
-                                void actions.inspect();
-                            }}
+                            onReset={() => void actions.newChallenge()}
                             verifyQuoteUrl={verifyQuoteUrl}
                         />
                     )}
