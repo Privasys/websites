@@ -105,6 +105,16 @@ const EXAMPLES: { label: string; detail: string }[] = [
     }
 ];
 
+// The attribute marketplace: any confidential app can provide priced, attested
+// attributes; relying parties pay per disclosure. Prices below are Privasys's
+// own gov-verified identity attributes; third-party providers set their own.
+const MARKETPLACE_ROWS: { attribute: string; assurance: string; price: string }[] = [
+    { attribute: 'Age over a threshold (18, 21, …)', assurance: 'Gov-verified', price: '10,000 credits ≈ £0.01' },
+    { attribute: 'Nationality', assurance: 'Gov-verified', price: '10,000 credits ≈ £0.01' },
+    { attribute: 'Given / family name', assurance: 'Gov-verified', price: '10,000 credits ≈ £0.01' },
+    { attribute: 'Document valid (a genuine ID was verified)', assurance: 'Gov-verified', price: '10,000 credits ≈ £0.01' }
+];
+
 export default function PricingPage() {
     return (
         <div className="max-w-5xl mx-auto px-6">
@@ -282,6 +292,46 @@ export default function PricingPage() {
                 <p className="mt-4 text-sm text-black/50 dark:text-white/50">
                     Charged per started minute (credits/hour ÷ 60). A running container debits your balance
                     continuously; at zero balance it is paused with reason “credits exhausted”.
+                </p>
+            </section>
+
+            {/* Attribute marketplace */}
+            <section className="mt-28 lg:mt-40">
+                <h2 className="text-2xl lg:text-4xl">
+                    <Balancer>Attribute marketplace</Balancer>
+                </h2>
+                <p className="mt-6 text-lg text-black/60 dark:text-white/60">
+                    Any confidential app can provide attested attributes — a verified insight such
+                    as “over 18” or “genuine document” — and any relying party can consume them,
+                    paying per disclosure. The provider earns 85% of each fee, the platform takes
+                    15%, and the user&apos;s identity is never revealed to the platform. Prices below
+                    are Privasys&apos;s own gov-verified identity attributes; third-party providers set
+                    their own in their attested manifest.
+                </p>
+                <div className="mt-10 overflow-x-auto">
+                    <table className="w-full text-left text-sm">
+                        <thead>
+                            <tr className="border-b border-black/10 dark:border-white/10 text-black/50 dark:text-white/50">
+                                <th className="py-3 pr-4 font-medium">Attribute</th>
+                                <th className="py-3 pr-4 font-medium">Assurance</th>
+                                <th className="py-3 font-medium">Price / disclosure</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {MARKETPLACE_ROWS.map((m) => (
+                                <tr key={m.attribute} className="border-b border-black/5 dark:border-white/5">
+                                    <td className="py-3 pr-4 font-medium">{m.attribute}</td>
+                                    <td className="py-3 pr-4">{m.assurance}</td>
+                                    <td className="py-3 whitespace-nowrap">{m.price}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+                <p className="mt-4 text-sm text-black/50 dark:text-white/50">
+                    Consuming an attribute is additive to the compute your own app uses; the fee is
+                    charged to the relying party at the point of disclosure. A user proving their own
+                    attributes to themselves pays nothing.
                 </p>
             </section>
 
