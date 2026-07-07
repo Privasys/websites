@@ -1,0 +1,38 @@
+---
+title: Attribute marketplace
+description: Attested, priced attributes any confidential app can provide and any relying party can consume.
+---
+
+An attribute is a verified insight about a person, such as "over 18", "nationality is FR", or "a genuine government document was checked". The attribute marketplace lets any confidential app **provide** such attributes and any relying party **consume** them, paying per disclosure. Privasys is the first provider, offering gov-verified identity attributes, and the marketplace is open to third parties.
+
+The defining property is that the platform attests **how** an attribute is computed (the provider runs in an attested enclave) while the provider owns **what** it means. A user's identity is never revealed to the platform, and billing carries no user identity.
+
+## Attributes and namespaces
+
+Every attribute has a key of the form `namespace:name`, for example `privasys:age_over_18` or `acme-dna:brca1_status`. A provider claims a global namespace, then defines the attributes it issues under it. Each attribute carries:
+
+- a **price** in credits, charged to the relying party per disclosure;
+- an **assurance** level the relying party can weigh against price (Privasys's identity attributes are `gov_verified`);
+- the **issuing app** that produces the disclosure.
+
+A provider's attributes only become consumable once the provider has been reviewed and approved.
+
+## How a paid disclosure works
+
+1. A relying party requests one or more attributes when it sends a user to sign in.
+2. At that point the identity provider reserves the relying party's credits and mints a short-lived **disclosure voucher** for each provider. The voucher names the relying party and the attributes it authorises. It carries no user identity.
+3. The wallet presents the voucher to the issuing enclave alongside the user's proof. The enclave verifies the voucher, produces the disclosure, and reports back so the reservation is **settled**. If the disclosure is not produced, the reservation is **released** and nothing is charged.
+
+Because the charge is keyed to the voucher, a relying party pays only for a disclosure it actually receives. A user proving their own attributes to themselves, with no paying relying party, is free.
+
+## Revenue split
+
+Each disclosure fee is split: the **provider earns 85%** and the **platform takes 15%**. Compute that the provider's own app consumes is billed separately to the app owner, as usual; the attribute fee is additive.
+
+## Becoming a provider
+
+From the developer dashboard, open **Attributes** and register a namespace with a display name. Once approved you can define attributes, set their price and assurance, and bind the app that issues them. Third-party prices live in the app's attested manifest, so a price cannot be misquoted; Privasys's own prices are set in the platform price book.
+
+## Privacy
+
+The marketplace is built so that money never meets identity. Vouchers are minted per relying party and carry only the relying party, the attributes, and the reserved price. Settlement records the same. The raw attribute value is produced inside the issuing enclave and disclosed only to the party the user consented to, as an audience-bound token, never as a raw value the platform can read.
