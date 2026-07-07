@@ -135,10 +135,11 @@ export function AppSidebar({
                         type="button"
                         onClick={onShowSecurity}
                         disabled={!secureEnabled}
-                        className={`flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm transition-colors hover:bg-[var(--color-surface-2)]/60 disabled:opacity-50 ${attestationPillClass(attestationStatus, secureEnabled)}`}
+                        className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-surface-2)]/60 disabled:opacity-50"
                     >
                         <ShieldIcon />
-                        <span className="flex-1">{attestationPillLabel(attestationStatus, secureEnabled)}</span>
+                        <span className="flex-1">Secure enclave</span>
+                        <SecureEnclaveTag status={attestationStatus} enabled={secureEnabled} />
                     </button>
                 )}
 
@@ -260,28 +261,36 @@ function BuildLine({ prefix, label, href }: { prefix: string; label: string; hre
     );
 }
 
-// Pill color reflects the INFERENCE ENCLAVE's attestation alone: green
-// when it verified, red when it failed, muted while in flight or when
-// there is no endpoint to attest. Tools never affect it.
-function attestationPillClass(
-    status: AggregateAttestationStatus | undefined,
-    secureEnabled: boolean
-): string {
-    if (!secureEnabled) return 'text-[var(--color-text-muted)]';
-    if (status === 'verified') return 'text-[var(--color-primary-green)]';
-    if (status === 'failed') return 'text-red-600 dark:text-red-400';
-    return 'text-[var(--color-text-muted)]';
-}
-
-// Pill wording matches the promise being made: a state, not a menu label.
-function attestationPillLabel(
-    status: AggregateAttestationStatus | undefined,
-    secureEnabled: boolean
-): string {
-    if (!secureEnabled) return 'Secure enclave';
-    if (status === 'verified') return 'Secure enclave verified';
-    if (status === 'failed') return 'Secure enclave not verified';
-    return 'Verifying secure enclave…';
+// The "Secure enclave" label stays neutral; a status TAG beside it carries
+// the verdict of the INFERENCE ENCLAVE's attestation alone (tools are
+// verified separately in the AI Tools view and never affect this).
+function SecureEnclaveTag({
+    status,
+    enabled
+}: {
+    status: AggregateAttestationStatus | undefined;
+    enabled: boolean;
+}) {
+    if (!enabled) return null;
+    if (status === 'verified') {
+        return (
+            <span className="shrink-0 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-[var(--color-primary-green)]">
+                ✓ Verified
+            </span>
+        );
+    }
+    if (status === 'failed') {
+        return (
+            <span className="shrink-0 rounded-full bg-red-500/10 px-2 py-0.5 text-[10px] font-medium text-red-600 dark:text-red-400">
+                ✕ Not verified
+            </span>
+        );
+    }
+    return (
+        <span className="shrink-0 rounded-full bg-[var(--color-surface-2)] px-2 py-0.5 text-[10px] font-medium text-[var(--color-text-muted)]">
+            Verifying…
+        </span>
+    );
 }
 
 interface DisplayInfo {

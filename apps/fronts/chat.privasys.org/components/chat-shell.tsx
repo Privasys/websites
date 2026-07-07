@@ -391,7 +391,7 @@ export function ChatShell({
                 </header>
 
                 {view === 'security' && instance.endpoint && session && (
-                    <SecurityView instance={instance} userTools={userTools.tools} onStatus={setAttestationStatus} />
+                    <SecurityView instance={instance} onStatus={setAttestationStatus} />
                 )}
                 {view === 'tools' && session && (
                     <ToolsView
@@ -412,7 +412,7 @@ export function ChatShell({
                     // rejects with "no active session iframe; call
                     // getSession() first".
                     <div className="hidden" aria-hidden="true">
-                        <SecurityView instance={instance} userTools={userTools.tools} onStatus={setAttestationStatus} />
+                        <SecurityView instance={instance} onStatus={setAttestationStatus} />
                     </div>
                 )}
 
