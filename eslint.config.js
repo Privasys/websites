@@ -146,6 +146,7 @@ const baseConfig = [
             '**/web-build/',
             '**/*.spec.tsx',
             '**/*.spec.ts',
+            '**/*.iife.js',
             '**/admin'
         ]
     }
