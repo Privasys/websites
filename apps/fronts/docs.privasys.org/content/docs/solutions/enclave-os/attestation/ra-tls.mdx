@@ -38,11 +38,21 @@ This provides:
 - **Compatibility**: Works with clients that don't support the `0xFFBB` extension (including standard browsers).
 - **Cacheability**: The quote can be verified once and the certificate pinned.
 
-The trade-off is that the quote could theoretically be replayed if the enclave's key is compromised, but since the key never leaves the TEE, this requires compromising the hardware itself.
+The trade-off is that the quote could theoretically be replayed onto a different session if the enclave's TLS key were extracted, since the binding above commits to the public key but not to the negotiated session secrets. The key never leaves the TEE, so this requires breaking the hardware's memory isolation, but for defence in depth we offer **channel binding** below.
 
 Enclave OS defaults to **deterministic mode** for maximum compatibility.
 
 Both modes produce identical certificate structures. The only difference is the binding value in `ReportData`.
+
+### Channel binding
+
+Challenge mode always binds the quote to the specific TLS session. The enclave folds a 32-byte **channel binder** (derived from the shared TLS handshake key schedule with `HKDF-Expand-Label(client_handshake_traffic_secret, "privasys-ratls-binder-v1", ...)`) into `ReportData`:
+
+```
+ReportData = SHA-512( SHA-256(SPKI_DER) || nonce || binder )
+```
+
+Because the binder is derived from this session's Diffie-Hellman secret and the quote is signed by the hardware attestation key (which never leaves the CPU), a quote cannot be relayed onto a *different* session — even if the leaf TLS key were extracted. The client recomputes the binder from its own copy of the key schedule and checks it against the quote before sending any data, failing closed on a mismatch. There is no negotiation and no un-bound challenge variant: a challenge quote that does not commit to the live session is rejected.
 
 ## Certificate Structure
 
