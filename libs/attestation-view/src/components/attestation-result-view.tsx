@@ -7,6 +7,7 @@ import type {
     AttestationResult,
     GPUAttestationResult,
     OsRelease,
+    WorkloadRelease,
     QuoteVerifyResult
 } from '../types';
 import { PRIVASYS_OID, TEXT_OIDS } from '../types';
@@ -213,6 +214,7 @@ export function AttestationResultView({
                     accent
                     expectations={expectations}
                     cwasmHash={result.cwasm_hash}
+                    workloadRelease={result.workload_release}
                 />
             )}
 
@@ -483,6 +485,12 @@ function QuoteSection({
                             {`\u2713 Enclave OS ${osRelease.tag || 'release'} \u2197`}
                         </a>
                     )}
+                    {osRelease?.status === 'verified' && (
+                        <Badge tone='ok'>{'\u2713 measurements match'}</Badge>
+                    )}
+                    {osRelease?.status === 'mismatch' && (
+                        <Badge tone='err'>{'\u2717 measurements do not match this release'}</Badge>
+                    )}
                 </>
             }
         >
@@ -568,7 +576,8 @@ function ExtensionsSection({
     extensions,
     accent = false,
     expectations,
-    cwasmHash
+    cwasmHash,
+    workloadRelease
 }: {
     title: string;
     description: string;
@@ -576,6 +585,7 @@ function ExtensionsSection({
     accent?: boolean;
     expectations?: AttestationExpectations;
     cwasmHash?: string;
+    workloadRelease?: WorkloadRelease;
 }) {
     return (
         <section
@@ -591,7 +601,13 @@ function ExtensionsSection({
                 {extensions.map((ext) => {
                     const printable = TEXT_OIDS.has(ext.oid) ? hexToPrintableText(ext.value_hex) : null;
                     const display = printable ? `${printable}  (${ext.value_hex})` : ext.value_hex;
-                    const verification = checkExpectation(ext, expectations, cwasmHash);
+                    // OID 3.2 (Workload Image Digest): show the published-package
+                    // link + digest-match verdict (the app-code analogue of the
+                    // Enclave OS release link), when management-service resolved it.
+                    const isImageDigest = ext.oid === PRIVASYS_OID.APP_CODE_HASH;
+                    const badge = isImageDigest && workloadRelease
+                        ? <WorkloadReleaseBadge release={workloadRelease} />
+                        : checkExpectation(ext, expectations, cwasmHash);
                     return (
                         <div
                             key={ext.oid}
@@ -601,7 +617,7 @@ function ExtensionsSection({
                                 label={ext.label}
                                 value={display}
                                 description={OID_DESCRIPTIONS[ext.label]}
-                                badge={verification}
+                                badge={badge}
                             />
                             <span className='mt-1 block font-mono text-[10px] text-black/30 dark:text-white/30'>
                                 {ext.oid}
@@ -644,6 +660,29 @@ function checkExpectation(
     return actual === expected
         ? <Badge tone='ok'>{`\u2713 Verified - ${label}`}</Badge>
         : <Badge tone='err'>{`\u2717 Mismatch - does not ${label}`}</Badge>;
+}
+
+// WorkloadReleaseBadge renders the published-package link + digest-match verdict
+// for the Workload Image Digest (OID 3.2) \u2014 the app-code analogue of the
+// Enclave OS release link/verdict shown in the quote section.
+function WorkloadReleaseBadge({ release }: { release: WorkloadRelease }) {
+    return (
+        <span className='inline-flex flex-wrap items-center gap-1.5'>
+            {release.matches === true && <Badge tone='ok'>{'\u2713 digest match'}</Badge>}
+            {release.matches === false && <Badge tone='err'>{'\u2717 digest mismatch'}</Badge>}
+            {release.url && (
+                <a
+                    href={release.url}
+                    target='_blank'
+                    rel='noreferrer'
+                    title='The published container package this workload was built from'
+                    className='inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400'
+                >
+                    {`${release.label || 'package'} \u2197`}
+                </a>
+            )}
+        </span>
+    );
 }
 
 function Section({
