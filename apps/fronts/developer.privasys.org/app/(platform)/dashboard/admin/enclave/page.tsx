@@ -5,6 +5,7 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import { adminEnclaveHealth, adminInspectEnclave, adminEnclaveMeasurements, adminListEnclaves, adminCreateEnclave, adminUpdateEnclave, adminDeleteEnclave, adminListCloudProviders, adminListCloudRegions, adminMatchCloudRegion, adminRefreshCloudRegions } from '~/lib/api';
 import { useSSE } from '~/lib/sse-context';
 import { COUNTRIES, regionForCountry, displayCountryName } from '~/lib/countries';
+import { Badge } from '@privasys/attestation-view';
 import type { Enclave, CreateEnclaveRequest, TeeType, EnclaveMeasurements, CloudProvider, CloudRegion, CloudRegionsMeta } from '~/lib/types';
 
 const EMPTY_FORM: CreateEnclaveRequest = {
@@ -756,16 +757,16 @@ export default function AdminEnclavePage() {
                                                                         className="text-xs inline-flex items-center gap-1 text-blue-600 dark:text-blue-400 hover:underline break-all">
                                                                         {enc.os_release_tag || enc.os_release_url} ↗
                                                                     </a>
-                                                                    {/* Measurement-verification badge: set on admin save and
-                                                                        re-checked on every boot quote that changes measurements. */}
+                                                                    {/* Measurement-verification badge (shared pill): set on admin
+                                                                        save and re-checked on every boot quote that changes measurements. */}
                                                                     {enc.os_release_status === 'verified' && (
-                                                                        <span className="text-[11px] font-medium text-emerald-600 dark:text-emerald-400">✓ measurements match</span>
+                                                                        <Badge tone="ok">✓ measurements match</Badge>
                                                                     )}
                                                                     {enc.os_release_status === 'mismatch' && (
-                                                                        <span className="text-[11px] font-medium text-red-600 dark:text-red-400">✗ measurements do NOT match this release</span>
+                                                                        <Badge tone="err">✗ measurements do NOT match this release</Badge>
                                                                     )}
                                                                     {enc.os_release_status === 'unverified' && (
-                                                                        <span className="text-[11px] text-amber-600 dark:text-amber-400">not yet verified (no quote reported)</span>
+                                                                        <Badge tone="warn">not yet verified (no quote reported)</Badge>
                                                                     )}
                                                                     {enc.os_release_checked_at && (
                                                                         <span className="text-[10px] text-black/30 dark:text-white/30">checked {new Date(enc.os_release_checked_at).toLocaleString()}</span>

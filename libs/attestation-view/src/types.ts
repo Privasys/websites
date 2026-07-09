@@ -51,6 +51,19 @@ export interface AttestationExtension {
 export interface OsRelease {
     url: string;
     tag: string;
+    // Verification of the enclave's measurements against the release
+    // (management-service): 'verified' | 'mismatch' | 'unverified' | ''.
+    status?: string;
+}
+
+// WorkloadRelease is the app-code analogue of OsRelease: the container package
+// the deployed version was built from, plus whether the ATTESTED workload image
+// digest (OID 3.2) matches that published digest. Stamped by management-service.
+export interface WorkloadRelease {
+    url: string;      // GitHub Packages (GHCR) page for the image
+    label?: string;   // version label, e.g. "v0.5.2"
+    digest?: string;  // expected bare hex digest of the published image
+    matches?: boolean; // attested OID 3.2 == published digest (omitted when unknown)
 }
 
 export interface AttestationTLS {
@@ -118,6 +131,8 @@ export interface AttestationResult {
     app_events?: AppEvent[];
     // The Enclave OS release this enclave runs (set at registration).
     os_release?: OsRelease;
+    // The container package the deployed workload was built from + digest match.
+    workload_release?: WorkloadRelease;
 }
 
 // Result of POST /api/v1/verify-quote (attestation-server proxy).
