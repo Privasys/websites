@@ -2,7 +2,7 @@
 
 import { useAuth, hasManagerRole } from '~/lib/privasys-auth';
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { adminEnclaveHealth, adminInspectEnclave, adminEnclaveMeasurements, adminListEnclaves, adminCreateEnclave, adminUpdateEnclave, adminDeleteEnclave, adminListCloudProviders, adminListCloudRegions, adminMatchCloudRegion, adminRefreshCloudRegions } from '~/lib/api';
+import { adminEnclaveHealth, adminInspectEnclave, adminEnclaveMeasurements, adminListEnclaves, adminCreateEnclave, adminUpdateEnclave, adminDeleteEnclave, adminListCloudProviders, adminListCloudRegions, adminMatchCloudRegion, adminRefreshCloudRegions, adminReverifyOsRelease } from '~/lib/api';
 import { useSSE } from '~/lib/sse-context';
 import { COUNTRIES, regionForCountry, displayCountryName } from '~/lib/countries';
 import { Badge } from '@privasys/attestation-view';
@@ -188,7 +188,25 @@ export default function AdminEnclavePage() {
         } catch {
             setEnclaveHealth(prev => ({ ...prev, [enc.id]: { status: 'unreachable', error: 'Could not reach enclave' } }));
         }
+        // Also re-verify the measurement match against the linked release: an SGX
+        // MRENCLAVE rotation leaves os_release_status stale otherwise.
+        void reverifyOsRelease(enc.id);
     }
+
+    // reverifyOsRelease re-checks the enclave's measurements against its linked
+    // release and merges the refreshed status into the list (badge updates live).
+    const reverifyOsRelease = useCallback(async (id: string) => {
+        if (!session?.accessToken) return;
+        try {
+            const r = await adminReverifyOsRelease(session.accessToken, id);
+            if (r.os_release_status !== undefined) {
+                const now = new Date().toISOString();
+                setEnclaves(prev => prev.map(e => e.id === id
+                    ? { ...e, os_release_status: r.os_release_status!, os_release_tag: r.os_release_tag || e.os_release_tag, os_release_checked_at: now }
+                    : e));
+            }
+        } catch { /* best-effort; keep the current badge */ }
+    }, [session?.accessToken]);
 
     // Load the attested measurements an enclave has reported (TDX MRTD/RTMRs;
     // SGX MRENCLAVE). Cached per enclave; fetched when a row is first expanded.
@@ -206,7 +224,12 @@ export default function AdminEnclavePage() {
     function toggleExpand(id: string) {
         const opening = expandedId !== id;
         setExpandedId(opening ? id : null);
-        if (opening && !(id in measurements)) loadMeasurements(id);
+        if (opening) {
+            if (!(id in measurements)) loadMeasurements(id);
+            // Re-verify the measurement match on open so the badge reflects the
+            // running enclave, not a status stamped before the last rotation.
+            void reverifyOsRelease(id);
+        }
     }
 
     // Derive unique filter options from data
