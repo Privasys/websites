@@ -490,6 +490,14 @@ export function adminDeleteEnclave(token: string, id: string): Promise<void> {
     });
 }
 
+// adminReverifyOsRelease re-checks the enclave's current measurements against
+// its linked Enclave OS release and returns the refreshed status. Used to
+// correct a stale "measurements match" after a fleet MRENCLAVE rotation.
+export function adminReverifyOsRelease(token: string, id: string): Promise<{ os_release_status?: string; os_release_tag?: string }> {
+    return request<{ os_release_status?: string; os_release_tag?: string }>(
+        `/api/v1/admin/enclaves/${encodeURIComponent(id)}/reverify-os-release`, token, { method: 'POST' });
+}
+
 // Cloud-region reference data (manager role): pre-fills enclave location
 // metadata from provider + cloud zone.
 export function adminListCloudProviders(token: string): Promise<{ providers: CloudProvider[]; meta: CloudRegionsMeta }> {
