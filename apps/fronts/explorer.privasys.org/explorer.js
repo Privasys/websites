@@ -1,4 +1,5 @@
 /* WASM App Explorer — standalone attestation & API testing */
+/* global Privasys */
 (function () {
     'use strict';
 
@@ -312,14 +313,19 @@
             var ch = r.challenge;
             var pubKeySha256 = new Uint8Array(pkHex.match(/.{1,2}/g).map(function (b) { return parseInt(b, 16); }));
             var nonce = new Uint8Array(ch.match(/.{1,2}/g).map(function (b) { return parseInt(b, 16); }));
-            var concat = new Uint8Array(pubKeySha256.length + nonce.length);
+            // Fold the RA-TLS channel binder in after the nonce (when present):
+            // report_data = SHA-512(SHA-256(pubkey) || nonce || binder).
+            var binderB64 = (r.quote && r.quote.channel_binder) || '';
+            var binder = binderB64 ? Uint8Array.from(atob(binderB64), function (c) { return c.charCodeAt(0); }) : new Uint8Array(0);
+            var concat = new Uint8Array(pubKeySha256.length + nonce.length + binder.length);
             concat.set(pubKeySha256);
             concat.set(nonce, pubKeySha256.length);
+            concat.set(binder, pubKeySha256.length + nonce.length);
             var hash = await crypto.subtle.digest('SHA-512', concat);
             var computed = Array.from(new Uint8Array(hash), function (b) { return b.toString(16).padStart(2, '0'); }).join('');
             var actual = r.quote.report_data.toLowerCase();
             verifyResult = computed === actual ? 'match' : 'mismatch';
-        } catch (_e) {
+        } catch {
             verifyResult = 'error';
         }
         renderAttestation();
@@ -451,7 +457,7 @@
                 r.quote.rtmr1 ? { label: 'RTMR[1]', value: r.quote.rtmr1, desc: 'Runtime Measurement Register 1 \u2014 measures the OS kernel, initrd, and boot parameters.' } : null,
                 r.quote.rtmr2 ? { label: 'RTMR[2]', value: r.quote.rtmr2, desc: 'Runtime Measurement Register 2 \u2014 measures the OS runtime components and application layer.' } : null,
                 r.quote.rtmr3 ? { label: 'RTMR[3]', value: r.quote.rtmr3, desc: 'Runtime Measurement Register 3 \u2014 available for application-defined measurements.' } : null,
-                r.quote.report_data ? { label: 'Report Data', value: r.quote.report_data, desc: r.challenge_mode ? 'SHA-512(SHA-256(pubkey) \u2016 challenge). A match proves freshness.' : 'SHA-512(SHA-256(pubkey) \u2016 timestamp).' } : null,
+                r.quote.report_data ? { label: 'Report Data', value: r.quote.report_data, desc: r.challenge_mode ? 'SHA-512(SHA-256(pubkey) \u2016 challenge \u2016 channel_binder). A match proves freshness and binds the quote to this TLS session.' : 'SHA-512(SHA-256(pubkey) \u2016 timestamp).' } : null,
                 r.quote.oid ? { label: 'OID', value: r.quote.oid } : null
             ].filter(Boolean);
 
@@ -1246,7 +1252,7 @@
                 return h('input', { type: 'text', className: 'param-input', value: String(paramValues[p.name] != null ? paramValues[p.name] : ''), placeholder: ty.kind === 'char' ? 'single character' : 'Enter ' + p.name + '\u2026', onInput: function (e) { paramValues[p.name] = e.target.value; } });
             default: {
                 var val = typeof paramValues[p.name] === 'string' ? paramValues[p.name] : JSON.stringify(paramValues[p.name], null, 2);
-                return h('textarea', { className: 'param-input', rows: '3', spellcheck: 'false', placeholder: 'JSON value', onInput: function (e) { try { paramValues[p.name] = JSON.parse(e.target.value); } catch (_err) { paramValues[p.name] = e.target.value; } } }, val);
+                return h('textarea', { className: 'param-input', rows: '3', spellcheck: 'false', placeholder: 'JSON value', onInput: function (e) { try { paramValues[p.name] = JSON.parse(e.target.value); } catch { paramValues[p.name] = e.target.value; } } }, val);
             }
         }
     }

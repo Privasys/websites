@@ -28,6 +28,13 @@ export interface AttestationQuote {
     version?: number;
     report_data?: string;
     raw_base64?: string;
+    // Base64 of the 32-byte RA-TLS channel binder this TLS session derived
+    // (management-service reads it from the Go fork's
+    // ConnectionState.RATLSChannelBinder). In challenge mode the enclave folds
+    // it into report_data — SHA-512(SHA-256(pubkey) || nonce || binder) — so a
+    // verifier MUST include it or the report_data check mismatches. Absent on
+    // TLS 1.2 / deterministic-mode certs.
+    channel_binder?: string;
     mr_enclave?: string;
     mr_signer?: string;
     mr_td?: string;

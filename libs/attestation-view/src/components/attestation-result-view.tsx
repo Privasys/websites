@@ -242,6 +242,7 @@ export function AttestationResultView({
                     pubKeySha256={result.certificate.public_key_sha256}
                     challenge={result.challenge}
                     reportData={result.quote.report_data}
+                    binderB64={result.quote.channel_binder}
                 />
             )}
 
@@ -280,7 +281,8 @@ function useReportDataCheck(result: AttestationResult): ReportDataCheck {
         verifyReportData({
             pubKeySha256Hex: pubKey,
             challengeHex: challenge,
-            reportDataHex: reportData
+            reportDataHex: reportData,
+            binderB64: result.quote?.channel_binder
         }).then((r) => {
             if (cancelled) return;
             if (r.status === 'match') {
@@ -340,10 +342,19 @@ function ChallengeBanner({
                             <Badge tone='err'>⚠ Verification error</Badge>
                         )}
                     </div>
-                    <p className='mb-2 text-[11px] opacity-70'>
-                        This certificate was freshly generated in response to your challenge nonce.
-                        The enclave bound your nonce into the quote&rsquo;s ReportData field.
-                    </p>
+                    {reportDataCheck.state === 'mismatch' || reportDataCheck.state === 'error' ? (
+                        <p className='mb-2 text-[11px] font-medium'>
+                            {reportDataCheck.state === 'error'
+                                ? 'The report data could not be verified in your browser. The quote’s binding to this session could not be confirmed — do not trust this enclave’s identity until this is resolved.'
+                                : 'Report data mismatch. The quote’s ReportData is not SHA-512( SHA-256(public_key) || nonce || channel_binder ) for this certificate and challenge, so the quote was not freshly bound to this TLS session. This is a serious failure — do not trust this enclave’s identity. See the hash comparison in the quote section below.'}
+                        </p>
+                    ) : (
+                        <p className='mb-2 text-[11px] opacity-70'>
+                            This certificate was freshly generated in response to your challenge nonce.
+                            The enclave bound your nonce and this TLS session&rsquo;s channel binder into the
+                            quote&rsquo;s ReportData field.
+                        </p>
+                    )}
                     <div className='mb-1 text-[11px] opacity-70'>Challenge sent:</div>
                     <code className='block break-all rounded bg-black/5 dark:bg-white/10 px-2 py-1 font-mono text-[11px]'>
                         {result.challenge}
@@ -454,11 +465,21 @@ function QuoteSection({
         return rows;
     }, [quote, challengeMode]);
 
+    // Anchor the Enclave OS release link + measurements verdict next to the
+    // enclave-identity measurement row (MRENCLAVE for SGX, MR_TD for TDX)
+    // rather than in the section header, so it reads as a property of that
+    // measurement. Falls back to the header when neither row is present.
+    const osReleaseAnchorLabel = quote.mr_enclave ? 'MRENCLAVE' : quote.mr_td ? 'MR_TD' : null;
+    const reportDataMismatch = reportDataCheck.state === 'mismatch' || reportDataCheck.state === 'error';
+
     return (
         <Section
             title={quote.type || 'Attestation Quote'}
             badge={
                 <>
+                    {reportDataMismatch && (
+                        <Badge tone='err'>{'\u2717 report data mismatch'}</Badge>
+                    )}
                     {quote.is_mock && (
                         <Badge tone='warn'>Mock</Badge>
                     )}
@@ -474,23 +495,7 @@ function QuoteSection({
                     {quoteVerifyError && (
                         <Badge tone='warn'>{`\u26a0 ${quoteVerifyError}`}</Badge>
                     )}
-                    {osRelease?.url && (
-                        <a
-                            href={osRelease.url}
-                            target='_blank'
-                            rel='noreferrer'
-                            title='The official Enclave OS release this enclave runs (verified at registration)'
-                            className='inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400'
-                        >
-                            {`\u2713 Enclave OS ${osRelease.tag || 'release'} \u2197`}
-                        </a>
-                    )}
-                    {osRelease?.status === 'verified' && (
-                        <Badge tone='ok'>{'\u2713 measurements match'}</Badge>
-                    )}
-                    {osRelease?.status === 'mismatch' && (
-                        <Badge tone='err'>{'\u2717 measurements do not match this release'}</Badge>
-                    )}
+                    {osRelease && !osReleaseAnchorLabel && <OsReleaseBadges osRelease={osRelease} />}
                 </>
             }
         >
@@ -507,17 +512,29 @@ function QuoteSection({
                                     ? <Badge tone='ok'>✓ Verified</Badge>
                                     : f.label === 'Report Data' && reportDataCheck.state === 'mismatch'
                                         ? <Badge tone='err'>✗ Mismatch</Badge>
-                                        : f.label === 'Report Data' && reportDataCheck.state === 'verifying'
-                                            ? <Badge tone='neutral'>Verifying...</Badge>
-                                            : /^RTMR\[\d\]$/.test(f.label) && quoteVerify?.success
-                                                ? <Badge tone='ok'>✓</Badge>
-                                                : null}
+                                        : f.label === 'Report Data' && reportDataCheck.state === 'error'
+                                            ? <Badge tone='err'>⚠ Verification error</Badge>
+                                            : f.label === 'Report Data' && reportDataCheck.state === 'verifying'
+                                                ? <Badge tone='neutral'>Verifying...</Badge>
+                                                : /^RTMR\[\d\]$/.test(f.label) && quoteVerify?.success
+                                                    ? <Badge tone='ok'>✓</Badge>
+                                                    : null}
+                                {osRelease && f.label === osReleaseAnchorLabel && (
+                                    <OsReleaseBadges osRelease={osRelease} />
+                                )}
                             </>
                         }
                     >
                         {f.label === 'Report Data' && reportDataCheck.state === 'mismatch' && (
                             <div className='mt-2 space-y-1.5 rounded-lg border border-red-200/50 bg-red-50/50 p-3 dark:border-red-800/30 dark:bg-red-900/10'>
-                                <p className='text-[11px] font-medium text-red-700 dark:text-red-400'>Hash comparison</p>
+                                <p className='text-[11px] font-medium text-red-700 dark:text-red-400'>
+                                    Report data does not match this certificate + challenge.
+                                </p>
+                                <p className='text-[11px] text-red-700/80 dark:text-red-400/80'>
+                                    Expected SHA-512( SHA-256(public_key) || nonce || channel_binder ). A mismatch
+                                    means the quote was not freshly bound to this TLS session — do not trust this
+                                    enclave&rsquo;s identity.
+                                </p>
                                 <DebugLine label='Computed' value={reportDataCheck.computed} />
                                 <DebugLine label='Actual' value={reportDataCheck.actual} />
                             </div>
@@ -660,6 +677,33 @@ function checkExpectation(
     return actual === expected
         ? <Badge tone='ok'>{`\u2713 Verified - ${label}`}</Badge>
         : <Badge tone='err'>{`\u2717 Mismatch - does not ${label}`}</Badge>;
+}
+
+// OsReleaseBadges renders the Enclave OS release link + the measurements-match
+// verdict. Anchored next to the enclave-identity measurement row (MRENCLAVE /
+// MR_TD) so the release provenance reads as a property of that measurement.
+function OsReleaseBadges({ osRelease }: { osRelease: OsRelease }) {
+    return (
+        <>
+            {osRelease.url && (
+                <a
+                    href={osRelease.url}
+                    target='_blank'
+                    rel='noreferrer'
+                    title='The official Enclave OS release this enclave runs (verified at registration)'
+                    className='inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400'
+                >
+                    {`✓ Enclave OS ${osRelease.tag || 'release'} ↗`}
+                </a>
+            )}
+            {osRelease.status === 'verified' && (
+                <Badge tone='ok'>{'✓ Measurements match'}</Badge>
+            )}
+            {osRelease.status === 'mismatch' && (
+                <Badge tone='err'>{'✗ Measurements do not match this release'}</Badge>
+            )}
+        </>
+    );
 }
 
 // WorkloadReleaseBadge renders the published-package link + digest-match verdict
@@ -815,23 +859,30 @@ function PemSection({
 function VerificationCodeSection({
     pubKeySha256,
     challenge,
-    reportData
+    reportData,
+    binderB64
 }: {
     pubKeySha256: string;
     challenge: string;
     reportData: string;
+    /** Base64 RA-TLS channel binder folded into report_data after the nonce.
+     *  When absent the snippet replays the legacy nonce-only preimage. */
+    binderB64?: string;
 }) {
     const snippet = [
         '// Report Data verification - paste in your browser console',
         `const pubkeySha256 = "${pubKeySha256}";`,
         `const challenge   = "${challenge}";`,
+        `const binderB64   = "${binderB64 || ''}";  // RA-TLS channel binder (base64, 32 bytes); "" for legacy nonce-only certs`,
         `const reportData  = "${reportData}";`,
         '',
         'const hex2buf = h => new Uint8Array(h.match(/.{2}/g).map(b => parseInt(b, 16)));',
+        'const b642buf = b => b ? Uint8Array.from(atob(b), c => c.charCodeAt(0)) : new Uint8Array(0);',
         'const buf2hex = b => [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, \'0\')).join(\'\');',
         '',
         '(async () => {',
-        '  const input = new Uint8Array([...hex2buf(pubkeySha256), ...hex2buf(challenge)]);',
+        '  // report_data = SHA-512( SHA-256(public_key_DER) || nonce || binder )',
+        '  const input = new Uint8Array([...hex2buf(pubkeySha256), ...hex2buf(challenge), ...b642buf(binderB64)]);',
         '  const hash  = await crypto.subtle.digest(\'SHA-512\', input);',
         '  const computed = buf2hex(hash);',
         '  const actual   = reportData.toLowerCase();',
@@ -848,7 +899,7 @@ function VerificationCodeSection({
             </div>
             <p className='mb-3 text-xs text-black/40 dark:text-white/40'>
                 Copy this snippet and paste it in your browser&rsquo;s developer console to
-                independently verify that <code className='text-[11px]'>SHA-512(pubkey_sha256 || challenge) == report_data</code>.
+                independently verify that <code className='text-[11px]'>SHA-512(pubkey_sha256 || challenge || channel_binder) == report_data</code>.
             </p>
             <pre className='max-h-56 overflow-y-auto whitespace-pre-wrap break-all rounded-lg bg-black/5 p-3 font-mono text-[11px] dark:bg-white/5'>
                 {snippet}
