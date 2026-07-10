@@ -87,7 +87,7 @@ Mutual RA-TLS always uses challenge-response mode: the server sends a challenge 
 
 Standard TLS libraries do not expose custom extensions from `CertificateRequest` to application code. Privasys maintains forks of Go and rustls that propagate the `0xFFBB` challenge nonce to the client certificate callback:
 
-- **Go**: [Privasys/go](https://github.com/Privasys/go/tree/ratls) adds an `RATLSChallenge` field to `tls.CertificateRequestInfo`, carrying the server's nonce. Requires the `ratls` build tag.
+- **Go**: [Privasys/go](https://github.com/Privasys/go/tree/release-branch.go1.26) adds an `RATLSChallenge` field to `tls.CertificateRequestInfo`, carrying the server's nonce. Requires the `ratls` build tag.
 - **rustls**: [Privasys/rustls](https://github.com/Privasys/rustls) extends the `CertificateRequest` handler to pass the `0xFFBB` nonce through to the client certificate resolver.
 
 These forks are what enable mutual RA-TLS between Enclave OS Mini and Virtual, and are required for features like [Enclave Vaults](/solutions/enclave-vaults/overview).
