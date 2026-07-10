@@ -219,10 +219,14 @@ export function useAttestation(target: AttestationTarget): [AttestationState, At
 }
 
 /**
- * Verifies that the TDX quote's report_data field equals
- *   SHA-512( SHA-256(pubkey) || nonce )
+ * Verifies that the quote's report_data field equals
+ *   SHA-512( SHA-256(pubkey) || nonce || binder )
  * which proves the quote was generated for the certificate the client
- * actually saw on the wire.
+ * actually saw on the wire AND is bound to this exact TLS session.
+ *
+ * `binderB64` is the base64 RA-TLS channel binder (32 bytes) the enclave
+ * folded into report_data. It is mandatory on the current challenge path;
+ * omit it only to replay the legacy nonce-only preimage.
  *
  * Returns 'match' | 'mismatch' | 'error'. Computed and actual values
  * are also returned so the UI can surface the diff.
@@ -231,13 +235,16 @@ export async function verifyReportData(args: {
     pubKeySha256Hex: string;
     challengeHex: string;
     reportDataHex: string;
+    binderB64?: string;
 }): Promise<{ status: 'match' | 'mismatch' | 'error'; computed?: string; actual?: string }> {
     try {
         const pub = hexToBytes(args.pubKeySha256Hex);
         const nonce = hexToBytes(args.challengeHex);
-        const buf = new Uint8Array(pub.length + nonce.length);
+        const binder = args.binderB64 ? base64ToBytes(args.binderB64) : new Uint8Array(0);
+        const buf = new Uint8Array(pub.length + nonce.length + binder.length);
         buf.set(pub);
         buf.set(nonce, pub.length);
+        buf.set(binder, pub.length + nonce.length);
         const hash = await crypto.subtle.digest('SHA-512', buf);
         const computed = bytesToHex(new Uint8Array(hash));
         const actual = args.reportDataHex.toLowerCase();
@@ -255,6 +262,13 @@ function hexToBytes(hex: string): Uint8Array {
     const m = hex.match(/.{1,2}/g);
     if (!m) throw new Error('invalid hex');
     return new Uint8Array(m.map((b) => parseInt(b, 16)));
+}
+
+function base64ToBytes(b64: string): Uint8Array {
+    const bin = atob(b64);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
 }
 
 function bytesToHex(bytes: Uint8Array): string {

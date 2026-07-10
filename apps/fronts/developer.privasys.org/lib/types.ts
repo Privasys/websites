@@ -396,6 +396,9 @@ export interface AttestationQuote {
     version?: number;
     report_data?: string;
     raw_base64?: string;
+    // Base64 of the 32-byte RA-TLS channel binder folded into report_data
+    // (SHA-512(SHA-256(pubkey) || nonce || binder)) in challenge mode.
+    channel_binder?: string;
     mr_enclave?: string;
     mr_signer?: string;
     mr_td?: string;
