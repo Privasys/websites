@@ -50,6 +50,11 @@ body {
     overflow-x: clip;
 }
 
+/* Element-level base typography. Wrapped in @layer base so Tailwind utilities
+   (which live in @layer utilities, a later layer) win — an UNLAYERED `p, li`
+   rule beats layered utilities regardless of specificity, which silently
+   overrode text-size/colour/weight utilities on every <p>/<li>/heading. */
+@layer base {
 h1 {
     font-family: "InterVariable", "Inter", "Helvetica Neue", "Helvetica", "Arial", sans-serif;
     line-height: 1.05;
@@ -103,6 +108,7 @@ p, li {
 
 @media (prefers-color-scheme: dark) {
     p, li { color: #a1a1a6; }
+}
 }
 
 .hero-intro {
