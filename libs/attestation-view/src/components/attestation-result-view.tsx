@@ -346,7 +346,7 @@ function ChallengeBanner({
                         <p className='mb-2 text-[11px] font-medium'>
                             {reportDataCheck.state === 'error'
                                 ? 'The report data could not be verified in your browser. The quote’s binding to this session could not be confirmed — do not trust this enclave’s identity until this is resolved.'
-                                : 'Report data mismatch. The quote’s ReportData is not SHA-512( SHA-256(public_key) || nonce || channel_binder ) for this certificate and challenge, so the quote was not freshly bound to this TLS session. This is a serious failure — do not trust this enclave’s identity. See the hash comparison in the quote section below.'}
+                                : 'Report data mismatch. The quote’s ReportData is not SHA-512( SHA-256(public_key) || nonce || channel_binder ) for this certificate and challenge, so the quote was not freshly bound to this TLS session. This is a serious failure: do not trust this enclave’s identity. See the hash comparison in the quote section below.'}
                         </p>
                     ) : (
                         <p className='mb-2 text-[11px] opacity-70'>
@@ -457,7 +457,7 @@ function QuoteSection({
                 label: 'Report Data',
                 value: quote.report_data,
                 description: challengeMode
-                    ? 'SHA-512( SHA-256(public_key_DER) || challenge_nonce ).'
+                    ? 'SHA-512( SHA-256(public_key_DER) || challenge_nonce || channel_binder ).'
                     : 'SHA-512( SHA-256(public_key_DER) || timestamp ). Deterministic mode - the certificate\'s NotBefore is the nonce.'
             });
         }
@@ -465,11 +465,16 @@ function QuoteSection({
         return rows;
     }, [quote, challengeMode]);
 
-    // Anchor the Enclave OS release link + measurements verdict next to the
-    // enclave-identity measurement row (MRENCLAVE for SGX, MR_TD for TDX)
-    // rather than in the section header, so it reads as a property of that
-    // measurement. Falls back to the header when neither row is present.
-    const osReleaseAnchorLabel = quote.mr_enclave ? 'MRENCLAVE' : quote.mr_td ? 'MR_TD' : null;
+    // Anchor the merged Enclave OS release + measurements verdict tag next to
+    // the measurement rows the release is actually verified against — MRENCLAVE
+    // for SGX; RTMR[1] and RTMR[2] for TDX (the EFI/OS-boot registers compared
+    // to the release's Predicted RTMRs). NOT MR_TD, whose value the release
+    // check does not gate on. Falls back to the header when no such row exists.
+    const osReleaseAnchors: string[] = quote.mr_enclave
+        ? ['MRENCLAVE']
+        : quote.mr_td
+            ? (['RTMR[1]', 'RTMR[2]'] as const).filter((l) => (l === 'RTMR[1]' ? quote.rtmr1 : quote.rtmr2))
+            : [];
     const reportDataMismatch = reportDataCheck.state === 'mismatch' || reportDataCheck.state === 'error';
 
     return (
@@ -495,7 +500,7 @@ function QuoteSection({
                     {quoteVerifyError && (
                         <Badge tone='warn'>{`\u26a0 ${quoteVerifyError}`}</Badge>
                     )}
-                    {osRelease && !osReleaseAnchorLabel && <OsReleaseBadges osRelease={osRelease} />}
+                    {osRelease && osReleaseAnchors.length === 0 && <OsReleaseBadge osRelease={osRelease} />}
                 </>
             }
         >
@@ -516,11 +521,11 @@ function QuoteSection({
                                             ? <Badge tone='err'>⚠ Verification error</Badge>
                                             : f.label === 'Report Data' && reportDataCheck.state === 'verifying'
                                                 ? <Badge tone='neutral'>Verifying...</Badge>
-                                                : /^RTMR\[\d\]$/.test(f.label) && quoteVerify?.success
+                                                : /^RTMR\[[012]\]$/.test(f.label) && quoteVerify?.success && !osReleaseAnchors.includes(f.label)
                                                     ? <Badge tone='ok'>✓</Badge>
                                                     : null}
-                                {osRelease && f.label === osReleaseAnchorLabel && (
-                                    <OsReleaseBadges osRelease={osRelease} />
+                                {osRelease && osReleaseAnchors.includes(f.label) && (
+                                    <OsReleaseBadge osRelease={osRelease} />
                                 )}
                             </>
                         }
@@ -532,7 +537,7 @@ function QuoteSection({
                                 </p>
                                 <p className='text-[11px] text-red-700/80 dark:text-red-400/80'>
                                     Expected SHA-512( SHA-256(public_key) || nonce || channel_binder ). A mismatch
-                                    means the quote was not freshly bound to this TLS session — do not trust this
+                                    means the quote was not freshly bound to this TLS session; do not trust this
                                     enclave&rsquo;s identity.
                                 </p>
                                 <DebugLine label='Computed' value={reportDataCheck.computed} />
@@ -679,30 +684,45 @@ function checkExpectation(
         : <Badge tone='err'>{`\u2717 Mismatch - does not ${label}`}</Badge>;
 }
 
-// OsReleaseBadges renders the Enclave OS release link + the measurements-match
-// verdict. Anchored next to the enclave-identity measurement row (MRENCLAVE /
-// MR_TD) so the release provenance reads as a property of that measurement.
-function OsReleaseBadges({ osRelease }: { osRelease: OsRelease }) {
+// OsReleaseBadge renders ONE merged pill: the Enclave OS release link and the
+// measurements-match verdict together. Colour follows the verdict — green only
+// when measurements verify, red on mismatch, neutral when the verdict is
+// unknown — so the link is never green while the measurements do not match.
+// Anchored next to the measurement rows the release is checked against
+// (MRENCLAVE for SGX, RTMR[1]/RTMR[2] for TDX).
+function OsReleaseBadge({ osRelease }: { osRelease: OsRelease }) {
+    const verified = osRelease.status === 'verified';
+    const mismatch = osRelease.status === 'mismatch';
+    const tag = osRelease.tag || 'release';
+    const mark = verified ? '✓ ' : mismatch ? '✗ ' : '';
+    const verdict = verified
+        ? ' · measurements match'
+        : mismatch
+            ? ' · measurements do not match'
+            : '';
+    const arrow = osRelease.url ? ' ↗' : '';
+    const text = `${mark}Enclave OS ${tag}${verdict}${arrow}`;
+    const tone = verified
+        ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400'
+        : mismatch
+            ? 'bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400'
+            : 'bg-black/5 text-black/60 hover:bg-black/10 dark:bg-white/10 dark:text-white/60';
+    const title = mismatch
+        ? 'This enclave\'s measurements do not match the Enclave OS release it is linked to'
+        : 'The official Enclave OS release this enclave runs, and whether its measurements match';
+    if (!osRelease.url) {
+        return <Badge tone={verified ? 'ok' : mismatch ? 'err' : 'neutral'}>{text}</Badge>;
+    }
     return (
-        <>
-            {osRelease.url && (
-                <a
-                    href={osRelease.url}
-                    target='_blank'
-                    rel='noreferrer'
-                    title='The official Enclave OS release this enclave runs (verified at registration)'
-                    className='inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400'
-                >
-                    {`✓ Enclave OS ${osRelease.tag || 'release'} ↗`}
-                </a>
-            )}
-            {osRelease.status === 'verified' && (
-                <Badge tone='ok'>{'✓ Measurements match'}</Badge>
-            )}
-            {osRelease.status === 'mismatch' && (
-                <Badge tone='err'>{'✗ Measurements do not match this release'}</Badge>
-            )}
-        </>
+        <a
+            href={osRelease.url}
+            target='_blank'
+            rel='noreferrer'
+            title={title}
+            className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${tone}`}
+        >
+            {text}
+        </a>
     );
 }
 
@@ -865,15 +885,14 @@ function VerificationCodeSection({
     pubKeySha256: string;
     challenge: string;
     reportData: string;
-    /** Base64 RA-TLS channel binder folded into report_data after the nonce.
-     *  When absent the snippet replays the legacy nonce-only preimage. */
+    /** Base64 RA-TLS channel binder folded into report_data after the nonce. */
     binderB64?: string;
 }) {
     const snippet = [
         '// Report Data verification - paste in your browser console',
         `const pubkeySha256 = "${pubKeySha256}";`,
         `const challenge   = "${challenge}";`,
-        `const binderB64   = "${binderB64 || ''}";  // RA-TLS channel binder (base64, 32 bytes); "" for legacy nonce-only certs`,
+        `const binderB64   = "${binderB64 || ''}";  // RA-TLS channel binder (base64, 32 bytes)`,
         `const reportData  = "${reportData}";`,
         '',
         'const hex2buf = h => new Uint8Array(h.match(/.{2}/g).map(b => parseInt(b, 16)));',
