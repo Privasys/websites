@@ -63,14 +63,16 @@ export interface OsRelease {
     status?: string;
 }
 
-// WorkloadRelease is the app-code analogue of OsRelease: the container package
-// the deployed version was built from, plus whether the ATTESTED workload image
-// digest (OID 3.2) matches that published digest. Stamped by management-service.
+// WorkloadRelease is the app-code analogue of OsRelease: the build the deployed
+// version's workload came from, plus whether the ATTESTED workload digest
+// (OID 3.2) matches that build's output. Stamped by management-service.
+// Containers link to the published GHCR package / GitHub release; wasm apps link
+// to the reproducible-app-builder Actions run that produced the .cwasm.
 export interface WorkloadRelease {
-    url: string;      // GitHub Packages (GHCR) page for the image
-    label?: string;   // version label, e.g. "v0.5.2"
-    digest?: string;  // expected bare hex digest of the published image
-    matches?: boolean; // attested OID 3.2 == published digest (omitted when unknown)
+    url: string;      // GHCR package / release page (container) or build-run URL (wasm)
+    label?: string;   // e.g. "v0.5.2" (container) or "reproducible build" (wasm)
+    digest?: string;  // expected bare hex digest (image digest / .cwasm SHA-256)
+    matches?: boolean; // attested OID 3.2 == expected digest (omitted when unknown)
 }
 
 export interface AttestationTLS {
