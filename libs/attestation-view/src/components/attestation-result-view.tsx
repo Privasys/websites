@@ -521,9 +521,7 @@ function QuoteSection({
                                             ? <Badge tone='err'>⚠ Verification error</Badge>
                                             : f.label === 'Report Data' && reportDataCheck.state === 'verifying'
                                                 ? <Badge tone='neutral'>Verifying...</Badge>
-                                                : /^RTMR\[[012]\]$/.test(f.label) && quoteVerify?.success && !osReleaseAnchors.includes(f.label)
-                                                    ? <Badge tone='ok'>✓</Badge>
-                                                    : null}
+                                                : null}
                                 {osRelease && osReleaseAnchors.includes(f.label) && (
                                     <OsReleaseBadge osRelease={osRelease} />
                                 )}
@@ -694,14 +692,13 @@ function OsReleaseBadge({ osRelease }: { osRelease: OsRelease }) {
     const verified = osRelease.status === 'verified';
     const mismatch = osRelease.status === 'mismatch';
     const tag = osRelease.tag || 'release';
-    const mark = verified ? '✓ ' : mismatch ? '✗ ' : '';
     const verdict = verified
-        ? ' · measurements match'
+        ? '✓ Measurements match '
         : mismatch
-            ? ' · measurements do not match'
+            ? '✗ Measurements do not match '
             : '';
     const arrow = osRelease.url ? ' ↗' : '';
-    const text = `${mark}Enclave OS ${tag}${verdict}${arrow}`;
+    const text = `${verdict}Enclave OS ${tag}${arrow}`;
     const tone = verified
         ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400'
         : mismatch
