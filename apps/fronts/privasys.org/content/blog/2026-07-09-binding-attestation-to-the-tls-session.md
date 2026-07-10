@@ -6,6 +6,10 @@ date: "2026-07-09"
 
 In January, security researchers presented a formal-methods result to the IETF SEAT working group. Analysing intra-handshake attested-TLS designs, they showed that the common construction fails to cryptographically bind the attestation evidence to the TLS session it is meant to protect. The finding is real, it is careful work, and it carries a CVE (CVE-2026-33697). It also, predictably, produced headlines. One outlet reported that confidential computing's [remote attestation protocol may have a fundamental flaw](https://www.scworld.com/brief/confidential-computings-remote-attestation-protocol-may-have-fundamental-flaw); another that the [trust mechanism is broken and the fix may not exist](https://www.theregister.com/security/2026/07/04/confidential-computings-trust-mechanism-is-broken-the-fix-may-not-exist/5266056). This post is about the gap between that framing and the engineering reality, and about what we actually did.
 
+## What the flaw is
+
+RA-TLS puts a hardware quote inside the TLS certificate. The quote commits to the certificate's public key, so a client can check that the key it is talking to was born inside a genuine, correctly measured enclave. What it does not commit to is the session itself: it vouches for the key, not for the fact that the enclave is the party on the other end of *this* connection. The whole guarantee therefore rests on one assumption, that the private key never leaves the enclave.
+
 ## Read the precondition
 
 To exploit this, an attacker must first obtain the enclave's TLS private key. That key lives in encrypted enclave memory. Extracting it means defeating the hardware's memory isolation: a side channel, a transient-execution attack, or a firmware break, applied successfully against a specific enclave. In other words, the attack begins where confidential computing's core guarantee has already failed.
