@@ -225,8 +225,7 @@ export function useAttestation(target: AttestationTarget): [AttestationState, At
  * actually saw on the wire AND is bound to this exact TLS session.
  *
  * `binderB64` is the base64 RA-TLS channel binder (32 bytes) the enclave
- * folded into report_data. It is mandatory on the current challenge path;
- * omit it only to replay the legacy nonce-only preimage.
+ * folds into report_data on the challenge path.
  *
  * Returns 'match' | 'mismatch' | 'error'. Computed and actual values
  * are also returned so the UI can surface the diff.
