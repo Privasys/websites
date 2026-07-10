@@ -723,26 +723,40 @@ function OsReleaseBadge({ osRelease }: { osRelease: OsRelease }) {
     );
 }
 
-// WorkloadReleaseBadge renders the published-package link + digest-match verdict
-// for the Workload Image Digest (OID 3.2) \u2014 the app-code analogue of the
-// Enclave OS release link/verdict shown in the quote section.
+// WorkloadReleaseBadge renders ONE merged pill for the Workload Image Digest
+// (OID 3.2): whether the deployed workload matches the build it came from, plus
+// a link to that build \u2014 the published GHCR package / GitHub release for
+// containers, or the reproducible-app-builder Actions run for wasm. Colour
+// follows the verdict (green only on match, red on mismatch, neutral when
+// unknown), mirroring the Enclave OS release pill.
 function WorkloadReleaseBadge({ release }: { release: WorkloadRelease }) {
+    const match = release.matches === true;
+    const mismatch = release.matches === false;
+    const label = release.label || 'build';
+    const verdict = match ? '\u2713 digest match \u00b7 ' : mismatch ? '\u2717 digest mismatch \u00b7 ' : '';
+    const arrow = release.url ? ' \u2197' : '';
+    const text = `${verdict}${label}${arrow}`;
+    const tone = match
+        ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400'
+        : mismatch
+            ? 'bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400'
+            : 'bg-black/5 text-black/60 hover:bg-black/10 dark:bg-white/10 dark:text-white/60';
+    const title = mismatch
+        ? 'The deployed workload does not match the build it is linked to'
+        : 'The build this workload was produced from; open it to verify independently';
+    if (!release.url) {
+        return <Badge tone={match ? 'ok' : mismatch ? 'err' : 'neutral'}>{text}</Badge>;
+    }
     return (
-        <span className='inline-flex flex-wrap items-center gap-1.5'>
-            {release.matches === true && <Badge tone='ok'>{'\u2713 digest match'}</Badge>}
-            {release.matches === false && <Badge tone='err'>{'\u2717 digest mismatch'}</Badge>}
-            {release.url && (
-                <a
-                    href={release.url}
-                    target='_blank'
-                    rel='noreferrer'
-                    title='The published container package this workload was built from'
-                    className='inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400'
-                >
-                    {`${release.label || 'package'} \u2197`}
-                </a>
-            )}
-        </span>
+        <a
+            href={release.url}
+            target='_blank'
+            rel='noreferrer'
+            title={title}
+            className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${tone}`}
+        >
+            {text}
+        </a>
     );
 }
 
