@@ -16,7 +16,6 @@ import {
     type EnvKey
 } from '~/lib/config';
 import { getPrivasys, mintAudienceToken } from '~/lib/privasys-sdk';
-import { FileHashTile } from '~/components/file-hash-tile';
 
 const INITIAL_FORM: ConnectFormValues = {
     appName: '',
@@ -115,18 +114,18 @@ export function ConnectScreen({ onConnect }: { onConnect: (_c: ConnectionConfig)
     return (
         <div>
             <section className='mb-10'>
-                <h1 className='text-4xl lg:text-5xl font-semibold tracking-tight'>WASM App Explorer</h1>
+                <h1 className='text-4xl lg:text-5xl font-semibold tracking-tight'>App Explorer</h1>
                 <p className='mt-4 max-w-2xl text-black/60 dark:text-white/60'>
                     Connect to a confidential app running inside a hardware-protected enclave. Inspect its
-                    remote attestation, authenticate with a passkey or the Privasys wallet, and call its API —
+                    remote attestation, authenticate with a passkey or the Privasys wallet, and call its API,
                     all verified independently through the Privasys gateway.
                 </p>
             </section>
 
-            <div className='grid grid-cols-1 lg:grid-cols-2 gap-6 items-start'>
+            <div className='max-w-xl'>
                 {/* Connect card */}
                 <div className='rounded-2xl border border-black/8 dark:border-white/10 p-6'>
-                    <h2 className='text-lg font-semibold tracking-tight'>Connect to a WASM app</h2>
+                    <h2 className='text-lg font-semibold tracking-tight'>Connect to an app</h2>
                     <p className='mt-1 text-sm text-black/55 dark:text-white/55'>
                         Enter an app name to explore its attestation and API through the Privasys gateway.
                     </p>
@@ -187,14 +186,11 @@ export function ConnectScreen({ onConnect }: { onConnect: (_c: ConnectionConfig)
                     <button
                         type='button'
                         onClick={handleConnect}
-                        className='mt-6 w-full rounded-lg bg-black text-white dark:bg-white dark:text-black px-4 py-2.5 text-sm font-semibold hover:opacity-90 transition-opacity'
+                        className='mt-6 w-full rounded-lg bg-gradient-to-br from-[#34E89E] to-[#00BCF2] text-[#0F172A] px-4 py-2.5 text-sm font-semibold hover:opacity-90 transition-opacity'
                     >
                         Connect
                     </button>
                 </div>
-
-                {/* File-hash tile */}
-                <FileHashTile />
             </div>
         </div>
     );

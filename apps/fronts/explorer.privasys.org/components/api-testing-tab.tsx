@@ -165,9 +165,9 @@ export function ApiTestingTab({ connection, fido2, fido2Actions }: { connection:
             if (data && data.status === 'error' && typeof data.message === 'string' && data.message.includes('session token expired')) {
                 fido2Actions.expireLocally();
                 setElapsed(ms);
-                setError('Session expired — please sign in again.');
+                setError('Session expired. Please sign in again.');
                 setResponseStatus('error');
-                pushHistory({ func: fn.name, params: { ...paramValues }, response: 'Session expired — please sign in again.', status: 'error', elapsed: ms, timestamp: new Date() });
+                pushHistory({ func: fn.name, params: { ...paramValues }, response: 'Session expired. Please sign in again.', status: 'error', elapsed: ms, timestamp: new Date() });
                 return;
             }
             const json = JSON.stringify(data, null, 2);
