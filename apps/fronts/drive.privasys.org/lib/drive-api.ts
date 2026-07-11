@@ -1,7 +1,7 @@
 // Client for the Privasys Drive enclave backend.
 //
 // The browser reaches Drive over a DEDICATED SEALED SESSION (PrivasysSession
-// from @privasys/auth) — never plain fetch. File bytes and metadata are
+// from @privasys/auth) - never plain fetch. File bytes and metadata are
 // sealed browser->enclave (CBOR-AES-GCM); the gateway only ever sees
 // ciphertext. Drive authenticates the sealed session itself: the enclave
 // relay asserts the wallet-vouched sub (X-Privasys-Sub) toward the app, so

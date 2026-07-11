@@ -1,6 +1,6 @@
 'use client';
 
-// DriveProvider — owns the sealed session to the Drive enclave and the
+// DriveProvider - owns the sealed session to the Drive enclave and the
 // caller's personal drive (tenant). Wraps the wallet auth context.
 //
 // Flow: the user signs in with `sessionRelayHost = driveHost()`, so the
@@ -22,6 +22,20 @@ import {
 import type { SealedSession } from '@privasys/auth';
 import { useAuth } from './privasys-auth';
 import { driveHost, ensurePersonalTenant, getMe, type Me, type Tenant } from './drive-api';
+import { fetchUserProfile, type UserProfile } from './me-api';
+
+/** Best display name for the signed-in user, falling back gracefully. */
+export function displayName(profile: UserProfile | null, me: Me | null): string {
+    return (
+        profile?.display_name ||
+        profile?.name ||
+        profile?.display_email ||
+        profile?.email ||
+        me?.email ||
+        me?.sub ||
+        ''
+    );
+}
 
 export type DriveStatus =
     | 'signed-out'
@@ -36,8 +50,11 @@ interface DriveContextValue {
     error: string | null;
     session: SealedSession | null;
     me: Me | null;
+    profile: UserProfile | null;
+    name: string; // best display name for the signed-in user
     tenant: Tenant | null; // the active workspace (personal drive for v1)
     signIn: () => Promise<void>;
+    signInInto: (el: HTMLElement) => Promise<void>;
     signOut: () => void;
     /** Re-request the wallet approval when no sealed voucher exists yet. */
     approve: () => Promise<void>;
@@ -48,8 +65,11 @@ const DriveContext = createContext<DriveContextValue>({
     error: null,
     session: null,
     me: null,
+    profile: null,
+    name: '',
     tenant: null,
     signIn: async () => {},
+    signInInto: async () => {},
     signOut: () => {},
     approve: async () => {}
 });
@@ -65,6 +85,7 @@ export function DriveProvider({ children }: { children: ReactNode }) {
     const [error, setError] = useState<string | null>(null);
     const [session, setSession] = useState<SealedSession | null>(null);
     const [me, setMe] = useState<Me | null>(null);
+    const [profile, setProfile] = useState<UserProfile | null>(null);
     const [tenant, setTenant] = useState<Tenant | null>(null);
     const bootstrapping = useRef(false);
 
@@ -75,8 +96,18 @@ export function DriveProvider({ children }: { children: ReactNode }) {
             setTenant(tenantRes);
             setSession(s);
             setStatus('ready');
+            // Profile (real name) lives behind the management-service /me,
+            // not the sealed identity (the relay asserts only the sub).
+            const token = auth.session?.accessToken;
+            if (token) {
+                fetchUserProfile(token)
+                    .then(setProfile)
+                    .catch(() => {
+                        /* name is a nicety; fall back to email/sub */
+                    });
+            }
         },
-        []
+        [auth.session?.accessToken]
     );
 
     // Resolve the sealed Drive session whenever the wallet session changes.
@@ -133,6 +164,23 @@ export function DriveProvider({ children }: { children: ReactNode }) {
         }
     }, [auth, host]);
 
+    // Inline ceremony: the wallet SDK renders its own sign-in surface
+    // (install-the-wallet / connect-with-passkey) into the container.
+    const signInInto = useCallback(
+        async (el: HTMLElement) => {
+            setError(null);
+            try {
+                await auth.signInInto(el, { sessionRelayHost: host });
+            } catch (e) {
+                if (e instanceof Error && e.message !== 'Authentication cancelled') {
+                    setError(e.message);
+                    setStatus('error');
+                }
+            }
+        },
+        [auth, host]
+    );
+
     const approve = useCallback(async () => {
         if (bootstrapping.current) return;
         bootstrapping.current = true;
@@ -158,13 +206,26 @@ export function DriveProvider({ children }: { children: ReactNode }) {
         auth.signOut();
         setSession(null);
         setMe(null);
+        setProfile(null);
         setTenant(null);
         setStatus('signed-out');
     }, [auth]);
 
     return (
         <DriveContext.Provider
-            value={{ status, error, session, me, tenant, signIn, signOut, approve }}
+            value={{
+                status,
+                error,
+                session,
+                me,
+                profile,
+                name: displayName(profile, me),
+                tenant,
+                signIn,
+                signInInto,
+                signOut,
+                approve
+            }}
         >
             {children}
         </DriveContext.Provider>
