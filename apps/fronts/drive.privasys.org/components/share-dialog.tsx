@@ -6,14 +6,12 @@ import {
     getPermissions,
     revokeGrant,
     setNodeACL,
-    shareWithUser,
     type DriveNode,
     type NodePermissions,
-    type Scope,
     type TenantKind
 } from '~/lib/drive-api';
 import { avatarColor, granteeLabel, initials } from '~/lib/format';
-import { CloseIcon, FolderIcon, FileIcon, LockIcon, TrashIcon } from './icons';
+import { CloseIcon, FolderIcon, FileIcon, LinkIcon, LockIcon, TrashIcon } from './icons';
 
 // Tenant member roles an enterprise folder ACL can narrow to.
 const ROLE_OPTIONS = ['owner', 'admin', 'contributor', 'reader'] as const;
@@ -38,10 +36,6 @@ export function ShareDialog({
     const [error, setError] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
 
-    // Add-person form
-    const [grantee, setGrantee] = useState('');
-    const [role, setRole] = useState<'viewer' | 'editor'>('viewer');
-
     const load = useCallback(async () => {
         setLoading(true);
         try {
@@ -60,23 +54,6 @@ export function ShareDialog({
     const activeGrants = (perms?.grants ?? []).filter(
         (g) => !g.revoked && g.subject.startsWith('subject:')
     );
-
-    const share = async () => {
-        const sub = grantee.trim();
-        if (!sub) return;
-        setBusy(true);
-        setError(null);
-        try {
-            const scope: Scope[] = role === 'editor' ? ['read', 'write'] : ['read'];
-            await shareWithUser(session, tenantID, node.id, sub, scope);
-            setGrantee('');
-            await load();
-        } catch (e) {
-            setError(e instanceof Error ? e.message : 'Could not share.');
-        } finally {
-            setBusy(false);
-        }
-    };
 
     const revoke = async (grantID: string) => {
         setBusy(true);
@@ -137,33 +114,33 @@ export function ShareDialog({
                         </div>
                     )}
 
-                    {/* Add people */}
-                    <label className="mb-1.5 block text-sm font-medium">Add people</label>
-                    <div className="flex gap-2">
-                        <input
-                            value={grantee}
-                            onChange={(e) => setGrantee(e.target.value)}
-                            onKeyDown={(e) => e.key === 'Enter' && void share()}
-                            placeholder="Recipient's Privasys ID"
-                            className="min-w-0 flex-1 rounded-lg border px-3 py-2 text-sm outline-none focus:border-[var(--drv-accent)]"
-                            style={{ borderColor: 'var(--drv-border)', background: 'var(--drv-surface)' }}
-                        />
-                        <select
-                            value={role}
-                            onChange={(e) => setRole(e.target.value as 'viewer' | 'editor')}
-                            className="rounded-lg border px-2 py-2 text-sm outline-none"
-                            style={{ borderColor: 'var(--drv-border)', background: 'var(--drv-surface)' }}
-                        >
-                            <option value="viewer">Viewer</option>
-                            <option value="editor">Editor</option>
-                        </select>
-                        <button
-                            onClick={() => void share()}
-                            disabled={busy || !grantee.trim()}
-                            className="drv-btn-primary rounded-lg px-4 py-2 text-sm disabled:opacity-50"
-                        >
-                            Share
-                        </button>
+                    {/* Share with a link. Privasys holds no names or email
+                        addresses, so there is nobody to "add" by identity;
+                        sharing is by link instead. */}
+                    <div className="rounded-xl border p-4" style={{ borderColor: 'var(--drv-border)' }}>
+                        <div className="flex items-center gap-2 text-sm font-medium">
+                            <LinkIcon width={18} height={18} style={{ color: 'var(--drv-accent)' }} />
+                            Share with a link
+                        </div>
+                        <p className="mt-1.5 text-xs" style={{ color: 'var(--drv-text-muted)' }}>
+                            A link keeps this {node.kind === 'folder' ? 'folder' : 'file'} sealed
+                            inside the enclave. The recipient opens it with the Privasys Wallet,
+                            or a passkey if they do not have the wallet yet.
+                        </p>
+                        <div className="mt-3 space-y-2">
+                            <LinkMode
+                                title="Anyone with the link"
+                                body="Whoever holds the link can open it after signing in. Best for wide, low-sensitivity sharing."
+                            />
+                            <LinkMode
+                                title="Restricted to people you approve"
+                                body="You choose which attributes the visitor must present (name, verified email, government-ID name) and approve each request. No email lists, no stored identities."
+                            />
+                        </div>
+                        <p className="mt-3 text-xs" style={{ color: 'var(--drv-text-muted)' }}>
+                            Link generation is rolling out next. Until then, existing access is
+                            listed below and can be revoked.
+                        </p>
                     </div>
 
                     {/* People with access */}
@@ -239,6 +216,20 @@ export function ShareDialog({
                         Done
                     </button>
                 </div>
+            </div>
+        </div>
+    );
+}
+
+function LinkMode({ title, body }: { title: string; body: string }) {
+    return (
+        <div
+            className="rounded-lg border px-3 py-2.5"
+            style={{ borderColor: 'var(--drv-border)', background: 'var(--drv-surface-2)' }}
+        >
+            <div className="text-[13px] font-medium">{title}</div>
+            <div className="mt-0.5 text-xs" style={{ color: 'var(--drv-text-muted)' }}>
+                {body}
             </div>
         </div>
     );
