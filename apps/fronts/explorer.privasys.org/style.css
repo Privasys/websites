@@ -1179,24 +1179,32 @@ textarea.param-input { resize: vertical; min-height: 60px; }
 }
 
 /* ── File hash tile ─────────────────────────────── */
-.hash-card { margin-top: 20px; }
+.hash-card { margin-top: 28px; }
+.hash-card select { margin-bottom: 14px; }
 .hash-drop {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 8px;
-    padding: 28px 20px;
+    gap: 5px;
+    padding: 20px;
     border: 1.5px dashed var(--border);
     border-radius: var(--radius-sm);
     text-align: center;
     cursor: pointer;
-    transition: border-color 0.15s, background 0.15s;
+    color: var(--muted);
+    transition: border-color 0.15s, background 0.15s, color 0.15s;
 }
 .hash-drop:hover,
-.hash-drop:focus-visible { border-color: var(--blue); background: var(--blue-bg); outline: none; }
-.hash-drop.dragover { border-color: var(--blue); background: var(--blue-bg); }
-.hash-drop-icon { width: 30px; height: 30px; color: var(--muted); }
-.hash-drop-text { font-size: 13px; color: var(--fg); }
+.hash-drop:focus-visible,
+.hash-drop.dragover {
+    border-color: var(--blue);
+    background: var(--blue-bg);
+    color: var(--blue);
+    outline: none;
+}
+.hash-drop-icon { width: 20px; height: 20px; }
+.hash-drop-title { font-size: 13px; color: var(--fg); }
+.hash-drop-sub { font-size: 11px; color: var(--muted); }
 .hash-browse { color: var(--blue); text-decoration: underline; }
 .hash-result { margin-top: 16px; }
 .hash-file {

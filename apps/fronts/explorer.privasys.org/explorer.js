@@ -1,5 +1,5 @@
 /* WASM App Explorer — standalone attestation & API testing */
-/* global Privasys */
+/* global Privasys, hashwasm */
 (function () {
     'use strict';
 
@@ -88,84 +88,30 @@
         navigator.clipboard.writeText(text).catch(function () {});
     }
 
-    // ── File hashing (streaming SHA-256) ───────────
-    // Pure-JS incremental SHA-256 (FIPS 180-4). crypto.subtle has no
-    // incremental API, so to hash arbitrarily large files we feed bounded
-    // chunks through this — the whole file is never held in memory. Verified
-    // against the standard test vectors and crypto.subtle before shipping.
-    function createSha256() {
-        const K = new Uint32Array([
-            0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
-            0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
-            0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
-            0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
-            0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
-            0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
-            0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
-            0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
-        ]);
-        const H = new Uint32Array([0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19]);
-        const W = new Uint32Array(64);
-        const block = new Uint8Array(64);
-        let blockLen = 0;
-        let totalLen = 0;
-        function processBlock(buf, off) {
-            for (let i = 0; i < 16; i++) {
-                W[i] = (buf[off + i * 4] << 24) | (buf[off + i * 4 + 1] << 16) | (buf[off + i * 4 + 2] << 8) | buf[off + i * 4 + 3];
-            }
-            for (let i = 16; i < 64; i++) {
-                const x = W[i - 15], y = W[i - 2];
-                const s0 = ((x >>> 7) | (x << 25)) ^ ((x >>> 18) | (x << 14)) ^ (x >>> 3);
-                const s1 = ((y >>> 17) | (y << 15)) ^ ((y >>> 19) | (y << 13)) ^ (y >>> 10);
-                W[i] = (W[i - 16] + s0 + W[i - 7] + s1) | 0;
-            }
-            let a = H[0], b = H[1], c = H[2], d = H[3], e = H[4], f = H[5], g = H[6], hh = H[7];
-            for (let i = 0; i < 64; i++) {
-                const S1 = ((e >>> 6) | (e << 26)) ^ ((e >>> 11) | (e << 21)) ^ ((e >>> 25) | (e << 7));
-                const ch = (e & f) ^ (~e & g);
-                const t1 = (hh + S1 + ch + K[i] + W[i]) | 0;
-                const S0 = ((a >>> 2) | (a << 30)) ^ ((a >>> 13) | (a << 19)) ^ ((a >>> 22) | (a << 10));
-                const maj = (a & b) ^ (a & c) ^ (b & c);
-                const t2 = (S0 + maj) | 0;
-                hh = g; g = f; f = e; e = (d + t1) | 0; d = c; c = b; b = a; a = (t1 + t2) | 0;
-            }
-            H[0] = (H[0] + a) | 0; H[1] = (H[1] + b) | 0; H[2] = (H[2] + c) | 0; H[3] = (H[3] + d) | 0;
-            H[4] = (H[4] + e) | 0; H[5] = (H[5] + f) | 0; H[6] = (H[6] + g) | 0; H[7] = (H[7] + hh) | 0;
-        }
-        return {
-            update(data) {
-                totalLen += data.length;
-                let i = 0;
-                if (blockLen > 0) {
-                    while (blockLen < 64 && i < data.length) block[blockLen++] = data[i++];
-                    if (blockLen === 64) { processBlock(block, 0); blockLen = 0; }
-                }
-                for (; i + 64 <= data.length; i += 64) processBlock(data, i);
-                while (i < data.length) block[blockLen++] = data[i++];
-            },
-            digestHex() {
-                // 64-bit big-endian bit length (correct past 2^32 bits, i.e. > 512 MB).
-                const hi = Math.floor(totalLen / 0x20000000) >>> 0;
-                const lo = (totalLen * 8) >>> 0;
-                block[blockLen++] = 0x80;
-                if (blockLen > 56) { while (blockLen < 64) block[blockLen++] = 0; processBlock(block, 0); blockLen = 0; }
-                while (blockLen < 56) block[blockLen++] = 0;
-                block[56] = (hi >>> 24) & 0xff; block[57] = (hi >>> 16) & 0xff; block[58] = (hi >>> 8) & 0xff; block[59] = hi & 0xff;
-                block[60] = (lo >>> 24) & 0xff; block[61] = (lo >>> 16) & 0xff; block[62] = (lo >>> 8) & 0xff; block[63] = lo & 0xff;
-                processBlock(block, 0);
-                let out = '';
-                for (let i = 0; i < 8; i++) out += (H[i] >>> 0).toString(16).padStart(8, '0');
-                return out;
-            }
-        };
-    }
+    // ── File hashing (streaming, hash-wasm) ───────────
+    // Uses the vendored hash-wasm UMD bundle (global `hashwasm`, wasm embedded)
+    // for fast, correct, multi-algorithm hashing. crypto.subtle has no
+    // incremental API, so we stream the file through hash-wasm's incremental
+    // hashers in bounded chunks — the whole file is never held in memory.
+    const HASH_ALGOS = {
+        'sha256':      { label: 'SHA-256',     create: function () { return hashwasm.createSHA256(); } },
+        'sha1':        { label: 'SHA-1',       create: function () { return hashwasm.createSHA1(); } },
+        'sha384':      { label: 'SHA-384',     create: function () { return hashwasm.createSHA384(); } },
+        'sha512':      { label: 'SHA-512',     create: function () { return hashwasm.createSHA512(); } },
+        'sha3-256':    { label: 'SHA3-256',    create: function () { return hashwasm.createSHA3(256); } },
+        'blake2b-256': { label: 'BLAKE2b-256', create: function () { return hashwasm.createBLAKE2b(256); } },
+        'blake3':      { label: 'BLAKE3',      create: function () { return hashwasm.createBLAKE3(); } },
+        'md5':         { label: 'MD5',         create: function () { return hashwasm.createMD5(); } }
+    };
 
     // Read `file` in bounded slices (so a multi-GB file never sits in memory)
-    // and stream the bytes through SHA-256. onProgress(done, total) fires per
-    // chunk. Returns the lowercase hex digest.
-    async function hashFileStreaming(file, onProgress) {
+    // and stream the bytes through the chosen hash-wasm hasher. onProgress(done,
+    // total) fires per chunk. Returns the lowercase hex digest.
+    async function hashFileStreaming(file, algoKey, onProgress) {
+        const spec = HASH_ALGOS[algoKey] || HASH_ALGOS.sha256;
+        const hasher = await spec.create();
+        hasher.init();
         const CHUNK = 8 * 1024 * 1024; // 8 MB resident at a time
-        const hasher = createSha256();
         let offset = 0;
         while (offset < file.size) {
             const end = Math.min(offset + CHUNK, file.size);
@@ -174,7 +120,7 @@
             offset = end;
             if (onProgress) onProgress(offset, file.size);
         }
-        return hasher.digestHex();
+        return hasher.digest('hex');
     }
 
     function formatBytes(n) {
@@ -185,15 +131,22 @@
         return v.toFixed(v >= 100 ? 0 : 1) + ' ' + units[u];
     }
 
-    // Wire up the "Compute a file hash" tile on the connect screen: drag-drop
-    // or click-to-browse, then stream the file through SHA-256 with a progress
-    // bar. Independent of any app connection.
+    // Wire up the "Compute a file hash" tile on the connect screen: drag a file
+    // onto the drop zone (or click to browse), then stream it through the chosen
+    // hash with a progress bar. Independent of any app connection.
     function setupFileHash() {
         const drop = $('#hash-drop');
         const input = $('#hash-file-input');
         const result = $('#hash-result');
+        const algoSelect = $('#hash-algo-select');
         if (!drop || !input || !result) return;
         let busy = false;
+
+        // A file dropped anywhere else on the page would make the browser
+        // navigate to it. Swallow drops document-wide so only the drop zone acts.
+        ['dragover', 'drop'].forEach(function (ev) {
+            document.addEventListener(ev, function (e) { e.preventDefault(); });
+        });
 
         function openPicker() { if (!busy) input.click(); }
         drop.addEventListener('click', openPicker);
@@ -207,9 +160,10 @@
             drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.add('dragover'); });
         });
         ['dragleave', 'dragend', 'drop'].forEach(function (ev) {
-            drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.remove('dragover'); });
+            drop.addEventListener(ev, function () { drop.classList.remove('dragover'); });
         });
         drop.addEventListener('drop', function (e) {
+            e.preventDefault();
             const dt = e.dataTransfer;
             if (dt && dt.files && dt.files[0]) handleFile(dt.files[0]);
         });
@@ -218,6 +172,8 @@
             if (busy) return;
             busy = true;
             input.value = ''; // let the same file be re-selected later
+            const algoKey = (algoSelect && algoSelect.value) || 'sha256';
+            const algoLabel = (HASH_ALGOS[algoKey] || HASH_ALGOS.sha256).label;
             result.hidden = false;
             result.textContent = '';
             const bar = h('div', { className: 'hash-progress-bar' });
@@ -230,7 +186,7 @@
             result.appendChild(meta);
             const started = Date.now();
             try {
-                const hex = await hashFileStreaming(file, function (done, total) {
+                const hex = await hashFileStreaming(file, algoKey, function (done, total) {
                     const pct = total ? Math.round(done / total * 100) : 100;
                     bar.style.width = pct + '%';
                     meta.textContent = 'Reading… ' + pct + '%  (' + formatBytes(done) + ' / ' + formatBytes(total) + ')';
@@ -239,7 +195,7 @@
                 bar.style.width = '100%';
                 meta.textContent = 'Hashed ' + formatBytes(file.size) + ' locally in ' + secs.toFixed(1) + 's';
                 result.appendChild(h('div', { className: 'hash-out' },
-                    h('div', { className: 'hash-out-label' }, 'SHA-256'),
+                    h('div', { className: 'hash-out-label' }, algoLabel),
                     h('div', { className: 'hash-out-row' },
                         h('span', { className: 'hash-value' }, hex),
                         h('button', { className: 'copy-btn', title: 'Copy', onClick: function () { copyText(hex); } }, '⧉')
@@ -247,7 +203,7 @@
                 ));
             } catch (err) {
                 result.appendChild(h('div', { className: 'hash-error' },
-                    'Could not read the file: ' + ((err && err.message) || err)));
+                    'Could not hash the file: ' + ((err && err.message) || err)));
             } finally {
                 busy = false;
             }

@@ -141,6 +141,7 @@ const baseConfig = [
             '**/template/',
             '**/app/(website)/**',
             '**/*.d.ts',
+            '**/*.min.js',
             '**/utils/**',
             '**/vendor/',
             '**/web-build/',
