@@ -88,6 +88,172 @@
         navigator.clipboard.writeText(text).catch(function () {});
     }
 
+    // ── File hashing (streaming SHA-256) ───────────
+    // Pure-JS incremental SHA-256 (FIPS 180-4). crypto.subtle has no
+    // incremental API, so to hash arbitrarily large files we feed bounded
+    // chunks through this — the whole file is never held in memory. Verified
+    // against the standard test vectors and crypto.subtle before shipping.
+    function createSha256() {
+        const K = new Uint32Array([
+            0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+            0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+            0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+            0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+            0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+            0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+            0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+            0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
+        ]);
+        const H = new Uint32Array([0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19]);
+        const W = new Uint32Array(64);
+        const block = new Uint8Array(64);
+        let blockLen = 0;
+        let totalLen = 0;
+        function processBlock(buf, off) {
+            for (let i = 0; i < 16; i++) {
+                W[i] = (buf[off + i * 4] << 24) | (buf[off + i * 4 + 1] << 16) | (buf[off + i * 4 + 2] << 8) | buf[off + i * 4 + 3];
+            }
+            for (let i = 16; i < 64; i++) {
+                const x = W[i - 15], y = W[i - 2];
+                const s0 = ((x >>> 7) | (x << 25)) ^ ((x >>> 18) | (x << 14)) ^ (x >>> 3);
+                const s1 = ((y >>> 17) | (y << 15)) ^ ((y >>> 19) | (y << 13)) ^ (y >>> 10);
+                W[i] = (W[i - 16] + s0 + W[i - 7] + s1) | 0;
+            }
+            let a = H[0], b = H[1], c = H[2], d = H[3], e = H[4], f = H[5], g = H[6], hh = H[7];
+            for (let i = 0; i < 64; i++) {
+                const S1 = ((e >>> 6) | (e << 26)) ^ ((e >>> 11) | (e << 21)) ^ ((e >>> 25) | (e << 7));
+                const ch = (e & f) ^ (~e & g);
+                const t1 = (hh + S1 + ch + K[i] + W[i]) | 0;
+                const S0 = ((a >>> 2) | (a << 30)) ^ ((a >>> 13) | (a << 19)) ^ ((a >>> 22) | (a << 10));
+                const maj = (a & b) ^ (a & c) ^ (b & c);
+                const t2 = (S0 + maj) | 0;
+                hh = g; g = f; f = e; e = (d + t1) | 0; d = c; c = b; b = a; a = (t1 + t2) | 0;
+            }
+            H[0] = (H[0] + a) | 0; H[1] = (H[1] + b) | 0; H[2] = (H[2] + c) | 0; H[3] = (H[3] + d) | 0;
+            H[4] = (H[4] + e) | 0; H[5] = (H[5] + f) | 0; H[6] = (H[6] + g) | 0; H[7] = (H[7] + hh) | 0;
+        }
+        return {
+            update(data) {
+                totalLen += data.length;
+                let i = 0;
+                if (blockLen > 0) {
+                    while (blockLen < 64 && i < data.length) block[blockLen++] = data[i++];
+                    if (blockLen === 64) { processBlock(block, 0); blockLen = 0; }
+                }
+                for (; i + 64 <= data.length; i += 64) processBlock(data, i);
+                while (i < data.length) block[blockLen++] = data[i++];
+            },
+            digestHex() {
+                // 64-bit big-endian bit length (correct past 2^32 bits, i.e. > 512 MB).
+                const hi = Math.floor(totalLen / 0x20000000) >>> 0;
+                const lo = (totalLen * 8) >>> 0;
+                block[blockLen++] = 0x80;
+                if (blockLen > 56) { while (blockLen < 64) block[blockLen++] = 0; processBlock(block, 0); blockLen = 0; }
+                while (blockLen < 56) block[blockLen++] = 0;
+                block[56] = (hi >>> 24) & 0xff; block[57] = (hi >>> 16) & 0xff; block[58] = (hi >>> 8) & 0xff; block[59] = hi & 0xff;
+                block[60] = (lo >>> 24) & 0xff; block[61] = (lo >>> 16) & 0xff; block[62] = (lo >>> 8) & 0xff; block[63] = lo & 0xff;
+                processBlock(block, 0);
+                let out = '';
+                for (let i = 0; i < 8; i++) out += (H[i] >>> 0).toString(16).padStart(8, '0');
+                return out;
+            }
+        };
+    }
+
+    // Read `file` in bounded slices (so a multi-GB file never sits in memory)
+    // and stream the bytes through SHA-256. onProgress(done, total) fires per
+    // chunk. Returns the lowercase hex digest.
+    async function hashFileStreaming(file, onProgress) {
+        const CHUNK = 8 * 1024 * 1024; // 8 MB resident at a time
+        const hasher = createSha256();
+        let offset = 0;
+        while (offset < file.size) {
+            const end = Math.min(offset + CHUNK, file.size);
+            const buf = await file.slice(offset, end).arrayBuffer();
+            hasher.update(new Uint8Array(buf));
+            offset = end;
+            if (onProgress) onProgress(offset, file.size);
+        }
+        return hasher.digestHex();
+    }
+
+    function formatBytes(n) {
+        if (n < 1024) return n + ' B';
+        const units = ['KB', 'MB', 'GB', 'TB'];
+        let u = -1, v = n;
+        do { v /= 1024; u++; } while (v >= 1024 && u < units.length - 1);
+        return v.toFixed(v >= 100 ? 0 : 1) + ' ' + units[u];
+    }
+
+    // Wire up the "Compute a file hash" tile on the connect screen: drag-drop
+    // or click-to-browse, then stream the file through SHA-256 with a progress
+    // bar. Independent of any app connection.
+    function setupFileHash() {
+        const drop = $('#hash-drop');
+        const input = $('#hash-file-input');
+        const result = $('#hash-result');
+        if (!drop || !input || !result) return;
+        let busy = false;
+
+        function openPicker() { if (!busy) input.click(); }
+        drop.addEventListener('click', openPicker);
+        drop.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openPicker(); }
+        });
+        input.addEventListener('change', function () {
+            if (input.files && input.files[0]) handleFile(input.files[0]);
+        });
+        ['dragenter', 'dragover'].forEach(function (ev) {
+            drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.add('dragover'); });
+        });
+        ['dragleave', 'dragend', 'drop'].forEach(function (ev) {
+            drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.remove('dragover'); });
+        });
+        drop.addEventListener('drop', function (e) {
+            const dt = e.dataTransfer;
+            if (dt && dt.files && dt.files[0]) handleFile(dt.files[0]);
+        });
+
+        async function handleFile(file) {
+            if (busy) return;
+            busy = true;
+            input.value = ''; // let the same file be re-selected later
+            result.hidden = false;
+            result.textContent = '';
+            const bar = h('div', { className: 'hash-progress-bar' });
+            const meta = h('div', { className: 'hash-meta' }, 'Reading… 0%');
+            result.appendChild(h('div', { className: 'hash-file' },
+                h('span', { className: 'hash-filename' }, file.name || '(unnamed file)'),
+                h('span', { className: 'hash-size' }, formatBytes(file.size))
+            ));
+            result.appendChild(h('div', { className: 'hash-progress-track' }, bar));
+            result.appendChild(meta);
+            const started = Date.now();
+            try {
+                const hex = await hashFileStreaming(file, function (done, total) {
+                    const pct = total ? Math.round(done / total * 100) : 100;
+                    bar.style.width = pct + '%';
+                    meta.textContent = 'Reading… ' + pct + '%  (' + formatBytes(done) + ' / ' + formatBytes(total) + ')';
+                });
+                const secs = (Date.now() - started) / 1000;
+                bar.style.width = '100%';
+                meta.textContent = 'Hashed ' + formatBytes(file.size) + ' locally in ' + secs.toFixed(1) + 's';
+                result.appendChild(h('div', { className: 'hash-out' },
+                    h('div', { className: 'hash-out-label' }, 'SHA-256'),
+                    h('div', { className: 'hash-out-row' },
+                        h('span', { className: 'hash-value' }, hex),
+                        h('button', { className: 'copy-btn', title: 'Copy', onClick: function () { copyText(hex); } }, '⧉')
+                    )
+                ));
+            } catch (err) {
+                result.appendChild(h('div', { className: 'hash-error' },
+                    'Could not read the file: ' + ((err && err.message) || err)));
+            } finally {
+                busy = false;
+            }
+        }
+    }
+
     async function apiFetch(path, opts) {
         const url = baseUrl.replace(/\/+$/, '') + path;
         const headers = { 'Content-Type': 'application/json' };
@@ -1278,6 +1444,7 @@
     // ── Init ───────────────────────────────────────
     document.addEventListener('DOMContentLoaded', function () {
         $('#connect-btn').addEventListener('click', handleConnect);
+        setupFileHash();
         var ids = ['endpoint-input', 'base-url-input', 'app-name-input', 'attestation-url-input', 'attestation-token-input', 'broker-url-input'];
         for (var i = 0; i < ids.length; i++) {
             var el = $('#' + ids[i]);
