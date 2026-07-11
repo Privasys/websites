@@ -1,33 +1,39 @@
 @import 'tailwindcss';
 @import '@privasys/ui/styles.css';
 
-
 :root {
     color-scheme: light dark;
 
-    /* Drive design tokens (Google Drive / SharePoint inspired). */
-    --drv-accent: #1a73e8;
-    --drv-accent-weak: #e8f0fe;
+    /* Privasys brand palette (see .operations/brand-identity.md). */
+    --drv-green: #34e89e;
+    --drv-blue: #00bcf2;
+    --drv-navy: #0f172a;
+    --drv-slate: #64748b;
+    --drv-gradient: linear-gradient(135deg, #34e89e 0%, #00bcf2 100%);
+
+    /* Drive UI tokens derived from the brand palette. */
+    --drv-accent: #00bcf2;
+    --drv-accent-weak: #e2f8ff;
     --drv-surface: #ffffff;
-    --drv-surface-2: #f8f9fa;
-    --drv-border: rgba(0, 0, 0, 0.08);
-    --drv-text: #202124;
-    --drv-text-muted: #5f6368;
-    --drv-hover: rgba(26, 115, 232, 0.06);
-    --drv-selected: rgba(26, 115, 232, 0.12);
+    --drv-surface-2: #f8fafc;
+    --drv-border: #e2e8f0;
+    --drv-text: #0f172a;
+    --drv-text-muted: #64748b;
+    --drv-hover: rgba(0, 188, 242, 0.07);
+    --drv-selected: rgba(0, 188, 242, 0.14);
 }
 
 @media (prefers-color-scheme: dark) {
     :root {
-        --drv-accent: #8ab4f8;
-        --drv-accent-weak: #1e2a3a;
-        --drv-surface: #1f1f1f;
-        --drv-surface-2: #171717;
-        --drv-border: rgba(255, 255, 255, 0.1);
-        --drv-text: #e8eaed;
-        --drv-text-muted: #9aa0a6;
-        --drv-hover: rgba(138, 180, 248, 0.08);
-        --drv-selected: rgba(138, 180, 248, 0.16);
+        --drv-accent: #34e89e;
+        --drv-accent-weak: #12313a;
+        --drv-surface: #0f172a;
+        --drv-surface-2: #0b1220;
+        --drv-border: rgba(226, 232, 240, 0.12);
+        --drv-text: #e2e8f0;
+        --drv-text-muted: #94a3b8;
+        --drv-hover: rgba(52, 232, 158, 0.08);
+        --drv-selected: rgba(52, 232, 158, 0.16);
     }
 }
 
@@ -39,6 +45,16 @@ body {
     font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
     background: var(--drv-surface-2);
     color: var(--drv-text);
+}
+
+/* Brand-gradient primary button. */
+.drv-btn-primary {
+    background: var(--drv-gradient);
+    color: #052235;
+    font-weight: 600;
+}
+.drv-btn-primary:hover {
+    opacity: 0.92;
 }
 
 /* Subtle scrollbars for the file panes. */

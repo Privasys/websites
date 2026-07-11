@@ -160,8 +160,7 @@ export function ShareDialog({
                         <button
                             onClick={() => void share()}
                             disabled={busy || !grantee.trim()}
-                            className="rounded-lg px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-                            style={{ background: 'var(--drv-accent)' }}
+                            className="drv-btn-primary rounded-lg px-4 py-2 text-sm disabled:opacity-50"
                         >
                             Share
                         </button>
@@ -320,8 +319,7 @@ function FolderACL({
             <button
                 onClick={() => onSave(roles)}
                 disabled={busy}
-                className="mt-3 rounded-full px-4 py-1.5 text-sm font-medium text-white disabled:opacity-50"
-                style={{ background: 'var(--drv-accent)' }}
+                className="drv-btn-primary mt-3 rounded-full px-4 py-1.5 text-sm disabled:opacity-50"
             >
                 {roles.length ? 'Save restriction' : 'Clear restriction'}
             </button>

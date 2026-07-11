@@ -49,6 +49,8 @@ export function FileBrowser({
     const [busy, setBusy] = useState(false);
     const [shareNode, setShareNode] = useState<DriveNode | null>(null);
     const [newFolder, setNewFolder] = useState(false);
+    const [dragging, setDragging] = useState(false);
+    const dragDepth = useRef(0);
     const fileInput = useRef<HTMLInputElement>(null);
 
     const current = path[path.length - 1];
@@ -134,7 +136,7 @@ export function FileBrowser({
     };
 
     const onDelete = async (n: DriveNode) => {
-        if (!confirm(`Delete “${n.name}”${n.kind === 'folder' ? ' and everything in it' : ''}?`))
+        if (!confirm(`Delete "${n.name}"${n.kind === 'folder' ? ' and everything in it' : ''}?`))
             return;
         setBusy(true);
         try {
@@ -147,12 +149,50 @@ export function FileBrowser({
         }
     };
 
+    // Drag-and-drop upload into the current folder.
+    const onDragEnter = (e: React.DragEvent) => {
+        if (!e.dataTransfer.types.includes('Files')) return;
+        e.preventDefault();
+        dragDepth.current += 1;
+        setDragging(true);
+    };
+    const onDragOver = (e: React.DragEvent) => {
+        if (e.dataTransfer.types.includes('Files')) e.preventDefault();
+    };
+    const onDragLeave = (e: React.DragEvent) => {
+        e.preventDefault();
+        dragDepth.current = Math.max(0, dragDepth.current - 1);
+        if (dragDepth.current === 0) setDragging(false);
+    };
+    const onDrop = (e: React.DragEvent) => {
+        e.preventDefault();
+        dragDepth.current = 0;
+        setDragging(false);
+        if (e.dataTransfer.files?.length) void onUpload(e.dataTransfer.files);
+    };
+
     return (
-        <div className="flex h-full flex-col">
+        <div
+            className="relative flex min-h-[calc(100vh-3.5rem)] flex-col"
+            onDragEnter={onDragEnter}
+            onDragOver={onDragOver}
+            onDragLeave={onDragLeave}
+            onDrop={onDrop}
+        >
+            {dragging && (
+                <div
+                    className="pointer-events-none absolute inset-3 z-30 flex items-center justify-center rounded-2xl border-2 border-dashed"
+                    style={{ borderColor: 'var(--drv-accent)', background: 'var(--drv-accent-weak)' }}
+                >
+                    <div className="flex items-center gap-2 text-sm font-medium" style={{ color: 'var(--drv-accent)' }}>
+                        <UploadIcon /> Drop files to upload to {current.name}
+                    </div>
+                </div>
+            )}
             {/* Toolbar */}
             <div
-                className="flex flex-wrap items-center gap-2 border-b px-4 py-3"
-                style={{ borderColor: 'var(--drv-border)' }}
+                className="sticky top-14 z-10 flex flex-wrap items-center gap-2 border-b px-4 py-3"
+                style={{ borderColor: 'var(--drv-border)', background: 'var(--drv-surface-2)' }}
             >
                 {/* Breadcrumbs */}
                 <nav className="flex min-w-0 flex-1 items-center gap-1 text-[15px]">
@@ -201,7 +241,7 @@ export function FileBrowser({
             {newFolder && <NewFolderRow onSubmit={onCreateFolder} onCancel={() => setNewFolder(false)} />}
 
             {/* Body */}
-            <div className="drv-scroll min-h-0 flex-1 overflow-auto p-4">
+            <div className="flex-1 p-4">
                 {loading ? (
                     <div className="py-20 text-center text-sm" style={{ color: 'var(--drv-text-muted)' }}>
                         Loading…
@@ -246,12 +286,8 @@ function ToolbarButton({
         <button
             onClick={onClick}
             disabled={disabled}
-            className="flex items-center gap-2 rounded-full px-3.5 py-2 text-sm font-medium transition-opacity disabled:opacity-50"
-            style={
-                primary
-                    ? { background: 'var(--drv-accent)', color: '#fff' }
-                    : { background: 'var(--drv-surface)', border: '1px solid var(--drv-border)' }
-            }
+            className={`flex items-center gap-2 rounded-full px-3.5 py-2 text-sm font-medium transition-opacity disabled:opacity-50${primary ? ' drv-btn-primary' : ''}`}
+            style={primary ? undefined : { background: 'var(--drv-surface)', border: '1px solid var(--drv-border)' }}
         >
             {icon}
             <span className="hidden md:inline">{label}</span>
@@ -308,7 +344,7 @@ function ListLayout({
                         {n.kind === 'folder' ? 'Folder' : kindLabel(n.name, n.mime_hint)}
                     </span>
                     <span className="hidden text-sm sm:block" style={{ color: 'var(--drv-text-muted)' }}>
-                        {n.kind === 'folder' ? '—' : formatBytes(n.size_bytes)}
+                        {n.kind === 'folder' ? '' : formatBytes(n.size_bytes)}
                     </span>
                     <div className="flex items-center justify-end gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
                         {n.kind === 'file' && <IconAction title="Download" onClick={() => onDownload(n)} icon={<DownloadIcon width={18} height={18} />} />}
@@ -395,7 +431,7 @@ function NewFolderRow({ onSubmit, onCancel }: { onSubmit: (name: string) => void
                 className="flex-1 rounded border px-2 py-1 text-sm outline-none"
                 style={{ borderColor: 'var(--drv-border)', background: 'var(--drv-surface)' }}
             />
-            <button onClick={() => onSubmit(name)} className="rounded-full px-3 py-1 text-sm font-medium text-white" style={{ background: 'var(--drv-accent)' }}>
+            <button onClick={() => onSubmit(name)} className="drv-btn-primary rounded-full px-3 py-1 text-sm">
                 Create
             </button>
             <button onClick={onCancel} className="rounded-full px-3 py-1 text-sm hover:bg-[var(--drv-hover)]">
@@ -415,8 +451,7 @@ function EmptyState({ onUpload }: { onUpload: () => void }) {
             </p>
             <button
                 onClick={onUpload}
-                className="mt-5 rounded-full px-4 py-2 text-sm font-medium text-white"
-                style={{ background: 'var(--drv-accent)' }}
+                className="drv-btn-primary mt-5 rounded-full px-4 py-2 text-sm"
             >
                 Upload files
             </button>
