@@ -1,0 +1,38 @@
+{
+    "name": "drive.privasys.org",
+    "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+    "sourceRoot": "apps/fronts/drive.privasys.org",
+    "projectType": "application",
+    "tags": [],
+    "targets": {
+        "build": {
+            "executor": "@nx/next:build",
+            "outputs": [
+                "{options.outputPath}"
+            ],
+            "defaultConfiguration": "production",
+            "options": {
+                "outputPath": "dist/apps/fronts/drive.privasys.org"
+            },
+            "configurations": {
+                "development": {
+                    "outputPath": "apps/fronts/drive.privasys.org"
+                },
+                "production": {}
+            }
+        },
+        "serve": {
+            "executor": "nx:run-commands",
+            "options": {
+                "command": "npx next dev -p 4215",
+                "cwd": "apps/fronts/drive.privasys.org"
+            }
+        },
+        "lint": {
+            "executor": "@nx/eslint:lint",
+            "outputs": [
+                "{options.outputFile}"
+            ]
+        }
+    }
+}

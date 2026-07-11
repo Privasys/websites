@@ -1,0 +1,128 @@
+name: Deploy drive.privasys.org to OVH
+
+# Deploys the static `drive.privasys.org` Next export to the OVH web host under
+# `/var/websites/drive.privasys.org/`, served by nginx. Mirrors
+# deploy-store.yml. DNS / the nginx server block for drive.privasys.org must
+# point at that directory (wired separately).
+#
+# The UI reaches the confidential Drive backend over a sealed session:
+#   NEXT_PUBLIC_DRIVE_APP_HOST = the Drive enclave hostname (relay app_host).
+#   NEXT_PUBLIC_API_BASE_URL   = the management-service the wallet SDK reads.
+# Defaults target the dev backend (drive-demo); pass inputs to point at a
+# production Drive instance.
+
+on:
+  workflow_dispatch:
+    inputs:
+      drive_host:
+        description: 'Drive enclave hostname the UI seals a session to'
+        required: false
+        type: string
+        default: 'drive-demo.apps-test.privasys.org'
+      api_base:
+        description: 'management-service base URL for the wallet SDK'
+        required: false
+        type: string
+        default: 'https://api-test.developer.privasys.org'
+      smoke:
+        description: 'Run post-deploy HTTP smoke test'
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: deploy-drive-privasys-org
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy drive.privasys.org
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      NEXT_TELEMETRY_DISABLED: 1
+      AWS_ACCESS_KEY_ID: ${{ secrets.NX_CACHE_AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.NX_CACHE_AWS_SECRET_ACCESS_KEY }}
+      NEXT_PUBLIC_API_BASE_URL: ${{ inputs.api_base }}
+      NEXT_PUBLIC_DRIVE_APP_HOST: ${{ inputs.drive_host }}
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.x
+          cache: yarn
+
+      - name: Install dependencies
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: yarn install --network-timeout 1000000 --immutable
+
+      - name: Build drive.privasys.org static export
+        run: |
+          set -euo pipefail
+          npx nx reset
+          npx nx run drive.privasys.org:build --skip-nx-cache
+          test -f dist/apps/fronts/drive.privasys.org/.next/index.html
+          test -d dist/apps/fronts/drive.privasys.org/.next/_next/static
+          echo "::group::Files to deploy"
+          find dist/apps/fronts/drive.privasys.org/.next -maxdepth 2 -type f | sort | head -200
+          echo "::endgroup::"
+
+      - name: Configure SSH
+        env:
+          OVH_SSH_KEY: ${{ secrets.OVH_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$OVH_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "${{ secrets.OVH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Stage build on OVH and publish atomically
+        env:
+          OVH_HOST: ${{ secrets.OVH_HOST }}
+          OVH_USER: ${{ secrets.OVH_USER }}
+          OVH_SSH_PORT: ${{ secrets.OVH_SSH_PORT }}
+        run: |
+          set -euo pipefail
+          PORT="${OVH_SSH_PORT:-22}"
+          DIST=dist/apps/fronts/drive.privasys.org/.next
+          TAG="$(date -u +%Y%m%d-%H%M%S)-${GITHUB_SHA::7}"
+          STAGING="drive-privasys-org-builds/${TAG}"
+          ssh -p "$PORT" -i ~/.ssh/id_ed25519 "${OVH_USER}@${OVH_HOST}" "mkdir -p ${STAGING}"
+          rsync -avz --delete \
+            -e "ssh -p ${PORT} -i ~/.ssh/id_ed25519" \
+            "${DIST}/" "${OVH_USER}@${OVH_HOST}:${STAGING}/"
+          ssh -p "$PORT" -i ~/.ssh/id_ed25519 "${OVH_USER}@${OVH_HOST}" "set -euo pipefail; \
+            cd \$HOME && \
+            sudo mkdir -p /var/websites/drive.privasys.org && \
+            sudo rsync -av --delete \
+              ${STAGING}/ /var/websites/drive.privasys.org/ && \
+            sudo nginx -t && sudo systemctl reload nginx"
+
+      - name: Smoke test
+        if: ${{ inputs.smoke }}
+        run: |
+          set -euo pipefail
+          ROOT=$(curl -sS -o /tmp/drive-index.html -w '%{http_code}' https://drive.privasys.org/)
+          echo "root=$ROOT"
+          test "$ROOT" = "200"
+          grep -q 'Privasys Drive' /tmp/drive-index.html
+
+      - name: Prune old staged builds on OVH (keep last 5)
+        if: always()
+        env:
+          OVH_HOST: ${{ secrets.OVH_HOST }}
+          OVH_USER: ${{ secrets.OVH_USER }}
+          OVH_SSH_PORT: ${{ secrets.OVH_SSH_PORT }}
+        run: |
+          set -euo pipefail
+          PORT="${OVH_SSH_PORT:-22}"
+          ssh -p "$PORT" -i ~/.ssh/id_ed25519 "${OVH_USER}@${OVH_HOST}" \
+            "ls -1t ~/drive-privasys-org-builds 2>/dev/null | tail -n +6 | xargs -r -I{} rm -rf ~/drive-privasys-org-builds/{}" || true
