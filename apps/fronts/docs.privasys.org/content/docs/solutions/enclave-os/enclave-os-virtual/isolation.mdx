@@ -1,0 +1,54 @@
+---
+title: Container Isolation
+description: How Enclave OS Virtual isolates co-located apps — a private network namespace per container, per-app encrypted storage, and the dedicated-enclave option.
+---
+
+A Confidential VM can host more than one app. Enclave OS Virtual treats every container as **mutually untrusting** and isolates it from its co-tenants on three axes: the network, storage, and its attested identity. The Confidential VM itself is the hardware trust boundary against the operator; this page is about the boundary **between apps** inside it.
+
+## Network Isolation
+
+Each container runs in its **own Linux network namespace**. It has a private `127.0.0.1` (loopback) and a private address on an internal bridge — nothing it binds is visible to another app.
+
+```
+┌──────────────────────── Confidential VM ────────────────────────┐
+│                                                                  │
+│   App A (netns A)          App B (netns B)                       │
+│   ┌───────────────┐        ┌───────────────┐                     │
+│   │ 127.0.0.1     │        │ 127.0.0.1     │   ← private per app  │
+│   │ eth0 10.88.a  │        │ eth0 10.88.b  │                     │
+│   └──────┬────────┘        └──────┬────────┘                     │
+│          │ (isolated)             │ (isolated)                   │
+│      ────┴────────── privasys0 bridge ──────┴────  gateway 10.88.0.1
+│                          │                                       │
+│                    ┌─────┴──────┐        ┌──────────────┐        │
+│                    │  Manager   │        │  NAT / egress │──────► internet
+│                    └────────────┘        └──────────────┘        │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+**What this guarantees:**
+
+| Property | Behaviour |
+|----------|-----------|
+| **Private loopback** | An app's `127.0.0.1:<port>` service — a database, cache, or internal API — is reachable **only** by that app. A co-tenant's `127.0.0.1` is a different loopback entirely. |
+| **No app-to-app traffic** | Each container's bridge port is *isolated*: it can reach the platform gateway and the internet, but **not** another container's address. Apps cannot discover or connect to each other. |
+| **Controlled egress** | Outbound traffic is NAT-masqueraded through the VM's interface. TLS is still terminated inside the enclave, so egress is attestable end-to-end. |
+| **No exposed control plane** | The management API is reachable only from inside the VM (loopback and the internal bridge); it is never bound to the VM's public address. |
+
+An app reaches the platform's management API at the address supplied in the `PRIVASYS_MANAGER_URL` environment variable — never a hard-coded loopback — so the platform, not the app, controls that channel.
+
+## Storage Isolation
+
+Every app that requests persistence gets its **own LUKS2-encrypted volume**, mounted at `/data`, keyed independently (see [Disk Encryption](/docs/solutions/enclave-os/enclave-os-virtual/disk-encryption)). One app cannot read another app's files, and the key never leaves the enclave. Because the mount is private, the recommended pattern for an app's internal service (e.g. an embedded database) is a **Unix socket on `/data`** rather than a TCP port — it is unreachable by any other app by construction.
+
+## Identity Isolation
+
+Each container is measured into its **own attestation certificate**: its image digest, environment, and volume mounts appear in a [per-container Merkle tree](/docs/solutions/enclave-os/enclave-os-virtual/containers#per-container-merkle-trees) and are pinned in the RA-TLS leaf. A client verifying one app cannot be silently handed another; the platform binds each self-service management call to the calling container's attested identity.
+
+## Dedicated Enclaves
+
+Multi-tenant isolation is strong, but some workloads want the **entire Confidential VM to themselves** — for the strictest blast-radius guarantees, a specific hardware SKU (a particular GPU, a fixed region), or a compliance requirement that no other tenant shares the machine.
+
+Privasys offers **dedicated enclaves**: a Confidential VM that runs only your app. You still get the same RA-TLS attestation, sealed storage, and upgrade-with-consent flow — with the VM boundary as your isolation boundary and no co-tenants at all.
+
+If you are evaluating whether shared or dedicated fits your workload, [contact us](https://privasys.org) to discuss a dedicated enclave.
