@@ -89,6 +89,7 @@ code, pre, .mono { font-family: var(--mono); }
     border: 1px solid var(--border);
     border-radius: var(--radius);
     padding: 32px;
+    margin: 0 32px 32px 0;
 }
 .connect-card h2 {
     font-size: 20px;
@@ -1186,13 +1187,17 @@ textarea.param-input { resize: vertical; min-height: 60px; }
     flex-direction: column;
     align-items: center;
     gap: 5px;
-    padding: 20px;
-    border: 1.5px dashed var(--border);
+    padding: 28px 20px;
+    border: 1.5px dashed rgba(0, 0, 0, 0.25);
     border-radius: var(--radius-sm);
     text-align: center;
     cursor: pointer;
     color: var(--muted);
+    background: var(--input-bg);
     transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+@media (prefers-color-scheme: dark) {
+    .hash-drop { border-color: rgba(255, 255, 255, 0.22); }
 }
 .hash-drop:hover,
 .hash-drop:focus-visible,
