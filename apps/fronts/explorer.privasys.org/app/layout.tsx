@@ -35,7 +35,8 @@ export default function RootLayout({ children }: { children: ReactNode }) {
                     connect screen's "Get Token" button (window.Privasys). */}
                 <Script src='https://privasys.id/auth/privasys-auth-client.iife.js' strategy='afterInteractive' />
                 <Navbar brandSuffix='Explorer' faviconPath={`${FAVICON}/favicon.svg`} items={NAV_ITEMS} />
-                <main className='mx-auto max-w-6xl w-full px-6 py-10 flex-1'>{children}</main>
+                {/* pt-20 clears the fixed 3.5rem Navbar. */}
+                <main className='mx-auto max-w-6xl w-full px-6 pt-20 pb-10 flex-1'>{children}</main>
                 <Footer companyLine='Every app runs inside a hardware-protected enclave. Attestation is verified independently. No trust required.' links={FOOTER_LINKS} />
             </body>
         </html>

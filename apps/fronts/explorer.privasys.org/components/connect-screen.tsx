@@ -186,7 +186,7 @@ export function ConnectScreen({ onConnect }: { onConnect: (_c: ConnectionConfig)
                     <button
                         type='button'
                         onClick={handleConnect}
-                        className='mt-6 w-full rounded-lg bg-gradient-to-br from-[#34E89E] to-[#00BCF2] text-[#0F172A] px-4 py-2.5 text-sm font-semibold hover:opacity-90 transition-opacity'
+                        className='mt-6 w-full rounded-lg bg-black text-white dark:bg-white dark:text-black px-4 py-2.5 text-sm font-semibold hover:opacity-90 transition-opacity'
                     >
                         Connect
                     </button>
