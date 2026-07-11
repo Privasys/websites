@@ -6,9 +6,10 @@ import { useDrive } from '~/lib/use-drive';
 import { avatarColor, initials } from '~/lib/format';
 import { FileBrowser } from './file-browser';
 import { SharedView } from './shared-view';
-import { HomeIcon, PeopleIcon, ShieldCheck } from './icons';
+import { RequestsView } from './requests-view';
+import { HomeIcon, InboxIcon, PeopleIcon, ShieldCheck } from './icons';
 
-type View = 'my-drive' | 'shared';
+type View = 'my-drive' | 'shared' | 'requests';
 
 const FOOTER_LINKS = [{ label: 'Legal', href: 'https://privasys.org/legal/', external: true }];
 
@@ -55,14 +56,22 @@ export function DriveApp() {
                         icon={<PeopleIcon width={18} height={18} />}
                         label="Shared with me"
                     />
+                    <SidebarItem
+                        active={view === 'requests'}
+                        onClick={() => setView('requests')}
+                        icon={<InboxIcon width={18} height={18} />}
+                        label="Requests"
+                    />
                 </nav>
 
                 {/* Main */}
                 <main className="min-w-0 flex-1" style={{ background: 'var(--drv-surface-2)' }}>
                     {view === 'my-drive' ? (
                         <FileBrowser session={session} tenant={tenant} me={me} />
-                    ) : (
+                    ) : view === 'shared' ? (
                         <SharedView session={session} />
+                    ) : (
+                        <RequestsView session={session} tenant={tenant} />
                     )}
                 </main>
             </div>

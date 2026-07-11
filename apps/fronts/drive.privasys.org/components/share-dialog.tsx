@@ -3,11 +3,16 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { SealedSession } from '@privasys/auth';
 import {
+    createLink,
     getPermissions,
+    listLinks,
     revokeGrant,
     setNodeACL,
+    type CreatedLink,
     type DriveNode,
+    type LinkMode,
     type NodePermissions,
+    type ShareLink,
     type TenantKind
 } from '~/lib/drive-api';
 import { avatarColor, granteeLabel, initials } from '~/lib/format';
@@ -15,6 +20,18 @@ import { CloseIcon, FolderIcon, FileIcon, LinkIcon, LockIcon, TrashIcon } from '
 
 // Tenant member roles an enterprise folder ACL can narrow to.
 const ROLE_OPTIONS = ['owner', 'admin', 'contributor', 'reader'] as const;
+
+// Attributes a "restricted" link can require the visitor to present.
+const ATTR_OPTIONS = [
+    { key: 'name', label: 'Name' },
+    { key: 'email', label: 'Verified email' },
+    { key: 'govid_name', label: 'Government-ID name' }
+] as const;
+
+function linkURL(id: string, secret: string): string {
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://drive.privasys.org';
+    return `${origin}/l?id=${id}#${secret}`;
+}
 
 export function ShareDialog({
     session,
@@ -32,14 +49,26 @@ export function ShareDialog({
     onClose: () => void;
 }) {
     const [perms, setPerms] = useState<NodePermissions | null>(null);
+    const [links, setLinks] = useState<ShareLink[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
 
+    // Link builder
+    const [mode, setMode] = useState<LinkMode>('open');
+    const [reqAttrs, setReqAttrs] = useState<string[]>(['name']);
+    const [generated, setGenerated] = useState<CreatedLink | null>(null);
+    const [copied, setCopied] = useState(false);
+
     const load = useCallback(async () => {
         setLoading(true);
         try {
-            setPerms(await getPermissions(session, tenantID, node.id));
+            const [p, ls] = await Promise.all([
+                getPermissions(session, tenantID, node.id),
+                listLinks(session, tenantID, node.id).catch(() => [])
+            ]);
+            setPerms(p);
+            setLinks(ls);
         } catch (e) {
             setError(e instanceof Error ? e.message : 'Could not load permissions.');
         } finally {
@@ -50,6 +79,39 @@ export function ShareDialog({
     useEffect(() => {
         void load();
     }, [load]);
+
+    const generate = async () => {
+        setBusy(true);
+        setError(null);
+        setGenerated(null);
+        setCopied(false);
+        try {
+            const created = await createLink(session, tenantID, node.id, {
+                mode,
+                scope: ['read'],
+                requiredAttributes: mode === 'restricted' ? reqAttrs : undefined
+            });
+            setGenerated(created);
+            await load();
+        } catch (e) {
+            setError(e instanceof Error ? e.message : 'Could not create the link.');
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    const copyLink = async (id: string, secret: string) => {
+        try {
+            await navigator.clipboard.writeText(linkURL(id, secret));
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1800);
+        } catch {
+            /* clipboard blocked; the field is selectable */
+        }
+    };
+
+    const toggleAttr = (k: string) =>
+        setReqAttrs((cur) => (cur.includes(k) ? cur.filter((x) => x !== k) : [...cur, k]));
 
     const activeGrants = (perms?.grants ?? []).filter(
         (g) => !g.revoked && g.subject.startsWith('subject:')
@@ -125,22 +187,107 @@ export function ShareDialog({
                         <p className="mt-1.5 text-xs" style={{ color: 'var(--drv-text-muted)' }}>
                             A link keeps this {node.kind === 'folder' ? 'folder' : 'file'} sealed
                             inside the enclave. The recipient opens it with the Privasys Wallet,
-                            or a passkey if they do not have the wallet yet.
+                            or is invited to install it (a passkey works once available).
                         </p>
+
                         <div className="mt-3 space-y-2">
-                            <LinkMode
+                            <LinkModeChoice
+                                selected={mode === 'open'}
+                                onSelect={() => setMode('open')}
                                 title="Anyone with the link"
-                                body="Whoever holds the link can open it after signing in. Best for wide, low-sensitivity sharing."
+                                body="Whoever holds the link can open it after signing in."
                             />
-                            <LinkMode
+                            <LinkModeChoice
+                                selected={mode === 'restricted'}
+                                onSelect={() => setMode('restricted')}
                                 title="Restricted to people you approve"
-                                body="You choose which attributes the visitor must present (name, verified email, government-ID name) and approve each request. No email lists, no stored identities."
+                                body="The visitor presents the attributes you choose; you approve each request."
                             />
                         </div>
-                        <p className="mt-3 text-xs" style={{ color: 'var(--drv-text-muted)' }}>
-                            Link generation is rolling out next. Until then, existing access is
-                            listed below and can be revoked.
-                        </p>
+
+                        {mode === 'restricted' && (
+                            <div className="mt-3">
+                                <div className="mb-1.5 text-xs font-medium" style={{ color: 'var(--drv-text-muted)' }}>
+                                    Require the visitor to present
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                    {ATTR_OPTIONS.map((a) => (
+                                        <button
+                                            key={a.key}
+                                            onClick={() => toggleAttr(a.key)}
+                                            className="rounded-full border px-3 py-1.5 text-xs"
+                                            style={{
+                                                borderColor: reqAttrs.includes(a.key) ? 'var(--drv-accent)' : 'var(--drv-border)',
+                                                background: reqAttrs.includes(a.key) ? 'var(--drv-accent-weak)' : 'transparent',
+                                                color: reqAttrs.includes(a.key) ? 'var(--drv-accent)' : 'var(--drv-text)'
+                                            }}
+                                        >
+                                            {a.label}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        <button
+                            onClick={() => void generate()}
+                            disabled={busy || (mode === 'restricted' && reqAttrs.length === 0)}
+                            className="drv-btn-primary mt-3 flex items-center gap-2 rounded-full px-4 py-2 text-sm disabled:opacity-50"
+                        >
+                            <LinkIcon width={16} height={16} /> Create link
+                        </button>
+
+                        {generated && (
+                            <div className="mt-3 rounded-lg border p-3" style={{ borderColor: 'var(--drv-accent)', background: 'var(--drv-accent-weak)' }}>
+                                <div className="mb-1.5 text-xs font-medium" style={{ color: 'var(--drv-accent)' }}>
+                                    Link ready. Copy it now, the secret is shown only once.
+                                </div>
+                                <div className="flex gap-2">
+                                    <input
+                                        readOnly
+                                        value={linkURL(generated.id, generated.secret)}
+                                        onFocus={(e) => e.currentTarget.select()}
+                                        className="min-w-0 flex-1 rounded-lg border px-3 py-2 text-xs outline-none"
+                                        style={{ borderColor: 'var(--drv-border)', background: 'var(--drv-surface)' }}
+                                    />
+                                    <button
+                                        onClick={() => void copyLink(generated.id, generated.secret)}
+                                        className="drv-btn-primary rounded-lg px-3 py-2 text-xs"
+                                    >
+                                        {copied ? 'Copied' : 'Copy'}
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        {links.length > 0 && (
+                            <div className="mt-4">
+                                <div className="mb-1.5 text-xs font-medium" style={{ color: 'var(--drv-text-muted)' }}>
+                                    Active links
+                                </div>
+                                <div className="space-y-1">
+                                    {links.map((l) => (
+                                        <div key={l.id} className="flex items-center gap-2 rounded-lg px-1 py-1.5 text-sm">
+                                            <LinkIcon width={16} height={16} style={{ color: 'var(--drv-text-muted)' }} />
+                                            <span className="flex-1 truncate">
+                                                {l.mode === 'restricted'
+                                                    ? `Restricted (${(l.required_attributes ?? []).join(', ') || 'attributes'})`
+                                                    : 'Anyone with the link'}
+                                            </span>
+                                            <button
+                                                title="Revoke link"
+                                                onClick={() => void revoke(l.id)}
+                                                disabled={busy}
+                                                className="rounded-lg p-1 hover:bg-[var(--drv-hover)]"
+                                                style={{ color: 'var(--drv-text-muted)' }}
+                                            >
+                                                <TrashIcon width={16} height={16} />
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
                     </div>
 
                     {/* People with access */}
@@ -221,17 +368,41 @@ export function ShareDialog({
     );
 }
 
-function LinkMode({ title, body }: { title: string; body: string }) {
+function LinkModeChoice({
+    selected,
+    onSelect,
+    title,
+    body
+}: {
+    selected: boolean;
+    onSelect: () => void;
+    title: string;
+    body: string;
+}) {
     return (
-        <div
-            className="rounded-lg border px-3 py-2.5"
-            style={{ borderColor: 'var(--drv-border)', background: 'var(--drv-surface-2)' }}
+        <button
+            onClick={onSelect}
+            className="flex w-full items-start gap-2.5 rounded-lg border px-3 py-2.5 text-left"
+            style={{
+                borderColor: selected ? 'var(--drv-accent)' : 'var(--drv-border)',
+                background: selected ? 'var(--drv-accent-weak)' : 'var(--drv-surface-2)'
+            }}
         >
-            <div className="text-[13px] font-medium">{title}</div>
-            <div className="mt-0.5 text-xs" style={{ color: 'var(--drv-text-muted)' }}>
-                {body}
-            </div>
-        </div>
+            <span
+                className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border"
+                style={{ borderColor: selected ? 'var(--drv-accent)' : 'var(--drv-border)' }}
+            >
+                {selected && (
+                    <span className="h-2 w-2 rounded-full" style={{ background: 'var(--drv-accent)' }} />
+                )}
+            </span>
+            <span className="min-w-0">
+                <span className="block text-[13px] font-medium">{title}</span>
+                <span className="mt-0.5 block text-xs" style={{ color: 'var(--drv-text-muted)' }}>
+                    {body}
+                </span>
+            </span>
+        </button>
     );
 }
 

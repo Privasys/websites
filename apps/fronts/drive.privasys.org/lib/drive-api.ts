@@ -253,3 +253,139 @@ export async function listShared(session: SealedSession): Promise<SharedItem[]> 
     const data = await json<{ shared: SharedItem[] }>(session, 'GET', '/v1/shared');
     return data.shared ?? [];
 }
+
+// ---- Share links -----------------------------------------------------
+
+export type LinkMode = 'open' | 'restricted';
+
+export interface ShareLink {
+    id: string;
+    mode: LinkMode;
+    scope: string[];
+    label?: string;
+    required_attributes?: string[];
+    created_at: string;
+    expires_at?: string;
+    revoked: boolean;
+}
+
+export interface CreatedLink {
+    id: string;
+    secret: string; // returned exactly once
+    mode: LinkMode;
+    scope: string[];
+    node_id: string;
+    required_attributes?: string[];
+    expires_at?: string;
+}
+
+export interface ResolvedLink {
+    link_id: string;
+    mode: LinkMode;
+    scope: string[];
+    required_attributes?: string[];
+    tenant_id: string;
+    owner_name: string;
+    already_granted: boolean;
+    request_status: string; // '' | 'pending' | 'approved' | 'denied'
+    node: { id: string; name: string; kind: NodeKind; size_bytes: number };
+}
+
+export interface RedeemResult {
+    status: 'granted' | 'pending';
+    tenant_id: string;
+    node_id: string;
+    name: string;
+    kind: NodeKind;
+    request_id?: string;
+}
+
+export interface LinkRequest {
+    id: string;
+    node_id: string;
+    node_name: string;
+    requester_sub: string;
+    attributes: Record<string, string>;
+    scope: string[];
+    status: string;
+    created_at: string;
+}
+
+/** Owner: mint a share link on a node. Secret is returned once. */
+export function createLink(
+    session: SealedSession,
+    tenantID: string,
+    nodeID: string,
+    opts: {
+        mode: LinkMode;
+        scope?: string[];
+        requiredAttributes?: string[];
+        expiresUnix?: number;
+        label?: string;
+    }
+): Promise<CreatedLink> {
+    return json<CreatedLink>(session, 'POST', `/v1/tenants/${tenantID}/nodes/${nodeID}/links`, {
+        mode: opts.mode,
+        scope: opts.scope ?? ['read'],
+        required_attributes: opts.requiredAttributes,
+        expires_unix: opts.expiresUnix,
+        label: opts.label
+    });
+}
+
+/** Owner: list a node's active links (no secrets). */
+export async function listLinks(
+    session: SealedSession,
+    tenantID: string,
+    nodeID: string
+): Promise<ShareLink[]> {
+    const data = await json<{ links: ShareLink[] }>(
+        session,
+        'GET',
+        `/v1/tenants/${tenantID}/nodes/${nodeID}/links`
+    );
+    return (data.links ?? []).filter((l) => !l.revoked);
+}
+
+/** Recipient: fetch a link's target metadata (requires the secret). */
+export function resolveLink(
+    session: SealedSession,
+    linkID: string,
+    secret: string
+): Promise<ResolvedLink> {
+    return json<ResolvedLink>(session, 'POST', `/v1/links/${linkID}/resolve`, { secret });
+}
+
+/** Recipient: redeem a link. Open -> granted; restricted -> pending request. */
+export function redeemLink(
+    session: SealedSession,
+    linkID: string,
+    secret: string,
+    attributes?: Record<string, string>
+): Promise<RedeemResult> {
+    return json<RedeemResult>(session, 'POST', `/v1/links/${linkID}/redeem`, { secret, attributes });
+}
+
+/** Owner: list restricted-link access requests (default pending). */
+export async function listLinkRequests(
+    session: SealedSession,
+    tenantID: string,
+    status = 'pending'
+): Promise<LinkRequest[]> {
+    const data = await json<{ requests: LinkRequest[] }>(
+        session,
+        'GET',
+        `/v1/tenants/${tenantID}/link-requests?status=${encodeURIComponent(status)}`
+    );
+    return data.requests ?? [];
+}
+
+/** Owner: approve or deny a restricted-link request. */
+export function decideLinkRequest(
+    session: SealedSession,
+    tenantID: string,
+    requestID: string,
+    decision: 'approve' | 'deny'
+): Promise<{ status: string }> {
+    return json(session, 'POST', `/v1/tenants/${tenantID}/link-requests/${requestID}/${decision}`);
+}
