@@ -2,6 +2,7 @@
 
 import Balancer from 'react-wrap-balancer';
 import Link from 'next/link';
+import { FALLBACK_INSTANCE_SIZES, monthlyGBP } from '~/lib/instance-sizes';
 
 // 1 credit = £0.000001  →  £1 = 1,000,000 credits.
 // All figures below come straight from the platform price book (pricing-plan
@@ -70,13 +71,17 @@ const WASM_PRICES: { resource: string; price: string; basis: string }[] = [
     }
 ];
 
-const CONTAINER_SIZES: { size: string; cpu: string; ram: string; ssd: string; perHour: string; perMonth: string }[] = [
-    { size: 'Confidential-Micro', cpu: '1', ram: '4 GB', ssd: '80 GB', perHour: '60,000', perMonth: '£43.20' },
-    { size: 'Confidential-Small', cpu: '2', ram: '8 GB', ssd: '160 GB', perHour: '120,000', perMonth: '£86.40' },
-    { size: 'Confidential-Medium', cpu: '4', ram: '16 GB', ssd: '320 GB', perHour: '240,000', perMonth: '£172.80' },
-    { size: 'Confidential-Large', cpu: '8', ram: '32 GB', ssd: '640 GB', perHour: '480,000', perMonth: '£345.60' },
-    { size: 'Confidential-XLarge', cpu: '16', ram: '64 GB', ssd: '1280 GB', perHour: '960,000', perMonth: '£691.20' }
-];
+// Derived from the shared Confidential-* instance catalogue (the same one the
+// dashboard's create wizard uses), so the two never drift.
+const CONTAINER_SIZES: { size: string; cpu: string; ram: string; storage: string; perHour: string; perMonth: string }[] =
+    FALLBACK_INSTANCE_SIZES.map((s) => ({
+        size: s.size,
+        cpu: String(s.vcpu),
+        ram: `${s.ram_gb} GB`,
+        storage: `${s.storage_gb} GB`,
+        perHour: s.credits_per_hour.toLocaleString('en-GB'),
+        perMonth: `£${monthlyGBP(s).toFixed(2)}`
+    }));
 
 const EXAMPLES: { label: string; detail: string }[] = [
     {
@@ -270,7 +275,7 @@ export default function PricingPage() {
                                 <th className="py-3 pr-4 font-medium">Size</th>
                                 <th className="py-3 pr-4 font-medium">vCPU</th>
                                 <th className="py-3 pr-4 font-medium">RAM</th>
-                                <th className="py-3 pr-4 font-medium">SSD</th>
+                                <th className="py-3 pr-4 font-medium">Storage</th>
                                 <th className="py-3 pr-4 font-medium">Credits / hour</th>
                                 <th className="py-3 font-medium">≈ £ / month</th>
                             </tr>
@@ -281,7 +286,7 @@ export default function PricingPage() {
                                     <td className="py-3 pr-4 font-medium">{s.size}</td>
                                     <td className="py-3 pr-4">{s.cpu}</td>
                                     <td className="py-3 pr-4">{s.ram}</td>
-                                    <td className="py-3 pr-4">{s.ssd}</td>
+                                    <td className="py-3 pr-4">{s.storage}</td>
                                     <td className="py-3 pr-4 whitespace-nowrap">{s.perHour}</td>
                                     <td className="py-3 whitespace-nowrap">{s.perMonth}</td>
                                 </tr>
@@ -290,9 +295,58 @@ export default function PricingPage() {
                     </table>
                 </div>
                 <p className="mt-4 text-sm text-black/50 dark:text-white/50">
-                    Charged per started minute (credits/hour ÷ 60). A running container debits your balance
+                    Charged per started minute (credits/hour ÷ 60). The size is chosen when the app is
+                    created and stays fixed for its lifetime. A running container debits your balance
                     continuously; at zero balance it is paused with reason “credits exhausted”.
                 </p>
+            </section>
+
+            {/* Dedicated plans */}
+            <section className="mt-28 lg:mt-40">
+                <h2 className="text-2xl lg:text-4xl">
+                    <Balancer>Dedicated plans</Balancer>
+                </h2>
+                <p className="mt-6 text-lg text-black/60 dark:text-white/60">
+                    For workloads that want a whole confidential machine to themselves.
+                </p>
+                <div className="mt-10 grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    <div className="rounded-2xl border border-black/10 dark:border-white/10 p-8">
+                        <h3 className="text-xl font-semibold">Dedicated TDX+GPU (H100)</h3>
+                        <div className="mt-4 flex items-baseline gap-2">
+                            <span className="text-4xl font-bold">£5,000</span>
+                            <span className="text-black/60 dark:text-white/60">/ month</span>
+                        </div>
+                        <p className="mt-4 text-black/60 dark:text-white/60">
+                            A whole confidential TDX + H100 80GB machine (GCP Netherlands, spot) dedicated
+                            to your account and operated by us. You pay for the machine; your users pay
+                            per inference token.
+                        </p>
+                        <a
+                            href="mailto:contact@privasys.org?subject=Privasys%20dedicated%20TDX%2BGPU"
+                            className="mt-8 inline-block px-6 py-2.5 font-bold border rounded-full text-black dark:text-white hover:bg-black hover:text-white dark:border-white dark:hover:bg-white dark:hover:text-black transition-colors"
+                        >
+                            Contact us
+                        </a>
+                    </div>
+                    <div className="rounded-2xl border border-black/10 dark:border-white/10 p-8">
+                        <h3 className="text-xl font-semibold">Confidential AI software licence</h3>
+                        <div className="mt-4 flex items-baseline gap-2">
+                            <span className="text-4xl font-bold">£7,500</span>
+                            <span className="text-black/60 dark:text-white/60">/ month</span>
+                        </div>
+                        <p className="mt-4 text-black/60 dark:text-white/60">
+                            Run the Privasys Confidential AI stack on your own H100 hardware, on
+                            premises or in your cloud: attested inference serving, sealed transport
+                            and per-token billing, with updates and support from us. Unlimited use.
+                        </p>
+                        <a
+                            href="mailto:contact@privasys.org?subject=Privasys%20Confidential%20AI%20licence"
+                            className="mt-8 inline-block px-6 py-2.5 font-bold border rounded-full text-black dark:text-white hover:bg-black hover:text-white dark:border-white dark:hover:bg-white dark:hover:text-black transition-colors"
+                        >
+                            Contact us
+                        </a>
+                    </div>
+                </div>
             </section>
 
             {/* Attribute marketplace */}

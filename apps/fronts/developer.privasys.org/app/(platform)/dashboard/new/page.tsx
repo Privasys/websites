@@ -5,6 +5,8 @@ import { useAuth } from '~/lib/privasys-auth';
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { createApp, uploadCwasm, checkAppName, detectAppType, listCachedImages, previewManifest, updateStoreListing } from '~/lib/api';
 import { slugifyDisplayName, displayNameError } from '~/lib/appName';
+import { fetchInstanceSizes, FALLBACK_INSTANCE_SIZES, monthlyGBP } from '~/lib/instance-sizes';
+import type { InstanceSize } from '~/lib/instance-sizes';
 import type { AppType, CachedImage } from '~/lib/types';
 import type { ManifestStore } from '~/lib/api';
 
@@ -159,6 +161,12 @@ export default function NewApplicationPage() {
     // Step 1: Type
     const [appType, setAppType] = useState<AppType | null>(null);
 
+    // VM size (container apps only): the Confidential-* instance size, fixed
+    // at creation for the app's lifetime. Catalogue loads from the platform;
+    // the static fallback keeps the step usable meanwhile.
+    const [instanceSize, setInstanceSize] = useState('micro');
+    const [sizes, setSizes] = useState<InstanceSize[]>(FALLBACK_INSTANCE_SIZES);
+
     // Step 2: Source
     const [sourceMode, setSourceMode] = useState<SourceMode>('github');
     const [commitUrl, setCommitUrl] = useState('');
@@ -222,6 +230,11 @@ export default function NewApplicationPage() {
 
     const canSubmit = appType !== null && isSourceComplete && isNameComplete && isListingComplete && !submitting;
 
+    // Container apps (package/cloud_image sources are container-only) get a
+    // VM-size step between Type and Source, shifting later steps' numbering.
+    const isContainerApp = sourceMode === 'package' || sourceMode === 'cloud_image' || appType === 'container';
+    const sizeStepOffset = isContainerApp ? 1 : 0;
+
     // ── Summaries for collapsed steps ──
 
     const typeSummary = appType === 'container' ? 'Container' : appType === 'wasm' ? 'WASM Application' : '';
@@ -235,6 +248,8 @@ export default function NewApplicationPage() {
                     ? `Upload (${file.name})`
                     : '';
     const nameSummary = name ? `${name}.apps.privasys.org` : '';
+    const selectedSize = sizes.find(s => s.slug === instanceSize);
+    const sizeSummary = selectedSize ? selectedSize.size : instanceSize;
 
     // ── Auto-infer app name from source ──
 
@@ -257,6 +272,16 @@ export default function NewApplicationPage() {
         }
         prevInferred.current = inferred;
     }, [sourceMode, parsed?.repo, containerImage, cloudImageName, friendlyName]);
+
+    // Load the Confidential-* instance-size catalogue once authenticated.
+    // fetchInstanceSizes falls back to the static catalogue on any error.
+    useEffect(() => {
+        if (!session?.accessToken) return;
+        let cancelled = false;
+        fetchInstanceSizes(session.accessToken)
+            .then(s => { if (!cancelled) setSizes(s); });
+        return () => { cancelled = true; };
+    }, [session?.accessToken]);
 
     // Load cached images when the user selects the cloud_image source.
     // We deliberately fetch lazily so non-cloud-image flows incur no GCE
@@ -359,9 +384,6 @@ export default function NewApplicationPage() {
         setSubmitting(true);
         setError(null);
 
-        const isContainerApp =
-            sourceMode === 'package' || sourceMode === 'cloud_image' || appType === 'container';
-
         try {
             const app = await createApp(session.accessToken, {
                 name: appName,
@@ -383,7 +405,9 @@ export default function NewApplicationPage() {
                 // key handle and mints the DEK in the fleet vault. The key
                 // provider is defaulted server-side. Omitting this leaves the
                 // volume off, so the container's /data is lost on every restart.
-                container_storage: isContainerApp ? true : undefined
+                container_storage: isContainerApp ? true : undefined,
+                // Confidential-* instance size, fixed for the app's lifetime.
+                instance_size: isContainerApp ? instanceSize : undefined
             });
 
             if (sourceMode === 'upload' && file) {
@@ -412,7 +436,7 @@ export default function NewApplicationPage() {
             setError(e instanceof Error ? e.message : 'Something went wrong');
             setSubmitting(false);
         }
-    }, [session?.accessToken, sourceMode, name, friendlyName, parsed, file, commitUrl, submitting, appType, containerImage, cloudImageName, cloudImageChannel, description, category, tagline, storeExtra]);
+    }, [session?.accessToken, sourceMode, name, friendlyName, parsed, file, commitUrl, submitting, appType, containerImage, cloudImageName, cloudImageChannel, description, category, tagline, storeExtra, isContainerApp, instanceSize]);
 
 
     // ── Wizard ──
@@ -470,11 +494,47 @@ export default function NewApplicationPage() {
                     </div>
                 </CollapsibleStep>
 
-                {/* ── Step 2: Source ── */}
+                {/* ── Step 2 (container apps only): VM size ── */}
+                {isContainerApp && (
+                    <CollapsibleStep
+                        step={2} label="VM size" summary={sizeSummary}
+                        active={currentStep === 2} done={currentStep > 2}
+                        onEdit={() => setCurrentStep(2)}
+                    >
+                        <div className="grid grid-cols-2 gap-3">
+                            {sizes.map(s => (
+                                <button
+                                    key={s.slug}
+                                    type="button"
+                                    onClick={() => {
+                                        setInstanceSize(s.slug);
+                                        setCurrentStep(3);
+                                    }}
+                                    className={`p-4 rounded-xl border-2 text-left transition-all hover:border-black/30 dark:hover:border-white/30 ${
+                                        instanceSize === s.slug ? 'border-black dark:border-white' : 'border-black/10 dark:border-white/10'
+                                    }`}
+                                >
+                                    <div className="text-sm font-semibold">{s.size}</div>
+                                    <div className="mt-1 text-xs text-black/50 dark:text-white/50">
+                                        {s.vcpu} vCPU · {s.ram_gb} GB RAM · {s.storage_gb} GB Storage
+                                    </div>
+                                    <div className="mt-0.5 text-xs text-black/50 dark:text-white/50">
+                                        {s.credits_per_hour.toLocaleString('en-GB')} credits/hour ≈ £{monthlyGBP(s).toFixed(2)}/mo
+                                    </div>
+                                </button>
+                            ))}
+                        </div>
+                        <p className="mt-3 text-xs text-black/40 dark:text-white/40">
+                            The size is fixed for the app&apos;s lifetime; billed per started minute while an instance runs.
+                        </p>
+                    </CollapsibleStep>
+                )}
+
+                {/* ── Source ── */}
                 <CollapsibleStep
-                    step={2} label="Source" summary={sourceSummary}
-                    active={currentStep === 2} done={currentStep > 2 && isSourceComplete}
-                    onEdit={() => setCurrentStep(2)}
+                    step={2 + sizeStepOffset} label="Source" summary={sourceSummary}
+                    active={currentStep === 2 + sizeStepOffset} done={currentStep > 2 + sizeStepOffset && isSourceComplete}
+                    onEdit={() => setCurrentStep(2 + sizeStepOffset)}
                 >
                     {/* Source mode tabs */}
                     <div className="flex gap-2 mb-4">
@@ -673,7 +733,7 @@ export default function NewApplicationPage() {
 
                     <button
                         type="button"
-                        onClick={() => setCurrentStep(3)}
+                        onClick={() => setCurrentStep(3 + sizeStepOffset)}
                         disabled={!isSourceComplete}
                         className="mt-4 px-4 py-2 text-sm font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-80 disabled:opacity-40 transition-opacity"
                     >
@@ -681,11 +741,11 @@ export default function NewApplicationPage() {
                     </button>
                 </CollapsibleStep>
 
-                {/* ── Step 3: Application Name ── */}
+                {/* ── Application Name ── */}
                 <CollapsibleStep
-                    step={3} label="Application name" summary={nameSummary}
-                    active={currentStep === 3} done={currentStep > 3 && isNameComplete}
-                    onEdit={() => setCurrentStep(3)}
+                    step={3 + sizeStepOffset} label="Application name" summary={nameSummary}
+                    active={currentStep === 3 + sizeStepOffset} done={currentStep > 3 + sizeStepOffset && isNameComplete}
+                    onEdit={() => setCurrentStep(3 + sizeStepOffset)}
                 >
                     <div className="space-y-3">
                         <div>
@@ -738,7 +798,7 @@ export default function NewApplicationPage() {
                         </div>
                         <button
                             type="button"
-                            onClick={() => setCurrentStep(4)}
+                            onClick={() => setCurrentStep(4 + sizeStepOffset)}
                             disabled={!isNameComplete}
                             className="px-4 py-2 text-sm font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-80 disabled:opacity-40 transition-opacity"
                         >
@@ -747,10 +807,10 @@ export default function NewApplicationPage() {
                     </div>
                 </CollapsibleStep>
 
-                {/* ── Step 4: App Store listing & create ── */}
+                {/* ── App Store listing & create ── */}
                 <CollapsibleStep
-                    step={4} label="App Store listing" summary={currentStep > 4 ? category : ''}
-                    active={currentStep === 4} done={false} last
+                    step={4 + sizeStepOffset} label="App Store listing" summary={currentStep > 4 + sizeStepOffset ? category : ''}
+                    active={currentStep === 4 + sizeStepOffset} done={false} last
                 >
                     <div className="space-y-4">
                         <p className="text-xs text-black/40 dark:text-white/40">
