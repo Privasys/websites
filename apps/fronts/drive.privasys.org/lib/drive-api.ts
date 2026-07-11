@@ -199,6 +199,19 @@ export async function deleteNode(
     if (!ok(res)) throw decodeError(res);
 }
 
+/** Reparent a node under parentID (null/'' moves it to the tenant root). */
+export async function moveNode(
+    session: SealedSession,
+    tenantID: string,
+    nodeID: string,
+    parentID: string | null
+): Promise<void> {
+    const res = await session.request('POST', `/v1/tenants/${tenantID}/nodes/${nodeID}/move`, {
+        parent_id: parentID ?? ''
+    });
+    if (!ok(res)) throw decodeError(res);
+}
+
 // ---- Permissioning ---------------------------------------------------
 
 export function getPermissions(

@@ -117,6 +117,24 @@ export const ShieldCheck = (p: P) => (
     </svg>
 );
 
+export const MoveIcon = (p: P) => (
+    <svg {...base(p)}>
+        <path d="M5 9 2 12l3 3" />
+        <path d="M9 5l3-3 3 3" />
+        <path d="M15 19l-3 3-3-3" />
+        <path d="M19 9l3 3-3 3" />
+        <path d="M2 12h20" />
+        <path d="M12 2v20" />
+    </svg>
+);
+
+export const EyeIcon = (p: P) => (
+    <svg {...base(p)}>
+        <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
+        <circle cx="12" cy="12" r="3" />
+    </svg>
+);
+
 export const InboxIcon = (p: P) => (
     <svg {...base(p)}>
         <path d="M22 12h-6l-2 3h-4l-2-3H2" />

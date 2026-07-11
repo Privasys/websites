@@ -65,7 +65,7 @@ export function DriveApp() {
                 </nav>
 
                 {/* Main */}
-                <main className="min-w-0 flex-1" style={{ background: 'var(--drv-surface-2)' }}>
+                <main className="flex min-w-0 flex-1 flex-col" style={{ background: 'var(--drv-surface-2)' }}>
                     {view === 'my-drive' ? (
                         <FileBrowser session={session} tenant={tenant} me={me} />
                     ) : view === 'shared' ? (
