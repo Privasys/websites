@@ -1,6 +1,6 @@
 ---
 title: Disk Encryption
-description: LUKS2+AEAD encryption for the OS data partition and per-container volumes in Enclave OS Virtual, with BYOK and Enclave Vaults key distribution.
+description: LUKS2+AEAD encryption for the OS data partition and per-container volumes in Enclave OS Virtual, with Enclave Vaults key distribution and legacy BYOK.
 ---
 
 Enclave OS Virtual encrypts all persistent data at rest using LUKS2 with authenticated encryption (AEAD). The disk has two encrypted regions with independent keys, and the encryption status is attested in every RA-TLS certificate.
@@ -9,21 +9,20 @@ Enclave OS Virtual encrypts all persistent data at rest using LUKS2 with authent
 
 | Partition | Size | Purpose | Encryption |
 |-----------|------|---------|------------|
-| **OS data** (`/data`) | 2 GB | CA certificate and key, manager configuration | LUKS2+AEAD, single key (BYOK or auto-generated) |
-| **Container volumes** | Remaining disk | Per-container writable storage | LUKS2+AEAD per LVM logical volume, independent key per container |
+| **OS data** (`/data`) | Dedicated disk | CA certificate and key, manager configuration | LUKS2+AEAD, key held by [Enclave Vaults](/solutions/enclave-vaults/overview) (legacy: BYOK) |
+| **Container volumes** | Dedicated disk | Per-container writable storage | LUKS2+AEAD per LVM logical volume, independent key per container |
 
 The two regions use separate keys. A compromise of one container's volume key does not expose the OS data partition or any other container's data.
 
 ## OS Data Partition
 
-At boot, a systemd service runs before the data mount:
+The `/data` key is a data encryption key held as **Shamir shares on the Enclave Vaults constellation** — it is generated inside the enclave, never exists outside TEE memory, and nothing secret is stored in instance metadata or on the host. At boot, before the data mount:
 
-1. Reads the passphrase from instance metadata (BYOK) or generates one.
-2. Formats the partition with LUKS2+AEAD on first boot, or opens an existing volume on subsequent boots.
-3. Writes the key origin (`"byok:<fingerprint>"` or `"generated"`) to `/run/luks/dek-origin`.
-4. The management server reads the origin and publishes it as **OID `1.3.6.1.4.1.65230.2.6`** in every RA-TLS certificate.
+1. On the very first boot, the machine redeems a single-use, operator-pre-approved bootstrap token with a fresh TDX quote whose measurements must match the approved Enclave OS release. It then generates the key in-enclave, splits it onto the vault constellation, and formats the partition with LUKS2+AEAD.
+2. On every later boot, a non-secret locator stored in the LUKS2 header points at the constellation; the machine authenticates with a fresh TDX quote, reconstructs the key from its shares over mutual RA-TLS, and opens the volume. No human is involved.
+3. The key origin (`"vault:<handle>"`, or `"byok:<fingerprint>"` on legacy machines) is written to `/run/luks/dek-origin` and published as **OID `1.3.6.1.4.1.65230.2.6`** in every RA-TLS certificate.
 
-This means a remote verifier can check the RA-TLS certificate's OID `2.6` extension and confirm whether the data partition uses a customer-provided key (BYOK) or an auto-generated one.
+This means a remote verifier can check the RA-TLS certificate's OID `2.6` extension and confirm how the data partition is keyed: vault-held (the default — the key is gated on the machine's attested identity) or a customer-provided key (legacy BYOK).
 
 ## Per-Container Encrypted Volumes
 
@@ -72,11 +71,11 @@ The encryption key origin is embedded in RA-TLS certificates at two levels:
 
 | Level | OID | Value |
 |-------|-----|-------|
-| Platform (OS data partition) | `1.3.6.1.4.1.65230.2.6` | `"byok:<fingerprint>"` or `"generated"` |
-| Per-container (volume) | `1.3.6.1.4.1.65230.3.4` | `"byok:<fingerprint>"` or `"generated"` |
+| Platform (OS data partition) | `1.3.6.1.4.1.65230.2.6` | `"vault:<handle>"` or `"byok:<fingerprint>"` |
+| Per-container (volume) | `1.3.6.1.4.1.65230.3.4` | `"vault:<handle>"` or `"byok:<fingerprint>"` |
 
 A client verifying the RA-TLS certificate can confirm:
 
 - Whether data at rest is encrypted.
-- Whether the operator provided their own key (BYOK) or the VM generated one.
+- How the key is held: on the Enclave Vaults constellation and gated on the machine's attested identity (`vault:` — the handle names the exact key), or operator-provided (legacy BYOK).
 - The SHA-256 fingerprint of the key (for BYOK), allowing the client to confirm the expected key is in use without revealing the key itself.
