@@ -1,0 +1,9 @@
+/* Tailwind input for the embedded @privasys/attestation-view component.
+   The generated CSS is injected into a shadow root (see mount.tsx), so it is
+   fully isolated from the explorer's own stylesheet — preflight included, which
+   the component's `border` utilities rely on. @source points at the shared lib
+   so only the classes it actually uses are generated. */
+@import "tailwindcss";
+
+@source "../../../../libs/attestation-view/src/**/*.{ts,tsx}";
+@source "./mount.tsx";
