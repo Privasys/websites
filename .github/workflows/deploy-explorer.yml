@@ -1,12 +1,13 @@
 name: Deploy Explorer to OVH
 
-# Deploys the static `explorer.privasys.org` site (plain HTML/JS/CSS)
+# Deploys the static `explorer.privasys.org` Next.js export
 # to `vm-ovh-fr-par-1` under `/var/websites/explorer.privasys.org/`.
 # Nginx serves the directory directly (TLS via Let's Encrypt) — no
 # container swap required, just an atomic rsync.
 #
-# Mirrors the SSH/secrets surface used by deploy-chat.yml so a single
-# OVH_SSH_KEY / OVH_HOST / OVH_USER / OVH_SSH_PORT triplet covers both.
+# Mirrors deploy-store.yml (Next static export via `@nx/next:build`).
+# A single OVH_SSH_KEY / OVH_HOST / OVH_USER / OVH_SSH_PORT triplet
+# covers all the OVH-hosted static fronts.
 
 on:
   workflow_dispatch:
@@ -28,6 +29,7 @@ jobs:
     timeout-minutes: 15
 
     env:
+      NEXT_TELEMETRY_DISABLED: 1
       AWS_ACCESS_KEY_ID: ${{ secrets.NX_CACHE_AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.NX_CACHE_AWS_SECRET_ACCESS_KEY }}
 
@@ -45,14 +47,15 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: yarn install --network-timeout 1000000 --immutable
 
-      - name: Build explorer (static copy)
+      - name: Build explorer.privasys.org static export
         run: |
           set -euo pipefail
           npx nx reset
-          npx nx build explorer.privasys.org --skip-nx-cache
-          test -f dist/apps/fronts/explorer.privasys.org/index.html
+          npx nx run explorer.privasys.org:build --skip-nx-cache
+          test -f dist/apps/fronts/explorer.privasys.org/.next/index.html
+          test -d dist/apps/fronts/explorer.privasys.org/.next/_next/static
           echo "::group::Files to deploy"
-          ls -la dist/apps/fronts/explorer.privasys.org/
+          find dist/apps/fronts/explorer.privasys.org/.next -maxdepth 2 -type f | sort | head -200
           echo "::endgroup::"
 
       - name: Configure SSH
@@ -75,7 +78,7 @@ jobs:
         run: |
           set -euo pipefail
           PORT="${OVH_SSH_PORT:-22}"
-          DIST=dist/apps/fronts/explorer.privasys.org
+          DIST=dist/apps/fronts/explorer.privasys.org/.next
           TAG="$(date -u +%Y%m%d-%H%M%S)-${GITHUB_SHA::7}"
           STAGING="explorer-builds/${TAG}"
           # 1. Stage the build under the OVH user's home dir.
@@ -86,14 +89,12 @@ jobs:
           rsync -avz --delete \
             -e "ssh -p ${PORT} -i ~/.ssh/id_ed25519" \
             "${DIST}/" "${OVH_USER}@${OVH_HOST}:${STAGING}/"
-          # 2. Atomically rsync staging → /var/websites. Keep the legacy
-          #    `privasys-auth.js` file in place (loaded by nothing in
-          #    the current index.html — the SDK comes from privasys.id
-          #    — but removing it would break any cached indexes still
-          #    in flight). Reload nginx as cheap insurance.
+          # 2. Atomically rsync staging → /var/websites. Reload nginx as
+          #    cheap insurance.
           ssh -p "$PORT" -i ~/.ssh/id_ed25519 "${OVH_USER}@${OVH_HOST}" "set -euo pipefail; \
             cd \$HOME && \
-            sudo rsync -av --delete --exclude='privasys-auth.js' \
+            sudo mkdir -p /var/websites/explorer.privasys.org && \
+            sudo rsync -av --delete \
               ${STAGING}/ /var/websites/explorer.privasys.org/ && \
             sudo nginx -t && sudo systemctl reload nginx"
 
@@ -105,7 +106,7 @@ jobs:
           echo "root=$ROOT"
           test "$ROOT" = "200"
           grep -q 'attestation-url-input' /tmp/explorer-index.html
-          grep -q 'value="https://as.privasys.org"' /tmp/explorer-index.html
+          grep -q 'WASM App Explorer' /tmp/explorer-index.html
 
       - name: Prune old staged builds on OVH (keep last 5)
         if: always()

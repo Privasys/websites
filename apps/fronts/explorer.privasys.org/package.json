@@ -1,0 +1,8 @@
+{
+    "name": "explorer.privasys.org",
+    "version": "0.0.1",
+    "license": "AGPL-3.0",
+    "dependencies": {
+        "hash-wasm": "^4.12.0"
+    }
+}
