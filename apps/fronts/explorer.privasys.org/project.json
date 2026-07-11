@@ -8,7 +8,9 @@
             "executor": "nx:run-commands",
             "outputs": ["{workspaceRoot}/dist/apps/fronts/explorer.privasys.org"],
             "options": {
+                "parallel": false,
                 "commands": [
+                    "node apps/fronts/explorer.privasys.org/scripts/build-attestation.cjs apps/fronts/explorer.privasys.org",
                     "node apps/fronts/explorer.privasys.org/scripts/copy-static.cjs apps/fronts/explorer.privasys.org dist/apps/fronts/explorer.privasys.org"
                 ]
             }

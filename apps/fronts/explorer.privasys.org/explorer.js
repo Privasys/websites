@@ -19,14 +19,6 @@
     const DEFAULT_BROKER_URL = 'wss://relay.privasys.org/relay';
     const FIDO2_TIMEOUT = 120000;
 
-    // Attestation state
-    let attestResult = null;
-    let attestLoading = false;
-    let challenge = generateHex(32);
-    let verifyResult = null;
-    let quoteVerifyResult = null;
-    let quoteVerifying = false;
-
     // API state
     let schema = null;
     let schemaLoading = false;
@@ -67,21 +59,6 @@
             el.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
         }
         return el;
-    }
-
-    function generateHex(bytes) {
-        const arr = new Uint8Array(bytes);
-        crypto.getRandomValues(arr);
-        return Array.from(arr, b => b.toString(16).padStart(2, '0')).join('');
-    }
-
-    function hexToText(hex) {
-        try {
-            const bytes = new Uint8Array(hex.match(/.{1,2}/g).map(b => parseInt(b, 16)));
-            const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-            if (/^[\x20-\x7e]+$/.test(text)) return text;
-            return null;
-        } catch { return null; }
     }
 
     function copyText(text) {
@@ -227,21 +204,6 @@
         if (res.status === 204) return null;
         return res.json();
     }
-
-    const TEXT_OIDS = new Set(['1.3.6.1.4.1.65230.3.3', '1.3.6.1.4.1.65230.3.4']);
-    const OID_DESCRIPTIONS = {
-        'Config Merkle Root': 'Hash of the enclave configuration tree.',
-        'Egress CA Hash': 'Hash of the CA certificate used for egress TLS.',
-        'Runtime Version Hash': 'Hash identifying the runtime version inside the enclave.',
-        'Combined Workloads Hash': 'Aggregate hash of all loaded WASM workloads.',
-        'DEK Origin': 'Data Encryption Key origin.',
-        'Attestation Servers Hash': 'Hash of the trusted attestation server list.',
-        'Workload Config Merkle Root': 'Merkle root of this workload\'s configuration.',
-        'Workload Code Hash': 'SHA-256 hash of the compiled WASM bytecode.',
-        'Workload Image Ref': 'Container image reference.',
-        'Workload Key Source': 'How the workload\'s encryption keys are sourced.',
-        'Workload Permissions Hash': 'Hash of the security permissions granted to this workload.'
-    };
 
     // ── WIT types ──────────────────────────────────
     function witTypeLabel(ty) {
@@ -391,426 +353,39 @@
     }
 
     // ═══════════════════════════════════════════════
-    // ATTESTATION TAB
+    // ATTESTATION TAB  (renders the shared React component)
     // ═══════════════════════════════════════════════
-
-    async function doAttest() {
-        attestLoading = true;
-        attestResult = null;
-        verifyResult = null;
-        quoteVerifyResult = null;
-        quoteVerifying = false;
-        renderAttestation();
-        try {
-            var trimmed = challenge.trim();
-            if (trimmed && !/^[0-9a-fA-F]{32,128}$/.test(trimmed)) {
-                throw new Error('Challenge must be 32-128 hex characters');
-            }
-            var qs = trimmed ? '?challenge=' + encodeURIComponent(trimmed) : '';
-            var data = await apiFetch('/api/v1/apps/' + encodeURIComponent(appName) + '/attest' + qs);
-            attestResult = data;
-            attestLoading = false;
-            renderAttestation();
-            // Auto-verify ReportData in challenge mode
-            if (data.challenge_mode && data.quote && data.quote.report_data && data.certificate && data.certificate.public_key_sha256 && data.challenge) {
-                await verifyReportData();
-            }
-            // Auto-verify quote signature via attestation server
-            if (attestationServerUrl && data.quote && data.quote.raw_base64 && !data.quote.is_mock) {
-                verifyQuoteSignature(data.quote.raw_base64);
-            }
-        } catch (e) {
-            attestLoading = false;
-            attestResult = null;
-            renderAttestation();
-            alert('Attestation failed: ' + e.message);
-        }
-    }
-
-    async function verifyReportData() {
-        if (!attestResult) return;
-        var r = attestResult;
-        try {
-            var pkHex = r.certificate.public_key_sha256;
-            var ch = r.challenge;
-            var pubKeySha256 = new Uint8Array(pkHex.match(/.{1,2}/g).map(function (b) { return parseInt(b, 16); }));
-            var nonce = new Uint8Array(ch.match(/.{1,2}/g).map(function (b) { return parseInt(b, 16); }));
-            // Fold the RA-TLS channel binder in after the nonce (when present):
-            // report_data = SHA-512(SHA-256(pubkey) || nonce || binder).
-            var binderB64 = (r.quote && r.quote.channel_binder) || '';
-            var binder = binderB64 ? Uint8Array.from(atob(binderB64), function (c) { return c.charCodeAt(0); }) : new Uint8Array(0);
-            var concat = new Uint8Array(pubKeySha256.length + nonce.length + binder.length);
-            concat.set(pubKeySha256);
-            concat.set(nonce, pubKeySha256.length);
-            concat.set(binder, pubKeySha256.length + nonce.length);
-            var hash = await crypto.subtle.digest('SHA-512', concat);
-            var computed = Array.from(new Uint8Array(hash), function (b) { return b.toString(16).padStart(2, '0'); }).join('');
-            var actual = r.quote.report_data.toLowerCase();
-            verifyResult = computed === actual ? 'match' : 'mismatch';
-        } catch {
-            verifyResult = 'error';
-        }
-        renderAttestation();
-    }
-
-    async function verifyQuoteSignature(rawBase64) {
-        quoteVerifying = true;
-        quoteVerifyResult = null;
-        renderAttestation();
-        try {
-            var url = attestationServerUrl + '/verify-quote';
-            var headers = { 'Content-Type': 'application/json' };
-            if (attestationServerToken) headers['Authorization'] = 'Bearer ' + attestationServerToken;
-            var res = await fetch(url, {
-                method: 'POST',
-                headers: headers,
-                body: JSON.stringify({ quote: rawBase64 })
-            });
-            if (!res.ok) {
-                var errBody = await res.json().catch(function () { return {}; });
-                throw new Error(errBody.error || errBody.message || 'HTTP ' + res.status);
-            }
-            quoteVerifyResult = await res.json();
-        } catch (e) {
-            quoteVerifyResult = { error: e.message };
-        } finally {
-            quoteVerifying = false;
-            renderAttestation();
-        }
-    }
+    // The attestation view is the SAME @privasys/attestation-view React
+    // component the portal uses, bundled into attestation.bundle.js and mounted
+    // in a shadow root so it stays identical and never drifts. The React app
+    // owns the full RA-TLS inspect + verify lifecycle (useAttestation); we just
+    // hand it the endpoints. A persistent host node preserves its state across
+    // tab switches (which recreate #tab-content).
+    var attestHost = null;
+    var attestHandle = null;
 
     function renderAttestation() {
         var content = $('#tab-content');
         if (!content) return;
         content.innerHTML = '';
-
-        if (!attestResult) {
-            var wrap = h('div', null,
-                h('div', { className: 'empty-state' },
-                    h('div', { className: 'icon' }, '\uD83D\uDEE1'),
-                    h('h3', null, 'Remote Attestation'),
-                    h('p', null, 'Connect to the enclave via RA-TLS and inspect the x.509 certificate, SGX/TDX quote, and attestation extensions.')
-                ),
-                h('div', { className: 'challenge-input-group' },
-                    h('label', null, 'Challenge Nonce'),
-                    h('div', { className: 'row' },
-                        h('input', { id: 'challenge-input', type: 'text', value: challenge, maxLength: '128', placeholder: '32-128 hex chars', onInput: function (e) { challenge = e.target.value.replace(/[^0-9a-fA-F]/g, ''); } }),
-                        h('button', { className: 'btn btn-outline btn-sm', onClick: function () { challenge = generateHex(32); $('#challenge-input').value = challenge; } }, 'Regenerate')
-                    ),
-                    h('div', { className: 'hint' }, 'Random nonce to prove the certificate was generated for this request. Leave empty for deterministic mode.')
-                ),
-                h('div', { className: 'text-center mt-4' },
-                    attestLoading
-                        ? h('span', { className: 'flex items-center gap-2', style: 'justify-content:center' }, h('span', { className: 'loading-spinner' }), ' Connecting\u2026')
-                        : h('button', { className: 'btn', id: 'inspect-btn', onClick: doAttest }, 'Inspect Certificate')
-                )
-            );
-            content.appendChild(wrap);
+        if (!window.PrivasysAttestationView) {
+            content.appendChild(h('div', { className: 'empty-state' },
+                h('h3', null, 'Attestation view unavailable'),
+                h('p', null, 'The attestation component bundle failed to load. Try reloading the page.')
+            ));
             return;
         }
-
-        var r = attestResult;
-        var els = [];
-
-        // Challenge banner
-        if (r.challenge_mode && r.challenge) {
-            var color = verifyResult === 'match' ? 'emerald' : verifyResult === 'mismatch' || verifyResult === 'error' ? 'red' : 'amber';
-            var badgeText = verifyResult === 'match' ? '\u2713 Match \u2014 freshness verified' : verifyResult === 'mismatch' ? '\u2717 Mismatch' : verifyResult === 'error' ? '\u2717 Error' : 'Verifying\u2026';
-            var badgeCls = verifyResult === 'match' ? 'badge-ok' : verifyResult === 'mismatch' || verifyResult === 'error' ? 'badge-err' : 'badge-warn';
-            var style = color === 'red' ? 'border-color:rgba(220,38,38,0.3);background:rgba(220,38,38,0.04)' : color === 'amber' ? 'border-color:rgba(217,119,6,0.3);background:rgba(217,119,6,0.04)' : '';
-            els.push(h('div', { className: 'card' + (color === 'emerald' ? ' card-emerald' : ''), style: style },
-                h('div', { className: 'card-body' },
-                    h('div', { className: 'flex items-center gap-2 mb-2' },
-                        h('span', null, '\uD83D\uDD10'),
-                        h('strong', { className: 'text-xs' }, 'Challenge Mode Active'),
-                        h('span', { className: 'badge ' + badgeCls }, badgeText)
-                    ),
-                    h('div', { className: 'text-xxs text-muted mb-2' }, 'This certificate was freshly generated in response to your challenge nonce.'),
-                    h('div', { className: 'text-xxs text-muted' }, 'Challenge sent:'),
-                    h('div', { className: 'field-value', style: 'font-size:11px' }, r.challenge)
-                )
-            ));
-        } else if (r.challenge_mode === false) {
-            els.push(h('div', { className: 'card' },
-                h('div', { className: 'card-body text-center text-xxs text-muted' },
-                    h('strong', null, 'Deterministic mode'), ' \u2014 certificate may be reused across connections. Use challenge mode for freshness.'
-                )
-            ));
-        }
-
-        // Actions
-        els.push(h('div', { className: 'actions-bar' },
-            h('button', { className: 'btn btn-outline btn-sm', onClick: doAttest }, attestLoading ? 'Refreshing\u2026' : 'Refresh'),
-            h('button', { className: 'btn btn-outline btn-sm', onClick: function () { downloadBlob(r.pem, 'enclave-certificate.pem', 'application/x-pem-file'); } }, 'Download PEM'),
-            h('button', { className: 'btn btn-outline btn-sm', style: 'margin-left:auto', onClick: function () { attestResult = null; verifyResult = null; quoteVerifyResult = null; challenge = generateHex(32); renderAttestation(); } }, 'New Challenge')
-        ));
-
-        // TLS
-        if (r.tls) {
-            els.push(renderCard('TLS Connection', null, [
-                renderField('Protocol', r.tls.version),
-                renderField('Cipher Suite', r.tls.cipher_suite)
-            ]));
-        }
-
-        // Certificate
-        if (r.certificate) {
-            els.push(renderCard('x.509 Certificate', null, [
-                { label: 'Subject', value: r.certificate.subject, desc: 'The entity this certificate identifies.' },
-                { label: 'Issuer', value: r.certificate.issuer, desc: 'Certificate authority that issued the cert.' },
-                { label: 'Serial Number', value: r.certificate.serial_number },
-                { label: 'Valid From', value: r.certificate.not_before },
-                { label: 'Valid Until', value: r.certificate.not_after },
-                { label: 'Signature Algorithm', value: r.certificate.signature_algorithm },
-                { label: 'Public Key SHA-256', value: r.certificate.public_key_sha256, desc: 'SHA-256 fingerprint of the public key.' }
-            ].map(function (f) { return renderField(f.label, f.value, f.desc); })));
-        }
-
-        // Quote (SGX or TDX)
-        if (r.quote) {
-            var quoteFields = [
-                { label: 'Quote Type', value: r.quote.type },
-                r.quote.format ? { label: 'Format', value: r.quote.format } : null,
-                r.quote.version != null ? { label: 'Version', value: String(r.quote.version) } : null,
-                r.quote.mr_enclave ? { label: 'MRENCLAVE', value: r.quote.mr_enclave, desc: 'Hash of the enclave binary. Uniquely identifies the build.' } : null,
-                r.quote.mr_signer ? { label: 'MRSIGNER', value: r.quote.mr_signer, desc: 'Hash of the signer\'s public key.' } : null,
-                r.quote.mr_td ? { label: 'MR_TD', value: r.quote.mr_td, desc: 'Measurement of the Trust Domain (TD). Uniquely identifies the TD firmware and configuration.' } : null,
-                r.quote.rtmr0 ? { label: 'RTMR[0]', value: r.quote.rtmr0, desc: 'Runtime Measurement Register 0 \u2014 measures the TD firmware (TDVF) and its configuration.' } : null,
-                r.quote.rtmr1 ? { label: 'RTMR[1]', value: r.quote.rtmr1, desc: 'Runtime Measurement Register 1 \u2014 measures the OS kernel, initrd, and boot parameters.' } : null,
-                r.quote.rtmr2 ? { label: 'RTMR[2]', value: r.quote.rtmr2, desc: 'Runtime Measurement Register 2 \u2014 measures the OS runtime components and application layer.' } : null,
-                r.quote.rtmr3 ? { label: 'RTMR[3]', value: r.quote.rtmr3, desc: 'Runtime Measurement Register 3 \u2014 available for application-defined measurements.' } : null,
-                r.quote.report_data ? { label: 'Report Data', value: r.quote.report_data, desc: r.challenge_mode ? 'SHA-512(SHA-256(pubkey) \u2016 challenge \u2016 channel_binder). A match proves freshness and binds the quote to this TLS session.' : 'SHA-512(SHA-256(pubkey) \u2016 timestamp).' } : null,
-                r.quote.oid ? { label: 'OID', value: r.quote.oid } : null
-            ].filter(Boolean);
-
-            var quoteEls = quoteFields.map(function (f) {
-                var el = renderField(f.label, f.value, f.desc);
-                if (f.label === 'Report Data' && verifyResult) {
-                    var badge = verifyResult === 'match'
-                        ? h('span', { className: 'badge badge-ok mt-2' }, '\u2713 Verified')
-                        : h('span', { className: 'badge badge-err mt-2' }, '\u2717 ' + (verifyResult === 'mismatch' ? 'Mismatch' : 'Error'));
-                    el.appendChild(badge);
-                }
-                return el;
+        if (!attestHost) attestHost = document.createElement('div');
+        content.appendChild(attestHost);
+        if (!attestHandle) {
+            var base = (baseUrl || '').replace(/\/+$/, '');
+            var asUrl = (attestationServerUrl || '').replace(/\/+$/, '');
+            attestHandle = window.PrivasysAttestationView.mount(attestHost, {
+                attestUrl: base + '/api/v1/apps/' + encodeURIComponent(appName) + '/attest',
+                verifyQuoteUrl: asUrl ? asUrl + '/verify-quote' : undefined,
+                getVerifyToken: function () { return Promise.resolve(attestationServerToken || ''); }
             });
-
-            if (r.quote.is_mock) {
-                quoteEls.unshift(h('span', { className: 'badge badge-warn' }, 'Mock'));
-            }
-
-            var quoteTitle = r.quote.type === 'TDX' ? 'TDX Quote' : 'SGX Quote';
-            els.push(renderCard(quoteTitle, null, quoteEls));
         }
-
-        // Quote signature verification via attestation server
-        if (attestationServerUrl && r.quote && r.quote.raw_base64 && !r.quote.is_mock) {
-            els.push(renderQuoteVerificationCard());
-        }
-
-        // Copy-paste verification snippet (always shown when we have a raw quote,
-        // so users can re-run the verification from their own console without
-        // having configured an attestation server URL up-front).
-        if (r.quote && r.quote.raw_base64 && !r.quote.is_mock) {
-            els.push(renderQuoteVerificationSnippetCard(r.quote.raw_base64));
-        }
-
-        // Platform extensions
-        if (r.extensions && r.extensions.length > 0) {
-            els.push(renderExtCard('Platform Attestation Extensions', 'Platform-level x.509 extensions (OIDs 1.x/2.x) from the enclave certificate.', r.extensions, false, r));
-        }
-
-        // Workload extensions
-        if (r.app_extensions && r.app_extensions.length > 0) {
-            els.push(renderExtCard('Workload Attestation Extensions', 'Per-workload x.509 extensions (OIDs 3.x) via SNI routing.', r.app_extensions, true, r));
-        }
-
-        // PEM
-        if (r.pem) els.push(renderPemCard('Platform PEM Certificate', r.pem));
-        if (r.app_pem) els.push(renderPemCard('Workload PEM Certificate', r.app_pem, true));
-
-        for (var i = 0; i < els.length; i++) content.appendChild(els[i]);
-    }
-
-    function renderQuoteVerificationCard() {
-        if (quoteVerifying) {
-            return h('div', { className: 'card', id: 'quote-verify-card' },
-                h('div', { className: 'card-header' }, h('h3', null, 'Quote Signature Verification')),
-                h('div', { className: 'card-body text-center' },
-                    h('span', { className: 'loading-spinner' }), ' Verifying quote via attestation server\u2026'
-                )
-            );
-        }
-        if (!quoteVerifyResult) return h('span');
-
-        if (quoteVerifyResult.error) {
-            return h('div', { className: 'card', id: 'quote-verify-card' },
-                h('div', { className: 'card-header' },
-                    h('h3', null, 'Quote Signature Verification'),
-                    h('span', { className: 'badge badge-err' }, '\u2717 Failed')
-                ),
-                h('div', { className: 'card-body' },
-                    h('p', { style: 'color:var(--red)' }, quoteVerifyResult.error)
-                )
-            );
-        }
-
-        var qv = quoteVerifyResult;
-        var ok = qv.verified || qv.status === 'verified' || qv.status === 'ok';
-        var items = [];
-
-        if (qv.tee_type) items.push(renderField('TEE Type', qv.tee_type));
-        if (qv.tcb_date) items.push(renderField('TCB Date', qv.tcb_date));
-        if (qv.tcb_status) items.push(renderField('TCB Status', qv.tcb_status));
-        if (qv.mr_enclave) items.push(renderField('MRENCLAVE', qv.mr_enclave));
-        if (qv.mr_signer) items.push(renderField('MRSIGNER', qv.mr_signer));
-        if (qv.mr_td) items.push(renderField('MR_TD', qv.mr_td));
-        if (qv.advisory_ids && qv.advisory_ids.length > 0) {
-            items.push(renderField('Advisory IDs', qv.advisory_ids.join(', ')));
-        }
-
-        return h('div', { className: 'card' + (ok ? ' card-emerald' : ''), id: 'quote-verify-card' },
-            h('div', { className: 'card-header' },
-                h('h3', null, 'Quote Signature Verification'),
-                h('span', { className: 'badge ' + (ok ? 'badge-ok' : 'badge-warn') }, ok ? '\u2713 Verified' : 'Unverified')
-            ),
-            h('div', { className: 'card-body' },
-                h('p', null, 'Quote signature verified via ' + attestationServerUrl),
-                ...items
-            )
-        );
-    }
-
-    function renderQuoteVerificationSnippetCard(rawBase64) {
-        var url = (attestationServerUrl || 'https://as.privasys.org') + '/verify-quote';
-        var lines = [
-            '// SGX/TDX Quote signature verification - paste in your browser console',
-            '// Sends the raw quote to the Privasys Attestation Server for cryptographic verification.',
-            '//',
-            '// The attestation server requires an OIDC bearer token with',
-            '//   - audience: "attestation-server"',
-            '//   - issuer:   "https://privasys.id"  (or "https://relay.privasys.org" for app-bound tokens)',
-            '//',
-            '// If you are on a Privasys front-end that has signed you in to privasys.id,',
-            '// the snippet will mint a short-lived audience-scoped token for you.',
-            '// Otherwise sign in at https://privasys.id and paste an access_token below.',
-            '',
-            'const ATTESTATION_SERVER = "' + url + '";',
-            '',
-            'const quoteBase64 = "' + rawBase64 + '";',
-            '',
-            'async function getToken() {',
-            '  const sdk = window.PrivasysAuth || window.privasysAuth;',
-            '  if (sdk && typeof sdk.getTokenForAudience === "function") {',
-            '    return await sdk.getTokenForAudience("attestation-server");',
-            '  }',
-            '  const MANUAL_TOKEN = "";  // <-- paste your access_token here',
-            '  if (MANUAL_TOKEN) return MANUAL_TOKEN;',
-            '  throw new Error("No Privasys Auth SDK on this page. Sign in at https://privasys.id and paste an access_token into MANUAL_TOKEN above.");',
-            '}',
-            '',
-            '(async () => {',
-            '  const token = await getToken();',
-            '  const resp = await fetch(ATTESTATION_SERVER, {',
-            '    method: "POST",',
-            '    headers: { "Content-Type": "application/json", "Authorization": "Bearer " + token },',
-            '    body: JSON.stringify({ quote: quoteBase64 })',
-            '  });',
-            '  const r = await resp.json();',
-            '  console.log(r.success ? "\u2713 VERIFIED" : "\u2717 FAILED", r);',
-            '})();'
-        ];
-        var snippet = lines.join('\n');
-        var pre = h('pre', { className: 'code-block', style: 'max-height:14rem;overflow-y:auto;white-space:pre-wrap;word-break:break-all;font-size:11px' }, snippet);
-        var btn = h('button', {
-            className: 'btn btn-outline btn-sm',
-            onclick: function () { copyText(snippet); }
-        }, 'Copy');
-        return h('div', { className: 'card' },
-            h('div', { className: 'card-header' },
-                h('h3', null, 'Quote Verification Code'),
-                btn
-            ),
-            h('div', { className: 'card-body' },
-                h('p', null, 'Copy this snippet and paste it in your browser\u2019s developer console to independently verify the SGX/TDX quote signature via the Privasys Attestation Server. The snippet auto-mints an audience-scoped token when the Privasys Auth SDK is available; otherwise paste one from privasys.id.'),
-                pre
-            )
-        );
-    }
-
-    function renderCard(title, desc, children) {
-        return h('div', { className: 'card' },
-            h('div', { className: 'card-header' }, h('h3', null, title)),
-            h('div', { className: 'card-body' },
-                desc ? h('p', null, desc) : null,
-                ...children
-            )
-        );
-    }
-
-    function renderField(label, value, desc) {
-        return h('div', { className: 'field' },
-            h('div', { className: 'field-label' },
-                h('span', null, label),
-                h('button', { className: 'copy-btn', onClick: function () { copyText(value || ''); } }, '\u29C9')
-            ),
-            h('div', { className: 'field-value' }, value || '\u2014'),
-            desc ? h('div', { className: 'field-desc' }, desc) : null
-        );
-    }
-
-    function renderExtCard(title, desc, exts, emerald, result) {
-        var items = exts.map(function (ext) {
-            var text = TEXT_OIDS.has(ext.oid) ? hexToText(ext.value_hex) : null;
-            var item = h('div', { className: 'ext-item' },
-                h('div', { className: 'flex items-center gap-2' },
-                    h('span', { className: 'ext-label' }, ext.label),
-                    h('button', { className: 'copy-btn', onClick: function () { copyText(ext.value_hex); } }, '\u29C9')
-                ),
-                h('div', { className: 'field-value' },
-                    text
-                        ? h('span', null, h('span', { style: 'opacity:0.9' }, text), ' ', h('span', { style: 'opacity:0.3;font-size:10px' }, '(' + ext.value_hex + ')'))
-                        : ext.value_hex
-                ),
-                h('div', { className: 'ext-oid' }, ext.oid),
-                OID_DESCRIPTIONS[ext.label] ? h('div', { className: 'field-desc' }, OID_DESCRIPTIONS[ext.label]) : null
-            );
-            if (ext.oid === '1.3.6.1.4.1.65230.3.2' && result && result.cwasm_hash) {
-                var codeMatch = ext.value_hex.toLowerCase() === result.cwasm_hash.toLowerCase();
-                item.appendChild(h('div', { className: 'mt-2' },
-                    h('span', { className: 'badge ' + (codeMatch ? 'badge-ok' : 'badge-err') },
-                        codeMatch ? '\u2713 Verified \u2014 matches uploaded CWASM hash' : '\u2717 Mismatch'
-                    )
-                ));
-            }
-            return item;
-        });
-        return h('div', { className: 'card' + (emerald ? ' card-emerald' : '') },
-            h('div', { className: 'card-header' }, h('h3', null, title)),
-            h('div', { className: 'card-body' }, desc ? h('p', null, desc) : null, ...items)
-        );
-    }
-
-    function renderPemCard(title, pem, emerald) {
-        return h('div', { className: 'card' + (emerald ? ' card-emerald' : '') },
-            h('div', { className: 'card-header' },
-                h('h3', null, title),
-                h('div', { className: 'flex gap-2' },
-                    h('button', { className: 'copy-btn', onClick: function () { downloadBlob(pem, title.indexOf('Workload') >= 0 ? 'workload-certificate.pem' : 'enclave-certificate.pem', 'application/x-pem-file'); } }, 'Download'),
-                    h('button', { className: 'copy-btn', onClick: function () { copyText(pem); } }, 'Copy')
-                )
-            ),
-            h('div', { className: 'card-body' }, h('pre', { className: 'pem-block' }, pem))
-        );
-    }
-
-    function downloadBlob(text, name, type) {
-        var blob = new Blob([text], { type: type });
-        var url = URL.createObjectURL(blob);
-        var a = document.createElement('a');
-        a.href = url;
-        a.download = name;
-        a.click();
-        URL.revokeObjectURL(url);
     }
 
     // ═══════════════════════════════════════════════
