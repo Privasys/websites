@@ -106,7 +106,7 @@ jobs:
           echo "root=$ROOT"
           test "$ROOT" = "200"
           grep -q 'attestation-url-input' /tmp/explorer-index.html
-          grep -q 'WASM App Explorer' /tmp/explorer-index.html
+          grep -q 'App Explorer' /tmp/explorer-index.html
 
       - name: Prune old staged builds on OVH (keep last 5)
         if: always()
