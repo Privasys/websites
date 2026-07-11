@@ -1,0 +1,48 @@
+@import 'tailwindcss';
+@import '@privasys/ui/styles.css';
+
+
+:root {
+    color-scheme: light dark;
+
+    /* Drive design tokens (Google Drive / SharePoint inspired). */
+    --drv-accent: #1a73e8;
+    --drv-accent-weak: #e8f0fe;
+    --drv-surface: #ffffff;
+    --drv-surface-2: #f8f9fa;
+    --drv-border: rgba(0, 0, 0, 0.08);
+    --drv-text: #202124;
+    --drv-text-muted: #5f6368;
+    --drv-hover: rgba(26, 115, 232, 0.06);
+    --drv-selected: rgba(26, 115, 232, 0.12);
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --drv-accent: #8ab4f8;
+        --drv-accent-weak: #1e2a3a;
+        --drv-surface: #1f1f1f;
+        --drv-surface-2: #171717;
+        --drv-border: rgba(255, 255, 255, 0.1);
+        --drv-text: #e8eaed;
+        --drv-text-muted: #9aa0a6;
+        --drv-hover: rgba(138, 180, 248, 0.08);
+        --drv-selected: rgba(138, 180, 248, 0.16);
+    }
+}
+
+html {
+    -webkit-font-smoothing: antialiased;
+}
+
+body {
+    font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    background: var(--drv-surface-2);
+    color: var(--drv-text);
+}
+
+/* Subtle scrollbars for the file panes. */
+.drv-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: var(--drv-border) transparent;
+}
