@@ -18,6 +18,7 @@ import { useBalance } from '~/lib/use-balance';
 import { getApiBaseUrl } from '~/lib/api-base-url';
 import type { App, BuildJob, AppVersion, AppDeployment, Enclave, CachedImage } from '~/lib/types';
 import { DEPLOYMENT_STATUS_LABELS, DEPLOYMENT_STATUS_COLORS, CONTAINER_STATE_LABELS, CONTAINER_STATE_COLORS } from '~/lib/types';
+import { FALLBACK_INSTANCE_SIZES, monthlyGBP } from '~/lib/instance-sizes';
 import { RtmrVerifier } from '~/components/rtmr-verifier';
 import { AttestationConnect, AttestationResultView, useAttestation } from '@privasys/attestation-view';
 
@@ -37,6 +38,15 @@ function missingStoreFields(app: App): string[] {
     if (!app.store_description?.trim()) missing.push('Description');
     if (!app.store_category?.trim()) missing.push('Category');
     return missing;
+}
+
+// instanceSizeLabel renders a container app's fixed Confidential-* instance
+// size (chosen at creation, no resize) for the current-instance tile. Falls
+// back to the bare slug when it is not in the known catalogue.
+function instanceSizeLabel(slug: string): string {
+    const s = FALLBACK_INSTANCE_SIZES.find(x => x.slug === slug);
+    if (!s) return slug;
+    return `${s.size} · ${s.vcpu} vCPU · ${s.ram_gb} GB · ${s.storage_gb} GB Storage · ≈ £${monthlyGBP(s).toFixed(2)}/mo`;
 }
 
 function BuildStatusDot({ status }: { status: string }) {
@@ -2253,6 +2263,12 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                                         <div>
                                             <div className="text-[10px] uppercase tracking-wider text-black/30 dark:text-white/30">Deployed</div>
                                             <div className="mt-0.5">{new Date(dep.deployed_at).toLocaleString()}</div>
+                                        </div>
+                                    )}
+                                    {app.app_type === 'container' && app.instance_size && (
+                                        <div className="col-span-3">
+                                            <div className="text-[10px] uppercase tracking-wider text-black/30 dark:text-white/30">Size</div>
+                                            <div className="mt-0.5">{instanceSizeLabel(app.instance_size)}</div>
                                         </div>
                                     )}
                                     {app.app_type === 'container' && imageRepoBase && (

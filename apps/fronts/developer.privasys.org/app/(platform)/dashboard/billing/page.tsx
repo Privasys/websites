@@ -48,7 +48,12 @@ const RESOURCE_LABEL: Record<string, string> = {
     crypto_verify: 'Crypto · verify',
     crypto_random: 'Crypto · random',
     https_plain: 'Outbound HTTPS',
-    https_ratls: 'Outbound HTTPS (RA-TLS)'
+    https_ratls: 'Outbound HTTPS (RA-TLS)',
+    container_minute_micro: 'Container minutes (Confidential-Micro)',
+    container_minute_small: 'Container minutes (Confidential-Small)',
+    container_minute_medium: 'Container minutes (Confidential-Medium)',
+    container_minute_large: 'Container minutes (Confidential-Large)',
+    container_minute_xlarge: 'Container minutes (Confidential-XLarge)'
 };
 
 const KIND_LABEL: Record<string, string> = {

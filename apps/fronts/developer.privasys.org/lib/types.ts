@@ -25,6 +25,9 @@ export interface App {
     container_mcp?: Record<string, unknown>;
     cloud_image_name?: string;
     cloud_image_channel?: string;
+    // Confidential-* instance size slug (e.g. "small"), fixed at creation for
+    // container apps. See lib/instance-sizes.ts for the catalogue.
+    instance_size?: string;
     // Volume-key provenance (the enclave-upgrade design). enclave_generated
     // (default) and vault are both vault-gated (upgrades need approval); external
     // defers to a customer KMS. vault_key_handle is set once a vault-backed volume
@@ -75,6 +78,8 @@ export interface CreateAppRequest {
     container_mcp?: Record<string, unknown>;
     cloud_image_name?: string;
     cloud_image_channel?: string;
+    // Confidential-* instance size slug for container apps (fixed at creation).
+    instance_size?: string;
 }
 
 export interface CachedImage {
