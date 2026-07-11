@@ -14,6 +14,7 @@ import {
 } from '~/lib/drive-api';
 import { formatBytes, kindLabel } from '~/lib/format';
 import { ShareDialog } from './share-dialog';
+import { FileViewer, canPreview } from './file-viewer';
 import {
     ChevronRight,
     DownloadIcon,
@@ -48,6 +49,7 @@ export function FileBrowser({
     const [view, setView] = useState<'grid' | 'list'>('list');
     const [busy, setBusy] = useState(false);
     const [shareNode, setShareNode] = useState<DriveNode | null>(null);
+    const [viewNode, setViewNode] = useState<DriveNode | null>(null);
     const [newFolder, setNewFolder] = useState(false);
     const [dragging, setDragging] = useState(false);
     const dragDepth = useRef(0);
@@ -78,6 +80,8 @@ export function FileBrowser({
     const openNode = (n: DriveNode) => {
         if (n.kind === 'folder') {
             setPath((p) => [...p, { id: n.id, name: n.name }]);
+        } else if (canPreview(n)) {
+            setViewNode(n);
         } else {
             void download(n);
         }
@@ -263,6 +267,16 @@ export function FileBrowser({
                     node={shareNode}
                     mySub={me?.sub ?? ''}
                     onClose={() => setShareNode(null)}
+                />
+            )}
+
+            {viewNode && (
+                <FileViewer
+                    session={session}
+                    tenantID={tenant.id}
+                    node={viewNode}
+                    onClose={() => setViewNode(null)}
+                    onDownload={(n) => void download(n)}
                 />
             )}
         </div>

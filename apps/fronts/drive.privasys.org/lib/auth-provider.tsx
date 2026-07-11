@@ -28,7 +28,12 @@ const SDK_CONFIG = {
     brokerUrl:
         process.env.NEXT_PUBLIC_BROKER_URL ?? 'wss://relay.privasys.org/relay',
     clientId: process.env.NEXT_PUBLIC_AUTH_CLIENT_ID ?? 'privasys-platform',
-    scope: ['openid', 'email', 'profile', 'offline_access'] as const
+    scope: ['openid', 'email', 'profile', 'offline_access'] as const,
+    // Explicitly ask the wallet to share these so it prompts for consent at
+    // sign-in (the `profile` scope alone does not raise the picker). Shared
+    // transiently for display only; the platform stores no PII of its own.
+    requestedAttributes: ['name', 'email'],
+    privacyPolicyUrl: 'https://privasys.org/legal/'
 };
 
 export function AuthProvider({ children }: { children: ReactNode }) {

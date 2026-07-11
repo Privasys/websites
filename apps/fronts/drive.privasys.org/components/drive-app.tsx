@@ -10,13 +10,7 @@ import { HomeIcon, PeopleIcon, ShieldCheck } from './icons';
 
 type View = 'my-drive' | 'shared';
 
-const FOOTER_LINKS = [
-    { label: 'Developer portal', href: 'https://developer.privasys.org', external: true },
-    { label: 'Docs', href: 'https://docs.privasys.org', external: true },
-    { label: 'Website', href: 'https://privasys.org', external: true },
-    { label: 'Privacy', href: 'https://privasys.org/legal/privacy/', external: true },
-    { label: 'Terms', href: 'https://privasys.org/legal/terms/', external: true }
-];
+const FOOTER_LINKS = [{ label: 'Legal', href: 'https://privasys.org/legal/', external: true }];
 
 export function DriveApp() {
     const { me, name, tenant, session, signOut } = useDrive();
