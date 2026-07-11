@@ -16,17 +16,11 @@ import {
     type TenantKind
 } from '~/lib/drive-api';
 import { avatarColor, granteeLabel, initials } from '~/lib/format';
+import { SHARE_ATTRIBUTES, assuranceLabel } from '~/lib/share-attributes';
 import { CloseIcon, FolderIcon, FileIcon, LinkIcon, LockIcon, TrashIcon } from './icons';
 
 // Tenant member roles an enterprise folder ACL can narrow to.
 const ROLE_OPTIONS = ['owner', 'admin', 'contributor', 'reader'] as const;
-
-// Attributes a "restricted" link can require the visitor to present.
-const ATTR_OPTIONS = [
-    { key: 'name', label: 'Name' },
-    { key: 'email', label: 'Verified email' },
-    { key: 'govid_name', label: 'Government-ID name' }
-] as const;
 
 function linkURL(id: string, secret: string): string {
     const origin = typeof window !== 'undefined' ? window.location.origin : 'https://drive.privasys.org';
@@ -211,10 +205,11 @@ export function ShareDialog({
                                     Require the visitor to present
                                 </div>
                                 <div className="flex flex-wrap gap-2">
-                                    {ATTR_OPTIONS.map((a) => (
+                                    {SHARE_ATTRIBUTES.map((a) => (
                                         <button
                                             key={a.key}
                                             onClick={() => toggleAttr(a.key)}
+                                            title={`${assuranceLabel(a.assurance)} attribute`}
                                             className="rounded-full border px-3 py-1.5 text-xs"
                                             style={{
                                                 borderColor: reqAttrs.includes(a.key) ? 'var(--drv-accent)' : 'var(--drv-border)',
@@ -223,6 +218,11 @@ export function ShareDialog({
                                             }}
                                         >
                                             {a.label}
+                                            {a.assurance !== 'basic' && (
+                                                <span className="ml-1 opacity-60">
+                                                    {a.assurance === 'gov' ? '· ID' : '· verified'}
+                                                </span>
+                                            )}
                                         </button>
                                     ))}
                                 </div>

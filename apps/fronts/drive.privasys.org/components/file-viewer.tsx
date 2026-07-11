@@ -108,15 +108,8 @@ export function FileViewer({
     }, [onClose]);
 
     return (
-        <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-            onClick={onClose}
-        >
-            <div
-                className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl shadow-2xl"
-                style={{ background: 'var(--drv-surface)' }}
-                onClick={(e) => e.stopPropagation()}
-            >
+        <div className="fixed inset-0 z-50 flex flex-col" style={{ background: 'var(--drv-surface)' }}>
+            <div className="flex min-h-0 flex-1 flex-col">
                 {/* Header */}
                 <div
                     className="flex items-center gap-3 border-b px-5 py-3"
@@ -157,7 +150,7 @@ export function FileViewer({
                             <img
                                 src={preview.url}
                                 alt={node.name}
-                                className="max-h-[70vh] max-w-full rounded-lg object-contain"
+                                className="max-h-[82vh] max-w-full rounded-lg object-contain"
                             />
                         </div>
                     ) : preview.kind === 'markdown' ? (
