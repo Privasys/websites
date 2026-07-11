@@ -4,6 +4,7 @@
     "pages": [
         "architecture",
         "containers",
+        "isolation",
         "hardened-images",
         "disk-encryption"
     ]
