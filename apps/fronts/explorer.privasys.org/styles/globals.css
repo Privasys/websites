@@ -1,0 +1,21 @@
+@import 'tailwindcss';
+@import '@privasys/ui/styles.css';
+
+/* Generate the utility classes used by the shared attestation-view lib. */
+@source '../../../../libs/attestation-view/src';
+/* Explorer's own client components (attestation / auth / API testing tabs,
+   connect screen, file-hash tile) live outside the default content root. */
+@source '../app';
+@source '../components';
+
+:root {
+    color-scheme: light dark;
+}
+
+html {
+    -webkit-font-smoothing: antialiased;
+}
+
+body {
+    font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+}

@@ -3,30 +3,36 @@
     "$schema": "../../../node_modules/nx/schemas/project-schema.json",
     "sourceRoot": "apps/fronts/explorer.privasys.org",
     "projectType": "application",
+    "tags": [],
     "targets": {
         "build": {
-            "executor": "nx:run-commands",
-            "outputs": ["{workspaceRoot}/dist/apps/fronts/explorer.privasys.org"],
+            "executor": "@nx/next:build",
+            "outputs": [
+                "{options.outputPath}"
+            ],
+            "defaultConfiguration": "production",
             "options": {
-                "parallel": false,
-                "commands": [
-                    "node apps/fronts/explorer.privasys.org/scripts/build-attestation.cjs apps/fronts/explorer.privasys.org",
-                    "node apps/fronts/explorer.privasys.org/scripts/copy-static.cjs apps/fronts/explorer.privasys.org dist/apps/fronts/explorer.privasys.org"
-                ]
+                "outputPath": "dist/apps/fronts/explorer.privasys.org"
+            },
+            "configurations": {
+                "development": {
+                    "outputPath": "apps/fronts/explorer.privasys.org"
+                },
+                "production": {}
             }
         },
         "serve": {
             "executor": "nx:run-commands",
             "options": {
-                "command": "npx serve -l 54281 -s .",
+                "command": "npx next dev -p 4218",
                 "cwd": "apps/fronts/explorer.privasys.org"
             }
         },
         "lint": {
-            "executor": "nx:run-commands",
-            "options": {
-                "command": "echo 'Static HTML — no lint configured'"
-            }
+            "executor": "@nx/eslint:lint",
+            "outputs": [
+                "{options.outputFile}"
+            ]
         },
         "e2e": {
             "executor": "nx:run-commands",
