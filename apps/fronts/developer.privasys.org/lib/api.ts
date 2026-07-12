@@ -1007,22 +1007,27 @@ export async function redeemPromoCode(token: string, code: string): Promise<Rede
 
 /**
  * Deploy a built version onto an enclave. The browser POSTs a tiny
- * `{enclave_id}` payload; the management-service service account performs
- * the actual `wasm_load` / `container_load` against the enclave over
- * RA-TLS. The wallet sealed-relay is reserved for runtime API calls
- * (e.g. `@config-api`) that carry user identity / secrets — deploys
- * themselves never touch it.
+ * `{enclave_id, instance_size?}` payload; the management-service service
+ * account performs the actual `wasm_load` / `container_load` against the
+ * enclave over RA-TLS. The wallet sealed-relay is reserved for runtime API
+ * calls (e.g. `@config-api`) that carry user identity / secrets — deploys
+ * themselves never touch it. `instanceSize` (container apps) picks the
+ * Confidential-* size for THIS deployment; omitted, the server defaults to
+ * the app's instance_size. Validated server-side.
  */
 export function deployDirect(
     token: string,
     appId: string,
     versionId: string,
-    enclaveId: string
+    enclaveId: string,
+    instanceSize?: string
 ): Promise<AppDeployment> {
+    const body: { enclave_id: string; instance_size?: string } = { enclave_id: enclaveId };
+    if (instanceSize) body.instance_size = instanceSize;
     return request<AppDeployment>(
         `/api/v1/apps/${encodeURIComponent(appId)}/versions/${encodeURIComponent(versionId)}/deploy`,
         token,
-        { method: 'POST', body: JSON.stringify({ enclave_id: enclaveId }) }
+        { method: 'POST', body: JSON.stringify(body) }
     );
 }
 

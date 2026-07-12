@@ -18,7 +18,8 @@ import { useBalance } from '~/lib/use-balance';
 import { getApiBaseUrl } from '~/lib/api-base-url';
 import type { App, BuildJob, AppVersion, AppDeployment, Enclave, CachedImage } from '~/lib/types';
 import { DEPLOYMENT_STATUS_LABELS, DEPLOYMENT_STATUS_COLORS, CONTAINER_STATE_LABELS, CONTAINER_STATE_COLORS } from '~/lib/types';
-import { FALLBACK_INSTANCE_SIZES, monthlyGBP } from '~/lib/instance-sizes';
+import { fetchInstanceSizes, FALLBACK_INSTANCE_SIZES, monthlyGBP } from '~/lib/instance-sizes';
+import type { InstanceSize } from '~/lib/instance-sizes';
 import { RtmrVerifier } from '~/components/rtmr-verifier';
 import { AttestationConnect, AttestationResultView, useAttestation } from '@privasys/attestation-view';
 
@@ -40,13 +41,18 @@ function missingStoreFields(app: App): string[] {
     return missing;
 }
 
-// instanceSizeLabel renders a container app's fixed Confidential-* instance
-// size (chosen at creation, no resize) for the current-instance tile. Falls
-// back to the bare slug when it is not in the known catalogue.
+// instanceSizeLabel renders a container deployment's Confidential-* instance
+// size (chosen at deploy time) for the current-instance tile. Falls back to
+// the bare slug when it is not in the known catalogue.
 function instanceSizeLabel(slug: string): string {
     const s = FALLBACK_INSTANCE_SIZES.find(x => x.slug === slug);
     if (!s) return slug;
     return `${s.size} · ${s.vcpu} vCPU · ${s.ram_gb} GB · ${s.storage_gb} GB Storage · ≈ £${monthlyGBP(s).toFixed(2)}/mo`;
+}
+
+// sizeOptionLabel is the <option> text for the deploy-time Size picker.
+function sizeOptionLabel(s: InstanceSize): string {
+    return `${s.size} — ${s.vcpu} vCPU · ${s.ram_gb} GB · ${s.storage_gb} GB Storage · ≈ £${monthlyGBP(s).toFixed(2)}/mo`;
 }
 
 function BuildStatusDot({ status }: { status: string }) {
@@ -1809,6 +1815,12 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
     // or an AppVersion id (fallback). Upload apps use cwasmFile instead.
     const [pickVersion, setPickVersion] = useState('');
     const [pickEnclave, setPickEnclave] = useState('');
+    // Deploy-time Confidential-* instance size (container apps only). Seeded
+    // from the active deployment's size once known (else the app's default);
+    // the user is free to change it — a redeploy may resize.
+    const [pickSize, setPickSize] = useState(app.instance_size || 'micro');
+    const pickSizeSeeded = useRef(false);
+    const [sizes, setSizes] = useState<InstanceSize[]>(FALLBACK_INSTANCE_SIZES);
     const [cwasmFile, setCwasmFile] = useState<File | null>(null);
     const [working, setWorking] = useState(false);
     const [workMsg, setWorkMsg] = useState<string | null>(null);
@@ -1939,6 +1951,24 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
         }
     }, [currentDeployment, upgradeTarget, currentEnclaveId, pickVersion, pickEnclave]);
 
+    // Load the Confidential-* size catalogue once (container apps). Best-effort:
+    // fetchInstanceSizes falls back to the static catalogue on any error.
+    useEffect(() => {
+        if (app.app_type !== 'container') return;
+        let alive = true;
+        fetchInstanceSizes(token).then(s => { if (alive) setSizes(s); });
+        return () => { alive = false; };
+    }, [app.app_type, token]);
+
+    // Seed the Size picker from the ACTIVE deployment's size, once it is known
+    // (deployments load async). Seed only once so the user's choice sticks.
+    const activeDeploymentSize = currentDeployment?.instance_size;
+    useEffect(() => {
+        if (pickSizeSeeded.current || !activeDeploymentSize) return;
+        pickSizeSeeded.current = true;
+        setPickSize(activeDeploymentSize);
+    }, [activeDeploymentSize]);
+
     // The image repo without any tag or @digest, used to build the ref to ship.
     const imageRepoBase = (() => {
         let base = app.container_image || '';
@@ -2027,9 +2057,12 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
             // new measurement is staged + promoted; do that, then retry. Deploying
             // first (rather than always staging) avoids a "key not found" on the
             // first deploy, since staging needs an existing key.
+            // Container deploys carry the chosen Confidential-* size; wasm
+            // deploys have no size control.
+            const sizeArg = app.app_type === 'container' ? pickSize : undefined;
             setWorkMsg('Deploying…');
             try {
-                await deployDirect(token, app.id, versionId, pickEnclave);
+                await deployDirect(token, app.id, versionId, pickEnclave, sizeArg);
             } catch (e) {
                 const msg = e instanceof Error ? e.message : String(e);
                 if (!needsApproval || !/not promoted|approve this version/i.test(msg)) throw e;
@@ -2043,7 +2076,7 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                 setWorkMsg('Promoting (releasing data key)…');
                 await promoteProfile(token, app.id, versionId, pendingId);
                 setWorkMsg('Deploying…');
-                await deployDirect(token, app.id, versionId, pickEnclave);
+                await deployDirect(token, app.id, versionId, pickEnclave, sizeArg);
             }
             if (!currentDeployment) { setPickVersion(''); setCwasmFile(null); }
         } catch (e) {
@@ -2100,6 +2133,17 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
             </select>
         );
     }
+
+    // The deploy-time Size control (container apps only; wasm deploys show no
+    // size control). Options come from the live catalogue with static fallback.
+    function renderSizePicker() {
+        return (
+            <select value={pickSize} onChange={e => setPickSize(e.target.value)} className={selectCls}>
+                {sizes.map(s => (<option key={s.slug} value={s.slug}>{sizeOptionLabel(s)}</option>))}
+            </select>
+        );
+    }
+
     const nothingToDeploy = !isUpload && !optLoading && choices.length === 0;
     const confirmDisabled = working || deployBlockedByCredits || storeMissing.length > 0 || (isUpload ? !cwasmFile : (!pickVersion || nothingToDeploy));
 
@@ -2265,10 +2309,10 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                                             <div className="mt-0.5">{new Date(dep.deployed_at).toLocaleString()}</div>
                                         </div>
                                     )}
-                                    {app.app_type === 'container' && app.instance_size && (
+                                    {app.app_type === 'container' && (dep.instance_size || app.instance_size) && (
                                         <div className="col-span-3">
                                             <div className="text-[10px] uppercase tracking-wider text-black/30 dark:text-white/30">Size</div>
-                                            <div className="mt-0.5">{instanceSizeLabel(app.instance_size)}</div>
+                                            <div className="mt-0.5">{instanceSizeLabel(dep.instance_size || app.instance_size || '')}</div>
                                         </div>
                                     )}
                                     {app.app_type === 'container' && imageRepoBase && (
@@ -2296,6 +2340,12 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                                                 <label className="text-xs text-black/50 dark:text-white/50 block mb-1">Upgrade to</label>
                                                 {renderVersionPicker(false)}
                                             </div>
+                                            {app.app_type === 'container' && (
+                                                <div className="flex-1">
+                                                    <label className="text-xs text-black/50 dark:text-white/50 block mb-1">Size</label>
+                                                    {renderSizePicker()}
+                                                </div>
+                                            )}
                                             <button
                                                 onClick={handleConfirm}
                                                 disabled={confirmDisabled || !pickEnclave}
@@ -2304,6 +2354,9 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                                                 {working ? 'Upgrading…' : 'Upgrade'}
                                             </button>
                                         </div>
+                                        {app.app_type === 'container' && (
+                                            <p className="mt-1.5 text-xs text-black/40 dark:text-white/40">Changing the size takes effect on this deployment.</p>
+                                        )}
                                         {storeMissing.length > 0 && (
                                             <div className="mt-2 text-xs text-amber-700 dark:text-amber-400">
                                                 Complete your App Store listing ({storeMissing.join(', ')}) before upgrading. <Link href={`/dashboard/apps/${app.id}?tab=store`} className="underline font-medium">Open App Store</Link>
@@ -2346,6 +2399,12 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                                     ? <select value={pickEnclave} onChange={e => setPickEnclave(e.target.value)} className={selectCls}><option value="">Select location…</option>{activeEnclaves.map(e => (<option key={e.id} value={e.id}>{enclaveLabel(e)}</option>))}</select>
                                     : <div className="text-xs text-black/40 dark:text-white/40 py-2">No active locations for this app type.</div>}
                             </div>
+                            {app.app_type === 'container' && (
+                                <div>
+                                    <label className="text-xs text-black/50 dark:text-white/50 block mb-1">Size</label>
+                                    {renderSizePicker()}
+                                </div>
+                            )}
                         </div>
                         {storeMissing.length > 0 && (
                             <div className="text-xs text-amber-700 dark:text-amber-400">Complete your App Store listing ({storeMissing.join(', ')}) before deploying. <Link href={`/dashboard/apps/${app.id}?tab=store`} className="underline font-medium">Open App Store</Link></div>
