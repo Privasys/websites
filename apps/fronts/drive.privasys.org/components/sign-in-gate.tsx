@@ -95,6 +95,7 @@ export function SignInGate() {
             </main>
 
             <Footer
+                className="!mt-0"
                 companyLine="Every file is sealed inside a hardware-protected enclave. Attestation is verified independently, no trust required."
                 links={FOOTER_LINKS}
             />

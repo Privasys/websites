@@ -14,6 +14,7 @@ import {
     type Tenant
 } from '~/lib/drive-api';
 import { formatBytes, kindLabel } from '~/lib/format';
+import { useDrive } from '~/lib/use-drive';
 import { ShareDialog } from './share-dialog';
 import { MoveDialog } from './move-dialog';
 import { FileViewer, canPreview } from './file-viewer';
@@ -50,6 +51,7 @@ export function FileBrowser({
     tenant: Tenant;
     me: Me | null;
 }) {
+    const { reconnect } = useDrive();
     const [path, setPath] = useState<Crumb[]>([{ id: null, name: 'My Drive' }]);
     const [nodes, setNodes] = useState<DriveNode[]>([]);
     const [loading, setLoading] = useState(true);
@@ -377,8 +379,14 @@ export function FileBrowser({
             )}
 
             {error && (
-                <div className="mx-4 mt-3 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-500">
-                    {error}
+                <div className="mx-4 mt-3 flex flex-wrap items-center gap-3 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-500">
+                    <span className="min-w-0 flex-1">{error}</span>
+                    <button
+                        onClick={() => void reconnect()}
+                        className="shrink-0 rounded-full border border-red-500/40 px-3 py-1 text-xs font-medium hover:bg-red-500/10"
+                    >
+                        Reconnect
+                    </button>
                 </div>
             )}
             {newFolder && <NewFolderRow onSubmit={onCreateFolder} onCancel={() => setNewFolder(false)} />}

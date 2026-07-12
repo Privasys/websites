@@ -58,6 +58,13 @@ interface DriveContextValue {
     signOut: () => void;
     /** Re-request the wallet approval when no sealed voucher exists yet. */
     approve: () => Promise<void>;
+    /**
+     * Recover after the enclave restarted or went unreachable: retry the
+     * sealed session, force-rebuild it if needed, and re-bootstrap. Lands
+     * on 'need-approval' when the enclave's identity changed (fresh
+     * wallet ceremony required).
+     */
+    reconnect: () => Promise<void>;
 }
 
 const DriveContext = createContext<DriveContextValue>({
@@ -71,7 +78,8 @@ const DriveContext = createContext<DriveContextValue>({
     signIn: async () => {},
     signInInto: async () => {},
     signOut: () => {},
-    approve: async () => {}
+    approve: async () => {},
+    reconnect: async () => {}
 });
 
 export function useDrive(): DriveContextValue {
@@ -202,6 +210,41 @@ export function DriveProvider({ children }: { children: ReactNode }) {
         }
     }, [auth, host, bootstrap]);
 
+    const reconnect = useCallback(async () => {
+        setError(null);
+        setStatus('connecting');
+        try {
+            // The cached per-host session self-heals at request level once
+            // the enclave is back; try it first.
+            let s = await auth.getSealedSession(host);
+            if (s) {
+                try {
+                    await bootstrap(s);
+                    return;
+                } catch {
+                    /* fall through to a forced rebuild */
+                }
+            }
+            const outcome = await auth.reestablishSealed(host);
+            if (outcome === 'rejected') {
+                // The enclave's identity/measurement changed: the wallet
+                // must verify it again.
+                setStatus('need-approval');
+                return;
+            }
+            s = await auth.getSealedSession(host);
+            if (s) {
+                await bootstrap(s);
+                return;
+            }
+            setStatus('error');
+            setError('Could not reconnect to Drive. Try again in a moment.');
+        } catch (e) {
+            setStatus('error');
+            setError(e instanceof Error ? e.message : 'Could not reconnect to Drive.');
+        }
+    }, [auth, host, bootstrap]);
+
     const signOut = useCallback(() => {
         auth.signOut();
         setSession(null);
@@ -224,7 +267,8 @@ export function DriveProvider({ children }: { children: ReactNode }) {
                 signIn,
                 signInInto,
                 signOut,
-                approve
+                approve,
+                reconnect
             }}
         >
             {children}

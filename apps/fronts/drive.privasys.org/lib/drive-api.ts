@@ -107,6 +107,43 @@ function ok(res: SealedResponse): boolean {
     return typeof res.status === 'number' && res.status >= 200 && res.status < 300;
 }
 
+// A sealed request to an unreachable enclave can otherwise hang forever
+// (the iframe RPC has no deadline of its own), leaving the UI silently
+// stuck. Cap every call so the failure surfaces and can be retried.
+const REQUEST_TIMEOUT_MS = 30_000;
+const TRANSFER_TIMEOUT_MS = 180_000; // uploads/downloads of larger files
+
+function timed(
+    session: SealedSession,
+    method: string,
+    path: string,
+    body: unknown,
+    ms: number
+): Promise<SealedResponse> {
+    return new Promise<SealedResponse>((resolve, reject) => {
+        const t = setTimeout(
+            () =>
+                reject(
+                    new DriveError(
+                        0,
+                        'The Drive enclave is not responding. It may be restarting or unreachable.'
+                    )
+                ),
+            ms
+        );
+        session.request(method, path, body).then(
+            (r) => {
+                clearTimeout(t);
+                resolve(r);
+            },
+            (e: unknown) => {
+                clearTimeout(t);
+                reject(e instanceof Error ? e : new Error(String(e)));
+            }
+        );
+    });
+}
+
 /** JSON request over the sealed session; throws DriveError on non-2xx. */
 async function json<T>(
     session: SealedSession,
@@ -114,7 +151,7 @@ async function json<T>(
     path: string,
     body?: unknown
 ): Promise<T> {
-    const res = await session.request(method, path, body);
+    const res = await timed(session, method, path, body, REQUEST_TIMEOUT_MS);
     if (!ok(res)) throw decodeError(res);
     const text = res.body && res.body.byteLength ? decoder.decode(res.body) : '';
     return (text ? JSON.parse(text) : {}) as T;
@@ -169,10 +206,12 @@ export async function uploadFile(
     const qs = new URLSearchParams({ name });
     if (mime) qs.set('mime', mime);
     if (parentID) qs.set('parent_id', parentID);
-    const res = await session.request(
+    const res = await timed(
+        session,
         'POST',
         `/v1/tenants/${tenantID}/files?${qs.toString()}`,
-        bytes
+        bytes,
+        TRANSFER_TIMEOUT_MS
     );
     if (!ok(res)) throw decodeError(res);
     const text = res.body && res.body.byteLength ? decoder.decode(res.body) : '';
@@ -185,7 +224,13 @@ export async function downloadFile(
     tenantID: string,
     fileID: string
 ): Promise<Uint8Array> {
-    const res = await session.request('GET', `/v1/tenants/${tenantID}/files/${fileID}`);
+    const res = await timed(
+        session,
+        'GET',
+        `/v1/tenants/${tenantID}/files/${fileID}`,
+        undefined,
+        TRANSFER_TIMEOUT_MS
+    );
     if (!ok(res)) throw decodeError(res);
     return res.body ?? new Uint8Array(0);
 }
@@ -195,7 +240,7 @@ export async function deleteNode(
     tenantID: string,
     nodeID: string
 ): Promise<void> {
-    const res = await session.request('DELETE', `/v1/tenants/${tenantID}/nodes/${nodeID}`);
+    const res = await timed(session, 'DELETE', `/v1/tenants/${tenantID}/nodes/${nodeID}`, undefined, REQUEST_TIMEOUT_MS);
     if (!ok(res)) throw decodeError(res);
 }
 
@@ -206,9 +251,9 @@ export async function moveNode(
     nodeID: string,
     parentID: string | null
 ): Promise<void> {
-    const res = await session.request('POST', `/v1/tenants/${tenantID}/nodes/${nodeID}/move`, {
+    const res = await timed(session, 'POST', `/v1/tenants/${tenantID}/nodes/${nodeID}/move`, {
         parent_id: parentID ?? ''
-    });
+    }, REQUEST_TIMEOUT_MS);
     if (!ok(res)) throw decodeError(res);
 }
 
@@ -247,7 +292,7 @@ export async function revokeGrant(
     tenantID: string,
     grantID: string
 ): Promise<void> {
-    const res = await session.request('DELETE', `/v1/tenants/${tenantID}/grants/${grantID}`);
+    const res = await timed(session, 'DELETE', `/v1/tenants/${tenantID}/grants/${grantID}`, undefined, REQUEST_TIMEOUT_MS);
     if (!ok(res)) throw decodeError(res);
 }
 
