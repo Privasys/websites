@@ -25,8 +25,10 @@ export interface App {
     container_mcp?: Record<string, unknown>;
     cloud_image_name?: string;
     cloud_image_channel?: string;
-    // Confidential-* instance size slug (e.g. "small"), fixed at creation for
-    // container apps. See lib/instance-sizes.ts for the catalogue.
+    // Confidential-* instance size slug (e.g. "small") for container apps: the
+    // server-side DEFAULT used when a deploy does not pick a size. Each
+    // deployment carries its own instance_size (see AppDeployment). See
+    // lib/instance-sizes.ts for the catalogue.
     instance_size?: string;
     // Volume-key provenance (the enclave-upgrade design). enclave_generated
     // (default) and vault are both vault-gated (upgrades need approval); external
@@ -78,8 +80,6 @@ export interface CreateAppRequest {
     container_mcp?: Record<string, unknown>;
     cloud_image_name?: string;
     cloud_image_channel?: string;
-    // Confidential-* instance size slug for container apps (fixed at creation).
-    instance_size?: string;
 }
 
 export interface CachedImage {
@@ -317,6 +317,9 @@ export interface AppDeployment {
     enclave_port: number;
     hostname?: string;
     status: DeploymentStatus;
+    // Confidential-* instance size slug this deployment runs on (container
+    // apps). Chosen at deploy time; defaults to the app's instance_size.
+    instance_size?: string;
     deployed_by: string;
     deployed_at?: string;
     stopped_at?: string;
