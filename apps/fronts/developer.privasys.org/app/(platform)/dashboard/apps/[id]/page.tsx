@@ -47,12 +47,18 @@ function missingStoreFields(app: App): string[] {
 function instanceSizeLabel(slug: string): string {
     const s = FALLBACK_INSTANCE_SIZES.find(x => x.slug === slug);
     if (!s) return slug;
-    return `${s.size} · ${s.vcpu} vCPU · ${s.ram_gb} GB · ${s.storage_gb} GB Storage · ≈ £${monthlyGBP(s).toFixed(2)}/mo`;
+    return `${s.size} · ${s.vcpu} vCPU · ${s.ram_gb} GB · ${s.storage_gb} GB Storage · ${priceLabel(s)}`;
 }
 
 // sizeOptionLabel is the <option> text for the deploy-time Size picker.
 function sizeOptionLabel(s: InstanceSize): string {
-    return `${s.size} — ${s.vcpu} vCPU · ${s.ram_gb} GB · ${s.storage_gb} GB Storage · ≈ £${monthlyGBP(s).toFixed(2)}/mo`;
+    return `${s.size} — ${s.vcpu} vCPU · ${s.ram_gb} GB · ${s.storage_gb} GB Storage · ${priceLabel(s)}`;
+}
+
+// priceLabel: the price book's meter tick (credits per started minute) plus
+// the always-on GBP monthly equivalent — the pair users reason with.
+function priceLabel(s: InstanceSize): string {
+    return `${s.credits_per_min.toLocaleString('en-GB')} credits/min ≈ £${monthlyGBP(s).toFixed(2)}/mo`;
 }
 
 function BuildStatusDot({ status }: { status: string }) {
