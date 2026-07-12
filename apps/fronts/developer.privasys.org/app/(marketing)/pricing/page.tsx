@@ -72,14 +72,16 @@ const WASM_PRICES: { resource: string; price: string; basis: string }[] = [
 ];
 
 // Derived from the shared Confidential-* instance catalogue (the same one the
-// dashboard's create wizard uses), so the two never drift.
-const CONTAINER_SIZES: { size: string; cpu: string; ram: string; storage: string; perHour: string; perMonth: string }[] =
+// dashboard's deploy picker uses), so the two never drift. Prices are shown
+// as the meter tick (credits per started minute) plus the always-on GBP
+// monthly equivalent.
+const CONTAINER_SIZES: { size: string; cpu: string; ram: string; storage: string; perMin: string; perMonth: string }[] =
     FALLBACK_INSTANCE_SIZES.map((s) => ({
         size: s.size,
         cpu: String(s.vcpu),
         ram: `${s.ram_gb} GB`,
         storage: `${s.storage_gb} GB`,
-        perHour: s.credits_per_hour.toLocaleString('en-GB'),
+        perMin: s.credits_per_min.toLocaleString('en-GB'),
         perMonth: `£${monthlyGBP(s).toFixed(2)}`
     }));
 
@@ -276,7 +278,7 @@ export default function PricingPage() {
                                 <th className="py-3 pr-4 font-medium">vCPU</th>
                                 <th className="py-3 pr-4 font-medium">RAM</th>
                                 <th className="py-3 pr-4 font-medium">Storage</th>
-                                <th className="py-3 pr-4 font-medium">Credits / hour</th>
+                                <th className="py-3 pr-4 font-medium">Credits / minute</th>
                                 <th className="py-3 font-medium">≈ £ / month</th>
                             </tr>
                         </thead>
@@ -287,7 +289,7 @@ export default function PricingPage() {
                                     <td className="py-3 pr-4">{s.cpu}</td>
                                     <td className="py-3 pr-4">{s.ram}</td>
                                     <td className="py-3 pr-4">{s.storage}</td>
-                                    <td className="py-3 pr-4 whitespace-nowrap">{s.perHour}</td>
+                                    <td className="py-3 pr-4 whitespace-nowrap">{s.perMin}</td>
                                     <td className="py-3 whitespace-nowrap">{s.perMonth}</td>
                                 </tr>
                             ))}
@@ -295,9 +297,10 @@ export default function PricingPage() {
                     </table>
                 </div>
                 <p className="mt-4 text-sm text-black/50 dark:text-white/50">
-                    Charged per started minute (credits/hour ÷ 60). The size is chosen when the app is
-                    created and stays fixed for its lifetime. A running container debits your balance
-                    continuously; at zero balance it is paused with reason “credits exhausted”.
+                    Charged per started minute while an instance runs. The size is chosen when you
+                    deploy, so you only pay while deployed and can change it on a redeploy. A running
+                    container debits your balance continuously; at zero balance it is paused with
+                    reason “credits exhausted”.
                 </p>
             </section>
 
