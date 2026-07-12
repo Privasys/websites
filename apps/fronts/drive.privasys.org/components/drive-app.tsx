@@ -39,30 +39,34 @@ export function DriveApp() {
             />
 
             <div className="flex flex-1 pt-14">
-                {/* Sidebar */}
-                <nav
-                    className="sticky top-14 hidden h-[calc(100vh-3.5rem)] w-56 shrink-0 flex-col gap-1 border-r p-3 sm:flex"
+                {/* Sidebar: stretches with the row (no forced viewport
+                    height, which used to push the footer below the fold);
+                    the nav itself sticks under the header. */}
+                <aside
+                    className="hidden w-56 shrink-0 border-r sm:block"
                     style={{ borderColor: 'var(--drv-border)' }}
                 >
-                    <SidebarItem
-                        active={view === 'my-drive'}
-                        onClick={() => setView('my-drive')}
-                        icon={<HomeIcon width={18} height={18} />}
-                        label="My Drive"
-                    />
-                    <SidebarItem
-                        active={view === 'shared'}
-                        onClick={() => setView('shared')}
-                        icon={<PeopleIcon width={18} height={18} />}
-                        label="Shared with me"
-                    />
-                    <SidebarItem
-                        active={view === 'requests'}
-                        onClick={() => setView('requests')}
-                        icon={<InboxIcon width={18} height={18} />}
-                        label="Requests"
-                    />
-                </nav>
+                    <nav className="sticky top-14 flex max-h-[calc(100vh-3.5rem)] flex-col gap-1 overflow-auto p-3">
+                        <SidebarItem
+                            active={view === 'my-drive'}
+                            onClick={() => setView('my-drive')}
+                            icon={<HomeIcon width={18} height={18} />}
+                            label="My Drive"
+                        />
+                        <SidebarItem
+                            active={view === 'shared'}
+                            onClick={() => setView('shared')}
+                            icon={<PeopleIcon width={18} height={18} />}
+                            label="Shared with me"
+                        />
+                        <SidebarItem
+                            active={view === 'requests'}
+                            onClick={() => setView('requests')}
+                            icon={<InboxIcon width={18} height={18} />}
+                            label="Requests"
+                        />
+                    </nav>
+                </aside>
 
                 {/* Main */}
                 <main className="flex min-w-0 flex-1 flex-col" style={{ background: 'var(--drv-surface-2)' }}>
@@ -76,7 +80,10 @@ export function DriveApp() {
                 </main>
             </div>
 
+            {/* !mt-0 overrides the shared footer's 7.5rem marketing-page
+                top margin, which does not belong in an app shell. */}
             <Footer
+                className="!mt-0"
                 companyLine="Every file is sealed inside a hardware-protected enclave. Attestation is verified independently, no trust required."
                 links={FOOTER_LINKS}
             />
