@@ -52,7 +52,7 @@ export function ShareDialog({
     const [mode, setMode] = useState<LinkMode>('open');
     const [reqAttrs, setReqAttrs] = useState<string[]>(['name']);
     const [generated, setGenerated] = useState<CreatedLink | null>(null);
-    const [copied, setCopied] = useState(false);
+    const [copied, setCopied] = useState<string | null>(null); // link id last copied
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -80,7 +80,7 @@ export function ShareDialog({
         setBusy(true);
         setError(null);
         setGenerated(null);
-        setCopied(false);
+        setCopied(null);
         try {
             const created = await createLink(session, tenantID, node.id, {
                 mode,
@@ -100,9 +100,9 @@ export function ShareDialog({
     const copyLink = async (id: string, secret: string) => {
         try {
             await navigator.clipboard.writeText(linkURL(id, secret));
-            setCopied(true);
+            setCopied(id);
         } catch {
-            /* clipboard blocked; the field below stays selectable */
+            /* clipboard blocked; the fallback field stays selectable */
         }
     };
 
@@ -239,29 +239,24 @@ export function ShareDialog({
                             <LinkIcon width={16} height={16} /> Copy link
                         </button>
 
-                        {generated && (
-                            <div className="mt-3 rounded-lg border p-3" style={{ borderColor: 'var(--drv-accent)', background: 'var(--drv-accent-weak)' }}>
-                                <div className="mb-1.5 text-xs font-medium" style={{ color: 'var(--drv-accent)' }}>
-                                    {copied
-                                        ? 'Link copied to your clipboard. It carries the secret and is shown only once.'
-                                        : 'Link ready. Copy it now, the secret is shown only once.'}
-                                </div>
-                                <div className="flex gap-2">
-                                    <input
-                                        readOnly
-                                        value={linkURL(generated.id, generated.secret)}
-                                        onFocus={(e) => e.currentTarget.select()}
-                                        className="min-w-0 flex-1 rounded-lg border px-3 py-2 text-xs outline-none"
-                                        style={{ borderColor: 'var(--drv-border)', background: 'var(--drv-surface)' }}
-                                    />
-                                    <button
-                                        onClick={() => void copyLink(generated.id, generated.secret)}
-                                        className="drv-btn-primary rounded-lg px-3 py-2 text-xs"
-                                    >
-                                        {copied ? 'Copied' : 'Copy'}
-                                    </button>
-                                </div>
+                        {generated && copied === generated.id && (
+                            <div
+                                className="mt-3 rounded-lg border px-3 py-2 text-xs font-medium"
+                                style={{ borderColor: 'var(--drv-accent)', background: 'var(--drv-accent-weak)', color: 'var(--drv-accent)' }}
+                            >
+                                Link copied to your clipboard.
                             </div>
+                        )}
+                        {generated && copied !== generated.id && (
+                            // Clipboard blocked (permissions): fall back to a
+                            // selectable field so the link is not lost.
+                            <input
+                                readOnly
+                                value={linkURL(generated.id, generated.secret)}
+                                onFocus={(e) => e.currentTarget.select()}
+                                className="mt-3 w-full rounded-lg border px-3 py-2 text-xs outline-none"
+                                style={{ borderColor: 'var(--drv-border)', background: 'var(--drv-surface)' }}
+                            />
                         )}
 
                         {links.length > 0 && (
@@ -278,6 +273,16 @@ export function ShareDialog({
                                                     ? `Restricted (${(l.required_attributes ?? []).join(', ') || 'attributes'})`
                                                     : 'Anyone with the link'}
                                             </span>
+                                            {l.secret && (
+                                                <button
+                                                    onClick={() => void copyLink(l.id, l.secret!)}
+                                                    disabled={busy}
+                                                    className="rounded-full border px-2.5 py-1 text-xs font-medium hover:bg-[var(--drv-hover)]"
+                                                    style={{ borderColor: 'var(--drv-border)', color: 'var(--drv-text)' }}
+                                                >
+                                                    {copied === l.id ? 'Copied' : 'Copy'}
+                                                </button>
+                                            )}
                                             <button
                                                 title="Revoke link"
                                                 onClick={() => void revoke(l.id)}

@@ -325,6 +325,8 @@ export interface ShareLink {
     created_at: string;
     expires_at?: string;
     revoked: boolean;
+    /** Owner-only: lets the link be re-copied. Absent on pre-existing links. */
+    secret?: string;
 }
 
 export interface CreatedLink {
