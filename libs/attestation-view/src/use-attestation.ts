@@ -147,6 +147,9 @@ export function useAttestation(target: AttestationTarget): [AttestationState, At
                 headers,
                 body: JSON.stringify({ quote: raw })
             });
+            if (res.status === 401 || res.status === 403) {
+                throw new Error('The attestation server rejected the request: token missing or invalid.');
+            }
             if (!res.ok) {
                 throw new Error(`Verify request failed: ${res.status} ${res.statusText}`);
             }
