@@ -15,7 +15,14 @@ export function AttestationTab({ connection }: { connection: ConnectionConfig })
         attestUrl,
         verifyQuoteUrl,
         verifyQuoteToken: () => Promise.resolve(connection.attestationServerToken),
-        autoVerifyQuote: !!connection.attestationServerUrl
+        // Auto-verify only once we actually hold an attestation-server token:
+        // as.privasys.org/verify-quote is bearer-gated (401 without one), so
+        // auto-firing on connect before the user has minted a token via
+        // "Get Token" surfaced a spurious 401. Without a token the quote is
+        // still inspected — just shown unverified until the user gets one.
+        autoVerifyQuote: !!connection.attestationServerUrl && !!connection.attestationServerToken,
+        // Deep-linked (URL-driven) connections inspect immediately.
+        autoInspect: connection.autoInspect
     });
 
     if (!state.result) {
