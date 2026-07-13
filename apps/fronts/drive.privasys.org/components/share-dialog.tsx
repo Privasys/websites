@@ -101,6 +101,7 @@ export function ShareDialog({
         try {
             await navigator.clipboard.writeText(linkURL(id, secret));
             setCopied(id);
+            setTimeout(() => setCopied((cur) => (cur === id ? null : cur)), 5000);
         } catch {
             /* clipboard blocked; the fallback field stays selectable */
         }
