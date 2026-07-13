@@ -30,6 +30,10 @@ const FOOTER_LINKS = [
 export default function RootLayout({ children }: { children: ReactNode }) {
     return (
         <html lang='en'>
+            <head>
+                {/* Privacy-friendly, self-hosted Plausible analytics (matches the other fronts). */}
+                <script defer data-domain='explorer.privasys.org' src='https://plausible.privasys.org/js/script.js' />
+            </head>
             <body className='min-h-screen flex flex-col overflow-x-hidden bg-white text-[#1d1d1f] dark:bg-[#0a0a0a] dark:text-[#f5f5f7]'>
                 {/* Hosted Privasys auth SDK: powers the Authenticate tab and the
                     connect screen's "Get Token" button (window.Privasys). */}
