@@ -3,7 +3,6 @@
 import { useEffect, useRef } from 'react';
 import { Navbar, Footer } from '@privasys/ui';
 import { useDrive } from '~/lib/use-drive';
-import { ShieldCheck } from './icons';
 
 const FOOTER_LINKS = [{ label: 'Legal', href: 'https://privasys.org/legal/', external: true }];
 
@@ -41,33 +40,24 @@ export function SignInGate() {
                             <Feature text="Sealed browser-to-enclave transport. The gateway only sees ciphertext." />
                             <Feature text="Directories and per-file, per-folder sharing you control." />
                             <Feature text="No passwords. Sign in with the Privasys Wallet or a passkey." />
+                            <Feature text="Attestation-verified confidential computing, no trust required." />
                         </ul>
-                        <div
-                            className="mt-6 flex items-center gap-2 text-xs"
-                            style={{ color: 'var(--drv-text-muted)' }}
-                        >
-                            <ShieldCheck /> Attestation-verified confidential computing
-                        </div>
                     </div>
 
-                    {/* Sign-in */}
-                    <div
-                        className="rounded-2xl border p-5 shadow-sm"
-                        style={{ background: 'var(--drv-surface)', borderColor: 'var(--drv-border)' }}
-                    >
-                        <div className="mb-4 text-center">
-                            <div className="text-lg font-semibold">Sign in to your drive</div>
-                            <div className="mt-1 text-xs" style={{ color: 'var(--drv-text-muted)' }}>
-                                Use the Privasys Wallet, or connect with a passkey.
-                            </div>
-                        </div>
-
+                    {/* Sign-in. The auth SDK's iframe draws its own card
+                        chrome, so the ceremony gets a bare, explicitly
+                        sized container (the SDK fills 100% of it) rather
+                        than a second nested card. */}
+                    <div>
                         {status === 'misconfigured' ? (
                             <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-600">
                                 {error ?? 'Drive is not configured.'}
                             </p>
                         ) : status === 'need-approval' ? (
-                            <div className="space-y-3 text-center">
+                            <div
+                                className="space-y-3 rounded-2xl border p-5 text-center shadow-sm"
+                                style={{ background: 'var(--drv-surface)', borderColor: 'var(--drv-border)' }}
+                            >
                                 <p className="text-sm" style={{ color: 'var(--drv-text-muted)' }}>
                                     Approve Privasys Drive on your phone to open a sealed channel
                                     to the enclave.
@@ -82,7 +72,7 @@ export function SignInGate() {
                         ) : (
                             <div
                                 ref={ceremonyRef}
-                                className="min-h-[320px] overflow-hidden rounded-xl"
+                                className="h-[560px] w-full overflow-hidden rounded-2xl"
                                 aria-busy={status === 'connecting'}
                             />
                         )}

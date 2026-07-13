@@ -191,7 +191,7 @@ function LinkLanding() {
                                     Sign in with the Privasys Wallet, or install it, to open it securely.
                                 </div>
                             </div>
-                            <div ref={ceremonyRef} className="min-h-[320px] overflow-hidden rounded-xl" />
+                            <div ref={ceremonyRef} className="h-[560px] w-full overflow-hidden rounded-xl" />
                         </Card>
                     ) : !resolved ? (
                         <Card>
