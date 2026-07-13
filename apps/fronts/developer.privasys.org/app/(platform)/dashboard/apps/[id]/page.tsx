@@ -55,10 +55,11 @@ function sizeOptionLabel(s: InstanceSize): string {
     return `${s.size} — ${s.vcpu} vCPU · ${s.ram_gb} GB · ${s.storage_gb} GB Storage · ${priceLabel(s)}`;
 }
 
-// priceLabel: the price book's meter tick (credits per started minute) plus
-// the always-on GBP monthly equivalent — the pair users reason with.
+// priceLabel: the meter tick (credits per started hour — billing decision
+// 2026-07-13) plus the always-on GBP monthly equivalent, the pair users
+// reason with.
 function priceLabel(s: InstanceSize): string {
-    return `${s.credits_per_min.toLocaleString('en-GB')} credits/min ≈ £${monthlyGBP(s).toFixed(2)}/mo`;
+    return `${s.credits_per_hour.toLocaleString('en-GB')} credits/hour ≈ £${monthlyGBP(s).toFixed(2)}/mo`;
 }
 
 function BuildStatusDot({ status }: { status: string }) {
