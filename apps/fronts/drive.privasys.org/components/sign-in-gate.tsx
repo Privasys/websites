@@ -44,10 +44,10 @@ export function SignInGate() {
                         </ul>
                     </div>
 
-                    {/* Sign-in. The auth SDK's iframe draws its own card
-                        chrome, so the ceremony gets a bare, explicitly
-                        sized container (the SDK fills 100% of it) rather
-                        than a second nested card. */}
+                    {/* Sign-in. Passing a container puts the auth SDK in
+                        inline presentation (@privasys/auth 0.6.0): no brand
+                        panel or close button, a compact column sized for
+                        this explicitly sized 560px container. */}
                     <div>
                         {status === 'misconfigured' ? (
                             <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-600">
