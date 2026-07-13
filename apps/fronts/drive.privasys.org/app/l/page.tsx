@@ -24,6 +24,7 @@ import {
 } from '~/lib/drive-api';
 import { FileViewer, canPreview } from '~/components/file-viewer';
 import { SharedBrowser } from '~/components/shared-browser';
+import { SHARE_ATTRIBUTES } from '~/lib/share-attributes';
 import { formatBytes } from '~/lib/format';
 import { FileIcon, FolderIcon, DownloadIcon, LockIcon, ShieldCheck } from '~/components/icons';
 
@@ -49,7 +50,8 @@ function LinkLanding() {
     const [params] = useState(readParams);
     const [resolved, setResolved] = useState<ResolvedLink | null>(null);
     const [error, setError] = useState<string | null>(null);
-    const [state, setState] = useState<'resolving' | 'granted' | 'pending' | 'denied'>('resolving');
+    const [state, setState] = useState<'resolving' | 'granted' | 'pending' | 'denied' | 'missing-attrs'>('resolving');
+    const [missingAttrs, setMissingAttrs] = useState<string[]>([]);
     const [viewing, setViewing] = useState(false);
     const ceremonyRef = useRef<HTMLDivElement>(null);
     const started = useRef(false);
@@ -99,8 +101,20 @@ function LinkLanding() {
                 return;
             }
             if (redeemed.current) return;
+            // Restricted links need every required attribute: without them
+            // no request is filed (the server enforces this too) and the
+            // visitor is told what to share instead.
+            const attrs = presentedAttributes(r);
+            if (r.mode === 'restricted') {
+                const missing = (r.required_attributes ?? []).filter((k) => !attrs?.[k]);
+                if (missing.length > 0) {
+                    setMissingAttrs(missing);
+                    setState('missing-attrs');
+                    return;
+                }
+            }
             redeemed.current = true;
-            const res = await redeemLink(session, params.id, params.secret, presentedAttributes(r));
+            const res = await redeemLink(session, params.id, params.secret, attrs);
             if (res.status === 'granted') {
                 setState('granted');
                 if (r.node.kind === 'file' && canPreview(asNode(r))) setViewing(true);
@@ -241,6 +255,15 @@ function LinkLanding() {
                                 <div className="mt-5 rounded-lg border px-3 py-3 text-sm" style={{ borderColor: 'var(--drv-border)', color: 'var(--drv-text-muted)' }}>
                                     The owner declined this request.
                                 </div>
+                            ) : state === 'missing-attrs' ? (
+                                <div className="mt-5 rounded-lg border px-3 py-3 text-sm" style={{ borderColor: 'var(--drv-border)', color: 'var(--drv-text-muted)' }}>
+                                    The owner asks visitors to share{' '}
+                                    <span style={{ color: 'var(--drv-text)' }}>
+                                        {missingAttrs.map(attrLabel).join(', ')}
+                                    </span>{' '}
+                                    to request access. Share {missingAttrs.length === 1 ? 'it' : 'them'} from
+                                    your Privasys Wallet when signing in, then open this link again.
+                                </div>
                             ) : (
                                 <div className="mt-5 rounded-lg border px-3 py-3 text-sm" style={{ borderColor: 'var(--drv-border)', color: 'var(--drv-text-muted)' }}>
                                     Waiting for the owner to approve your access. This page updates
@@ -279,6 +302,10 @@ function LinkLanding() {
             />
         </div>
     );
+}
+
+function attrLabel(key: string): string {
+    return SHARE_ATTRIBUTES.find((a) => a.key === key)?.label ?? key;
 }
 
 function asNode(r: ResolvedLink): DriveNode {

@@ -89,8 +89,12 @@ body {
 .drv-markdown h3 { font-size: 1.15em; }
 .drv-markdown p { margin: 0.7em 0; }
 .drv-markdown a { color: var(--drv-accent); text-decoration: underline; }
+/* Restore markers: the Tailwind reset sets list-style:none globally. */
 .drv-markdown ul,
 .drv-markdown ol { margin: 0.7em 0; padding-left: 1.5em; }
+.drv-markdown ul { list-style: disc; }
+.drv-markdown ol { list-style: decimal; }
+.drv-markdown ul ul { list-style: circle; }
 .drv-markdown li { margin: 0.25em 0; }
 .drv-markdown blockquote {
     margin: 0.9em 0;
