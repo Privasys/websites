@@ -53,7 +53,8 @@ const RESOURCE_LABEL: Record<string, string> = {
     container_minute_small: 'Container minutes (Confidential-Small)',
     container_minute_medium: 'Container minutes (Confidential-Medium)',
     container_minute_large: 'Container minutes (Confidential-Large)',
-    container_minute_xlarge: 'Container minutes (Confidential-XLarge)'
+    container_minute_xlarge: 'Container minutes (Confidential-XLarge)',
+    storage_retained_gb_day: 'Retained storage (GB-days)'
 };
 
 const KIND_LABEL: Record<string, string> = {
