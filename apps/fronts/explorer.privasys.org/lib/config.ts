@@ -32,6 +32,9 @@ export interface ConnectionConfig {
     brokerUrl: string;
     attestationServerUrl: string;
     attestationServerToken: string;
+    // When true (a URL-driven deep link), the attestation tab inspects the
+    // certificate immediately instead of waiting for a click.
+    autoInspect?: boolean;
 }
 
 // Raw form fields the connect screen collects.
@@ -47,6 +50,34 @@ export interface ConnectFormValues {
 }
 
 const stripTrailingSlash = (s: string): string => s.replace(/\/+$/, '');
+
+// Build a ready-to-use connection from URL query params so the explorer can be
+// deep-linked straight to an app's Remote Attestation, e.g.
+//   /?app=wasm-app-example&env=development
+// `app` (or `appName`/`name`) is required; `env` (or `environment`) accepts
+// production/development and the short forms prod/dev/test. Everything else
+// uses the environment preset, with quote verification enabled. Returns null
+// when no app is given (fall back to the connect screen).
+export function connectionFromParams(params: URLSearchParams): ConnectionConfig | null {
+    const appName = (params.get('app') || params.get('appName') || params.get('name') || '').trim();
+    if (!appName) return null;
+
+    const envRaw = (params.get('env') || params.get('environment') || '').trim().toLowerCase();
+    const env: EnvKey = envRaw === 'development' || envRaw === 'dev' || envRaw === 'test' ? 'development' : 'production';
+
+    const resolved = resolveConnection({
+        appName,
+        env,
+        endpointUrl: '',
+        baseUrl: '',
+        gatewayDomain: '',
+        brokerUrl: '',
+        attestationServerUrl: DEFAULT_ATTESTATION_SERVER,
+        attestationServerToken: ''
+    });
+    if ('error' in resolved) return null;
+    return { ...resolved, autoInspect: true };
+}
 
 // Resolve the raw connect-form values into a ConnectionConfig, mirroring the
 // legacy handleConnect(). Returns a string error message when the app name /
