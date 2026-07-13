@@ -291,14 +291,16 @@ export function FileBrowser({
             onDragLeave={onPageDragLeave}
             onDrop={onPageDrop}
         >
-            {pageDrag && dropTarget === null && (
+            {/* Google-Drive-style drop affordance: the files area gets a
+                translucent tint (rows stay visible so a folder can be
+                targeted), and a floating pill names the destination. */}
+            {pageDrag && (
                 <div
-                    className="pointer-events-none absolute inset-3 z-30 flex items-center justify-center rounded-2xl border-2 border-dashed"
-                    style={{ borderColor: 'var(--drv-accent)', background: 'var(--drv-accent-weak)' }}
+                    className="drv-btn-primary pointer-events-none fixed bottom-8 left-1/2 z-40 flex -translate-x-1/2 items-center gap-2 rounded-full px-5 py-2.5 text-sm shadow-lg"
                 >
-                    <div className="flex items-center gap-2 text-sm font-medium" style={{ color: 'var(--drv-accent)' }}>
-                        <UploadIcon /> Drop files to upload to {current.name}
-                    </div>
+                    <UploadIcon width={18} height={18} />
+                    Drop files to upload to{' '}
+                    {dropTarget ? (byId.get(dropTarget)?.name ?? current.name) : current.name}
                 </div>
             )}
 
@@ -392,7 +394,21 @@ export function FileBrowser({
             {newFolder && <NewFolderRow onSubmit={onCreateFolder} onCancel={() => setNewFolder(false)} />}
 
             {/* Body */}
-            <div className="flex-1 p-4" onClick={(e) => e.target === e.currentTarget && clearSelection()}>
+            <div
+                className="flex-1 rounded-xl p-4"
+                onClick={(e) => e.target === e.currentTarget && clearSelection()}
+                style={
+                    pageDrag && dropTarget === null
+                        ? {
+                            // Tint, do not cover: folder rows must stay
+                            // visible (and targetable) during the drag.
+                            outline: '2px dashed var(--drv-accent)',
+                            outlineOffset: '-6px',
+                            background: 'var(--drv-hover)'
+                        }
+                        : undefined
+                }
+            >
                 {loading ? (
                     <div className="py-20 text-center text-sm" style={{ color: 'var(--drv-text-muted)' }}>
                         Loading…

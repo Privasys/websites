@@ -108,7 +108,7 @@ function Feature({ text }: { text: string }) {
         <li className="flex items-start gap-2.5">
             <span
                 className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-white"
-                style={{ background: 'var(--drv-gradient)' }}
+                style={{ background: 'var(--drv-accent)' }}
             >
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
                     <path d="m5 12 5 5L20 7" />

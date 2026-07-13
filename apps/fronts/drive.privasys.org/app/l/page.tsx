@@ -5,10 +5,12 @@
 // The recipient opens this after receiving a link. The whole Drive channel
 // is a wallet-attested sealed session, so the visitor signs in first (the
 // wallet, or an invitation to install it). Once a sealed session exists we
-// resolve the link, then either redeem it (open links grant access
-// immediately) or file an access request (restricted links wait for the
-// owner). The link secret rides in the URL fragment and never reaches a
-// server log.
+// resolve the link and redeem it immediately: clicking the link,
+// authenticating and consenting to the requested attributes IS the request,
+// so no extra button stands between the visitor and the content. Open links
+// grant on the spot; restricted links file the access request and this page
+// polls until the owner decides. The link secret rides in the URL fragment
+// and never reaches a server log.
 
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { Navbar, Footer } from '@privasys/ui';
@@ -21,6 +23,7 @@ import {
     type ResolvedLink
 } from '~/lib/drive-api';
 import { FileViewer, canPreview } from '~/components/file-viewer';
+import { SharedBrowser } from '~/components/shared-browser';
 import { formatBytes } from '~/lib/format';
 import { FileIcon, FolderIcon, DownloadIcon, LockIcon, ShieldCheck } from '~/components/icons';
 
@@ -42,15 +45,15 @@ export default function LinkPage() {
 }
 
 function LinkLanding() {
-    const { status, session, name, signInInto } = useDrive();
+    const { status, session, name, profile, signInInto } = useDrive();
     const [params] = useState(readParams);
     const [resolved, setResolved] = useState<ResolvedLink | null>(null);
     const [error, setError] = useState<string | null>(null);
-    const [busy, setBusy] = useState(false);
-    const [redeemState, setRedeemState] = useState<'idle' | 'granted' | 'pending'>('idle');
+    const [state, setState] = useState<'resolving' | 'granted' | 'pending' | 'denied'>('resolving');
     const [viewing, setViewing] = useState(false);
     const ceremonyRef = useRef<HTMLDivElement>(null);
     const started = useRef(false);
+    const redeemed = useRef(false);
 
     // Mount the sign-in ceremony when signed out.
     useEffect(() => {
@@ -59,52 +62,83 @@ function LinkLanding() {
         void signInInto(ceremonyRef.current);
     }, [status, signInInto]);
 
-    // Resolve the link once a sealed session is live.
-    const resolve = useCallback(async () => {
+    // The attributes the visitor already consented to share at sign-in,
+    // matched against what the link requires.
+    const presentedAttributes = useCallback(
+        (r: ResolvedLink): Record<string, string> | undefined => {
+            if (r.mode !== 'restricted') return undefined;
+            const available: Record<string, string | undefined> = {
+                name: profile?.name || profile?.display_name || name,
+                email: profile?.email || profile?.display_email
+            };
+            const out: Record<string, string> = {};
+            for (const key of r.required_attributes ?? []) {
+                const v = available[key];
+                if (v) out[key] = v;
+            }
+            return out;
+        },
+        [profile, name]
+    );
+
+    // Resolve, then redeem in the same breath: authenticating with the
+    // requested attributes already expressed the visitor's intent.
+    const resolveAndRedeem = useCallback(async () => {
         if (!session || !params.id || !params.secret) return;
         setError(null);
         try {
             const r = await resolveLink(session, params.id, params.secret);
             setResolved(r);
-            if (r.already_granted) setRedeemState('granted');
-            else if (r.request_status === 'pending') setRedeemState('pending');
+            if (r.already_granted) {
+                setState('granted');
+                if (r.node.kind === 'file' && canPreview(asNode(r))) setViewing(true);
+                return;
+            }
+            if (r.request_status === 'pending') {
+                setState('pending');
+                return;
+            }
+            if (redeemed.current) return;
+            redeemed.current = true;
+            const res = await redeemLink(session, params.id, params.secret, presentedAttributes(r));
+            if (res.status === 'granted') {
+                setState('granted');
+                if (r.node.kind === 'file' && canPreview(asNode(r))) setViewing(true);
+            } else {
+                setState('pending');
+            }
         } catch (e) {
             setError(e instanceof Error ? e.message : 'This link is invalid or has expired.');
         }
-    }, [session, params]);
+    }, [session, params, presentedAttributes]);
 
     useEffect(() => {
-        void resolve();
-    }, [resolve]);
+        void resolveAndRedeem();
+    }, [resolveAndRedeem]);
 
-    const act = async () => {
-        if (!session || !resolved) return;
-        setBusy(true);
-        setError(null);
-        try {
-            const attributes =
-                resolved.mode === 'restricted' && name ? { name } : undefined;
-            const res = await redeemLink(session, params.id, params.secret, attributes);
-            setRedeemState(res.status);
-            if (res.status === 'granted') await resolve();
-        } catch (e) {
-            setError(e instanceof Error ? e.message : 'Could not open this link.');
-        } finally {
-            setBusy(false);
-        }
-    };
-
-    const asNode = (r: ResolvedLink): DriveNode => ({
-        id: r.node.id,
-        tenant_id: r.tenant_id,
-        kind: r.node.kind,
-        name: r.node.name,
-        size_bytes: r.node.size_bytes
-    });
+    // While the owner's decision is pending, poll so approval flips this
+    // page to the content without a manual reload.
+    useEffect(() => {
+        if (state !== 'pending' || !session) return;
+        const t = setInterval(async () => {
+            try {
+                const r = await resolveLink(session, params.id, params.secret);
+                if (r.already_granted) {
+                    setResolved(r);
+                    setState('granted');
+                    if (r.node.kind === 'file' && canPreview(asNode(r))) setViewing(true);
+                } else if (r.request_status === 'denied') {
+                    setState('denied');
+                }
+            } catch {
+                /* keep polling */
+            }
+        }, 8000);
+        return () => clearInterval(t);
+    }, [state, session, params]);
 
     const download = async () => {
         if (!session || !resolved) return;
-        setBusy(true);
         try {
             const bytes = await downloadFile(session, resolved.tenant_id, resolved.node.id);
             const blob = new Blob([bytes as BlobPart], { type: 'application/octet-stream' });
@@ -118,17 +152,17 @@ function LinkLanding() {
             URL.revokeObjectURL(url);
         } catch (e) {
             setError(e instanceof Error ? e.message : 'Download failed.');
-        } finally {
-            setBusy(false);
         }
     };
+
+    const grantedFolder = state === 'granted' && resolved?.node.kind === 'folder';
 
     return (
         <div className="flex min-h-screen flex-col" style={{ background: 'var(--drv-surface-2)' }}>
             <Navbar brandSuffix="Drive" fullWidth />
 
-            <main className="flex flex-1 items-center justify-center px-6 pt-14">
-                <div className="w-full max-w-md py-12">
+            <main className="flex flex-1 justify-center px-6 pt-14">
+                <div className={`w-full py-10 ${grantedFolder ? 'max-w-3xl' : 'max-w-md self-center'}`}>
                     {!params.id || !params.secret ? (
                         <Card>
                             <p className="text-sm" style={{ color: 'var(--drv-text-muted)' }}>
@@ -138,7 +172,7 @@ function LinkLanding() {
                     ) : status === 'signed-out' ? (
                         <Card>
                             <div className="mb-3 text-center">
-                                <div className="text-lg font-semibold">You have been sent a file</div>
+                                <div className="text-lg font-semibold">Something was shared with you</div>
                                 <div className="mt-1 text-xs" style={{ color: 'var(--drv-text-muted)' }}>
                                     Sign in with the Privasys Wallet, or install it, to open it securely.
                                 </div>
@@ -151,6 +185,24 @@ function LinkLanding() {
                                 {error ?? 'Opening the link…'}
                             </p>
                         </Card>
+                    ) : grantedFolder ? (
+                        <>
+                            <div className="mb-4">
+                                <div className="text-lg font-semibold">{resolved.node.name}</div>
+                                <div className="text-xs" style={{ color: 'var(--drv-text-muted)' }}>
+                                    {resolved.owner_name ? `Shared by ${resolved.owner_name}` : 'Shared with you'}
+                                    {' · sealed end-to-end inside the enclave'}
+                                </div>
+                            </div>
+                            {session && (
+                                <SharedBrowser
+                                    session={session}
+                                    tenantID={resolved.tenant_id}
+                                    rootID={resolved.node.id}
+                                    rootName={resolved.node.name}
+                                />
+                            )}
+                        </>
                     ) : (
                         <Card>
                             <div className="flex items-center gap-3">
@@ -168,7 +220,7 @@ function LinkLanding() {
                                 </div>
                             </div>
 
-                            {redeemState === 'granted' ? (
+                            {state === 'granted' ? (
                                 <div className="mt-5 flex flex-wrap gap-2">
                                     {resolved.node.kind === 'file' && canPreview(asNode(resolved)) && (
                                         <button onClick={() => setViewing(true)} className="drv-btn-primary flex items-center gap-2 rounded-full px-4 py-2 text-sm">
@@ -178,34 +230,21 @@ function LinkLanding() {
                                     {resolved.node.kind === 'file' && (
                                         <button
                                             onClick={() => void download()}
-                                            disabled={busy}
-                                            className="flex items-center gap-2 rounded-full border px-4 py-2 text-sm disabled:opacity-50"
+                                            className="flex items-center gap-2 rounded-full border px-4 py-2 text-sm"
                                             style={{ borderColor: 'var(--drv-border)' }}
                                         >
                                             <DownloadIcon width={16} height={16} /> Download
                                         </button>
                                     )}
                                 </div>
-                            ) : redeemState === 'pending' ? (
+                            ) : state === 'denied' ? (
                                 <div className="mt-5 rounded-lg border px-3 py-3 text-sm" style={{ borderColor: 'var(--drv-border)', color: 'var(--drv-text-muted)' }}>
-                                    Your request is waiting for the owner to approve it. You can close
-                                    this page and come back to the link later.
+                                    The owner declined this request.
                                 </div>
                             ) : (
-                                <div className="mt-5">
-                                    {resolved.mode === 'restricted' && (
-                                        <p className="mb-3 text-xs" style={{ color: 'var(--drv-text-muted)' }}>
-                                            The owner will review your request. You are sharing:{' '}
-                                            {(resolved.required_attributes ?? []).join(', ') || 'your details'}.
-                                        </p>
-                                    )}
-                                    <button
-                                        onClick={() => void act()}
-                                        disabled={busy}
-                                        className="drv-btn-primary w-full rounded-full px-4 py-2.5 text-sm disabled:opacity-50"
-                                    >
-                                        {resolved.mode === 'restricted' ? 'Request access' : 'Open file'}
-                                    </button>
+                                <div className="mt-5 rounded-lg border px-3 py-3 text-sm" style={{ borderColor: 'var(--drv-border)', color: 'var(--drv-text-muted)' }}>
+                                    Waiting for the owner to approve your access. This page updates
+                                    automatically; you can also come back to the link later.
                                 </div>
                             )}
 
@@ -240,6 +279,16 @@ function LinkLanding() {
             />
         </div>
     );
+}
+
+function asNode(r: ResolvedLink): DriveNode {
+    return {
+        id: r.node.id,
+        tenant_id: r.tenant_id,
+        kind: r.node.kind,
+        name: r.node.name,
+        size_bytes: r.node.size_bytes
+    };
 }
 
 function Card({ children }: { children: React.ReactNode }) {
