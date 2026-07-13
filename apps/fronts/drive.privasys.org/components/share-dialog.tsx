@@ -74,6 +74,8 @@ export function ShareDialog({
         void load();
     }, [load]);
 
+    // Create the link and put it straight on the clipboard: the user's
+    // intent behind "Copy link" is to paste it somewhere next.
     const generate = async () => {
         setBusy(true);
         setError(null);
@@ -86,6 +88,7 @@ export function ShareDialog({
                 requiredAttributes: mode === 'restricted' ? reqAttrs : undefined
             });
             setGenerated(created);
+            await copyLink(created.id, created.secret);
             await load();
         } catch (e) {
             setError(e instanceof Error ? e.message : 'Could not create the link.');
@@ -98,9 +101,8 @@ export function ShareDialog({
         try {
             await navigator.clipboard.writeText(linkURL(id, secret));
             setCopied(true);
-            setTimeout(() => setCopied(false), 1800);
         } catch {
-            /* clipboard blocked; the field is selectable */
+            /* clipboard blocked; the field below stays selectable */
         }
     };
 
@@ -234,13 +236,15 @@ export function ShareDialog({
                             disabled={busy || (mode === 'restricted' && reqAttrs.length === 0)}
                             className="drv-btn-primary mt-3 flex items-center gap-2 rounded-full px-4 py-2 text-sm disabled:opacity-50"
                         >
-                            <LinkIcon width={16} height={16} /> Create link
+                            <LinkIcon width={16} height={16} /> Copy link
                         </button>
 
                         {generated && (
                             <div className="mt-3 rounded-lg border p-3" style={{ borderColor: 'var(--drv-accent)', background: 'var(--drv-accent-weak)' }}>
                                 <div className="mb-1.5 text-xs font-medium" style={{ color: 'var(--drv-accent)' }}>
-                                    Link ready. Copy it now, the secret is shown only once.
+                                    {copied
+                                        ? 'Link copied to your clipboard. It carries the secret and is shown only once.'
+                                        : 'Link ready. Copy it now, the secret is shown only once.'}
                                 </div>
                                 <div className="flex gap-2">
                                     <input

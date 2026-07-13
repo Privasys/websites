@@ -47,14 +47,20 @@ body {
     color: var(--drv-text);
 }
 
-/* Brand-gradient primary button. */
+/* Solid accent primary button. */
 .drv-btn-primary {
-    background: var(--drv-gradient);
-    color: #052235;
+    background: var(--drv-accent);
+    color: #fff;
     font-weight: 600;
 }
 .drv-btn-primary:hover {
-    opacity: 0.92;
+    opacity: 0.9;
+}
+@media (prefers-color-scheme: dark) {
+    /* The dark accent is the brand green; dark text reads better on it. */
+    .drv-btn-primary {
+        color: #052235;
+    }
 }
 
 /* Subtle scrollbars for the file panes. */

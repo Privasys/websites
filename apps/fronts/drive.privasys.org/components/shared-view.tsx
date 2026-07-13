@@ -4,12 +4,14 @@ import { useCallback, useEffect, useState } from 'react';
 import type { SealedSession } from '@privasys/auth';
 import { downloadFile, listShared, type SharedItem } from '~/lib/drive-api';
 import { avatarColor, formatBytes, granteeLabel, initials } from '~/lib/format';
-import { DownloadIcon, FileIcon, FolderIcon, PeopleIcon } from './icons';
+import { SharedBrowser } from './shared-browser';
+import { ChevronRight, DownloadIcon, FileIcon, FolderIcon, PeopleIcon } from './icons';
 
 export function SharedView({ session }: { session: SealedSession }) {
     const [items, setItems] = useState<SharedItem[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [browsing, setBrowsing] = useState<SharedItem | null>(null);
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -44,6 +46,32 @@ export function SharedView({ session }: { session: SealedSession }) {
         }
     };
 
+    if (browsing) {
+        return (
+            <div className="flex h-full flex-col">
+                <div className="flex items-center gap-1 border-b px-5 py-3.5" style={{ borderColor: 'var(--drv-border)' }}>
+                    <button
+                        onClick={() => setBrowsing(null)}
+                        className="rounded px-1.5 py-0.5 text-[15px] font-medium hover:bg-[var(--drv-hover)]"
+                        style={{ color: 'var(--drv-text-muted)' }}
+                    >
+                        Shared with me
+                    </button>
+                    <ChevronRight style={{ color: 'var(--drv-text-muted)' }} />
+                    <span className="truncate text-[15px] font-medium">{browsing.name}</span>
+                </div>
+                <div className="drv-scroll min-h-0 flex-1 overflow-auto p-4">
+                    <SharedBrowser
+                        session={session}
+                        tenantID={browsing.tenant_id}
+                        rootID={browsing.node_id}
+                        rootName={browsing.name}
+                    />
+                </div>
+            </div>
+        );
+    }
+
     return (
         <div className="flex h-full flex-col">
             <div className="border-b px-5 py-3.5" style={{ borderColor: 'var(--drv-border)' }}>
@@ -75,8 +103,9 @@ export function SharedView({ session }: { session: SealedSession }) {
                         {items.map((it) => (
                             <div
                                 key={it.grant_id}
-                                className="group flex items-center gap-3 px-4 py-3 hover:bg-[var(--drv-hover)]"
+                                className={`group flex items-center gap-3 px-4 py-3 hover:bg-[var(--drv-hover)]${it.kind === 'folder' ? ' cursor-pointer' : ''}`}
                                 style={{ borderBottom: '1px solid var(--drv-border)' }}
+                                onClick={it.kind === 'folder' ? () => setBrowsing(it) : undefined}
                             >
                                 {it.kind === 'folder' ? (
                                     <FolderIcon width={22} height={22} style={{ color: 'var(--drv-accent)' }} />
