@@ -105,3 +105,15 @@ export async function mintAudienceToken(env: EnvKey, audience: string): Promise<
     }
     return frame.getTokenForAudience(audience);
 }
+
+// Mint an audience token ONLY if the user already has a Privasys.id session,
+// without ever opening the interactive sign-in. Returns '' when there is no
+// session (or the SDK is unavailable). Used to auto-verify quotes silently for
+// already-signed-in users; the interactive mintAudienceToken() is the fallback.
+export async function mintAudienceTokenSilent(env: EnvKey, audience: string): Promise<string> {
+    const frame = getIdpAuthFrame(env);
+    if (!frame) return '';
+    const session = await frame.getSession();
+    if (!session) return '';
+    return frame.getTokenForAudience(audience);
+}
