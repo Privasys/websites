@@ -1005,24 +1005,44 @@ export async function redeemPromoCode(token: string, code: string): Promise<Rede
     });
 }
 
+// DeployLocation is an adopter-facing deploy target: a place (cloud region)
+// rather than a specific enclave. The management-service picks a compatible
+// enclave in the chosen location at deploy time.
+export interface DeployLocation {
+    code: string;      // e.g. "europe-west9" — sent as `location` in the deploy body
+    label: string;     // e.g. "Paris, France"
+    tee_type: string;  // e.g. "tdx" | "sgx"
+    provider: string;  // e.g. "OVHcloud"
+}
+
+// listDeployLocations returns the locations an adopter may deploy this app to
+// (filtered server-side by the app's TEE type and image compatibility).
+export async function listDeployLocations(token: string, appId: string): Promise<DeployLocation[]> {
+    const res = await request<{ locations: DeployLocation[] }>(
+        `/api/v1/apps/${encodeURIComponent(appId)}/deploy-locations`, token);
+    return res.locations ?? [];
+}
+
 /**
- * Deploy a built version onto an enclave. The browser POSTs a tiny
- * `{enclave_id, instance_size?}` payload; the management-service service
- * account performs the actual `wasm_load` / `container_load` against the
- * enclave over RA-TLS. The wallet sealed-relay is reserved for runtime API
- * calls (e.g. `@config-api`) that carry user identity / secrets — deploys
- * themselves never touch it. `instanceSize` (container apps) picks the
- * Confidential-* size for THIS deployment; omitted, the server defaults to
- * the app's instance_size. Validated server-side.
+ * Deploy a built version to a location. The browser POSTs a tiny
+ * `{location, instance_size?}` payload; the management-service service
+ * account picks a compatible enclave in that location and performs the actual
+ * `wasm_load` / `container_load` against it over RA-TLS. The wallet
+ * sealed-relay is reserved for runtime API calls (e.g. `@config-api`) that
+ * carry user identity / secrets — deploys themselves never touch it.
+ * `instanceSize` (container apps) picks the Confidential-* size for THIS
+ * deployment; omitted, the server defaults to the app's instance_size.
+ * Validated server-side. (An admin may still target a specific enclave via
+ * `enclave_id`; adopters send a location.)
  */
 export function deployDirect(
     token: string,
     appId: string,
     versionId: string,
-    enclaveId: string,
+    location: string,
     instanceSize?: string
 ): Promise<AppDeployment> {
-    const body: { enclave_id: string; instance_size?: string } = { enclave_id: enclaveId };
+    const body: { location: string; instance_size?: string } = { location };
     if (instanceSize) body.instance_size = instanceSize;
     return request<AppDeployment>(
         `/api/v1/apps/${encodeURIComponent(appId)}/versions/${encodeURIComponent(versionId)}/deploy`,

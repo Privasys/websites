@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { useAuth } from '~/lib/privasys-auth';
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { getApp, listBuilds, listVersions, listDeployments, listCompatibleEnclaves, deleteApp, deployDirect, stopDeployment, getAppSchema, rpcCall, updateStoreListing, publishApp, identiconUrl, getAppMcp, updateContainerMcp, detectContainerMcp, retryBuild, listAppOwners, addAppOwner, removeAppOwner, createVersion, stageProfile, promoteProfile, listRegistryTags, uploadAsset, listAppCommits, uploadVersionCwasm, getVersion, listCachedImages, listAppApiKeys, createAppApiKey, revokeAppApiKey } from '~/lib/api';
+import { getApp, listBuilds, listVersions, listDeployments, listCompatibleEnclaves, deleteApp, deployDirect, stopDeployment, getAppSchema, rpcCall, updateStoreListing, publishApp, identiconUrl, getAppMcp, updateContainerMcp, detectContainerMcp, retryBuild, listAppOwners, addAppOwner, removeAppOwner, createVersion, stageProfile, promoteProfile, listRegistryTags, uploadAsset, listAppCommits, uploadVersionCwasm, getVersion, listCachedImages, listDeployLocations, listAppApiKeys, createAppApiKey, revokeAppApiKey } from '~/lib/api';
 
 // Public store base — where a published app is browsable.
 const STORE_BASE_URL = 'https://store.privasys.org';
@@ -12,7 +12,7 @@ import type { CreateVersionBody } from '~/lib/api';
 import { isApiStatus } from '~/lib/api';
 import { versionLabel, versionSemverStr, isStrictlyNewer } from '~/lib/version';
 import { displayNameError } from '~/lib/appName';
-import type { AppSchema, ConfigureSection, FunctionSchema, JsonSchemaProp, ActionProgress, WitType, McpManifest, AppTeam, AppCommit, AppApiKey, CreatedApiKey } from '~/lib/api';
+import type { AppSchema, ConfigureSection, FunctionSchema, JsonSchemaProp, ActionProgress, WitType, McpManifest, AppTeam, AppCommit, AppApiKey, CreatedApiKey, DeployLocation } from '~/lib/api';
 import { useSSE } from '~/lib/sse-context';
 import { useBalance } from '~/lib/use-balance';
 import { getApiBaseUrl } from '~/lib/api-base-url';
@@ -1786,8 +1786,6 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
     // Map by `gateway_host` (the IP) since deployments are keyed by IP.
     const enclaveMap = Object.fromEntries(enclaves.map(e => [`${e.gateway_host ?? ''}:${e.port}`, e]));
     const readyVersions = versions.filter(v => v.status === 'ready');
-    const compatibleTeeType = app.app_type === 'container' ? 'tdx' : 'sgx';
-    const activeEnclaves = enclaves.filter(e => e.status === 'active' && (!e.tee_type || e.tee_type === compatibleTeeType));
     const source = app.source_type; // package | github | cloud_image | upload
     const isUpload = source === 'upload';
     // Approval applies only to a vault-backed upgrade (the key handle is present).
@@ -1821,7 +1819,11 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
     // identifier: registry tag (package), commit sha (github), channel (cloud_image),
     // or an AppVersion id (fallback). Upload apps use cwasmFile instead.
     const [pickVersion, setPickVersion] = useState('');
-    const [pickEnclave, setPickEnclave] = useState('');
+    // Adopters deploy to a LOCATION (cloud region), not a specific enclave. The
+    // management-service picks a compatible enclave in the chosen location.
+    const [pickLocation, setPickLocation] = useState('');
+    const [locations, setLocations] = useState<DeployLocation[]>([]);
+    const [locationsLoaded, setLocationsLoaded] = useState(false);
     // Deploy-time Confidential-* instance size (container apps only). Seeded
     // from the active deployment's size once known (else the app's default);
     // the user is free to change it — a redeploy may resize.
@@ -1942,10 +1944,14 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
     // Inline upgrade: prefill the version with the newest option and pin the
     // location to the running instance (an upgrade does not move the app).
     const upgradeTarget = choices[0]?.value ?? '';
-    // An inline upgrade stays on the enclave already running the app, so prefer
-    // the deployment's own enclave_id. Falling back to enclaveMap alone breaks
-    // for cloud_image apps, whose map is built only from zone-compatible
-    // enclaves: a miss left pickEnclave empty and Upgrade silently no-opped.
+    // An inline upgrade stays where the app already runs, so pin the location to
+    // the current deployment's cloud region (derived from its enclave).
+    const currentLocationCode = currentDeployment
+        ? (enclaveMap[`${currentDeployment.enclave_host}:${currentDeployment.enclave_port}`]?.cloud_region_code ?? '')
+        : '';
+    // The specific enclave the app already runs on. Not an adopter deploy target
+    // (they pick a location), but the vault stage/promote control plane still
+    // addresses a concrete enclave, so derive it for that path only.
     const currentEnclaveId = currentDeployment
         ? (currentDeployment.enclave_id
             ?? enclaveMap[`${currentDeployment.enclave_host}:${currentDeployment.enclave_port}`]?.id
@@ -1954,9 +1960,25 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
     useEffect(() => {
         if (currentDeployment) {
             if (!pickVersion && upgradeTarget) setPickVersion(upgradeTarget);
-            if (currentEnclaveId && pickEnclave !== currentEnclaveId) setPickEnclave(currentEnclaveId);
+            if (currentLocationCode && pickLocation !== currentLocationCode) setPickLocation(currentLocationCode);
         }
-    }, [currentDeployment, upgradeTarget, currentEnclaveId, pickVersion, pickEnclave]);
+    }, [currentDeployment, upgradeTarget, currentLocationCode, pickVersion, pickLocation]);
+
+    // Load the adopter-facing deploy locations once per tab (like the size
+    // catalogue). value = location.code, sent as `location` to deployDirect.
+    useEffect(() => {
+        let alive = true;
+        listDeployLocations(token, app.id)
+            .then(locs => { if (alive) { setLocations(locs); setLocationsLoaded(true); } })
+            .catch(() => { if (alive) { setLocations([]); setLocationsLoaded(true); } });
+        return () => { alive = false; };
+    }, [token, app.id]);
+
+    // Preselect the sole location on a first deploy (nothing to upgrade-pin to).
+    useEffect(() => {
+        if (currentDeployment) return;
+        if (!pickLocation && locations.length === 1) setPickLocation(locations[0].code);
+    }, [currentDeployment, locations, pickLocation]);
 
     // Load the Confidential-* size catalogue once (container apps). Best-effort:
     // fetchInstanceSizes falls back to the static catalogue on any error.
@@ -1989,6 +2011,8 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
 
     const selectCls = 'w-full px-3 py-2 text-sm rounded-lg border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/20';
     const enclaveLabel = (e: Enclave) => `${e.name} — ${e.region || e.country || 'Unknown'}${e.provider ? ` (${e.provider})` : ''}${e.tee_type ? ` [${e.tee_type.toUpperCase()}]` : ''}`;
+    // Adopter-facing deploy-location label: place + provider, tagged with the TEE.
+    const locationLabel = (l: DeployLocation) => `${l.label}${l.provider ? ` (${l.provider})` : ''}${l.tee_type ? ` [${l.tee_type.toUpperCase()}]` : ''}`;
 
     // Package URL for the IMAGE link (repo without tag), best-effort per registry.
     const packageUrl = (() => {
@@ -2026,7 +2050,7 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
     }
 
     async function handleConfirm() {
-        if (!pickEnclave) return;
+        if (!pickLocation) return;
         if (isUpload ? !cwasmFile : !pickVersion) return;
         if (deployBlockedByCredits) {
             setError('Your credit balance is empty. Top up credits or redeem a code on the Billing page to deploy.');
@@ -2069,12 +2093,12 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
             const sizeArg = app.app_type === 'container' ? pickSize : undefined;
             setWorkMsg('Deploying…');
             try {
-                await deployDirect(token, app.id, versionId, pickEnclave, sizeArg);
+                await deployDirect(token, app.id, versionId, pickLocation, sizeArg);
             } catch (e) {
                 const msg = e instanceof Error ? e.message : String(e);
                 if (!needsApproval || !/not promoted|approve this version/i.test(msg)) throw e;
                 setWorkMsg('Staging measurement…');
-                const staged = await stageProfile(token, app.id, versionId, pickEnclave);
+                const staged = await stageProfile(token, app.id, versionId, currentEnclaveId);
                 // Promote the pending profile the stage just created. The vault
                 // assigns its id; a key with prior pending profiles gets a
                 // non-zero id, so hardcoding 0 promotes the wrong/absent profile
@@ -2083,7 +2107,7 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                 setWorkMsg('Promoting (releasing data key)…');
                 await promoteProfile(token, app.id, versionId, pendingId);
                 setWorkMsg('Deploying…');
-                await deployDirect(token, app.id, versionId, pickEnclave, sizeArg);
+                await deployDirect(token, app.id, versionId, pickLocation, sizeArg);
             }
             if (!currentDeployment) { setPickVersion(''); setCwasmFile(null); }
         } catch (e) {
@@ -2355,7 +2379,7 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                                             )}
                                             <button
                                                 onClick={handleConfirm}
-                                                disabled={confirmDisabled || !pickEnclave}
+                                                disabled={confirmDisabled || !pickLocation}
                                                 className="px-4 py-2 text-sm font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
                                             >
                                                 {working ? 'Upgrading…' : 'Upgrade'}
@@ -2402,9 +2426,11 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                             </div>
                             <div>
                                 <label className="text-xs text-black/50 dark:text-white/50 block mb-1">Location</label>
-                                {activeEnclaves.length > 0
-                                    ? <select value={pickEnclave} onChange={e => setPickEnclave(e.target.value)} className={selectCls}><option value="">Select location…</option>{activeEnclaves.map(e => (<option key={e.id} value={e.id}>{enclaveLabel(e)}</option>))}</select>
-                                    : <div className="text-xs text-black/40 dark:text-white/40 py-2">No active locations for this app type.</div>}
+                                {!locationsLoaded
+                                    ? <div className="text-xs text-black/40 dark:text-white/40 py-2">Loading locations…</div>
+                                    : locations.length > 0
+                                        ? <select value={pickLocation} onChange={e => setPickLocation(e.target.value)} className={selectCls}><option value="">Select location…</option>{locations.map(l => (<option key={l.code} value={l.code}>{locationLabel(l)}</option>))}</select>
+                                        : <div className="text-xs text-black/40 dark:text-white/40 py-2">No locations available for this app.</div>}
                             </div>
                             {app.app_type === 'container' && (
                                 <div>
@@ -2422,7 +2448,7 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                         {buildStatusLine}
                         <button
                             onClick={handleConfirm}
-                            disabled={confirmDisabled || !pickEnclave}
+                            disabled={confirmDisabled || !pickLocation}
                             className="px-4 py-2 text-sm font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
                         >
                             {working ? 'Deploying…' : 'Deploy'}
