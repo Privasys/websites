@@ -182,7 +182,7 @@ export function DriveApp() {
                 top margin, which does not belong in an app shell. */}
             <Footer
                 className="!mt-0"
-                companyLine="Every file is sealed inside a hardware-protected enclave. Attestation is verified independently, no trust required."
+                companyLine="Every file is sealed inside a hardware-protected enclave. Verify its attestation yourself; you don't have to trust us."
                 links={FOOTER_LINKS}
             />
         </div>
