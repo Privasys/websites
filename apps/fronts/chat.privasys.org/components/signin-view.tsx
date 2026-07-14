@@ -17,7 +17,7 @@ const CHAT_PITCH = {
         'Sealed browser-to-enclave transport. The gateway only sees ciphertext.',
         'Chat history stays on this device. The platform stores none of it.',
         'No passwords. Sign in with the Privasys Wallet or a passkey.',
-        'Attestation-verified confidential computing, no trust required.'
+        'Attestation-verified confidential computing. Verify it yourself, no need to trust the operator.'
     ]
 };
 

@@ -33,7 +33,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                     </div>
                 </header>
                 <main className='mx-auto max-w-6xl w-full px-6 py-10 flex-1'>{children}</main>
-                <Footer companyLine='Every app runs inside a hardware-protected enclave. Attestation is verified independently — no trust required.' links={FOOTER_LINKS} />
+                <Footer companyLine="Every app runs inside a hardware-protected enclave. Verify its attestation yourself; you don't have to trust us." links={FOOTER_LINKS} />
             </body>
         </html>
     );
