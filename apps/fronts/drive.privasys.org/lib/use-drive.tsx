@@ -21,7 +21,14 @@ import {
 } from 'react';
 import type { SealedSession } from '@privasys/auth';
 import { useAuth } from './privasys-auth';
-import { driveHost, ensurePersonalTenant, getMe, type Me, type Tenant } from './drive-api';
+import {
+    createWorkspace,
+    driveHost,
+    ensurePersonalTenant,
+    getMe,
+    type Me,
+    type Tenant
+} from './drive-api';
 import { fetchUserProfile, type UserProfile } from './me-api';
 
 /** Best display name for the signed-in user, falling back gracefully. */
@@ -52,7 +59,13 @@ interface DriveContextValue {
     me: Me | null;
     profile: UserProfile | null;
     name: string; // best display name for the signed-in user
-    tenant: Tenant | null; // the active workspace (personal drive for v1)
+    tenant: Tenant | null; // the ACTIVE tenant (personal drive or a workspace)
+    /** All the caller's tenants (personal + enterprise workspaces). */
+    tenants: Tenant[];
+    /** Switch the active tenant (workspace switcher). */
+    switchTenant: (t: Tenant) => void;
+    /** Create an enterprise workspace, refresh memberships, switch to it. */
+    newWorkspace: (name: string) => Promise<void>;
     signIn: () => Promise<void>;
     signInInto: (el: HTMLElement) => Promise<void>;
     signOut: () => void;
@@ -75,6 +88,9 @@ const DriveContext = createContext<DriveContextValue>({
     profile: null,
     name: '',
     tenant: null,
+    tenants: [],
+    switchTenant: () => {},
+    newWorkspace: async () => {},
     signIn: async () => {},
     signInInto: async () => {},
     signOut: () => {},
@@ -101,7 +117,15 @@ export function DriveProvider({ children }: { children: ReactNode }) {
         async (s: SealedSession) => {
             const [meRes, tenantRes] = await Promise.all([getMe(s), ensurePersonalTenant(s)]);
             setMe(meRes);
-            setTenant(tenantRes);
+            // Default the active tenant to the personal drive, keeping a
+            // previously selected workspace across reconnects.
+            setTenant((cur) => {
+                if (cur) {
+                    const still = meRes.tenants.find((t) => t.id === cur.id);
+                    if (still) return still;
+                }
+                return tenantRes;
+            });
             setSession(s);
             setStatus('ready');
             // Profile (real name) lives behind the management-service /me,
@@ -210,6 +234,20 @@ export function DriveProvider({ children }: { children: ReactNode }) {
         }
     }, [auth, host, bootstrap]);
 
+    const switchTenant = useCallback((t: Tenant) => setTenant(t), []);
+
+    const newWorkspace = useCallback(
+        async (wsName: string) => {
+            if (!session) throw new Error('Not connected.');
+            const t = await createWorkspace(session, wsName);
+            // Refresh memberships so the switcher lists it with the role.
+            const meRes = await getMe(session);
+            setMe(meRes);
+            setTenant(meRes.tenants.find((x) => x.id === t.id) ?? t);
+        },
+        [session]
+    );
+
     const reconnect = useCallback(async () => {
         setError(null);
         setStatus('connecting');
@@ -264,6 +302,9 @@ export function DriveProvider({ children }: { children: ReactNode }) {
                 profile,
                 name: displayName(profile, me),
                 tenant,
+                tenants: me?.tenants ?? [],
+                switchTenant,
+                newWorkspace,
                 signIn,
                 signInInto,
                 signOut,

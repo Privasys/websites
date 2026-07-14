@@ -7,17 +7,48 @@ import { avatarColor, initials } from '~/lib/format';
 import { FileBrowser } from './file-browser';
 import { SharedView } from './shared-view';
 import { RequestsView } from './requests-view';
-import { HomeIcon, InboxIcon, PeopleIcon, ShieldCheck } from './icons';
+import { MembersView } from './members-view';
+import { FolderIcon, HomeIcon, InboxIcon, PeopleIcon, PlusIcon, ShieldCheck } from './icons';
 
-type View = 'my-drive' | 'shared' | 'requests';
+type View = 'files' | 'shared' | 'requests' | 'members';
 
 const FOOTER_LINKS = [{ label: 'Legal', href: 'https://privasys.org/legal/', external: true }];
 
 export function DriveApp() {
-    const { me, name, tenant, session, signOut } = useDrive();
-    const [view, setView] = useState<View>('my-drive');
+    const { me, name, tenant, tenants, switchTenant, newWorkspace, session, signOut } = useDrive();
+    const [view, setView] = useState<View>('files');
+    const [creating, setCreating] = useState(false);
+    const [wsName, setWsName] = useState('');
+    const [wsError, setWsError] = useState<string | null>(null);
+    const [wsBusy, setWsBusy] = useState(false);
 
     if (!session || !tenant) return null;
+
+    const personal = tenants.find((t) => t.kind === 'user');
+    const workspaces = tenants.filter((t) => t.kind === 'enterprise');
+    const isEnterprise = tenant.kind === 'enterprise';
+
+    const pick = (t: typeof tenant) => {
+        switchTenant(t);
+        setView('files');
+    };
+
+    const createWs = async () => {
+        const n = wsName.trim();
+        if (!n) return;
+        setWsBusy(true);
+        setWsError(null);
+        try {
+            await newWorkspace(n);
+            setCreating(false);
+            setWsName('');
+            setView('files');
+        } catch (e) {
+            setWsError(e instanceof Error ? e.message : 'Could not create the workspace.');
+        } finally {
+            setWsBusy(false);
+        }
+    };
 
     return (
         <div className="flex min-h-screen flex-col" style={{ background: 'var(--drv-surface)' }}>
@@ -39,20 +70,21 @@ export function DriveApp() {
             />
 
             <div className="flex flex-1 pt-14">
-                {/* Sidebar: stretches with the row (no forced viewport
-                    height, which used to push the footer below the fold);
-                    the nav itself sticks under the header. */}
+                {/* Sidebar: stretches with the row; the nav sticks under the
+                    header. */}
                 <aside
                     className="hidden w-56 shrink-0 border-r sm:block"
                     style={{ borderColor: 'var(--drv-border)' }}
                 >
                     <nav className="sticky top-14 flex max-h-[calc(100vh-3.5rem)] flex-col gap-1 overflow-auto p-3">
-                        <SidebarItem
-                            active={view === 'my-drive'}
-                            onClick={() => setView('my-drive')}
-                            icon={<HomeIcon width={18} height={18} />}
-                            label="My Drive"
-                        />
+                        {personal && (
+                            <SidebarItem
+                                active={view === 'files' && tenant.id === personal.id}
+                                onClick={() => pick(personal)}
+                                icon={<HomeIcon width={18} height={18} />}
+                                label="My Drive"
+                            />
+                        )}
                         <SidebarItem
                             active={view === 'shared'}
                             onClick={() => setView('shared')}
@@ -65,17 +97,83 @@ export function DriveApp() {
                             icon={<InboxIcon width={18} height={18} />}
                             label="Requests"
                         />
+
+                        {/* Workspaces (enterprise tenants) */}
+                        <div
+                            className="mt-4 mb-1 flex items-center justify-between px-4 text-xs font-medium"
+                            style={{ color: 'var(--drv-text-muted)' }}
+                        >
+                            Workspaces
+                            <button
+                                title="New workspace"
+                                onClick={() => setCreating((v) => !v)}
+                                className="rounded p-0.5 hover:bg-[var(--drv-hover)]"
+                            >
+                                <PlusIcon width={14} height={14} />
+                            </button>
+                        </div>
+                        {creating && (
+                            <div className="mb-1 px-2">
+                                <input
+                                    autoFocus
+                                    value={wsName}
+                                    onChange={(e) => setWsName(e.target.value)}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') void createWs();
+                                        if (e.key === 'Escape') setCreating(false);
+                                    }}
+                                    placeholder="Workspace name"
+                                    disabled={wsBusy}
+                                    className="w-full rounded-lg border px-2.5 py-1.5 text-sm outline-none focus:border-[var(--drv-accent)]"
+                                    style={{ borderColor: 'var(--drv-border)', background: 'var(--drv-surface)' }}
+                                />
+                                {wsError && <p className="mt-1 text-xs text-red-500">{wsError}</p>}
+                            </div>
+                        )}
+                        {workspaces.length === 0 && !creating && (
+                            <p className="px-4 py-1 text-xs" style={{ color: 'var(--drv-text-muted)' }}>
+                                Shared drives for a team.
+                            </p>
+                        )}
+                        {workspaces.map((w) => (
+                            <SidebarItem
+                                key={w.id}
+                                active={view === 'files' && tenant.id === w.id}
+                                onClick={() => pick(w)}
+                                icon={<FolderIcon width={18} height={18} />}
+                                label={w.name}
+                            />
+                        ))}
+
+                        {isEnterprise && (
+                            <>
+                                <div
+                                    className="mt-4 mb-1 px-4 text-xs font-medium"
+                                    style={{ color: 'var(--drv-text-muted)' }}
+                                >
+                                    {tenant.name}
+                                </div>
+                                <SidebarItem
+                                    active={view === 'members'}
+                                    onClick={() => setView('members')}
+                                    icon={<PeopleIcon width={18} height={18} />}
+                                    label="Members"
+                                />
+                            </>
+                        )}
                     </nav>
                 </aside>
 
                 {/* Main */}
                 <main className="flex min-w-0 flex-1 flex-col" style={{ background: 'var(--drv-surface-2)' }}>
-                    {view === 'my-drive' ? (
-                        <FileBrowser session={session} tenant={tenant} me={me} />
+                    {view === 'files' ? (
+                        <FileBrowser key={tenant.id} session={session} tenant={tenant} me={me} />
                     ) : view === 'shared' ? (
                         <SharedView session={session} />
-                    ) : (
+                    ) : view === 'requests' ? (
                         <RequestsView session={session} tenant={tenant} />
+                    ) : (
+                        <MembersView session={session} tenant={tenant} mySub={me?.sub ?? ''} />
                     )}
                 </main>
             </div>
@@ -157,14 +255,14 @@ function SidebarItem({
     return (
         <button
             onClick={onClick}
-            className="flex items-center gap-3 rounded-full px-4 py-2.5 text-sm font-medium transition-colors"
+            className="flex items-center gap-3 rounded-full px-4 py-2.5 text-left text-sm font-medium transition-colors"
             style={{
                 background: active ? 'var(--drv-accent-weak)' : 'transparent',
                 color: active ? 'var(--drv-accent)' : 'var(--drv-text)'
             }}
         >
             {icon}
-            {label}
+            <span className="truncate">{label}</span>
         </button>
     );
 }
