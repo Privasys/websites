@@ -117,6 +117,20 @@ export const ShieldCheck = (p: P) => (
     </svg>
 );
 
+export const IndexedIcon = (p: P) => (
+    <svg {...base(p)}>
+        <circle cx="12" cy="12" r="9" />
+        <path d="m8.5 12 2.5 2.5 4.5-5" />
+    </svg>
+);
+
+export const ProcessingIcon = (p: P) => (
+    <svg {...base(p)}>
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 7v5l3 3" />
+    </svg>
+);
+
 export const PlusIcon = (p: P) => (
     <svg {...base(p)}>
         <path d="M12 5v14" />
