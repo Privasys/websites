@@ -6,82 +6,53 @@ import { useDrive } from '~/lib/use-drive';
 
 const FOOTER_LINKS = [{ label: 'Legal', href: 'https://privasys.org/legal/', external: true }];
 
+// Full-page sign-in gate. The auth SDK renders the ENTIRE surface (page
+// presentation): drive's pitch in the left panel, and every ceremony state
+// on the right — sign-in options, push/QR, the one-tap re-approval after a
+// back-end redeploy, success. Drive's integration is one container plus
+// connectInto(); the only outcomes it reacts to are success (drive
+// bootstraps to 'ready') and failure (error banner with a retry).
 export function SignInGate() {
-    const { status, error, signInInto, approve } = useDrive();
+    const { status, error, connectInto } = useDrive();
     const ceremonyRef = useRef<HTMLDivElement>(null);
     const started = useRef(false);
 
-    // Mount the wallet SDK's sign-in surface inline. It handles the whole
-    // ceremony itself: install the Privasys Wallet, or connect with a
-    // passkey, or scan the QR code.
     useEffect(() => {
         if (status !== 'signed-out' || started.current || !ceremonyRef.current) return;
         started.current = true;
-        void signInInto(ceremonyRef.current);
-    }, [status, signInInto]);
+        void connectInto(ceremonyRef.current).finally(() => {
+            started.current = false;
+        });
+    }, [status, connectInto]);
 
     return (
         <div className="flex min-h-screen flex-col" style={{ background: 'var(--drv-surface)' }}>
             <Navbar brandSuffix="Drive" fullWidth />
 
-            <main className="flex flex-1 items-center justify-center px-6 pt-14">
-                <div className="grid w-full max-w-4xl items-center gap-10 py-12 md:grid-cols-2">
-                    {/* Pitch */}
-                    <div>
-                        <h1 className="text-3xl font-semibold tracking-tight" style={{ color: 'var(--drv-text)' }}>
-                            Your files, sealed.
-                        </h1>
-                        <p className="mt-4 text-[15px] leading-relaxed" style={{ color: 'var(--drv-text-muted)' }}>
-                            Privasys Drive keeps every file end-to-end encrypted inside a
-                            hardware-protected enclave. The operator can never read your data,
-                            and you can verify it yourself by remote attestation.
-                        </p>
-                        <ul className="mt-6 space-y-3 text-sm" style={{ color: 'var(--drv-text)' }}>
-                            <Feature text="Sealed browser-to-enclave transport. The gateway only sees ciphertext." />
-                            <Feature text="Directories and per-file, per-folder sharing you control." />
-                            <Feature text="No passwords. Sign in with the Privasys Wallet or a passkey." />
-                            <Feature text="Attestation-verified confidential computing, no trust required." />
-                        </ul>
-                    </div>
-
-                    {/* Sign-in. Passing a container puts the auth SDK in
-                        inline presentation (@privasys/auth 0.6.0): no brand
-                        panel or close button, a compact column sized for
-                        this explicitly sized 560px container. */}
-                    <div>
-                        {status === 'misconfigured' ? (
-                            <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-600">
-                                {error ?? 'Drive is not configured.'}
-                            </p>
-                        ) : status === 'need-approval' ? (
-                            <div
-                                className="space-y-3 rounded-2xl border p-5 text-center shadow-sm"
-                                style={{ background: 'var(--drv-surface)', borderColor: 'var(--drv-border)' }}
-                            >
-                                <p className="text-sm" style={{ color: 'var(--drv-text-muted)' }}>
-                                    Approve Privasys Drive on your phone to open a sealed channel
-                                    to the enclave.
-                                </p>
+            <main className="flex flex-1 flex-col pt-14">
+                {status === 'misconfigured' ? (
+                    <p className="mx-auto mt-16 max-w-md rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-600">
+                        {error ?? 'Drive is not configured.'}
+                    </p>
+                ) : (
+                    <>
+                        {status === 'error' && (
+                            <div className="mx-auto mt-6 flex max-w-md items-center gap-3 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-500">
+                                <span className="flex-1">{error ?? 'Could not connect to Drive.'}</span>
                                 <button
-                                    onClick={() => void approve()}
-                                    className="drv-btn-primary w-full rounded-full px-5 py-3 text-[15px]"
+                                    onClick={() => {
+                                        if (ceremonyRef.current) void connectInto(ceremonyRef.current);
+                                    }}
+                                    className="shrink-0 rounded-full border border-red-500/40 px-3 py-1 text-xs font-medium hover:bg-red-500/10"
                                 >
-                                    Approve on your wallet
+                                    Try again
                                 </button>
                             </div>
-                        ) : (
-                            <div
-                                ref={ceremonyRef}
-                                className="h-[560px] w-full overflow-hidden rounded-2xl"
-                                aria-busy={status === 'connecting'}
-                            />
                         )}
-
-                        {error && status !== 'misconfigured' && (
-                            <p className="mt-3 text-center text-sm text-red-500">{error}</p>
-                        )}
-                    </div>
-                </div>
+                        {/* The SDK gate fills this container (page presentation). */}
+                        <div ref={ceremonyRef} className="min-h-[620px] w-full flex-1" />
+                    </>
+                )}
             </main>
 
             <Footer
@@ -90,21 +61,5 @@ export function SignInGate() {
                 links={FOOTER_LINKS}
             />
         </div>
-    );
-}
-
-function Feature({ text }: { text: string }) {
-    return (
-        <li className="flex items-start gap-2.5">
-            <span
-                className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-white"
-                style={{ background: 'var(--drv-accent)' }}
-            >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="m5 12 5 5L20 7" />
-                </svg>
-            </span>
-            {text}
-        </li>
     );
 }

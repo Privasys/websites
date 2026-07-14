@@ -47,10 +47,25 @@ export function displayName(profile: UserProfile | null, me: Me | null): string 
 export type DriveStatus =
     | 'signed-out'
     | 'connecting'
-    | 'need-approval'
     | 'ready'
     | 'error'
     | 'misconfigured';
+
+// Drive's pitch for the SDK gate's left panel (page presentation). The SDK
+// styles it; strings only.
+const DRIVE_PITCH = {
+    title: 'Your files, sealed.',
+    description:
+        'Privasys Drive keeps every file end-to-end encrypted inside a ' +
+        'hardware-protected enclave. The operator can never read your data, ' +
+        'and you can verify it yourself by remote attestation.',
+    bullets: [
+        'Sealed browser-to-enclave transport. The gateway only sees ciphertext.',
+        'Directories and per-file, per-folder sharing you control.',
+        'No passwords. Sign in with the Privasys Wallet or a passkey.',
+        'Attestation-verified confidential computing, no trust required.'
+    ]
+};
 
 interface DriveContextValue {
     status: DriveStatus;
@@ -68,9 +83,14 @@ interface DriveContextValue {
     newWorkspace: (name: string) => Promise<void>;
     signIn: () => Promise<void>;
     signInInto: (el: HTMLElement) => Promise<void>;
+    /**
+     * The one-call gate (SDK connect()): mounts the whole sign-in surface
+     * (pitch + ceremony/approval states) into `el` and bootstraps the
+     * drive on success. Lands on 'error' (with a message) only when the
+     * SDK gave up; a user cancel returns to 'signed-out' silently.
+     */
+    connectInto: (el: HTMLElement) => Promise<void>;
     signOut: () => void;
-    /** Re-request the wallet approval when no sealed voucher exists yet. */
-    approve: () => Promise<void>;
     /**
      * Recover after the enclave restarted or went unreachable: retry the
      * sealed session, force-rebuild it if needed, and re-bootstrap. Lands
@@ -93,8 +113,8 @@ const DriveContext = createContext<DriveContextValue>({
     newWorkspace: async () => {},
     signIn: async () => {},
     signInInto: async () => {},
+    connectInto: async () => {},
     signOut: () => {},
-    approve: async () => {},
     reconnect: async () => {}
 });
 
@@ -168,8 +188,10 @@ export function DriveProvider({ children }: { children: ReactNode }) {
             .then(async (s) => {
                 if (cancelled) return;
                 if (!s) {
-                    // Signed in, but no sealed voucher for Drive yet.
-                    setStatus('need-approval');
+                    // Signed in, but no live sealed session for Drive — the
+                    // gate's connect() handles re-approval or a fresh
+                    // ceremony from here.
+                    setStatus('signed-out');
                     return;
                 }
                 await bootstrap(s);
@@ -213,22 +235,24 @@ export function DriveProvider({ children }: { children: ReactNode }) {
         [auth, host]
     );
 
-    const approve = useCallback(async () => {
+    // The one-call gate: SDK connect() renders every state (silent restore,
+    // one-tap re-approval, full ceremony) inside `el`; we bootstrap the
+    // drive when it hands back the sealed session.
+    const connectInto = useCallback(async (el: HTMLElement) => {
         if (bootstrapping.current) return;
         bootstrapping.current = true;
         setError(null);
-        setStatus('connecting');
         try {
-            let s = await auth.getSealedSession(host);
-            if (!s) {
-                await auth.requestAppVoucher(host); // phone push approval
-                s = await auth.getSealedSession(host);
-            }
-            if (!s) throw new Error('Drive approval was not completed.');
+            const s = await auth.connectInto(el, { appHost: host, pitch: DRIVE_PITCH });
+            if (!s) throw new Error('Drive connection was not completed.');
             await bootstrap(s);
         } catch (e) {
-            setStatus('need-approval');
-            setError(e instanceof Error ? e.message : 'Approval failed.');
+            if ((e as { code?: string }).code === 'cancelled') {
+                setStatus('signed-out');
+                return;
+            }
+            setStatus('error');
+            setError(e instanceof Error ? e.message : 'Could not connect to Drive.');
         } finally {
             bootstrapping.current = false;
         }
@@ -266,8 +290,9 @@ export function DriveProvider({ children }: { children: ReactNode }) {
             const outcome = await auth.reestablishSealed(host);
             if (outcome === 'rejected') {
                 // The enclave's identity/measurement changed: the wallet
-                // must verify it again.
-                setStatus('need-approval');
+                // must verify it again — hand over to the gate (its
+                // connect() renders the one-tap approval).
+                setStatus('signed-out');
                 return;
             }
             s = await auth.getSealedSession(host);
@@ -307,8 +332,8 @@ export function DriveProvider({ children }: { children: ReactNode }) {
                 newWorkspace,
                 signIn,
                 signInInto,
+                connectInto,
                 signOut,
-                approve,
                 reconnect
             }}
         >
