@@ -8,13 +8,15 @@ import {
     downloadFile,
     listChildren,
     moveNode,
+    searchTenant,
     setNodeIndexing,
     uploadFileStreaming,
     type DriveNode,
     type Me,
+    type SearchHit,
     type Tenant
 } from '~/lib/drive-api';
-import { formatBytes, kindLabel } from '~/lib/format';
+import { formatBytes, formatDate, ownerLabel } from '~/lib/format';
 import { useDrive } from '~/lib/use-drive';
 import { ShareDialog } from './share-dialog';
 import { MoveDialog } from './move-dialog';
@@ -30,6 +32,8 @@ import {
     IndexedIcon,
     ProcessingIcon,
     NewFolderIcon,
+    SearchIcon,
+    SearchOffIcon,
     ShareIcon,
     TrashIcon,
     UploadIcon,
@@ -76,6 +80,11 @@ export function FileBrowser({
     const [pageDrag, setPageDrag] = useState(false);
     const [dropTarget, setDropTarget] = useState<string | null>(null);
     const [progress, setProgress] = useState<{ name: string; pct: number } | null>(null);
+    // Semantic search: the input value, the submitted query, its hits.
+    const [searchQ, setSearchQ] = useState('');
+    const [activeSearch, setActiveSearch] = useState('');
+    const [hits, setHits] = useState<SearchHit[]>([]);
+    const [searching, setSearching] = useState(false);
     const dragDepth = useRef(0);
     const fileInput = useRef<HTMLInputElement>(null);
 
@@ -125,6 +134,40 @@ export function FileBrowser({
         }, 5000);
         return () => clearInterval(t);
     }, [nodes, session, tenant.id, current.id]);
+
+    // ---- semantic search ----
+    const runSearch = async () => {
+        const q = searchQ.trim();
+        if (!q) return;
+        setActiveSearch(q);
+        setSearching(true);
+        setError(null);
+        try {
+            setHits(await searchTenant(session, tenant.id, q, 20));
+        } catch (e) {
+            setError(e instanceof Error ? e.message : 'Search failed.');
+            setActiveSearch('');
+        } finally {
+            setSearching(false);
+        }
+    };
+    const clearSearch = () => {
+        setSearchQ('');
+        setActiveSearch('');
+        setHits([]);
+    };
+    const openHit = (h: SearchHit) => {
+        const n: DriveNode = {
+            id: h.node_id,
+            tenant_id: tenant.id,
+            kind: 'file',
+            name: h.name,
+            mime_hint: h.mime_hint,
+            size_bytes: 0
+        };
+        if (canPreview(n)) setViewNode(n);
+        else void download(n);
+    };
 
     // ---- selection ----
     const clearSelection = () => setSelected(new Set());
@@ -230,8 +273,8 @@ export function FileBrowser({
         }
     };
 
-    // Toggle a folder's searchability: excluding covers its subtree for
-    // future uploads.
+    // Toggle a node's searchability: excluding a folder covers its
+    // subtree for future uploads.
     const toggleIndexing = async (n: DriveNode) => {
         setBusy(true);
         setError(null);
@@ -352,94 +395,123 @@ export function FileBrowser({
                 </div>
             )}
 
-            {/* Toolbar */}
+            {/* Toolbar: one fixed-height row whose content swaps between
+                browsing controls and the selection actions, so selecting a
+                row never shifts the file list (double-click stays where it
+                was clicked). */}
             <div
-                className="sticky top-14 z-10 flex flex-wrap items-center gap-2 border-b px-4 py-3"
-                style={{ borderColor: 'var(--drv-border)', background: 'var(--drv-surface-2)' }}
+                className="sticky top-14 z-10 flex h-14 items-center gap-2 border-b px-4"
+                style={{
+                    borderColor: 'var(--drv-border)',
+                    background: selected.size > 0 ? 'var(--drv-accent-weak)' : 'var(--drv-surface-2)'
+                }}
             >
-                <nav className="flex min-w-0 flex-1 items-center gap-1 text-[15px]">
-                    {path.map((c, i) => (
-                        <span key={`${c.id ?? 'root'}-${i}`} className="flex min-w-0 items-center gap-1">
-                            {i > 0 && <ChevronRight className="shrink-0" style={{ color: 'var(--drv-text-muted)' }} />}
-                            <button
-                                onClick={() => navigateTo(i)}
-                                onDragOver={(e) =>
-                                    c.id === null
-                                        ? undefined
-                                        : folderDragOver(e, c.id)
-                                }
-                                onDrop={(e) => {
-                                    if (c.id === null) {
-                                        // allow dropping onto "My Drive" to move to root
-                                        e.preventDefault();
-                                        e.stopPropagation();
-                                        const raw = e.dataTransfer.getData(DRAG_TYPE);
-                                        if (raw) void moveInto(JSON.parse(raw) as string[], null);
-                                    }
-                                }}
-                                className="truncate rounded px-1.5 py-0.5 font-medium hover:bg-[var(--drv-hover)]"
-                                style={{ color: i === path.length - 1 ? 'var(--drv-text)' : 'var(--drv-text-muted)' }}
-                            >
-                                {c.name}
-                            </button>
+                {selected.size > 0 ? (
+                    <>
+                        <IconButton title="Clear selection" onClick={clearSelection} icon={<CloseIcon width={18} height={18} />} />
+                        <span className="mr-1 text-sm font-medium" style={{ color: 'var(--drv-accent)' }}>
+                            {selected.size} selected
                         </span>
-                    ))}
-                </nav>
+                        {soleFile && canPreview(soleFile) && (
+                            <IconButton title="Preview" onClick={() => setViewNode(soleFile)} icon={<EyeIcon width={18} height={18} />} />
+                        )}
+                        {soleNode && (
+                            <IconButton title="Share" onClick={() => setShareNode(soleNode)} icon={<ShareIcon width={18} height={18} />} />
+                        )}
+                        {anyFileSelected && (
+                            <IconButton title="Download" onClick={() => void downloadSelected()} icon={<DownloadIcon width={18} height={18} />} />
+                        )}
+                        <IconButton title="Move" onClick={() => setMoveOpen(true)} icon={<MoveIcon width={18} height={18} />} />
+                        {soleNode && soleNode.kind === 'folder' && (
+                            <IconButton
+                                title={soleNode.index_status === 'excluded' ? 'Enable search in this folder' : 'Exclude this folder from search'}
+                                onClick={() => void toggleIndexing(soleNode)}
+                                icon={
+                                    soleNode.index_status === 'excluded' ? (
+                                        <SearchIcon width={18} height={18} />
+                                    ) : (
+                                        <SearchOffIcon width={18} height={18} />
+                                    )
+                                }
+                            />
+                        )}
+                        <IconButton title="Delete" onClick={() => void onDeleteSelected()} icon={<TrashIcon width={18} height={18} />} />
+                    </>
+                ) : (
+                    <>
+                        <nav className="flex min-w-0 shrink items-center gap-1 text-[15px]">
+                            {path.map((c, i) => (
+                                <span key={`${c.id ?? 'root'}-${i}`} className="flex min-w-0 items-center gap-1">
+                                    {i > 0 && <ChevronRight className="shrink-0" style={{ color: 'var(--drv-text-muted)' }} />}
+                                    <button
+                                        onClick={() => navigateTo(i)}
+                                        onDragOver={(e) =>
+                                            c.id === null
+                                                ? undefined
+                                                : folderDragOver(e, c.id)
+                                        }
+                                        onDrop={(e) => {
+                                            if (c.id === null) {
+                                                // allow dropping onto the root crumb
+                                                e.preventDefault();
+                                                e.stopPropagation();
+                                                const raw = e.dataTransfer.getData(DRAG_TYPE);
+                                                if (raw) void moveInto(JSON.parse(raw) as string[], null);
+                                            }
+                                        }}
+                                        className="truncate rounded px-1.5 py-0.5 font-medium hover:bg-[var(--drv-hover)]"
+                                        style={{ color: i === path.length - 1 ? 'var(--drv-text)' : 'var(--drv-text-muted)' }}
+                                    >
+                                        {c.name}
+                                    </button>
+                                </span>
+                            ))}
+                        </nav>
 
-                <div className="flex items-center gap-1.5">
-                    <ToolbarButton onClick={() => setNewFolder(true)} disabled={busy} icon={<NewFolderIcon />} label="New folder" />
-                    <ToolbarButton onClick={() => fileInput.current?.click()} disabled={busy} icon={<UploadIcon />} label="Upload" primary />
-                    <div className="mx-1 h-6 w-px" style={{ background: 'var(--drv-border)' }} />
-                    <button
-                        onClick={() => setView((v) => (v === 'list' ? 'grid' : 'list'))}
-                        className="flex h-9 w-9 items-center justify-center rounded-lg hover:bg-[var(--drv-hover)]"
-                        title={view === 'list' ? 'Grid view' : 'List view'}
-                    >
-                        {view === 'list' ? <GridIcon /> : <ListIcon />}
-                    </button>
-                </div>
+                        {/* Semantic search over the drive's sealed index. */}
+                        <div
+                            className="mx-2 flex min-w-0 max-w-md flex-1 items-center gap-2 rounded-full border px-3 py-1.5"
+                            style={{ borderColor: 'var(--drv-border)', background: 'var(--drv-surface)' }}
+                        >
+                            <SearchIcon width={16} height={16} style={{ color: 'var(--drv-text-muted)' }} />
+                            <input
+                                value={searchQ}
+                                onChange={(e) => setSearchQ(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') void runSearch();
+                                    if (e.key === 'Escape') clearSearch();
+                                }}
+                                placeholder="Search in Drive"
+                                className="min-w-0 flex-1 bg-transparent text-sm outline-none"
+                            />
+                            {(searchQ || activeSearch) && (
+                                <button title="Clear search" onClick={clearSearch} className="rounded p-0.5 hover:bg-[var(--drv-hover)]">
+                                    <CloseIcon width={14} height={14} style={{ color: 'var(--drv-text-muted)' }} />
+                                </button>
+                            )}
+                        </div>
+
+                        <div className="ml-auto flex items-center gap-1">
+                            <IconButton title="New folder" onClick={() => setNewFolder(true)} disabled={busy} icon={<NewFolderIcon />} />
+                            <button
+                                onClick={() => fileInput.current?.click()}
+                                disabled={busy}
+                                title="Upload files"
+                                className="drv-btn-primary flex h-9 w-9 items-center justify-center rounded-full disabled:opacity-50"
+                            >
+                                <UploadIcon width={18} height={18} />
+                            </button>
+                            <div className="mx-1 h-6 w-px" style={{ background: 'var(--drv-border)' }} />
+                            <IconButton
+                                title={view === 'list' ? 'Grid view' : 'List view'}
+                                onClick={() => setView((v) => (v === 'list' ? 'grid' : 'list'))}
+                                icon={view === 'list' ? <GridIcon /> : <ListIcon />}
+                            />
+                        </div>
+                    </>
+                )}
                 <input ref={fileInput} type="file" multiple hidden onChange={(e) => void onUpload(e.target.files)} />
             </div>
-
-            {/* Selection action bar */}
-            {selected.size > 0 && (
-                <div
-                    className="sticky top-[6.5rem] z-10 flex flex-wrap items-center gap-2 border-b px-4 py-2"
-                    style={{ borderColor: 'var(--drv-border)', background: 'var(--drv-accent-weak)' }}
-                >
-                    <button onClick={clearSelection} className="rounded-lg p-1 hover:bg-[var(--drv-hover)]" title="Clear selection">
-                        <CloseIcon width={18} height={18} />
-                    </button>
-                    <span className="text-sm font-medium" style={{ color: 'var(--drv-accent)' }}>
-                        {selected.size} selected
-                    </span>
-                    <div className="mx-1 h-5 w-px" style={{ background: 'var(--drv-border)' }} />
-                    {soleFile && canPreview(soleFile) && (
-                        <ActionChip onClick={() => setViewNode(soleFile)} icon={<EyeIcon width={16} height={16} />} label="Preview" />
-                    )}
-                    {soleNode && (
-                        <ActionChip onClick={() => setShareNode(soleNode)} icon={<ShareIcon width={16} height={16} />} label="Share" />
-                    )}
-                    {anyFileSelected && (
-                        <ActionChip onClick={() => void downloadSelected()} icon={<DownloadIcon width={16} height={16} />} label="Download" />
-                    )}
-                    {soleNode && soleNode.kind === 'folder' && (
-                        <ActionChip
-                            onClick={() => void toggleIndexing(soleNode)}
-                            icon={
-                                soleNode.index_status === 'excluded' ? (
-                                    <ProcessingIcon width={16} height={16} />
-                                ) : (
-                                    <IndexedIcon width={16} height={16} />
-                                )
-                            }
-                            label={soleNode.index_status === 'excluded' ? 'Enable search' : 'Exclude from search'}
-                        />
-                    )}
-                    <ActionChip onClick={() => setMoveOpen(true)} icon={<MoveIcon width={16} height={16} />} label="Move" />
-                    <ActionChip onClick={() => void onDeleteSelected()} icon={<TrashIcon width={16} height={16} />} label="Delete" />
-                </div>
-            )}
 
             {progress && (
                 <div
@@ -492,7 +564,15 @@ export function FileBrowser({
                         : undefined
                 }
             >
-                {loading ? (
+                {activeSearch ? (
+                    <SearchResults
+                        query={activeSearch}
+                        hits={hits}
+                        searching={searching}
+                        onOpen={openHit}
+                        onClear={clearSearch}
+                    />
+                ) : loading ? (
                     <div className="py-20 text-center text-sm" style={{ color: 'var(--drv-text-muted)' }}>
                         Loading…
                     </div>
@@ -502,6 +582,7 @@ export function FileBrowser({
                     <ListLayout
                         nodes={nodes}
                         selected={selected}
+                        mySub={me?.sub ?? ''}
                         onRowClick={onRowClick}
                         onToggle={toggle}
                         onOpen={openNode}
@@ -555,59 +636,64 @@ export function FileBrowser({
     );
 }
 
-function ToolbarButton({
+// Icon-only toolbar button; the label lives in the tooltip.
+function IconButton({
+    title,
     onClick,
-    disabled,
     icon,
-    label,
-    primary
+    disabled
 }: {
+    title: string;
     onClick: () => void;
-    disabled?: boolean;
     icon: React.ReactNode;
-    label: string;
-    primary?: boolean;
+    disabled?: boolean;
 }) {
     return (
         <button
+            title={title}
+            aria-label={title}
             onClick={onClick}
             disabled={disabled}
-            className={`flex items-center gap-2 rounded-full px-3.5 py-2 text-sm font-medium transition-opacity disabled:opacity-50${primary ? ' drv-btn-primary' : ''}`}
-            style={primary ? undefined : { background: 'var(--drv-surface)', border: '1px solid var(--drv-border)' }}
-        >
-            {icon}
-            <span className="hidden md:inline">{label}</span>
-        </button>
-    );
-}
-
-function ActionChip({ onClick, icon, label }: { onClick: () => void; icon: React.ReactNode; label: string }) {
-    return (
-        <button
-            onClick={onClick}
-            className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium hover:bg-[var(--drv-hover)]"
+            className="flex h-9 w-9 items-center justify-center rounded-full hover:bg-[var(--drv-hover)] disabled:opacity-50"
             style={{ color: 'var(--drv-text)' }}
         >
             {icon}
-            <span className="hidden sm:inline">{label}</span>
         </button>
     );
 }
 
-// Semantic-index indicator: grey clock while processing, green check
-// when the file is searchable. Excluded/skipped/failed show nothing.
-function IndexBadge({ status }: { status?: string }) {
-    if (status === 'pending' || status === 'processing') {
+// Searchability column: grey clock while indexing, green check when
+// searchable, muted search-off when excluded / not indexed.
+function StatusIcon({ node }: { node: DriveNode }) {
+    const s = node.index_status;
+    if (s === 'pending' || s === 'processing') {
         return (
             <span title="Indexing for search…" aria-label="Indexing">
                 <ProcessingIcon width={16} height={16} style={{ color: 'var(--drv-text-muted)' }} />
             </span>
         );
     }
-    if (status === 'indexed') {
+    if (s === 'indexed') {
         return (
             <span title="Searchable" aria-label="Searchable">
                 <IndexedIcon width={16} height={16} style={{ color: '#16a34a' }} />
+            </span>
+        );
+    }
+    if (s === 'excluded') {
+        return (
+            <span title="Excluded from search" aria-label="Excluded from search">
+                <SearchOffIcon width={16} height={16} style={{ color: 'var(--drv-text-muted)' }} />
+            </span>
+        );
+    }
+    if (s === 'skipped' || s === 'failed') {
+        return (
+            <span
+                title={s === 'failed' ? 'Indexing failed' : 'Not indexed (type not supported yet)'}
+                aria-label="Not indexed"
+            >
+                <SearchOffIcon width={16} height={16} style={{ color: 'var(--drv-border)' }} />
             </span>
         );
     }
@@ -631,9 +717,12 @@ interface RowExtra {
     isDropTarget: boolean;
 }
 
+const LIST_COLS = 'grid-cols-[28px_minmax(0,1fr)_90px_110px_90px_44px]';
+
 function ListLayout({
     nodes,
     selected,
+    mySub,
     onRowClick,
     onToggle,
     onOpen,
@@ -641,6 +730,7 @@ function ListLayout({
 }: {
     nodes: DriveNode[];
     selected: Set<string>;
+    mySub: string;
     onRowClick: (e: React.MouseEvent, id: string) => void;
     onToggle: (id: string) => void;
     onOpen: (n: DriveNode) => void;
@@ -649,13 +739,17 @@ function ListLayout({
     return (
         <div className="overflow-hidden rounded-xl border" style={{ borderColor: 'var(--drv-border)', background: 'var(--drv-surface)' }}>
             <div
-                className="grid grid-cols-[28px_1fr_120px_110px] items-center px-4 py-2 text-xs font-medium"
+                className={`grid ${LIST_COLS} items-center px-4 py-2 text-xs font-medium`}
                 style={{ color: 'var(--drv-text-muted)', borderBottom: '1px solid var(--drv-border)' }}
             >
                 <span />
                 <span>Name</span>
-                <span className="hidden sm:block">Type</span>
+                <span className="hidden sm:block">Owner</span>
+                <span className="hidden sm:block">Modified</span>
                 <span className="hidden sm:block">Size</span>
+                <span className="text-center" title="Searchability">
+                    <SearchIcon width={14} height={14} className="inline" />
+                </span>
             </div>
             {nodes.map((n) => {
                 const rp = rowProps(n);
@@ -670,7 +764,7 @@ function ListLayout({
                         onDrop={rp.onDrop}
                         onClick={(e) => onRowClick(e, n.id)}
                         onDoubleClick={() => onOpen(n)}
-                        className="group grid cursor-pointer grid-cols-[28px_1fr_120px_110px] items-center px-4 py-2.5"
+                        className={`group grid cursor-pointer ${LIST_COLS} items-center px-4 py-2.5`}
                         style={{
                             borderBottom: '1px solid var(--drv-border)',
                             background: rp.isDropTarget
@@ -692,19 +786,84 @@ function ListLayout({
                         <div className="flex min-w-0 items-center gap-3">
                             <NodeIcon node={n} />
                             <span className="truncate text-sm font-medium">{n.name}</span>
-                            <span className="ml-auto shrink-0 pr-2">
-                                <IndexBadge status={n.index_status} />
-                            </span>
                         </div>
-                        <span className="hidden text-sm sm:block" style={{ color: 'var(--drv-text-muted)' }}>
-                            {n.kind === 'folder' ? 'Folder' : kindLabel(n.name, n.mime_hint)}
+                        <span className="hidden truncate text-sm sm:block" style={{ color: 'var(--drv-text-muted)' }}>
+                            {ownerLabel(n.created_by, mySub)}
                         </span>
                         <span className="hidden text-sm sm:block" style={{ color: 'var(--drv-text-muted)' }}>
-                            {n.kind === 'folder' ? '' : formatBytes(n.size_bytes)}
+                            {formatDate(n.updated_at)}
+                        </span>
+                        <span className="hidden text-sm sm:block" style={{ color: 'var(--drv-text-muted)' }}>
+                            {n.kind === 'folder' ? '—' : formatBytes(n.size_bytes)}
+                        </span>
+                        <span className="flex justify-center">
+                            <StatusIcon node={n} />
                         </span>
                     </div>
                 );
             })}
+        </div>
+    );
+}
+
+function SearchResults({
+    query,
+    hits,
+    searching,
+    onOpen,
+    onClear
+}: {
+    query: string;
+    hits: SearchHit[];
+    searching: boolean;
+    onOpen: (h: SearchHit) => void;
+    onClear: () => void;
+}) {
+    return (
+        <div>
+            <div className="mb-3 flex items-center gap-2 text-sm">
+                <span style={{ color: 'var(--drv-text-muted)' }}>
+                    {searching ? 'Searching…' : `Results for "${query}"`}
+                </span>
+                <button
+                    onClick={onClear}
+                    className="rounded-full px-2.5 py-0.5 text-xs font-medium hover:bg-[var(--drv-hover)]"
+                    style={{ color: 'var(--drv-accent)' }}
+                >
+                    Back to files
+                </button>
+            </div>
+            {searching ? null : hits.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-20 text-center">
+                    <SearchIcon width={44} height={44} style={{ color: 'var(--drv-border)' }} />
+                    <p className="mt-4 text-sm font-medium">No matches</p>
+                    <p className="mt-1 text-sm" style={{ color: 'var(--drv-text-muted)' }}>
+                        Only files with the green searchable mark are covered.
+                    </p>
+                </div>
+            ) : (
+                <div className="overflow-hidden rounded-xl border" style={{ borderColor: 'var(--drv-border)', background: 'var(--drv-surface)' }}>
+                    {hits.map((h, i) => (
+                        <button
+                            key={`${h.node_id}-${h.chunk_index}-${i}`}
+                            onClick={() => onOpen(h)}
+                            className="block w-full px-4 py-3 text-left hover:bg-[var(--drv-hover)]"
+                            style={{ borderBottom: '1px solid var(--drv-border)' }}
+                        >
+                            <div className="flex items-center gap-2">
+                                <FileIcon width={18} height={18} style={{ color: 'var(--drv-text-muted)' }} />
+                                <span className="truncate text-sm font-medium">{h.name}</span>
+                                <span className="ml-auto shrink-0 text-xs" style={{ color: 'var(--drv-text-muted)' }}>
+                                    {(h.score * 100).toFixed(0)}%
+                                </span>
+                            </div>
+                            <p className="mt-1 line-clamp-2 text-xs" style={{ color: 'var(--drv-text-muted)' }}>
+                                {h.snippet}
+                            </p>
+                        </button>
+                    ))}
+                </div>
+            )}
         </div>
     );
 }
@@ -750,7 +909,12 @@ function GridLayout({
                                 <FileIcon width={36} height={36} style={{ color: 'var(--drv-text-muted)' }} />
                             )}
                         </div>
-                        <div className="truncate text-sm font-medium">{n.name}</div>
+                        <div className="flex items-center gap-1.5">
+                            <span className="min-w-0 truncate text-sm font-medium">{n.name}</span>
+                            <span className="ml-auto shrink-0">
+                                <StatusIcon node={n} />
+                            </span>
+                        </div>
                         <div className="mt-0.5 text-xs" style={{ color: 'var(--drv-text-muted)' }}>
                             {n.kind === 'folder' ? 'Folder' : formatBytes(n.size_bytes)}
                         </div>

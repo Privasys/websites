@@ -27,6 +27,24 @@ export function kindLabel(name: string, mime?: string): string {
     return ext ? ext.toUpperCase() : 'File';
 }
 
+/** "me" for the caller, else the first 8 chars of the sub. */
+export function ownerLabel(createdBy: string | undefined, mySub: string): string {
+    if (!createdBy) return 'me';
+    if (createdBy === mySub) return 'me';
+    return createdBy.slice(0, 8);
+}
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** Compact date: "14 Jul" this year, "14 Jul 2025" otherwise. */
+export function formatDate(iso?: string): string {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '';
+    const base = `${d.getDate()} ${MONTHS[d.getMonth()]}`;
+    return d.getFullYear() === new Date().getFullYear() ? base : `${base} ${d.getFullYear()}`;
+}
+
 /** subject:<sub> -> <sub>; leaves link/app subjects intact. */
 export function granteeLabel(subject: string): string {
     if (subject.startsWith('subject:')) return subject.slice('subject:'.length);

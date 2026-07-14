@@ -117,6 +117,21 @@ export const ShieldCheck = (p: P) => (
     </svg>
 );
 
+export const SearchIcon = (p: P) => (
+    <svg {...base(p)}>
+        <circle cx="11" cy="11" r="7" />
+        <path d="m21 21-4.35-4.35" />
+    </svg>
+);
+
+export const SearchOffIcon = (p: P) => (
+    <svg {...base(p)}>
+        <circle cx="11" cy="11" r="7" />
+        <path d="m21 21-4.35-4.35" />
+        <path d="m8 8 6 6" />
+    </svg>
+);
+
 export const IndexedIcon = (p: P) => (
     <svg {...base(p)}>
         <circle cx="12" cy="12" r="9" />

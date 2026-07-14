@@ -34,8 +34,12 @@ export interface DriveNode {
     size_bytes: number;
     merkle_root_hex?: string;
     manifest_ref?: string;
-    /** Semantic-index state: '' | pending | processing | indexed | skipped | failed. */
+    /** Semantic-index state: '' | pending | processing | indexed | skipped | failed | excluded. */
     index_status?: string;
+    /** Creator's sub (Owner column). */
+    created_by?: string;
+    /** RFC3339 (Modified column). */
+    updated_at?: string;
 }
 
 export type TenantKind = 'user' | 'enterprise';
@@ -375,6 +379,32 @@ export async function deleteNode(
 ): Promise<void> {
     const res = await timed(session, 'DELETE', `/v1/tenants/${tenantID}/nodes/${nodeID}`, undefined, REQUEST_TIMEOUT_MS);
     if (!ok(res)) throw decodeError(res);
+}
+
+// ---- Semantic search ---------------------------------------------------
+
+export interface SearchHit {
+    node_id: string;
+    name: string;
+    mime_hint?: string;
+    chunk_index: number;
+    snippet: string;
+    score: number;
+}
+
+/** Semantic search over the tenant's indexed files. */
+export async function searchTenant(
+    session: SealedSession,
+    tenantID: string,
+    query: string,
+    topK = 10
+): Promise<SearchHit[]> {
+    const data = await json<{ hits: SearchHit[] }>(
+        session,
+        'GET',
+        `/v1/tenants/${tenantID}/search?q=${encodeURIComponent(query)}&k=${topK}`
+    );
+    return data.hits ?? [];
 }
 
 /** Mark a node (typically a folder) searchable or non-searchable. */
