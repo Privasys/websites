@@ -387,7 +387,12 @@ export interface SearchHit {
     node_id: string;
     name: string;
     mime_hint?: string;
+    section_id?: number;
+    /** Title chain from the document root ("Report" › "Results" › …). */
+    section_path?: string[];
     chunk_index: number;
+    char_start?: number;
+    char_end?: number;
     snippet: string;
     score: number;
 }

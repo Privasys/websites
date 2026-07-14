@@ -853,6 +853,15 @@ function SearchResults({
                             <div className="flex items-center gap-2">
                                 <FileIcon width={18} height={18} style={{ color: 'var(--drv-text-muted)' }} />
                                 <span className="truncate text-sm font-medium">{h.name}</span>
+                                {h.section_path && h.section_path.length > 1 && (
+                                    <span
+                                        className="truncate rounded-full px-2 py-0.5 text-xs"
+                                        style={{ background: 'var(--drv-accent-weak)', color: 'var(--drv-accent)' }}
+                                        title={h.section_path.join(' › ')}
+                                    >
+                                        {h.section_path.slice(1).join(' › ')}
+                                    </span>
+                                )}
                                 <span className="ml-auto shrink-0 text-xs" style={{ color: 'var(--drv-text-muted)' }}>
                                     {(h.score * 100).toFixed(0)}%
                                 </span>
