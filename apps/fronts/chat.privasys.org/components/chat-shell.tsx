@@ -353,10 +353,11 @@ export function ChatShell({
     // prompt. Reached on reconnect (stale sealed transport) or from the
     // sidebar; the signed-out case renders the gate from the page itself.
     if (view === 'signin') {
+        // No stale-transport notice needed: the SDK's connect() detects the
+        // refused voucher itself and renders reason-aware re-approval copy.
         return (
             <SignInGate
                 instance={instance}
-                notice={transport === 'stale' ? 'The secure back-end changed. Sign in again to re-verify it.' : undefined}
                 onCancel={session ? goChat : undefined}
                 onSuccess={goChat}
             />

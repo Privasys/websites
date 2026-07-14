@@ -1,16 +1,32 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { chatServiceHost } from '~/lib/chat-service-api';
 import { useAuth } from '~/lib/privasys-auth';
 import type { Instance } from '~/lib/types';
 
-// Full-page sign-in gate (same pattern as drive.privasys.org): chat pitch
-// on the left, the auth SDK's inline ceremony on the right. It replaces
-// the WHOLE shell while signing in, so no signed-in chrome (sidebar,
-// conversation list, user pill) shows behind an authentication prompt.
-// The SDK renders the ceremony in inline presentation (no card chrome of
-// its own) because we pass a container.
+// Chat's pitch for the SDK gate's left panel (page presentation). The SDK
+// styles it; strings only.
+const CHAT_PITCH = {
+    title: 'Your conversations, sealed.',
+    description:
+        'Privasys Chat runs its AI model inside a hardware-protected enclave. ' +
+        'The operator can never read your prompts or replies, and you can ' +
+        'verify it yourself by remote attestation.',
+    bullets: [
+        'Sealed browser-to-enclave transport. The gateway only sees ciphertext.',
+        'Chat history stays on this device. The platform stores none of it.',
+        'No passwords. Sign in with the Privasys Wallet or a passkey.',
+        'Attestation-verified confidential computing, no trust required.'
+    ]
+};
+
+// Full-page sign-in gate. The auth SDK renders the ENTIRE surface (page
+// presentation): chat's pitch in the left panel and every ceremony state on
+// the right — sign-in options, push/QR, the one-tap re-approval after a
+// back-end redeploy (reason-aware copy comes from the SDK), success. Chat's
+// integration is one container plus connectInto(); it reacts only to
+// success and failure.
 export function SignInGate({
     instance,
     notice,
@@ -24,48 +40,43 @@ export function SignInGate({
     onCancel?: () => void;
     onSuccess: () => void;
 }) {
-    const { signInInto, cancelSignIn } = useAuth();
+    const { connectInto, cancelSignIn } = useAuth();
     const containerRef = useRef<HTMLDivElement>(null);
     const startedRef = useRef(false);
     const [error, setError] = useState<string | null>(null);
 
-    useEffect(() => {
-        if (startedRef.current) return;
+    const start = useCallback(() => {
         const el = containerRef.current;
-        if (!el) return;
-        // Wait for the real instance metadata to load before kicking off the
-        // sign-in flow — without it we cannot know whether `session_relay`
-        // is enabled, and the SDK would generate a vanilla QR (no
-        // `mode: "session-relay"`) so the wallet would bind a normal passkey
-        // instead of bootstrapping a sealed session against the enclave.
-        if (!instance.endpoint) return;
+        if (!el || startedRef.current) return;
         startedRef.current = true;
-        // Opt into the sealed session-relay flow when the management
-        // service tells us this instance has the bootstrap middleware.
-        // The wallet attests `app_host`'s quote and binds the issued JWT
-        // to a sealed CBOR-AES-GCM transport session that lives inside
-        // the privasys.id iframe.
+        setError(null);
         const sessionRelayHost = instance.session_relay?.enabled
             ? instance.session_relay.app_host
             : undefined;
-        // Multi-app attestation: seal the chat-service back-end (a separate
-        // enclave) in the SAME wallet ceremony, so getSealedSession(chatHost)
-        // later resumes silently without a second phone touch.
-        const opts = sessionRelayHost
-            ? { sessionRelayHost, extraAppHosts: [chatServiceHost()] }
-            : undefined;
-        void signInInto(el, opts)
+        void connectInto(el, {
+            pitch: CHAT_PITCH,
+            ...(sessionRelayHost
+                ? { appHost: sessionRelayHost, extraAppHosts: [chatServiceHost()] }
+                : {})
+        })
             .then(() => onSuccess())
             .catch((e: unknown) => {
-                const msg = e instanceof Error ? e.message : 'Sign-in failed.';
-                if (msg !== 'Authentication cancelled') {
-                    setError(msg);
-                }
+                startedRef.current = false;
+                if ((e as { code?: string }).code === 'cancelled') return;
+                setError(e instanceof Error ? e.message : 'Sign-in failed.');
             });
-    }, [instance, signInInto, onSuccess]);
+    }, [instance, connectInto, onSuccess]);
+
+    useEffect(() => {
+        // Wait for the real instance metadata before starting: without it we
+        // cannot know whether `session_relay` is enabled, and the SDK would
+        // run a vanilla ceremony (no sealed transport bootstrap).
+        if (!instance.endpoint) return;
+        start();
+    }, [instance.endpoint, start]);
 
     return (
-        <div className="flex min-h-screen flex-1 flex-col bg-[var(--color-surface-0,transparent)]">
+        <div className="flex min-h-screen flex-1 flex-col">
             <header className="flex items-center gap-2 px-5 py-4">
                 <img
                     src="/favicon/privasys-logo.mini.svg"
@@ -89,63 +100,27 @@ export function SignInGate({
                 )}
             </header>
 
-            <main className="flex flex-1 items-center justify-center px-6">
-                <div className="grid w-full max-w-4xl items-center gap-10 py-12 md:grid-cols-2">
-                    {/* Pitch */}
-                    <div>
-                        <h1 className="text-3xl font-semibold tracking-tight text-[var(--color-text-primary)]">
-                            Your conversations, sealed.
-                        </h1>
-                        <p className="mt-4 text-[15px] leading-relaxed text-[var(--color-text-secondary)]">
-                            Privasys Chat runs its AI model inside a hardware-protected
-                            enclave. The operator can never read your prompts or replies,
-                            and you can verify it yourself by remote attestation.
-                        </p>
-                        <ul className="mt-6 space-y-3 text-sm text-[var(--color-text-primary)]">
-                            <Feature text="Sealed browser-to-enclave transport. The gateway only sees ciphertext." />
-                            <Feature text="Chat history stays on this device. The platform stores none of it." />
-                            <Feature text="No passwords. Sign in with the Privasys Wallet or a passkey." />
-                            <Feature text="Attestation-verified confidential computing, no trust required." />
-                        </ul>
+            <main className="flex flex-1 flex-col">
+                {notice && (
+                    <p className="mx-auto mt-2 text-center text-sm text-[var(--color-text-secondary)]">
+                        {notice}
+                    </p>
+                )}
+                {error && (
+                    <div className="mx-auto mt-4 flex max-w-md items-center gap-3 rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
+                        <span className="flex-1">{error}</span>
+                        <button
+                            type="button"
+                            onClick={start}
+                            className="shrink-0 rounded-full border border-red-500/40 px-3 py-1 text-xs font-medium hover:bg-red-500/10"
+                        >
+                            Try again
+                        </button>
                     </div>
-
-                    {/* Sign-in. Passing a container puts the auth SDK in inline
-                        presentation: no brand panel or close button, a compact
-                        column sized for this explicitly sized container. */}
-                    <div>
-                        {notice && (
-                            <p className="mb-3 text-center text-sm text-[var(--color-text-secondary)]">
-                                {notice}
-                            </p>
-                        )}
-                        {error && (
-                            <div className="mb-3 rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
-                                {error}
-                            </div>
-                        )}
-                        <div
-                            ref={containerRef}
-                            className="h-[560px] w-full overflow-hidden rounded-2xl"
-                        />
-                    </div>
-                </div>
+                )}
+                {/* The SDK gate fills this container (page presentation). */}
+                <div ref={containerRef} className="min-h-[620px] w-full flex-1" />
             </main>
         </div>
-    );
-}
-
-function Feature({ text }: { text: string }) {
-    return (
-        <li className="flex items-start gap-2.5">
-            <span
-                className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-white"
-                style={{ background: 'var(--color-primary-blue)' }}
-            >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="m5 12 5 5L20 7" />
-                </svg>
-            </span>
-            {text}
-        </li>
     );
 }

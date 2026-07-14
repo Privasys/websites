@@ -103,13 +103,27 @@ interface AuthContextValue {
      */
     signInInto: (container: HTMLElement, opts?: { sessionRelayHost?: string; extraAppHosts?: string[] }) => Promise<void>;
     /**
-     * Abort an in-flight `signInInto` ceremony. The pending promise rejects
-     * with "Authentication cancelled" and the SDK removes its iframe —
-     * required when navigating away mid-ceremony, because the sealed-mode
-     * auth iframe is an overlay parented to <body> and would otherwise
-     * outlive its container. No-op when no ceremony is in flight.
+     * Abort an in-flight `signInInto`/`connectInto` ceremony. The pending
+     * promise rejects with "Authentication cancelled" and the SDK removes
+     * its iframe — required when navigating away mid-ceremony, because the
+     * sealed-mode auth iframe is an overlay parented to <body> and would
+     * otherwise outlive its container. No-op when no ceremony is in flight.
      */
     cancelSignIn: () => void;
+    /**
+     * One-call gate (SDK `connect()`): silent restore → one-tap wallet
+     * re-approval (enclave measurement changed) → full ceremony, all
+     * rendered by the SDK inside `container` in page presentation with
+     * the app's `pitch`. Installs the primary sealed session on success
+     * (when `appHost` is set). Rejects with the SDK's typed ConnectError
+     * (`code: 'cancelled' | 'timeout' | 'failed'`).
+     */
+    connectInto: (container: HTMLElement, opts?: {
+        appHost?: string;
+        extraAppHosts?: string[];
+        pitch?: { title?: string; description?: string; bullets?: string[] };
+        methods?: readonly ('wallet' | 'passkey' | 'social')[];
+    }) => Promise<void>;
     /**
      * Re-establish the sealed enclave session after a page reload with
      * no wallet ceremony and no push: the privasys.id iframe bootstraps
@@ -166,6 +180,7 @@ const AuthContext = createContext<AuthContextValue>({
     signIn: async () => {},
     signInInto: async () => {},
     cancelSignIn: () => {},
+    connectInto: async () => {},
     resumeSealed: async () => {},
     reestablishSealed: async () => 'unavailable',
     staleReason: null,
@@ -355,6 +370,54 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
         inlineFrameRef.current?.cancel();
     }, []);
 
+    // One-call gate: SDK connect() in page presentation. The SDK owns the
+    // whole surface (pitch panel + ceremony/approval states); on success we
+    // adopt the token and, when sealed, install the primary sealed session.
+    const connectInto = useCallback(
+        async (
+            container: HTMLElement,
+            opts?: {
+                appHost?: string;
+                extraAppHosts?: string[];
+                pitch?: { title?: string; description?: string; bullets?: string[] };
+                methods?: readonly ('wallet' | 'passkey' | 'social')[];
+            }
+        ): Promise<void> => {
+            const frame = new AuthFrame({
+                ...config,
+                container,
+                presentation: 'page',
+                ...(opts?.pitch ? { pitch: opts.pitch } : {}),
+                ...(opts?.methods ? { methods: opts.methods } : {}),
+                ...(opts?.appHost
+                    ? {
+                        sessionRelay: {
+                            appHost: opts.appHost,
+                            ...(opts.extraAppHosts?.length ? { extraAppHosts: opts.extraAppHosts } : {})
+                        }
+                    }
+                    : {})
+            });
+            inlineFrameRef.current = frame;
+            try {
+                const res = await frame.connect();
+                acceptResultToken(res.accessToken);
+                if (opts?.appHost && res.session) {
+                    // Adopt as the primary sealed transport, retiring any
+                    // stale pre-redeploy frame.
+                    if (sealedFrameRef.current) sealedFrameRef.current.destroy();
+                    sealedFrameRef.current = frame;
+                    sealedHostRef.current = opts.appHost;
+                    setSealedSession(res.session);
+                    setStaleReason(null);
+                }
+            } finally {
+                if (inlineFrameRef.current === frame) inlineFrameRef.current = null;
+            }
+        },
+        [config, acceptResultToken]
+    );
+
     const resumeSealed = useCallback(
         async (appHost: string) => {
             if (sealedSession) return;
@@ -534,7 +597,7 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
 
     return (
         <AuthContext.Provider
-            value={{ session, loading, expired, sealedSession, getTokenForAudience, signIn, signInInto, cancelSignIn, resumeSealed, reestablishSealed, staleReason, getSealedSession, requestAppVoucher, signOut }}
+            value={{ session, loading, expired, sealedSession, getTokenForAudience, signIn, signInInto, cancelSignIn, connectInto, resumeSealed, reestablishSealed, staleReason, getSealedSession, requestAppVoucher, signOut }}
         >
             {children}
         </AuthContext.Provider>
