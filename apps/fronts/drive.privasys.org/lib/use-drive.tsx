@@ -85,11 +85,12 @@ interface DriveContextValue {
     signInInto: (el: HTMLElement) => Promise<void>;
     /**
      * The one-call gate (SDK connect()): mounts the whole sign-in surface
-     * (pitch + ceremony/approval states) into `el` and bootstraps the
-     * drive on success. Lands on 'error' (with a message) only when the
-     * SDK gave up; a user cancel returns to 'signed-out' silently.
+     * (header + pitch + ceremony/approval states) into `el` and bootstraps
+     * the drive on success. Returns the outcome so the gate can render a
+     * "closed" panel on user cancel (the SDK's Close button); 'error'
+     * (with a message) only when the SDK gave up.
      */
-    connectInto: (el: HTMLElement) => Promise<void>;
+    connectInto: (el: HTMLElement) => Promise<'ready' | 'cancelled' | 'error'>;
     signOut: () => void;
     /**
      * Recover after the enclave restarted or went unreachable: retry the
@@ -113,7 +114,7 @@ const DriveContext = createContext<DriveContextValue>({
     newWorkspace: async () => {},
     signIn: async () => {},
     signInInto: async () => {},
-    connectInto: async () => {},
+    connectInto: async () => 'error' as const,
     signOut: () => {},
     reconnect: async () => {}
 });
@@ -238,21 +239,32 @@ export function DriveProvider({ children }: { children: ReactNode }) {
     // The one-call gate: SDK connect() renders every state (silent restore,
     // one-tap re-approval, full ceremony) inside `el`; we bootstrap the
     // drive when it hands back the sealed session.
-    const connectInto = useCallback(async (el: HTMLElement) => {
-        if (bootstrapping.current) return;
+    const connectInto = useCallback(async (el: HTMLElement): Promise<'ready' | 'cancelled' | 'error'> => {
+        if (bootstrapping.current) return 'error';
         bootstrapping.current = true;
         setError(null);
         try {
-            const s = await auth.connectInto(el, { appHost: host, pitch: DRIVE_PITCH });
+            const s = await auth.connectInto(el, {
+                appHost: host,
+                pitch: DRIVE_PITCH,
+                app: {
+                    displayName: 'Privasys Drive',
+                    ...(typeof window !== 'undefined'
+                        ? { logoUrl: `${window.location.origin}/favicon/privasys-logo.mini.svg` }
+                        : {})
+                }
+            });
             if (!s) throw new Error('Drive connection was not completed.');
             await bootstrap(s);
+            return 'ready';
         } catch (e) {
             if ((e as { code?: string }).code === 'cancelled') {
                 setStatus('signed-out');
-                return;
+                return 'cancelled';
             }
             setStatus('error');
             setError(e instanceof Error ? e.message : 'Could not connect to Drive.');
+            return 'error';
         } finally {
             bootstrapping.current = false;
         }

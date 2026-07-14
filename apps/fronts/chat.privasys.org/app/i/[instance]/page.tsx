@@ -23,7 +23,7 @@ const HEALTH_PROBE_TIMEOUT_MS = 4_000;
 //   - When authenticated: load the instance metadata and stream replies.
 export default function InstancePage({ params }: { params: Promise<{ instance: string }> }) {
     const { instance: instanceId } = use(params);
-    const { session, loading: authLoading, expired } = useAuth();
+    const { session, loading: authLoading } = useAuth();
     const [instance, setInstance] = useState<Instance | null>(null);
     const [error, setError] = useState<string | null>(null);
     // 'unknown' until we've probed; 'up' / 'down' after the probe resolves.
@@ -131,7 +131,6 @@ export default function InstancePage({ params }: { params: Promise<{ instance: s
         return (
             <SignInGate
                 instance={instance ?? placeholder}
-                notice={expired ? 'Your session expired. Sign in again to keep chatting.' : undefined}
                 onSuccess={() => { /* session state flips the page to the shell */ }}
             />
         );
