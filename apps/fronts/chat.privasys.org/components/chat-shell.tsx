@@ -17,7 +17,7 @@ import type { SealedSession } from '@privasys/auth';
 import { AppSidebar } from './app-sidebar';
 import { ChatPanel, type PendingReplay } from './chat-panel';
 import { SecurityView } from './security-view';
-import { SignInView } from './signin-view';
+import { SignInGate } from './signin-view';
 
 type ShellView = 'chat' | 'security' | 'tools' | 'signin';
 
@@ -348,6 +348,21 @@ export function ChatShell({
         goChat();
     }, [conv]);
 
+    // Sign-in replaces the WHOLE shell (drive.privasys.org pattern): no
+    // sidebar, conversation list or signed-in user pill behind an auth
+    // prompt. Reached on reconnect (stale sealed transport) or from the
+    // sidebar; the signed-out case renders the gate from the page itself.
+    if (view === 'signin') {
+        return (
+            <SignInGate
+                instance={instance}
+                notice={transport === 'stale' ? 'The secure back-end changed. Sign in again to re-verify it.' : undefined}
+                onCancel={session ? goChat : undefined}
+                onSuccess={goChat}
+            />
+        );
+    }
+
     return (
         <div className="flex flex-1">
             <AppSidebar
@@ -414,10 +429,6 @@ export function ChatShell({
                     <div className="hidden" aria-hidden="true">
                         <SecurityView instance={instance} onStatus={setAttestationStatus} />
                     </div>
-                )}
-
-                {view === 'signin' && (
-                    <SignInView instance={instance} onCancel={goChat} onSuccess={goChat} />
                 )}
 
                 {view === 'chat' && (

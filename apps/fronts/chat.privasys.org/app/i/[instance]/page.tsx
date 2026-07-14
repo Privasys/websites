@@ -4,6 +4,7 @@ import { use, useEffect, useMemo, useState } from 'react';
 import type { Instance } from '~/lib/types';
 import { fetchInstance, InstanceNotFoundError, pickInitialModel, probeInstanceHealth } from '~/lib/instance-api';
 import { ChatShell } from '~/components/chat-shell';
+import { SignInGate } from '~/components/signin-view';
 import { useAuth } from '~/lib/privasys-auth';
 
 const BOOK_DEMO_URL = 'https://tinyurl.com/bfoing-30';
@@ -109,10 +110,12 @@ export default function InstancePage({ params }: { params: Promise<{ instance: s
         );
     }
 
-    // Unauthenticated: render the shell so the sidebar + sign-in flow are
-    // visible. Use the real instance metadata if it's already loaded so the
-    // sign-in iframe can opt into session-relay; otherwise fall back to a
-    // placeholder until `fetchInstance` resolves.
+    // Unauthenticated: full-page sign-in gate (drive.privasys.org pattern) —
+    // no chat chrome until a session exists. Use the real instance metadata
+    // if it's already loaded so the sign-in iframe can opt into
+    // session-relay; the gate waits on `instance.endpoint` otherwise (the
+    // ceremony must not start against the placeholder — the wallet would
+    // get a vanilla QR with no `mode: "session-relay"`).
     if (!session) {
         const placeholder: Instance = {
             id: instanceId,
@@ -126,16 +129,10 @@ export default function InstancePage({ params }: { params: Promise<{ instance: s
             attestation_server: ''
         };
         return (
-            <ChatShell
-                key="guest"
+            <SignInGate
                 instance={instance ?? placeholder}
-                initialModel={null}
-                disabledReason={
-                    expired
-                        ? 'Your session expired. Sign in to keep chatting.'
-                        : 'Sign in from the sidebar to start a confidential conversation.'
-                }
-                userGreeting="Welcome"
+                notice={expired ? 'Your session expired. Sign in again to keep chatting.' : undefined}
+                onSuccess={() => { /* session state flips the page to the shell */ }}
             />
         );
     }

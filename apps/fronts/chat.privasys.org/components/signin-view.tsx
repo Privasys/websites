@@ -5,19 +5,26 @@ import { chatServiceHost } from '~/lib/chat-service-api';
 import { useAuth } from '~/lib/privasys-auth';
 import type { Instance } from '~/lib/types';
 
-// Inline sign-in view. Mounts the privasys.id auth iframe inside the
-// chat panel via the `signInInto(container)` SDK hook so the overall
-// shell (sidebar + header) remains visible during authentication.
-export function SignInView({
+// Full-page sign-in gate (same pattern as drive.privasys.org): chat pitch
+// on the left, the auth SDK's inline ceremony on the right. It replaces
+// the WHOLE shell while signing in, so no signed-in chrome (sidebar,
+// conversation list, user pill) shows behind an authentication prompt.
+// The SDK renders the ceremony in inline presentation (no card chrome of
+// its own) because we pass a container.
+export function SignInGate({
     instance,
+    notice,
+    onCancel,
     onSuccess
 }: {
     instance: Instance;
-    /** Accepted for API compatibility; the inline view has no cancel affordance. */
+    /** Optional context line above the ceremony (e.g. session expired). */
+    notice?: string;
+    /** When set, shows "Back to chat" and aborts the ceremony on click. */
     onCancel?: () => void;
     onSuccess: () => void;
 }) {
-    const { signInInto } = useAuth();
+    const { signInInto, cancelSignIn } = useAuth();
     const containerRef = useRef<HTMLDivElement>(null);
     const startedRef = useRef(false);
     const [error, setError] = useState<string | null>(null);
@@ -58,18 +65,87 @@ export function SignInView({
     }, [instance, signInInto, onSuccess]);
 
     return (
-        <div className="flex flex-1 flex-col overflow-hidden">
-            <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-4 pt-4 pb-4">
-                {error && (
-                    <div className="mb-3 rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
-                        {error}
-                    </div>
-                )}
-                <div
-                    ref={containerRef}
-                    className="flex-1 min-h-0 overflow-hidden rounded-2xl border border-[var(--color-border-dark)] bg-white shadow-sm"
+        <div className="flex min-h-screen flex-1 flex-col bg-[var(--color-surface-0,transparent)]">
+            <header className="flex items-center gap-2 px-5 py-4">
+                <img
+                    src="/favicon/privasys-logo.mini.svg"
+                    alt="Privasys"
+                    className="h-7 w-7"
                 />
-            </div>
+                <span className="text-sm font-semibold tracking-tight text-[var(--color-text-primary)]">
+                    Privasys Chat
+                </span>
+                {onCancel && (
+                    <button
+                        type="button"
+                        onClick={() => {
+                            cancelSignIn();
+                            onCancel();
+                        }}
+                        className="ml-auto rounded-md border border-[var(--color-border-dark)] bg-[var(--color-surface-2)]/50 px-3 py-1 text-xs text-[var(--color-text-secondary)] hover:border-[var(--color-primary-blue)]/60 hover:text-[var(--color-primary-blue)]"
+                    >
+                        Back to chat
+                    </button>
+                )}
+            </header>
+
+            <main className="flex flex-1 items-center justify-center px-6">
+                <div className="grid w-full max-w-4xl items-center gap-10 py-12 md:grid-cols-2">
+                    {/* Pitch */}
+                    <div>
+                        <h1 className="text-3xl font-semibold tracking-tight text-[var(--color-text-primary)]">
+                            Your conversations, sealed.
+                        </h1>
+                        <p className="mt-4 text-[15px] leading-relaxed text-[var(--color-text-secondary)]">
+                            Privasys Chat runs its AI model inside a hardware-protected
+                            enclave. The operator can never read your prompts or replies,
+                            and you can verify it yourself by remote attestation.
+                        </p>
+                        <ul className="mt-6 space-y-3 text-sm text-[var(--color-text-primary)]">
+                            <Feature text="Sealed browser-to-enclave transport. The gateway only sees ciphertext." />
+                            <Feature text="Chat history stays on this device. The platform stores none of it." />
+                            <Feature text="No passwords. Sign in with the Privasys Wallet or a passkey." />
+                            <Feature text="Attestation-verified confidential computing, no trust required." />
+                        </ul>
+                    </div>
+
+                    {/* Sign-in. Passing a container puts the auth SDK in inline
+                        presentation: no brand panel or close button, a compact
+                        column sized for this explicitly sized container. */}
+                    <div>
+                        {notice && (
+                            <p className="mb-3 text-center text-sm text-[var(--color-text-secondary)]">
+                                {notice}
+                            </p>
+                        )}
+                        {error && (
+                            <div className="mb-3 rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
+                                {error}
+                            </div>
+                        )}
+                        <div
+                            ref={containerRef}
+                            className="h-[560px] w-full overflow-hidden rounded-2xl"
+                        />
+                    </div>
+                </div>
+            </main>
         </div>
+    );
+}
+
+function Feature({ text }: { text: string }) {
+    return (
+        <li className="flex items-start gap-2.5">
+            <span
+                className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-white"
+                style={{ background: 'var(--color-primary-blue)' }}
+            >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="m5 12 5 5L20 7" />
+                </svg>
+            </span>
+            {text}
+        </li>
     );
 }

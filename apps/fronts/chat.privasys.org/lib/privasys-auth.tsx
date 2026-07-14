@@ -103,6 +103,14 @@ interface AuthContextValue {
      */
     signInInto: (container: HTMLElement, opts?: { sessionRelayHost?: string; extraAppHosts?: string[] }) => Promise<void>;
     /**
+     * Abort an in-flight `signInInto` ceremony. The pending promise rejects
+     * with "Authentication cancelled" and the SDK removes its iframe —
+     * required when navigating away mid-ceremony, because the sealed-mode
+     * auth iframe is an overlay parented to <body> and would otherwise
+     * outlive its container. No-op when no ceremony is in flight.
+     */
+    cancelSignIn: () => void;
+    /**
      * Re-establish the sealed enclave session after a page reload with
      * no wallet ceremony and no push: the privasys.id iframe bootstraps
      * against the enclave using the EncAuth voucher stored at the IdP.
@@ -157,6 +165,7 @@ const AuthContext = createContext<AuthContextValue>({
     },
     signIn: async () => {},
     signInInto: async () => {},
+    cancelSignIn: () => {},
     resumeSealed: async () => {},
     reestablishSealed: async () => 'unavailable',
     staleReason: null,
@@ -197,6 +206,9 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
     const [sealedSession, setSealedSession] = useState<SealedSession | null>(null);
     const [staleReason, setStaleReason] = useState<SealedStaleReason>(null);
     const frameRef = useRef<AuthFrame | null>(null);
+    // In-flight one-shot inline sign-in frame (signInInto); lets
+    // cancelSignIn abort the ceremony when the user navigates away.
+    const inlineFrameRef = useRef<AuthFrame | null>(null);
     // Dedicated frame for voucher-based sealed resume. Separate from the
     // persistent renewal frame because `sessionRelay.appHost` is a
     // constructor-only option and the appHost is per-instance (only
@@ -316,20 +328,32 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
                     }
                     : {})
             });
-            const result = await inline.signIn();
-            acceptResultToken(result.accessToken ?? result.sessionToken);
-            if (opts?.sessionRelayHost && result.sessionRelay) {
-                try {
-                    const s = await inline.session();
-                    setSealedSession(s);
-                    setStaleReason(null);
-                } catch (err) {
-                    console.warn('[chat-auth] sealed session install failed:', err);
+            inlineFrameRef.current = inline;
+            try {
+                const result = await inline.signIn();
+                acceptResultToken(result.accessToken ?? result.sessionToken);
+                if (opts?.sessionRelayHost && result.sessionRelay) {
+                    try {
+                        const s = await inline.session();
+                        setSealedSession(s);
+                        setStaleReason(null);
+                    } catch (err) {
+                        console.warn('[chat-auth] sealed session install failed:', err);
+                    }
                 }
+            } finally {
+                if (inlineFrameRef.current === inline) inlineFrameRef.current = null;
             }
         },
         [config, acceptResultToken]
     );
+
+    // Abort the in-flight inline ceremony (if any). AuthFrame.cancel() is a
+    // no-op once the ceremony has resolved, so this can never tear down a
+    // live sealed session.
+    const cancelSignIn = useCallback(() => {
+        inlineFrameRef.current?.cancel();
+    }, []);
 
     const resumeSealed = useCallback(
         async (appHost: string) => {
@@ -510,7 +534,7 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
 
     return (
         <AuthContext.Provider
-            value={{ session, loading, expired, sealedSession, getTokenForAudience, signIn, signInInto, resumeSealed, reestablishSealed, staleReason, getSealedSession, requestAppVoucher, signOut }}
+            value={{ session, loading, expired, sealedSession, getTokenForAudience, signIn, signInInto, cancelSignIn, resumeSealed, reestablishSealed, staleReason, getSealedSession, requestAppVoucher, signOut }}
         >
             {children}
         </AuthContext.Provider>
