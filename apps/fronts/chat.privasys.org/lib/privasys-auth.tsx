@@ -121,7 +121,8 @@ interface AuthContextValue {
     connectInto: (container: HTMLElement, opts?: {
         appHost?: string;
         extraAppHosts?: string[];
-        pitch?: { title?: string; description?: string; bullets?: string[] };
+        pitch?: { title?: string; description?: string; bullets?: string[]; logoUrl?: string };
+        app?: { logoUrl?: string; displayName?: string };
         methods?: readonly ('wallet' | 'passkey' | 'social')[];
     }) => Promise<void>;
     /**
@@ -379,7 +380,8 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
             opts?: {
                 appHost?: string;
                 extraAppHosts?: string[];
-                pitch?: { title?: string; description?: string; bullets?: string[] };
+                pitch?: { title?: string; description?: string; bullets?: string[]; logoUrl?: string };
+                app?: { logoUrl?: string; displayName?: string };
                 methods?: readonly ('wallet' | 'passkey' | 'social')[];
             }
         ): Promise<void> => {
@@ -388,6 +390,7 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
                 container,
                 presentation: 'page',
                 ...(opts?.pitch ? { pitch: opts.pitch } : {}),
+                ...(opts?.app ? { app: opts.app } : {}),
                 ...(opts?.methods ? { methods: opts.methods } : {}),
                 ...(opts?.appHost
                     ? {

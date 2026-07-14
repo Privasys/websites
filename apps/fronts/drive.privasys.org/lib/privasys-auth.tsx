@@ -113,7 +113,9 @@ interface AuthContextValue {
      */
     connectInto: (container: HTMLElement, opts: {
         appHost: string;
-        pitch?: { title?: string; description?: string; bullets?: string[] };
+        pitch?: { title?: string; description?: string; bullets?: string[]; logoUrl?: string };
+        /** App identity for the SDK gate header (logo + display name). */
+        app?: { logoUrl?: string; displayName?: string };
         methods?: readonly ('wallet' | 'passkey' | 'social')[];
     }) => Promise<SealedSession | null>;
     /**
@@ -369,7 +371,8 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
             container: HTMLElement,
             opts: {
                 appHost: string;
-                pitch?: { title?: string; description?: string; bullets?: string[] };
+                pitch?: { title?: string; description?: string; bullets?: string[]; logoUrl?: string };
+                app?: { logoUrl?: string; displayName?: string };
                 methods?: readonly ('wallet' | 'passkey' | 'social')[];
             }
         ): Promise<SealedSession | null> => {
@@ -378,6 +381,7 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
                 container,
                 presentation: 'page',
                 ...(opts.pitch ? { pitch: opts.pitch } : {}),
+                ...(opts.app ? { app: opts.app } : {}),
                 ...(opts.methods ? { methods: opts.methods } : {}),
                 sessionRelay: { appHost: opts.appHost }
             });
