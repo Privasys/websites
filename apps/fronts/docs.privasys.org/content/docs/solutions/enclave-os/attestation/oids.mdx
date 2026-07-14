@@ -13,6 +13,10 @@ These OIDs carry the raw hardware attestation quote. Each certificate contains e
 |-----|------|------------|
 | `1.2.840.113741.1.13.1.0` | Intel SGX DCAP Quote | Enclave OS Mini |
 | `1.2.840.113741.1.5.5.1.6` | Intel TDX Quote | Enclave OS Virtual |
+| `1.3.6.1.4.1.65230.4.1` | AMD SEV-SNP Attestation Report | Enclave OS Virtual |
+| `1.3.6.1.4.1.65230.5.1` | NVIDIA GPU CC Evidence | GPU workloads (secondary) |
+
+The `4.*` and `5.*` arcs under `65230` are hardware-evidence families and are reserved for that use.
 
 ## Platform-Level OIDs (arc `1.3.6.1.4.1.65230`)
 
@@ -44,6 +48,14 @@ Per-workload OIDs appear in certificates served via [SNI routing](/solutions/enc
 | `3.5.<n>` | App-Defined Extensions | Sub-arc for workload-supplied extensions, installed at runtime via the SDK (`set-attestation-extension`) or pinned at deploy time (e.g. attested environment variables) |
 | `3.6` | Workload App Id | Platform-assigned app identity (`apps.id`, raw 16-byte UUID). Pins *which* app a workload is, so a vault key can be sealed to a specific app (MR_APP) and a same-code peer with a different app-id cannot unseal it. Omitted when no app-id is supplied (MR_ENCLAVE). Both. |
 
+## Cross-Enclave Dependency OIDs (arc `1.3.6.1.4.1.65230.6.*`)
+
+When a workload depends on other enclaves, it is pinned to a fixed set of dependency identities. That set is carried here and enforced fail-closed on outbound RA-TLS. See [Attested Dependencies](/solutions/enclave-os/attestation/dependencies).
+
+| OID | Name | Description |
+|-----|------|-------------|
+| `6.1` | Attested Dependency Set | Canonical encoding of the workload's **direct** dependency identities (per entry: app-id, allowed measurements, required OIDs, folded identity). Written by the runtime, never the app. Both. |
+
 ## OID Hierarchy
 
 ```
@@ -67,6 +79,10 @@ Per-workload OIDs appear in certificates served via [SNI routing](/solutions/enc
     +-- 3.5                          Workload config hash / model digest
     |   +-- 3.5.<n>                  App-defined extensions
     +-- 3.6                          Workload app id (MR_APP sealing)
++-- 4.1                              AMD SEV-SNP attestation report
++-- 5.1                              NVIDIA GPU CC evidence
++-- 6.*                              Cross-enclave dependency OIDs
+    +-- 6.1                          Attested dependency set
 ```
 
 ## Verification Strategies

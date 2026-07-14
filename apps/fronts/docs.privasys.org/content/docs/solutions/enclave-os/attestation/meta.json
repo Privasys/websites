@@ -5,6 +5,7 @@
         "ra-tls",
         "oids",
         "merkle-tree",
-        "mutual-ra-tls"
+        "mutual-ra-tls",
+        "dependencies"
     ]
 }
