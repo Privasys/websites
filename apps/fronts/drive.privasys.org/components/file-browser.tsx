@@ -8,7 +8,7 @@ import {
     downloadFile,
     listChildren,
     moveNode,
-    uploadFile,
+    uploadFileStreaming,
     type DriveNode,
     type Me,
     type Tenant
@@ -52,7 +52,14 @@ export function FileBrowser({
     me: Me | null;
 }) {
     const { reconnect } = useDrive();
-    const [path, setPath] = useState<Crumb[]>([{ id: null, name: 'My Drive' }]);
+    const rootName = tenant.kind === 'user' ? 'My Drive' : tenant.name;
+    const [path, setPath] = useState<Crumb[]>([{ id: null, name: rootName }]);
+
+    // Reset to the root when the active tenant (workspace) changes.
+    useEffect(() => {
+        setPath([{ id: null, name: rootName }]);
+
+    }, [tenant.id]);
     const [nodes, setNodes] = useState<DriveNode[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -65,6 +72,7 @@ export function FileBrowser({
     const [newFolder, setNewFolder] = useState(false);
     const [pageDrag, setPageDrag] = useState(false);
     const [dropTarget, setDropTarget] = useState<string | null>(null);
+    const [progress, setProgress] = useState<{ name: string; pct: number } | null>(null);
     const dragDepth = useRef(0);
     const fileInput = useRef<HTMLInputElement>(null);
 
@@ -151,14 +159,17 @@ export function FileBrowser({
         setError(null);
         try {
             for (const f of Array.from(files)) {
-                const bytes = new Uint8Array(await f.arrayBuffer());
-                await uploadFile(session, tenant.id, dest, f.name, f.type, bytes);
+                setProgress({ name: f.name, pct: 0 });
+                await uploadFileStreaming(session, tenant.id, dest, f, (sent, total) =>
+                    setProgress({ name: f.name, pct: total ? Math.round((sent / total) * 100) : 100 })
+                );
             }
             await reload();
         } catch (e) {
             setError(e instanceof Error ? e.message : 'Upload failed.');
         } finally {
             setBusy(false);
+            setProgress(null);
             if (fileInput.current) fileInput.current.value = '';
         }
     };
@@ -377,6 +388,28 @@ export function FileBrowser({
                     )}
                     <ActionChip onClick={() => setMoveOpen(true)} icon={<MoveIcon width={16} height={16} />} label="Move" />
                     <ActionChip onClick={() => void onDeleteSelected()} icon={<TrashIcon width={16} height={16} />} label="Delete" />
+                </div>
+            )}
+
+            {progress && (
+                <div
+                    className="mx-4 mt-3 rounded-lg border px-3 py-2"
+                    style={{ borderColor: 'var(--drv-border)', background: 'var(--drv-surface)' }}
+                >
+                    <div className="mb-1.5 flex items-center justify-between text-xs">
+                        <span className="truncate" style={{ color: 'var(--drv-text-muted)' }}>
+                            Uploading {progress.name}
+                        </span>
+                        <span className="ml-2 shrink-0 font-medium" style={{ color: 'var(--drv-accent)' }}>
+                            {progress.pct}%
+                        </span>
+                    </div>
+                    <div className="h-1.5 overflow-hidden rounded-full" style={{ background: 'var(--drv-surface-2)' }}>
+                        <div
+                            className="h-full rounded-full transition-all"
+                            style={{ width: `${progress.pct}%`, background: 'var(--drv-accent)' }}
+                        />
+                    </div>
                 </div>
             )}
 

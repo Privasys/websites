@@ -168,6 +168,75 @@ export function ensurePersonalTenant(session: SealedSession): Promise<Tenant> {
     return json<Tenant>(session, 'POST', '/v1/me/tenant');
 }
 
+// ---- Workspaces (enterprise tenants) ---------------------------------
+
+export interface Member {
+    sub: string;
+    role: MemberRole;
+}
+
+/** Create an enterprise workspace; the caller becomes its owner. */
+export function createWorkspace(session: SealedSession, name: string): Promise<Tenant> {
+    return json<Tenant>(session, 'POST', '/v1/tenants', { kind: 'enterprise', name });
+}
+
+export async function listMembers(session: SealedSession, tenantID: string): Promise<Member[]> {
+    const data = await json<{ members: Member[] }>(
+        session,
+        'GET',
+        `/v1/tenants/${tenantID}/members`
+    );
+    return data.members ?? [];
+}
+
+/** Add a member by their Privasys ID sub (upserts the role). */
+export async function addMember(
+    session: SealedSession,
+    tenantID: string,
+    sub: string,
+    role: MemberRole
+): Promise<void> {
+    const res = await timed(
+        session,
+        'POST',
+        `/v1/tenants/${tenantID}/members`,
+        { user_sub: sub, role },
+        REQUEST_TIMEOUT_MS
+    );
+    if (!ok(res)) throw decodeError(res);
+}
+
+export async function setMemberRole(
+    session: SealedSession,
+    tenantID: string,
+    sub: string,
+    role: MemberRole
+): Promise<void> {
+    const res = await timed(
+        session,
+        'PATCH',
+        `/v1/tenants/${tenantID}/members/${encodeURIComponent(sub)}`,
+        { role },
+        REQUEST_TIMEOUT_MS
+    );
+    if (!ok(res)) throw decodeError(res);
+}
+
+export async function removeMember(
+    session: SealedSession,
+    tenantID: string,
+    sub: string
+): Promise<void> {
+    const res = await timed(
+        session,
+        'DELETE',
+        `/v1/tenants/${tenantID}/members/${encodeURIComponent(sub)}`,
+        undefined,
+        REQUEST_TIMEOUT_MS
+    );
+    if (!ok(res)) throw decodeError(res);
+}
+
 // ---- Browse ----------------------------------------------------------
 
 /** List a folder's children; pass null/'' for the tenant root. */
@@ -216,6 +285,68 @@ export async function uploadFile(
     if (!ok(res)) throw decodeError(res);
     const text = res.body && res.body.byteLength ? decoder.decode(res.body) : '';
     return JSON.parse(text) as DriveNode;
+}
+
+// Files above this go through the chunked upload session; below it, one
+// sealed request. Parts stay well under the transport's comfort zone.
+export const STREAM_THRESHOLD = 8 * 1024 * 1024;
+const PART_SIZE = 4 * 1024 * 1024;
+
+/**
+ * Upload of any size with progress: small files in one sealed request,
+ * larger ones as a chunked session (sequential sealed parts, finalized
+ * through the same seal path server-side).
+ */
+export async function uploadFileStreaming(
+    session: SealedSession,
+    tenantID: string,
+    parentID: string | null,
+    file: File,
+    onProgress?: (sentBytes: number, totalBytes: number) => void
+): Promise<DriveNode> {
+    if (file.size <= STREAM_THRESHOLD) {
+        onProgress?.(0, file.size);
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        const node = await uploadFile(session, tenantID, parentID, file.name, file.type, bytes);
+        onProgress?.(file.size, file.size);
+        return node;
+    }
+    const created = await json<{ id: string }>(session, 'POST', `/v1/tenants/${tenantID}/uploads`, {
+        parent_id: parentID ?? '',
+        name: file.name,
+        mime: file.type,
+        size: file.size
+    });
+    try {
+        let sent = 0;
+        let index = 0;
+        while (sent < file.size) {
+            const slice = file.slice(sent, Math.min(sent + PART_SIZE, file.size));
+            const bytes = new Uint8Array(await slice.arrayBuffer());
+            const res = await timed(
+                session,
+                'PUT',
+                `/v1/tenants/${tenantID}/uploads/${created.id}/chunks/${index}`,
+                bytes,
+                TRANSFER_TIMEOUT_MS
+            );
+            if (!ok(res)) throw decodeError(res);
+            sent += bytes.byteLength;
+            index += 1;
+            onProgress?.(sent, file.size);
+        }
+        return await json<DriveNode>(
+            session,
+            'POST',
+            `/v1/tenants/${tenantID}/uploads/${created.id}/finalize`
+        );
+    } catch (e) {
+        // Best-effort cleanup of the staged session.
+        void session
+            .request('DELETE', `/v1/tenants/${tenantID}/uploads/${created.id}`)
+            .catch(() => undefined);
+        throw e;
+    }
 }
 
 /** Download a file's plaintext bytes (decrypted inside the enclave). */
