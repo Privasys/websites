@@ -34,6 +34,8 @@ export interface DriveNode {
     size_bytes: number;
     merkle_root_hex?: string;
     manifest_ref?: string;
+    /** Semantic-index state: '' | pending | processing | indexed | skipped | failed. */
+    index_status?: string;
 }
 
 export type TenantKind = 'user' | 'enterprise';
@@ -372,6 +374,23 @@ export async function deleteNode(
     nodeID: string
 ): Promise<void> {
     const res = await timed(session, 'DELETE', `/v1/tenants/${tenantID}/nodes/${nodeID}`, undefined, REQUEST_TIMEOUT_MS);
+    if (!ok(res)) throw decodeError(res);
+}
+
+/** Mark a node (typically a folder) searchable or non-searchable. */
+export async function setNodeIndexing(
+    session: SealedSession,
+    tenantID: string,
+    nodeID: string,
+    enabled: boolean
+): Promise<void> {
+    const res = await timed(
+        session,
+        'PUT',
+        `/v1/tenants/${tenantID}/nodes/${nodeID}/indexing`,
+        { enabled },
+        REQUEST_TIMEOUT_MS
+    );
     if (!ok(res)) throw decodeError(res);
 }
 

@@ -8,6 +8,7 @@ import {
     downloadFile,
     listChildren,
     moveNode,
+    setNodeIndexing,
     uploadFileStreaming,
     type DriveNode,
     type Me,
@@ -26,6 +27,8 @@ import {
     GridIcon,
     ListIcon,
     MoveIcon,
+    IndexedIcon,
+    ProcessingIcon,
     NewFolderIcon,
     ShareIcon,
     TrashIcon,
@@ -103,6 +106,25 @@ export function FileBrowser({
     useEffect(() => {
         void reload();
     }, [reload]);
+
+    // While anything in view is still indexing, refresh quietly so the
+    // grey processing icon flips to green without user action.
+    useEffect(() => {
+        if (!nodes.some((n) => n.index_status === 'pending' || n.index_status === 'processing'))
+            return;
+        const t = setInterval(async () => {
+            try {
+                const kids = await listChildren(session, tenant.id, current.id);
+                kids.sort((a, b) =>
+                    a.kind !== b.kind ? (a.kind === 'folder' ? -1 : 1) : a.name.localeCompare(b.name)
+                );
+                setNodes(kids);
+            } catch {
+                /* transient; the next tick retries */
+            }
+        }, 5000);
+        return () => clearInterval(t);
+    }, [nodes, session, tenant.id, current.id]);
 
     // ---- selection ----
     const clearSelection = () => setSelected(new Set());
@@ -203,6 +225,21 @@ export function FileBrowser({
             await reload();
         } catch (e) {
             setError(e instanceof Error ? e.message : 'Delete failed.');
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    // Toggle a folder's searchability: excluding covers its subtree for
+    // future uploads.
+    const toggleIndexing = async (n: DriveNode) => {
+        setBusy(true);
+        setError(null);
+        try {
+            await setNodeIndexing(session, tenant.id, n.id, n.index_status === 'excluded');
+            await reload();
+        } catch (e) {
+            setError(e instanceof Error ? e.message : 'Could not update search settings.');
         } finally {
             setBusy(false);
         }
@@ -386,6 +423,19 @@ export function FileBrowser({
                     {anyFileSelected && (
                         <ActionChip onClick={() => void downloadSelected()} icon={<DownloadIcon width={16} height={16} />} label="Download" />
                     )}
+                    {soleNode && soleNode.kind === 'folder' && (
+                        <ActionChip
+                            onClick={() => void toggleIndexing(soleNode)}
+                            icon={
+                                soleNode.index_status === 'excluded' ? (
+                                    <ProcessingIcon width={16} height={16} />
+                                ) : (
+                                    <IndexedIcon width={16} height={16} />
+                                )
+                            }
+                            label={soleNode.index_status === 'excluded' ? 'Enable search' : 'Exclude from search'}
+                        />
+                    )}
                     <ActionChip onClick={() => setMoveOpen(true)} icon={<MoveIcon width={16} height={16} />} label="Move" />
                     <ActionChip onClick={() => void onDeleteSelected()} icon={<TrashIcon width={16} height={16} />} label="Delete" />
                 </div>
@@ -544,6 +594,26 @@ function ActionChip({ onClick, icon, label }: { onClick: () => void; icon: React
     );
 }
 
+// Semantic-index indicator: grey clock while processing, green check
+// when the file is searchable. Excluded/skipped/failed show nothing.
+function IndexBadge({ status }: { status?: string }) {
+    if (status === 'pending' || status === 'processing') {
+        return (
+            <span title="Indexing for search…" aria-label="Indexing">
+                <ProcessingIcon width={16} height={16} style={{ color: 'var(--drv-text-muted)' }} />
+            </span>
+        );
+    }
+    if (status === 'indexed') {
+        return (
+            <span title="Searchable" aria-label="Searchable">
+                <IndexedIcon width={16} height={16} style={{ color: '#16a34a' }} />
+            </span>
+        );
+    }
+    return null;
+}
+
 function NodeIcon({ node }: { node: DriveNode }) {
     return node.kind === 'folder' ? (
         <FolderIcon width={22} height={22} style={{ color: 'var(--drv-accent)' }} />
@@ -622,6 +692,9 @@ function ListLayout({
                         <div className="flex min-w-0 items-center gap-3">
                             <NodeIcon node={n} />
                             <span className="truncate text-sm font-medium">{n.name}</span>
+                            <span className="ml-auto shrink-0 pr-2">
+                                <IndexBadge status={n.index_status} />
+                            </span>
                         </div>
                         <span className="hidden text-sm sm:block" style={{ color: 'var(--drv-text-muted)' }}>
                             {n.kind === 'folder' ? 'Folder' : kindLabel(n.name, n.mime_hint)}
