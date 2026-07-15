@@ -1040,15 +1040,68 @@ export function deployDirect(
     appId: string,
     versionId: string,
     location: string,
-    instanceSize?: string
+    instanceSize?: string,
+    opts?: { tenancy?: 'mutualised' | 'dedicated'; instanceId?: string }
 ): Promise<AppDeployment> {
-    const body: { location: string; instance_size?: string } = { location };
+    // Deploying onto an owned dedicated instance (opts.instanceId) implies
+    // dedicated tenancy and needs no location; otherwise a location selects a
+    // mutualised host (Phase 6).
+    const body: { location?: string; instance_size?: string; tenancy?: string; instance_id?: string } = {};
+    if (opts?.instanceId) body.instance_id = opts.instanceId;
+    else body.location = location;
     if (instanceSize) body.instance_size = instanceSize;
+    if (opts?.tenancy) body.tenancy = opts.tenancy;
     return request<AppDeployment>(
         `/api/v1/apps/${encodeURIComponent(appId)}/versions/${encodeURIComponent(versionId)}/deploy`,
         token,
         { method: 'POST', body: JSON.stringify(body) }
     );
+}
+
+// --- Dedicated instances (Phase 6) --------------------------------------
+
+export interface Instance {
+    id: string;
+    name: string;
+    shape: string;
+    size: string;
+    location: string;
+    state: 'provisioning' | 'starting' | 'running' | 'stopped' | 'deleting' | 'deleted' | 'error' | string;
+    host?: string;
+    port: number;
+    app_count: number;
+    tenancy: string;
+    created_at: string;
+    updated_at: string;
+}
+
+export async function listInstances(token: string): Promise<Instance[]> {
+    const res = await request<{ instances: Instance[] }>('/api/v1/instances', token);
+    return res.instances ?? [];
+}
+
+export async function getInstance(token: string, id: string): Promise<{ instance: Instance; apps: AppDeployment[] }> {
+    return request<{ instance: Instance; apps: AppDeployment[] }>(`/api/v1/instances/${encodeURIComponent(id)}`, token);
+}
+
+export async function createInstance(token: string, body: { name?: string; size: string; location?: string }): Promise<{ instance: Instance; message?: string }> {
+    return request<{ instance: Instance; message?: string }>('/api/v1/instances', token, {
+        method: 'POST',
+        body: JSON.stringify(body)
+    });
+}
+
+export function stopInstance(token: string, id: string): Promise<{ instance: Instance }> {
+    return request<{ instance: Instance }>(`/api/v1/instances/${encodeURIComponent(id)}/stop`, token, { method: 'POST', body: '{}' });
+}
+
+export function startInstance(token: string, id: string): Promise<{ instance: Instance }> {
+    return request<{ instance: Instance }>(`/api/v1/instances/${encodeURIComponent(id)}/start`, token, { method: 'POST', body: '{}' });
+}
+
+export function deleteInstance(token: string, id: string, force = false): Promise<{ status: string; message?: string }> {
+    const qs = force ? '?force=true' : '';
+    return request<{ status: string; message?: string }>(`/api/v1/instances/${encodeURIComponent(id)}${qs}`, token, { method: 'DELETE' });
 }
 
 export function stopDeployment(token: string, appId: string, deploymentId: string, force = false): Promise<AppDeployment> {
