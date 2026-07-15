@@ -11,7 +11,7 @@ export const DEFAULT_INSTANCE = process.env.NEXT_PUBLIC_DEFAULT_INSTANCE ?? 'dem
 export const CHAT_HREF = `/i/${DEFAULT_INSTANCE}/`;
 export const CONTACT_HREF =
     'mailto:contact@privasys.org?subject=Privasys%20Chat%20enquiry';
-export const DOCS_AI = 'https://docs.privasys.org/solutions/ai';
+export const DOCS_AI = 'https://docs.privasys.org/solutions/ai/overview';
 
 const NAV_ITEMS = [
     { label: 'Private by design', href: '/privacy/' },
