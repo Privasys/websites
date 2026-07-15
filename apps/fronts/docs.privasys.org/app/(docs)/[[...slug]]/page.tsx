@@ -38,6 +38,7 @@ const folderRedirects: Record<string, string> = {
     'solutions/enclave-os/attestation': '/solutions/enclave-os/attestation/ra-tls',
     'solutions/enclave-vaults': '/solutions/enclave-vaults/overview',
     'solutions/enclave-agent': '/solutions/enclave-agent/overview',
+    'solutions/ai': '/solutions/ai/overview',
     'solutions/platform': '/solutions/platform/overview',
     'solutions/platform/developer-platform': '/solutions/platform/developer-platform/getting-started',
 

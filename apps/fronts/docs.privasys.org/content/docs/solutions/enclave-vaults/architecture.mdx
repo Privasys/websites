@@ -3,7 +3,7 @@ title: Architecture
 description: How the Enclave Vaults distributed vHSM is built. Typed key objects, in-enclave operations, RawShare distribution, per-key policy, and a controlled lifecycle for caller-enclave version changes.
 ---
 
-Enclave Vaults runs as the `enclave-os-vault` module inside an Intel SGX enclave on top of [Enclave OS Mini](/solutions/enclave-os/mini/overview). It inherits the OS's attestation stack, sealed storage, RA-TLS ingress, and OIDC token verification.
+Enclave Vaults runs as the `enclave-os-vault` module inside an Intel SGX enclave on top of [Enclave OS Mini](/solutions/enclave-os/enclave-os-mini/architecture). It inherits the OS's attestation stack, sealed storage, RA-TLS ingress, and OIDC token verification.
 
 A production deployment is a **constellation** of vault enclaves on independent machines. The vaults do not coordinate with each other; coordination is driven by the client SDK on behalf of the key owner.
 

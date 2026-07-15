@@ -39,11 +39,11 @@ An app reaches the platform's management API at the address supplied in the `PRI
 
 ## Storage Isolation
 
-Every app that requests persistence gets its **own LUKS2-encrypted volume**, mounted at `/data`, keyed independently (see [Disk Encryption](/docs/solutions/enclave-os/enclave-os-virtual/disk-encryption)). One app cannot read another app's files, and the key never leaves the enclave. Because the mount is private, the recommended pattern for an app's internal service (e.g. an embedded database) is a **Unix socket on `/data`** rather than a TCP port — it is unreachable by any other app by construction.
+Every app that requests persistence gets its **own LUKS2-encrypted volume**, mounted at `/data`, keyed independently (see [Disk Encryption](/solutions/enclave-os/enclave-os-virtual/disk-encryption)). One app cannot read another app's files, and the key never leaves the enclave. Because the mount is private, the recommended pattern for an app's internal service (e.g. an embedded database) is a **Unix socket on `/data`** rather than a TCP port — it is unreachable by any other app by construction.
 
 ## Identity Isolation
 
-Each container is measured into its **own attestation certificate**: its image digest, environment, and volume mounts appear in a [per-container Merkle tree](/docs/solutions/enclave-os/enclave-os-virtual/containers#per-container-merkle-trees) and are pinned in the RA-TLS leaf. A client verifying one app cannot be silently handed another; the platform binds each self-service management call to the calling container's attested identity.
+Each container is measured into its **own attestation certificate**: its image digest, environment, and volume mounts appear in a [per-container Merkle tree](/solutions/enclave-os/enclave-os-virtual/containers#per-container-merkle-trees) and are pinned in the RA-TLS leaf. A client verifying one app cannot be silently handed another; the platform binds each self-service management call to the calling container's attested identity.
 
 ## Dedicated Enclaves
 
