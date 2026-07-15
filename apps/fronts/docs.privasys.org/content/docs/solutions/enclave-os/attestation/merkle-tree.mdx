@@ -76,7 +76,7 @@ Both editions follow the same pattern: the Merkle tree is recomputed whenever th
 
 In addition to the Merkle root, both editions embed individual [OID extensions](/solutions/enclave-os/attestation/oids) for common properties. This gives clients two complementary approaches:
 
-- **Full audit**: Request the configuration manifest from the [attestation server](/solutions/platform/attestation-server) and recompute the Merkle root to verify all inputs.
+- **Full audit**: Request the configuration manifest from the [attestation server](/technology/attestation/attestation-server) and recompute the Merkle root to verify all inputs.
 - **Fast-path**: Check a single OID (for example, "does the workload hash match my expectation?") without any Merkle computation.
 
 ### Platform-wide vs per-workload scope

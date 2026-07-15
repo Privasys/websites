@@ -138,11 +138,11 @@ Providing `--ca-cert` or `--ca-key` on restart **updates** the sealed config (e.
 
 For production, run the enclave behind a **Layer 4 (TCP passthrough)** proxy. The enclave terminates TLS internally, so the proxy must NOT terminate TLS.
 
-See the [Layer 4 Proxy Guide](/solutions/enclave-os/guides/layer4-proxy) for Caddy (caddy-l4) and HAProxy configurations.
+See the [Layer 4 Proxy Guide](/solutions/enclave-os/enclave-os-mini/guides/layer4-proxy) for Caddy (caddy-l4) and HAProxy configurations.
 
 ## Loading WASM Apps
 
-The enclave starts **empty**; no WASM apps are compiled in. Apps are loaded at runtime over the RA-TLS connection. See [Build a WASM App](/solutions/enclave-os/guides/build-wasm-app) for the full workflow.
+The enclave starts **empty**; no WASM apps are compiled in. Apps are loaded at runtime over the RA-TLS connection. See [Build a WASM App](/solutions/enclave-os/enclave-os-mini/guides/build-wasm-app) for the full workflow.
 
 ### Quick start
 
