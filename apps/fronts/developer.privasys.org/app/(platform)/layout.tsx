@@ -119,6 +119,21 @@ function Sidebar() {
                     );
                 })}
 
+                {/* Instances (dedicated confidential VMs you own) */}
+                <Link
+                    href="/dashboard/instances"
+                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
+                        pathname === '/dashboard/instances'
+                            ? 'bg-black/5 dark:bg-white/10 font-medium'
+                            : 'hover:bg-black/3 dark:hover:bg-white/5 text-black/60 dark:text-white/60'
+                    }`}
+                >
+                    <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+                        <path d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-9 4h.01M12 16h.01" />
+                    </svg>
+                    Instances
+                </Link>
+
                 {/* Team */}
                 <Link
                     href="/dashboard/team"
