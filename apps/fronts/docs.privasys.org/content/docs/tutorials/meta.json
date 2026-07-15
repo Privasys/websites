@@ -1,0 +1,8 @@
+{
+    "title": "Tutorials",
+    "defaultOpen": false,
+    "pages": [
+        "index",
+        "enclave-upgrade"
+    ]
+}

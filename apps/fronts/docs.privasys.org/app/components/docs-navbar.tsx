@@ -26,7 +26,7 @@ function PrivasysLogo() {
 const links: LinkItemType[] = [
     {
         text: 'Documentation',
-        url: '/introduction/overview',
+        url: '/technology/overview',
         active: 'nested-url'
     },
     {
@@ -82,7 +82,7 @@ export function DocsNavbar() {
                         buttonVariants({
                             color: 'ghost',
                             size: 'icon-sm',
-                            className: 'p-2',
+                            className: 'p-2'
                         })
                     )}
                 >

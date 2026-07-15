@@ -1,7 +1,8 @@
 {
     "title": "Technology",
-    "defaultOpen": false,
+    "defaultOpen": true,
     "pages": [
+        "overview",
         "confidential-computing",
         "attestation",
         "sealed-session"
