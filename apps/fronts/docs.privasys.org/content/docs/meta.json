@@ -2,12 +2,12 @@
     "title": "Documentation",
     "root": true,
     "pages": [
-        "---Introduction---",
-        "...introduction",
         "---Technology---",
         "...technology",
         "---Solutions---",
         "...solutions",
+        "---Tutorials---",
+        "...tutorials",
         "---",
         "acknowledgments"
     ]

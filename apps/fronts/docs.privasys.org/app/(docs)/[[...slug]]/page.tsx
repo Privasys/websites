@@ -22,11 +22,12 @@ interface MdxPageData {
 
 /** Slugs that should redirect to a default child page. */
 const folderRedirects: Record<string, string> = {
-    // Root → Introduction
-    '': '/introduction/overview',
+    // Root → Technology overview (the former Introduction/Overview, merged in)
+    '': '/technology/overview',
     // Folder index redirects (new structure)
-    'introduction': '/introduction/overview',
-    'technology': '/technology/confidential-computing/overview',
+    'introduction': '/technology/overview',
+    'introduction/overview': '/technology/overview',
+    'technology': '/technology/overview',
     'technology/confidential-computing': '/technology/confidential-computing/overview',
     'technology/attestation': '/technology/attestation/remote-attestation',
     'solutions': '/solutions/enclave-os/presentation',
@@ -44,7 +45,7 @@ const folderRedirects: Record<string, string> = {
     // the introduction/technology/solutions hierarchy. These map the old URLs
     // (still held by search engines and external links) to their new homes so
     // they consolidate instead of returning 404.
-    'why-privasys': '/introduction/overview',
+    'why-privasys': '/technology/overview',
     'confidential-computing': '/technology/confidential-computing/overview',
     'confidential-computing/presentation': '/technology/confidential-computing/overview',
     'confidential-computing/attestation': '/technology/attestation/remote-attestation',
