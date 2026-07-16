@@ -85,6 +85,17 @@ const CONTAINER_SIZES: { size: string; cpu: string; ram: string; storage: string
         perMonth: `£${monthlyGBP(s).toFixed(2)}`
     }));
 
+// Dedicated confidential VMs: whole machines owned by one account, billed per
+// started machine-hour. Medium and Large price the same as their shared size
+// (the whole machine replaces the per-app meter); the GPU shape is
+// dedicated-only. Rates mirror the platform price book's instance_hour_*
+// resources.
+const DEDICATED_MACHINES: { name: string; machine: string; cpu: string; ram: string; gpu: string; perHour: string; perMonth: string }[] = [
+    { name: 'Confidential-Medium', machine: 'c3-standard-4', cpu: '4', ram: '16 GB', gpu: '–', perHour: '240,000', perMonth: '£172.80' },
+    { name: 'Confidential-Large', machine: 'c3-standard-8', cpu: '8', ram: '32 GB', gpu: '–', perHour: '480,000', perMonth: '£345.60' },
+    { name: 'Confidential-GPU-H100', machine: 'a3-highgpu-1g', cpu: '26', ram: '234 GB', gpu: '1× NVIDIA H100 80GB', perHour: '7,000,000', perMonth: '£5,040' }
+];
+
 const EXAMPLES: { label: string; detail: string }[] = [
     {
         label: 'A typical function call',
@@ -210,15 +221,16 @@ export default function PricingPage() {
                         </Link>
                     </div>
                     <div className="rounded-2xl border border-black/10 dark:border-white/10 p-8">
-                        <h3 className="text-xl font-semibold">Dedicated package</h3>
+                        <h3 className="text-xl font-semibold">Reserved WASM capacity</h3>
                         <div className="mt-4 flex items-baseline gap-2">
                             <span className="text-4xl font-bold">£200</span>
                             <span className="text-black/60 dark:text-white/60">/ month</span>
                         </div>
                         <p className="mt-4 text-black/60 dark:text-white/60">
-                            Reserve <strong>400 MB of dedicated enclave (EPC) memory</strong> for your account
-                            with <strong>unlimited, unmetered</strong> usage. Ideal for heavy, steady workloads
-                            that would otherwise run past the credit model.
+                            Reserve <strong>400 MB of dedicated enclave (EPC) memory</strong> for your WASM
+                            modules with <strong>unlimited, unmetered</strong> usage. Ideal for heavy, steady
+                            workloads that would otherwise run past the credit model. (Dedicated
+                            machines for container apps are priced below.)
                         </p>
                         <a
                             href="mailto:contact@privasys.org?subject=Privasys%20dedicated%20package"
@@ -261,76 +273,120 @@ export default function PricingPage() {
                 </div>
             </section>
 
-            {/* Container instances */}
+            {/* Container apps: the two hosting models, clearly separated */}
             <section className="mt-28 lg:mt-40">
                 <h2 className="text-2xl lg:text-4xl">
-                    <Balancer>Container apps — instance pricing</Balancer>
+                    <Balancer>Container apps — two ways to host</Balancer>
                 </h2>
                 <p className="mt-6 text-lg text-black/60 dark:text-white/60">
-                    Full applications running inside a confidential VM (Enclave OS Virtual). Predictable fixed
-                    sizes, billed per started hour from the same credit balance.
+                    Full applications running inside a confidential VM (Enclave OS Virtual). You choose the
+                    hosting model when you deploy: a size on a <strong>shared</strong> confidential host, or a
+                    whole <strong>dedicated</strong> machine of your own. Both bill per started hour from the
+                    same credit balance, and both give your app its own encrypted volume and attested identity.
                 </p>
-                <div className="mt-10 overflow-x-auto">
-                    <table className="w-full text-left text-sm">
-                        <thead>
-                            <tr className="border-b border-black/10 dark:border-white/10 text-black/50 dark:text-white/50">
-                                <th className="py-3 pr-4 font-medium">Size</th>
-                                <th className="py-3 pr-4 font-medium">vCPU</th>
-                                <th className="py-3 pr-4 font-medium">RAM</th>
-                                <th className="py-3 pr-4 font-medium">Storage</th>
-                                <th className="py-3 pr-4 font-medium">Credits / hour</th>
-                                <th className="py-3 font-medium">≈ £ / month</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {CONTAINER_SIZES.map((s) => (
-                                <tr key={s.size} className="border-b border-black/5 dark:border-white/5">
-                                    <td className="py-3 pr-4 font-medium">{s.size}</td>
-                                    <td className="py-3 pr-4">{s.cpu}</td>
-                                    <td className="py-3 pr-4">{s.ram}</td>
-                                    <td className="py-3 pr-4">{s.storage}</td>
-                                    <td className="py-3 pr-4 whitespace-nowrap">{s.perHour}</td>
-                                    <td className="py-3 whitespace-nowrap">{s.perMonth}</td>
+
+                {/* Shared (mutualised) */}
+                <div className="mt-12">
+                    <div className="flex items-baseline gap-3">
+                        <h3 className="text-xl font-semibold">Shared confidential hosts</h3>
+                        <span className="text-xs uppercase tracking-wider px-2 py-0.5 rounded-full bg-black/5 dark:bg-white/10 text-black/50 dark:text-white/50">pay per size</span>
+                    </div>
+                    <p className="mt-3 text-black/60 dark:text-white/60">
+                        The default. Your app runs at a fixed Confidential-* size on a shared confidential VM,
+                        isolated in its own encrypted container volume with enforced CPU and memory limits.
+                        You pay only for your size, only while deployed; when a location fills up the platform
+                        provisions new shared capacity automatically.
+                    </p>
+                    <div className="mt-6 overflow-x-auto">
+                        <table className="w-full text-left text-sm">
+                            <thead>
+                                <tr className="border-b border-black/10 dark:border-white/10 text-black/50 dark:text-white/50">
+                                    <th className="py-3 pr-4 font-medium">Size</th>
+                                    <th className="py-3 pr-4 font-medium">vCPU</th>
+                                    <th className="py-3 pr-4 font-medium">RAM</th>
+                                    <th className="py-3 pr-4 font-medium">Storage</th>
+                                    <th className="py-3 pr-4 font-medium">Credits / hour</th>
+                                    <th className="py-3 font-medium">≈ £ / month</th>
                                 </tr>
-                            ))}
-                        </tbody>
-                    </table>
+                            </thead>
+                            <tbody>
+                                {CONTAINER_SIZES.map((s) => (
+                                    <tr key={s.size} className="border-b border-black/5 dark:border-white/5">
+                                        <td className="py-3 pr-4 font-medium">{s.size}</td>
+                                        <td className="py-3 pr-4">{s.cpu}</td>
+                                        <td className="py-3 pr-4">{s.ram}</td>
+                                        <td className="py-3 pr-4">{s.storage}</td>
+                                        <td className="py-3 pr-4 whitespace-nowrap">{s.perHour}</td>
+                                        <td className="py-3 whitespace-nowrap">{s.perMonth}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                    <p className="mt-4 text-sm text-black/50 dark:text-white/50">
+                        Charged per started hour while deployed. The size is chosen at deploy time and a
+                        redeploy with a new size is the resize. At zero balance the app is paused with
+                        reason “credits exhausted”, staying fully attestable.
+                    </p>
                 </div>
-                <p className="mt-4 text-sm text-black/50 dark:text-white/50">
-                    Charged per started hour while an instance runs. The size is chosen when you
-                    deploy, so you only pay while deployed and can change it on a redeploy. A running
-                    container debits your balance continuously; at zero balance it is paused with
-                    reason “credits exhausted”.
-                </p>
+
+                {/* Dedicated */}
+                <div className="mt-16">
+                    <div className="flex items-baseline gap-3">
+                        <h3 className="text-xl font-semibold">Dedicated confidential machines</h3>
+                        <span className="text-xs uppercase tracking-wider px-2 py-0.5 rounded-full bg-black/5 dark:bg-white/10 text-black/50 dark:text-white/50">pay per machine</span>
+                    </div>
+                    <p className="mt-3 text-black/60 dark:text-white/60">
+                        A whole confidential VM provisioned on demand in minutes, owned by your account and
+                        operated by us. You pay for the machine, not per app: run as many of your own apps on
+                        it as you like, with resource caps entirely your call. Stop it when idle and pay only
+                        for retained storage; start it again and your encrypted volumes are exactly where you
+                        left them.
+                    </p>
+                    <div className="mt-6 overflow-x-auto">
+                        <table className="w-full text-left text-sm">
+                            <thead>
+                                <tr className="border-b border-black/10 dark:border-white/10 text-black/50 dark:text-white/50">
+                                    <th className="py-3 pr-4 font-medium">Machine</th>
+                                    <th className="py-3 pr-4 font-medium">Shape</th>
+                                    <th className="py-3 pr-4 font-medium">vCPU</th>
+                                    <th className="py-3 pr-4 font-medium">RAM</th>
+                                    <th className="py-3 pr-4 font-medium">GPU</th>
+                                    <th className="py-3 pr-4 font-medium">Credits / hour</th>
+                                    <th className="py-3 font-medium">≈ £ / month</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {DEDICATED_MACHINES.map((m) => (
+                                    <tr key={m.machine} className="border-b border-black/5 dark:border-white/5">
+                                        <td className="py-3 pr-4 font-medium">{m.name}</td>
+                                        <td className="py-3 pr-4 font-mono text-xs">{m.machine}</td>
+                                        <td className="py-3 pr-4">{m.cpu}</td>
+                                        <td className="py-3 pr-4">{m.ram}</td>
+                                        <td className="py-3 pr-4">{m.gpu}</td>
+                                        <td className="py-3 pr-4 whitespace-nowrap">{m.perHour}</td>
+                                        <td className="py-3 whitespace-nowrap">{m.perMonth}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                    <p className="mt-4 text-sm text-black/50 dark:text-white/50">
+                        Charged per started machine-hour while the VM runs; the apps on it accrue no per-app
+                        compute charges. A stopped machine keeps its encrypted volumes and vault keys for
+                        200,000 credits (£0.20) per GB per month after a free grace window. The GPU machine
+                        serves confidential AI: you pay for the machine, and your users pay per inference
+                        token. Paris (France) at launch; the H100 runs in the Netherlands.
+                    </p>
+                </div>
             </section>
 
-            {/* Dedicated plans */}
+            {/* Bring your own hardware */}
             <section className="mt-28 lg:mt-40">
                 <h2 className="text-2xl lg:text-4xl">
-                    <Balancer>Dedicated plans</Balancer>
+                    <Balancer>On your own hardware</Balancer>
                 </h2>
-                <p className="mt-6 text-lg text-black/60 dark:text-white/60">
-                    For workloads that want a whole confidential machine to themselves.
-                </p>
                 <div className="mt-10 grid grid-cols-1 lg:grid-cols-2 gap-8">
-                    <div className="rounded-2xl border border-black/10 dark:border-white/10 p-8">
-                        <h3 className="text-xl font-semibold">Dedicated TDX+GPU (H100)</h3>
-                        <div className="mt-4 flex items-baseline gap-2">
-                            <span className="text-4xl font-bold">£5,000</span>
-                            <span className="text-black/60 dark:text-white/60">/ month</span>
-                        </div>
-                        <p className="mt-4 text-black/60 dark:text-white/60">
-                            A whole confidential TDX + H100 80GB machine (GCP Netherlands, spot) dedicated
-                            to your account and operated by us. You pay for the machine; your users pay
-                            per inference token.
-                        </p>
-                        <a
-                            href="mailto:contact@privasys.org?subject=Privasys%20dedicated%20TDX%2BGPU"
-                            className="mt-8 inline-block px-6 py-2.5 font-bold border rounded-full text-black dark:text-white hover:bg-black hover:text-white dark:border-white dark:hover:bg-white dark:hover:text-black transition-colors"
-                        >
-                            Contact us
-                        </a>
-                    </div>
                     <div className="rounded-2xl border border-black/10 dark:border-white/10 p-8">
                         <h3 className="text-xl font-semibold">Confidential AI software licence</h3>
                         <div className="mt-4 flex items-baseline gap-2">
@@ -414,8 +470,8 @@ export default function PricingPage() {
                 </h2>
                 <p className="mt-6 text-lg text-black/60 dark:text-white/60">
                     <Balancer>
-                        Talk to us about volume discounts, the dedicated package, or anything else.
-                        We are happy to help you model your costs before you commit.
+                        Talk to us about volume discounts, dedicated machines, larger GPU fleets, or
+                        anything else. We are happy to help you model your costs before you commit.
                     </Balancer>
                 </p>
                 <div className="mt-10 flex flex-wrap gap-4">
