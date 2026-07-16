@@ -98,6 +98,12 @@ export class DriveError extends Error {
 }
 
 function decodeError(res: SealedResponse): DriveError {
+    // A reply without a numeric status is not an HTTP error but a sealed
+    // channel hiccup (typically the enclave session still settling right
+    // after a fresh ceremony) — name it, and mark it retryable.
+    if (typeof res.status !== 'number') {
+        return new DriveError(0, 'The sealed channel is not ready yet. Retrying usually fixes this.');
+    }
     const text = res.body && res.body.byteLength ? decoder.decode(res.body) : '';
     let msg = `HTTP ${res.status}`;
     try {
