@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { useAuth } from '~/lib/privasys-auth';
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { getApp, listBuilds, listVersions, listDeployments, listCompatibleEnclaves, deleteApp, deployDirect, stopDeployment, getAppSchema, rpcCall, updateStoreListing, publishApp, identiconUrl, getAppMcp, updateContainerMcp, detectContainerMcp, retryBuild, listAppOwners, addAppOwner, removeAppOwner, createVersion, stageProfile, promoteProfile, listRegistryTags, uploadAsset, listAppCommits, uploadVersionCwasm, getVersion, listCachedImages, listDeployLocations, listAppApiKeys, createAppApiKey, revokeAppApiKey } from '~/lib/api';
+import { getApp, listBuilds, listVersions, listDeployments, listCompatibleEnclaves, deleteApp, deployDirect, stopDeployment, getAppSchema, rpcCall, updateStoreListing, publishApp, identiconUrl, getAppMcp, updateContainerMcp, detectContainerMcp, retryBuild, listAppOwners, addAppOwner, removeAppOwner, createVersion, stageProfile, promoteProfile, listRegistryTags, uploadAsset, listAppCommits, uploadVersionCwasm, getVersion, listCachedImages, listDeployLocations, listAppApiKeys, createAppApiKey, revokeAppApiKey, listInstances } from '~/lib/api';
 
 // Public store base — where a published app is browsable.
 const STORE_BASE_URL = 'https://store.privasys.org';
@@ -12,7 +12,7 @@ import type { CreateVersionBody } from '~/lib/api';
 import { isApiStatus } from '~/lib/api';
 import { versionLabel, versionSemverStr, isStrictlyNewer } from '~/lib/version';
 import { displayNameError } from '~/lib/appName';
-import type { AppSchema, ConfigureSection, FunctionSchema, JsonSchemaProp, ActionProgress, WitType, McpManifest, AppTeam, AppCommit, AppApiKey, CreatedApiKey, DeployLocation } from '~/lib/api';
+import type { AppSchema, ConfigureSection, FunctionSchema, JsonSchemaProp, ActionProgress, WitType, McpManifest, AppTeam, AppCommit, AppApiKey, CreatedApiKey, DeployLocation, Instance } from '~/lib/api';
 import { useSSE } from '~/lib/sse-context';
 import { useBalance } from '~/lib/use-balance';
 import { getApiBaseUrl } from '~/lib/api-base-url';
@@ -1830,6 +1830,13 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
     const [pickSize, setPickSize] = useState(app.instance_size || 'micro');
     const pickSizeSeeded = useRef(false);
     const [sizes, setSizes] = useState<InstanceSize[]>(FALLBACK_INSTANCE_SIZES);
+    // Tenancy (container apps, first deploy): 'shared' places onto a mutualised
+    // host in the chosen location (default); 'dedicated' provisions a whole
+    // confidential VM for this app; 'instance' targets a dedicated VM the
+    // owner already runs (multi-app instances, Phase 6).
+    const [pickTenancy, setPickTenancy] = useState<'shared' | 'dedicated' | 'instance'>('shared');
+    const [pickInstance, setPickInstance] = useState('');
+    const [myInstances, setMyInstances] = useState<Instance[]>([]);
     const [cwasmFile, setCwasmFile] = useState<File | null>(null);
     const [working, setWorking] = useState(false);
     const [workMsg, setWorkMsg] = useState<string | null>(null);
@@ -1986,6 +1993,11 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
         if (app.app_type !== 'container') return;
         let alive = true;
         fetchInstanceSizes(token).then(s => { if (alive) setSizes(s); });
+        // The owner's running dedicated instances feed the "My instance"
+        // tenancy option; best-effort (an empty list simply hides the option).
+        listInstances(token)
+            .then(list => { if (alive) setMyInstances(list.filter(i => i.state === 'running')); })
+            .catch(() => { if (alive) setMyInstances([]); });
         return () => { alive = false; };
     }, [app.app_type, token]);
 
@@ -2049,8 +2061,14 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
         throw new Error('Build is taking longer than expected; it will finish in the background — deploy it from Versions once ready');
     }
 
+    // Effective tenancy for a FIRST deploy: the picker only shows for container
+    // apps without a live deployment; everything else stays 'shared' (upgrades
+    // pin to the current host server-side).
+    const tenancyChoice = app.app_type === 'container' && !currentDeployment ? pickTenancy : 'shared';
+
     async function handleConfirm() {
-        if (!pickLocation) return;
+        if (tenancyChoice === 'shared' && !pickLocation) return;
+        if (tenancyChoice === 'instance' && !pickInstance) return;
         if (isUpload ? !cwasmFile : !pickVersion) return;
         if (deployBlockedByCredits) {
             setError('Your credit balance is empty. Top up credits or redeem a code on the Billing page to deploy.');
@@ -2091,9 +2109,17 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
             // Container deploys carry the chosen Confidential-* size; wasm
             // deploys have no size control.
             const sizeArg = app.app_type === 'container' ? pickSize : undefined;
+            // Tenancy → deploy payload: shared = location placement (default);
+            // dedicated = the platform provisions a whole VM for this app;
+            // instance = deploy onto an owned running dedicated VM.
+            const deployOpts = tenancyChoice === 'dedicated'
+                ? { tenancy: 'dedicated' as const }
+                : tenancyChoice === 'instance'
+                    ? { instanceId: pickInstance }
+                    : undefined;
             setWorkMsg('Deploying…');
             try {
-                await deployDirect(token, app.id, versionId, pickLocation, sizeArg);
+                await deployDirect(token, app.id, versionId, pickLocation, sizeArg, deployOpts);
             } catch (e) {
                 const msg = e instanceof Error ? e.message : String(e);
                 if (!needsApproval || !/not promoted|approve this version/i.test(msg)) throw e;
@@ -2107,7 +2133,7 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                 setWorkMsg('Promoting (releasing data key)…');
                 await promoteProfile(token, app.id, versionId, pendingId);
                 setWorkMsg('Deploying…');
-                await deployDirect(token, app.id, versionId, pickLocation, sizeArg);
+                await deployDirect(token, app.id, versionId, pickLocation, sizeArg, deployOpts);
             }
             if (!currentDeployment) { setPickVersion(''); setCwasmFile(null); }
         } catch (e) {
@@ -2167,11 +2193,45 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
 
     // The deploy-time Size control (container apps only; wasm deploys show no
     // size control). Options come from the live catalogue with static fallback.
+    // Dedicated VMs are offered for Medium and Large only (the platform's
+    // dedicated shape catalogue); shared placements offer every size.
+    const DEDICATED_SIZE_SLUGS = ['medium', 'large'];
     function renderSizePicker() {
+        const opts = tenancyChoice === 'dedicated' ? sizes.filter(s => DEDICATED_SIZE_SLUGS.includes(s.slug)) : sizes;
         return (
             <select value={pickSize} onChange={e => setPickSize(e.target.value)} className={selectCls}>
-                {sizes.map(s => (<option key={s.slug} value={s.slug}>{sizeOptionLabel(s)}</option>))}
+                {opts.map(s => (<option key={s.slug} value={s.slug}>{sizeOptionLabel(s)}</option>))}
             </select>
+        );
+    }
+
+    // Tenancy control (container apps, first deploy). 'My instance' appears
+    // only when the owner has a running dedicated instance to target.
+    function renderTenancyPicker() {
+        const opt = (v: 'shared' | 'dedicated' | 'instance', label: string, hint: string) => (
+            <button
+                key={v}
+                type="button"
+                onClick={() => {
+                    setPickTenancy(v);
+                    // Dedicated VMs come in Medium/Large only — snap the size.
+                    if (v === 'dedicated' && !DEDICATED_SIZE_SLUGS.includes(pickSize)) setPickSize('medium');
+                    if (v === 'instance' && !pickInstance && myInstances.length > 0) setPickInstance(myInstances[0].id);
+                }}
+                title={hint}
+                className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${pickTenancy === v
+                    ? 'border-black dark:border-white bg-black text-white dark:bg-white dark:text-black'
+                    : 'border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5'}`}
+            >
+                {label}
+            </button>
+        );
+        return (
+            <div className="flex flex-wrap gap-2">
+                {opt('shared', 'Shared', 'Runs on a shared confidential host in the chosen location — pay per started hour for the size.')}
+                {opt('dedicated', 'Dedicated VM', 'Provisions a whole confidential VM for this app — the machine is billed per started hour, apps included.')}
+                {myInstances.length > 0 && opt('instance', 'My instance', 'Deploy onto a dedicated VM you already run, alongside your other apps — no extra machine cost.')}
+            </div>
         );
     }
 
@@ -2419,23 +2479,53 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                     /* No current instance: deploy inline (no modal). */
                     <section className="p-5 rounded-xl border border-black/10 dark:border-white/10 space-y-3">
                         <div className="text-sm text-black/50 dark:text-white/50">No active deployment.</div>
+                        {app.app_type === 'container' && (
+                            <div>
+                                <label className="text-xs text-black/50 dark:text-white/50 block mb-1">Hosting</label>
+                                {renderTenancyPicker()}
+                                <div className="mt-1.5 text-[11px] text-black/40 dark:text-white/40">
+                                    {pickTenancy === 'shared' && 'Shared confidential host — pay per started hour for the size below.'}
+                                    {pickTenancy === 'dedicated' && 'A whole confidential VM is provisioned for this app; the machine is billed per started hour, apps included.'}
+                                    {pickTenancy === 'instance' && 'Deploys alongside your other apps on the selected instance — no extra machine cost.'}
+                                </div>
+                            </div>
+                        )}
                         <div className="grid grid-cols-2 gap-3">
                             <div>
                                 <label className="text-xs text-black/50 dark:text-white/50 block mb-1">Version</label>
                                 {renderVersionPicker(true)}
                             </div>
-                            <div>
-                                <label className="text-xs text-black/50 dark:text-white/50 block mb-1">Location</label>
-                                {!locationsLoaded
-                                    ? <div className="text-xs text-black/40 dark:text-white/40 py-2">Loading locations…</div>
-                                    : locations.length > 0
-                                        ? <select value={pickLocation} onChange={e => setPickLocation(e.target.value)} className={selectCls}><option value="">Select location…</option>{locations.map(l => (<option key={l.code} value={l.code}>{locationLabel(l)}</option>))}</select>
-                                        : <div className="text-xs text-black/40 dark:text-white/40 py-2">No locations available for this app.</div>}
-                            </div>
+                            {tenancyChoice === 'shared' && (
+                                <div>
+                                    <label className="text-xs text-black/50 dark:text-white/50 block mb-1">Location</label>
+                                    {!locationsLoaded
+                                        ? <div className="text-xs text-black/40 dark:text-white/40 py-2">Loading locations…</div>
+                                        : locations.length > 0
+                                            ? <select value={pickLocation} onChange={e => setPickLocation(e.target.value)} className={selectCls}><option value="">Select location…</option>{locations.map(l => (<option key={l.code} value={l.code}>{locationLabel(l)}</option>))}</select>
+                                            : <div className="text-xs text-black/40 dark:text-white/40 py-2">No locations available for this app.</div>}
+                                </div>
+                            )}
+                            {tenancyChoice === 'dedicated' && (
+                                <div>
+                                    <label className="text-xs text-black/50 dark:text-white/50 block mb-1">Location</label>
+                                    <div className="px-3 py-2 text-sm rounded-lg border border-black/10 dark:border-white/10 bg-black/[0.02] dark:bg-white/[0.03] text-black/60 dark:text-white/60">Paris, France (gcp) [TDX]</div>
+                                </div>
+                            )}
+                            {tenancyChoice === 'instance' && (
+                                <div>
+                                    <label className="text-xs text-black/50 dark:text-white/50 block mb-1">Instance</label>
+                                    <select value={pickInstance} onChange={e => setPickInstance(e.target.value)} className={selectCls}>
+                                        {myInstances.map(i => (<option key={i.id} value={i.id}>{i.name} — {i.shape} · {i.location} · {i.app_count} app{i.app_count === 1 ? '' : 's'}</option>))}
+                                    </select>
+                                </div>
+                            )}
                             {app.app_type === 'container' && (
                                 <div>
                                     <label className="text-xs text-black/50 dark:text-white/50 block mb-1">Size</label>
                                     {renderSizePicker()}
+                                    {tenancyChoice === 'instance' && (
+                                        <div className="mt-1 text-[11px] text-black/40 dark:text-white/40">Sizes cap resources on your instance; oversubscription is allowed.</div>
+                                    )}
                                 </div>
                             )}
                         </div>
@@ -2448,7 +2538,9 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                         {buildStatusLine}
                         <button
                             onClick={handleConfirm}
-                            disabled={confirmDisabled || !pickLocation}
+                            disabled={confirmDisabled
+                                || (tenancyChoice === 'shared' && !pickLocation)
+                                || (tenancyChoice === 'instance' && !pickInstance)}
                             className="px-4 py-2 text-sm font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
                         >
                             {working ? 'Deploying…' : 'Deploy'}
