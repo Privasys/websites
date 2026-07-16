@@ -62,7 +62,7 @@ const DRIVE_PITCH = {
     bullets: [
         'Sealed browser-to-enclave transport. The gateway only sees ciphertext.',
         'Directories and per-file, per-folder sharing you control.',
-        'No passwords. Sign in with the Privasys Wallet or a passkey.',
+        'No passwords. Sign in with the Privasys Wallet on your phone.',
         'Attestation-verified confidential computing. Verify it yourself, no need to trust the operator.'
     ]
 };
@@ -259,6 +259,13 @@ export function DriveProvider({ children }: { children: ReactNode }) {
         try {
             const s = await auth.connectInto(el, {
                 appHost: host,
+                // Sealed transport: only the wallet can open the channel
+                // (the SDK defaults to this for session-relay apps; explicit
+                // here so the invariant is visible where Drive configures
+                // its gate). A visitor missing a verified email imports it
+                // in the WALLET (link an IdP there), never by replacing the
+                // wallet with a browser social sign-in.
+                methods: ['wallet'],
                 pitch: DRIVE_PITCH,
                 app: {
                     displayName: 'Privasys Drive',
