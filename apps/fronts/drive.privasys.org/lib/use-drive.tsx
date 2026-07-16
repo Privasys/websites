@@ -259,12 +259,13 @@ export function DriveProvider({ children }: { children: ReactNode }) {
         try {
             const s = await auth.connectInto(el, {
                 appHost: host,
-                // Sealed transport: only the wallet can open the channel
-                // (the SDK defaults to this for session-relay apps; explicit
-                // here so the invariant is visible where Drive configures
-                // its gate). A visitor missing a verified email imports it
-                // in the WALLET (link an IdP there), never by replacing the
-                // wallet with a browser social sign-in.
+                // Drive's OWN transport constraint (not an SDK default):
+                // the Drive API speaks exclusively over the wallet-attested
+                // sealed channel today, so non-wallet sign-ins would
+                // authenticate and then have no way to reach the enclave.
+                // Lift this once a wallet-less (unverified) transport
+                // exists. A visitor missing a verified email imports it in
+                // the WALLET (link an IdP there).
                 methods: ['wallet'],
                 pitch: DRIVE_PITCH,
                 app: {
