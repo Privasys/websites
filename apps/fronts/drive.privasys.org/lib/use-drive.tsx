@@ -136,7 +136,20 @@ export function DriveProvider({ children }: { children: ReactNode }) {
 
     const bootstrap = useCallback(
         async (s: SealedSession) => {
-            const [meRes, tenantRes] = await Promise.all([getMe(s), ensurePersonalTenant(s)]);
+            // Right after a fresh wallet ceremony the sealed channel can
+            // need a beat before the first request lands (the enclave-side
+            // session is still settling); retry briefly instead of
+            // surfacing a scary banner on first sign-in.
+            let meRes!: Me, tenantRes!: Tenant;
+            for (let attempt = 0; ; attempt++) {
+                try {
+                    [meRes, tenantRes] = await Promise.all([getMe(s), ensurePersonalTenant(s)]);
+                    break;
+                } catch (e) {
+                    if (attempt >= 2) throw e;
+                    await new Promise((r) => setTimeout(r, 1200 * (attempt + 1)));
+                }
+            }
             setMe(meRes);
             // Default the active tenant to the personal drive, keeping a
             // previously selected workspace across reconnects.
