@@ -4265,15 +4265,15 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@privasys/auth@npm:^0.7.2":
-  version: 0.7.2
-  resolution: "@privasys/auth@npm:0.7.2::__archiveUrl=https%3A%2F%2Fnpm.pkg.github.com%2Fdownload%2F%40privasys%2Fauth%2F0.7.2%2F59f379d69f014e39f4d17410857425df631ccfa4"
+"@privasys/auth@npm:^0.7.3":
+  version: 0.7.3
+  resolution: "@privasys/auth@npm:0.7.3::__archiveUrl=https%3A%2F%2Fnpm.pkg.github.com%2Fdownload%2F%40privasys%2Fauth%2F0.7.3%2Fef25c06933e2b9119b24abdfcf64f7811cd5d8c3"
   dependencies:
     "@noble/hashes": "npm:^1.5.0"
     qrcode-generator: "npm:^1.4.4"
   peerDependencies:
     react: ">=18"
-  checksum: 10c0/4afc7204ea7f28c2d3ebda10e100715a367c609f6826cf8934d4d0b011540f0869ad30363ac5885bc5e805b52c03f3c538f8358819730bf67b8b3f96a12f9072
+  checksum: 10c0/b9712b75a96f74d70ab0e8a5f34c82a057a877b81be8b075b5a440c7940ae27eb0dbc10ef656254dea5f719787fdcbb6a06c32a55878450e0a54fb4e466deb97
   languageName: node
   linkType: hard
 
@@ -4314,7 +4314,7 @@ __metadata:
     "@nx/web": "npm:21.4.1"
     "@nx/workspace": "npm:21.4.1"
     "@playwright/test": "npm:^1.58.2"
-    "@privasys/auth": "npm:^0.7.2"
+    "@privasys/auth": "npm:^0.7.3"
     "@stylistic/eslint-plugin": "npm:^5.3.1"
     "@swc/core": "npm:1.13.5"
     "@swc/jest": "npm:0.2.39"

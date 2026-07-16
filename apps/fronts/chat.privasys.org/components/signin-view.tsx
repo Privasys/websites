@@ -16,7 +16,7 @@ const CHAT_PITCH = {
     bullets: [
         'Sealed browser-to-enclave transport. The gateway only sees ciphertext.',
         'Chat history stays on this device. The platform stores none of it.',
-        'No passwords. Sign in with the Privasys Wallet or a passkey.',
+        'No passwords. Sign in with the Privasys Wallet on your phone.',
         'Attestation-verified confidential computing. Verify it yourself, no need to trust the operator.'
     ]
 };
@@ -62,7 +62,13 @@ export function SignInGate({
                     : {})
             },
             ...(sessionRelayHost
-                ? { appHost: sessionRelayHost, extraAppHosts: [chatServiceHost()] }
+                ? {
+                    appHost: sessionRelayHost,
+                    extraAppHosts: [chatServiceHost()],
+                    // Sealed transport: only the wallet can open the channel
+                    // (SDK default for session-relay apps; explicit here).
+                    methods: ['wallet'] as const
+                }
                 : {})
         })
             .then(() => onSuccess())
