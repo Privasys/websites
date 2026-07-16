@@ -65,8 +65,8 @@ export function SignInGate({
                 ? {
                     appHost: sessionRelayHost,
                     extraAppHosts: [chatServiceHost()],
-                    // Sealed transport: only the wallet can open the channel
-                    // (SDK default for session-relay apps; explicit here).
+                    // Chat's OWN transport constraint (not an SDK default): sealed
+                    // instances are reachable only over the wallet-attested channel.
                     methods: ['wallet'] as const
                 }
                 : {})
