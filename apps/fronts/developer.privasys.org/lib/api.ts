@@ -455,6 +455,43 @@ export function adminUpdateSettings(token: string, group: string, settings: Reco
 }
 
 // ---------------------------------------------------------------------------
+// Price book (admin role required). The credit-ledger owns the versioned
+// book; publishing appends a complete new version (versions are immutable so
+// historical usage stays reproducible).
+// ---------------------------------------------------------------------------
+
+export interface PricebookRule {
+    resource: string;
+    fixed_per_call: number;
+    per_unit: number;
+    divisor: number;
+}
+
+export interface PricebookVersionMeta {
+    version: number;
+    note: string;
+    created_by: string;
+    created_at: string;
+}
+
+export interface Pricebook {
+    current_version: number;
+    versions: PricebookVersionMeta[];
+    rules: PricebookRule[];
+}
+
+export function adminGetPricing(token: string): Promise<Pricebook> {
+    return request<Pricebook>('/api/v1/admin/pricing/', token);
+}
+
+export function adminPublishPricing(token: string, note: string, rules: PricebookRule[]): Promise<{ version: number }> {
+    return request<{ version: number }>('/api/v1/admin/pricing/', token, {
+        method: 'POST',
+        body: JSON.stringify({ note, rules })
+    });
+}
+
+// ---------------------------------------------------------------------------
 // Enclave management (manager role required)
 // ---------------------------------------------------------------------------
 
