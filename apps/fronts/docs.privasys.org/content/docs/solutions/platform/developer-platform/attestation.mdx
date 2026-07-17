@@ -76,6 +76,7 @@ Each deployed WASM application gets its own leaf certificate (selected via SNI) 
 | `1.3.6.1.4.1.65230.3.2` | SHA-256 code hash of the WASM binary |
 | `1.3.6.1.4.1.65230.3.4` | App key source |
 | `1.3.6.1.4.1.65230.3.5.*` | App-defined extensions (set at runtime via the SDK) |
+| `1.3.6.1.4.1.65230.3.6` | Platform-assigned app id (`apps.id`, raw 16-byte UUID) |
 
 This means the certificate attests not just the enclave, but the specific application running inside it. See the [X.509 OID scheme](/solutions/enclave-os/attestation/oids) for the full reference.
 

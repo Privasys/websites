@@ -237,7 +237,8 @@ SGX DCAP Quote (platform attestation)
                 +-- Per-App Leaf Certs (via SNI)
                         |-- App Code Hash (OID 65230.3.2)
                         |-- App Config Root (OID 65230.3.1)
-                        +-- App Key Source (OID 65230.3.4)
+                        |-- App Key Source (OID 65230.3.4)
+                        +-- App Id (OID 65230.3.6)
 ```
 
 ### Virtual (TDX)
@@ -279,7 +280,8 @@ TDX Quote (platform attestation)
                         |-- Image Digest (OID 65230.3.2)
                         |-- Image Ref (OID 65230.3.3)
                         |-- Container Config Root (OID 65230.3.1)
-                        +-- Volume Encryption (OID 65230.3.4)
+                        |-- Volume Encryption (OID 65230.3.4)
+                        +-- App Id (OID 65230.3.6)
 ```
 
 A verifier inspecting either certificate knows:
