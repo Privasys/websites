@@ -1,14 +1,28 @@
 'use client';
 
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent, type ReactNode } from 'react';
 import type { AvailableModel, Instance } from '~/lib/types';
 import type { SamplingParams } from '~/lib/sampling';
 import type { UserTool } from '~/lib/chat-service-api';
+import type { AttachIntent } from '~/lib/drive-chat-api';
 import { ModelPicker } from './model-picker';
 import { SamplingEditor } from './sampling-editor';
 
 /** Response mode: 'fast' answers directly, 'thinking' reasons first. */
 export type ChatMode = 'fast' | 'thinking';
+
+/** A file attached to the current conversation (Drive §8.7), shown as a chip. */
+export interface AttachmentChip {
+    id: string;
+    name: string;
+    sizeBytes: number;
+    intent: AttachIntent;
+    /** True when the file is large enough to be indexed (looked up on demand)
+     *  rather than read in full into the chat context. */
+    indexed: boolean;
+    status: 'uploading' | 'ready' | 'error';
+    error?: string;
+}
 
 // Unified composer used both in the empty-state (centered) and in the
 // docked footer once a conversation has started. Layout mirrors Gemini:
@@ -36,6 +50,9 @@ export function Composer({
     onToggleUserTool,
     onManageTools,
     onRemoveUserTool,
+    attachEnabled,
+    attachments,
+    onAttachFile,
     placeholder,
     autoFocus,
     disabledReason
@@ -70,6 +87,13 @@ export function Composer({
     /** Navigate to the AI Tools management view. */
     onManageTools?: () => void;
     onRemoveUserTool?: (id: string) => void | Promise<void>;
+    /** Drive §8.7: when true, the Attach affordance offers the two intents
+     *  ("Use in this chat" / "Add to my knowledge base") and uploads to Drive. */
+    attachEnabled?: boolean;
+    /** Attachment chips for the current conversation. */
+    attachments?: AttachmentChip[];
+    /** Upload a picked file into the current conversation with an intent. */
+    onAttachFile?: (file: File, intent: AttachIntent) => void;
     /** Fleet governance: 'locked' | 'enclave_only' | 'open'. Gates adding. */
     placeholder?: string;
     autoFocus?: boolean;
@@ -80,9 +104,27 @@ export function Composer({
     disabledReason?: string;
 }) {
     const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    const pendingIntentRef = useRef<AttachIntent>('session');
     const [showAdvanced, setShowAdvanced] = useState(false);
     const [showTools, setShowTools] = useState(false);
+    const [showAttach, setShowAttach] = useState(false);
     const disabled = !!disabledReason;
+    const canAttach = !!attachEnabled && !!onAttachFile;
+    const chips = attachments ?? [];
+
+    const pickFileFor = (intent: AttachIntent) => {
+        pendingIntentRef.current = intent;
+        setShowAttach(false);
+        fileInputRef.current?.click();
+    };
+
+    const onFilePicked = (e: ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        // Reset so picking the same file again re-fires the change event.
+        e.target.value = '';
+        if (file) onAttachFile?.(file, pendingIntentRef.current);
+    };
     const advancedAvailable = !!sampling && !!onSamplingChange;
     const availableTools = instance.available_tools ?? [];
     const myTools = userTools ?? [];
@@ -126,15 +168,66 @@ export function Composer({
                     className="block w-full resize-none bg-transparent px-5 pt-4 pb-2 text-[15px] leading-6 text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] focus:outline-none disabled:opacity-60"
                 />
 
+                {chips.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 px-4 pt-3">
+                        {chips.map((c) => (
+                            <AttachmentPill key={c.id} chip={c} />
+                        ))}
+                    </div>
+                )}
+
                 <div className="flex items-center gap-2 px-3 pt-1 pb-2.5">
-                    <button
-                        type="button"
-                        title="Attach (coming soon)"
-                        disabled
-                        className="grid h-8 w-8 place-items-center rounded-full text-[var(--color-text-muted)] opacity-50"
-                    >
-                        <PaperclipIcon />
-                    </button>
+                    {canAttach ? (
+                        <div className="relative">
+                            <input
+                                ref={fileInputRef}
+                                type="file"
+                                className="hidden"
+                                onChange={onFilePicked}
+                            />
+                            <button
+                                type="button"
+                                onClick={() => setShowAttach((s) => !s)}
+                                aria-expanded={showAttach}
+                                title="Attach a file"
+                                className="grid h-8 w-8 place-items-center rounded-full text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-2)]/60 hover:text-[var(--color-text-primary)]"
+                            >
+                                <PaperclipIcon />
+                            </button>
+                            {showAttach && (
+                                <>
+                                    <button
+                                        type="button"
+                                        aria-hidden="true"
+                                        tabIndex={-1}
+                                        onClick={() => setShowAttach(false)}
+                                        className="fixed inset-0 z-10 cursor-default"
+                                    />
+                                    <div className="absolute bottom-full left-0 z-20 mb-2 w-72 overflow-hidden rounded-xl border border-[var(--color-border-dark)] bg-[var(--color-surface-1)] py-1 shadow-xl shadow-black/30">
+                                        <AttachOption
+                                            title="Use in this chat"
+                                            description="Attach a file for this conversation only. Small files are read in full; larger ones are indexed so I look up the relevant parts."
+                                            onSelect={() => pickFileFor('session')}
+                                        />
+                                        <AttachOption
+                                            title="Add to my knowledge base"
+                                            description="Save the file to your private Drive knowledge base so I can draw on it in this and future chats."
+                                            onSelect={() => pickFileFor('knowledge')}
+                                        />
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    ) : (
+                        <button
+                            type="button"
+                            title="Attach (sign in with the Privasys Wallet to enable)"
+                            disabled
+                            className="grid h-8 w-8 place-items-center rounded-full text-[var(--color-text-muted)] opacity-50"
+                        >
+                            <PaperclipIcon />
+                        </button>
+                    )}
 
                     <div className="ml-1">
                         <ModelPicker
@@ -508,6 +601,63 @@ function PaperclipIcon() {
             <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
         </svg>
     );
+}
+
+// One choice in the Attach menu: the two §8.7 intents.
+function AttachOption({
+    title,
+    description,
+    onSelect
+}: {
+    title: string;
+    description: string;
+    onSelect: () => void;
+}) {
+    return (
+        <button
+            type="button"
+            onClick={onSelect}
+            className="flex w-full flex-col gap-0.5 px-3 py-2 text-left hover:bg-[var(--color-surface-2)]/60"
+        >
+            <span className="text-sm text-[var(--color-text-primary)]">{title}</span>
+            <span className="text-[11px] leading-4 text-[var(--color-text-muted)]">{description}</span>
+        </button>
+    );
+}
+
+// A single attachment chip. The behaviour label reflects how the file will be
+// used: "read in full" for small files vs "indexed" for large ones.
+function AttachmentPill({ chip }: { chip: AttachmentChip }) {
+    const behaviour =
+        chip.status === 'uploading'
+            ? 'uploading…'
+            : chip.status === 'error'
+                ? chip.error || 'failed'
+                : chip.intent === 'knowledge'
+                    ? 'in knowledge base'
+                    : chip.indexed
+                        ? 'indexed — I’ll look up relevant sections'
+                        : 'read in full';
+    return (
+        <span
+            className={`inline-flex max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] ${
+                chip.status === 'error'
+                    ? 'border-red-300/50 text-red-500 dark:text-red-300'
+                    : 'border-[var(--color-border-dark)] text-[var(--color-text-secondary)]'
+            }`}
+            title={`${chip.name} (${formatBytes(chip.sizeBytes)}) — ${behaviour}`}
+        >
+            <PaperclipIcon />
+            <span className="truncate">{chip.name}</span>
+            <span className="shrink-0 text-[var(--color-text-muted)]">· {behaviour}</span>
+        </span>
+    );
+}
+
+function formatBytes(n: number): string {
+    if (n < 1024) return `${n} B`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} kB`;
+    return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function SendIcon() {

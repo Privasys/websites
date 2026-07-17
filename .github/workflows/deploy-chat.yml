@@ -48,6 +48,9 @@ jobs:
             # No dedicated chat-service back-end in prod yet: leave the
             # chat-service URL empty so BYO-MCP stays fully dormant there.
             echo "chat_service_url="                            >> "$GITHUB_OUTPUT"
+            # Drive ↔ Chat (§8.7) stays dormant in prod until a prod Drive
+            # instance is provisioned: an empty host disables the feature.
+            echo "drive_app_host="                              >> "$GITHUB_OUTPUT"
           else
             echo "container=chat"                                  >> "$GITHUB_OUTPUT"
             echo "host_port=3011"                                  >> "$GITHUB_OUTPUT"
@@ -60,6 +63,10 @@ jobs:
             # wallet vouchers it alongside the inference enclave in one ceremony
             # (multi-app attestation).
             echo "chat_service_url=https://chat-service.apps-test.privasys.org" >> "$GITHUB_OUTPUT"
+            # Drive ↔ Chat (§8.7): conversations, attach-from-Drive and the
+            # agent's Drive RAG memory ride a dedicated sealed session to the
+            # Drive enclave (same drive-demo backend the Drive front uses).
+            echo "drive_app_host=drive-demo.apps-test.privasys.org" >> "$GITHUB_OUTPUT"
           fi
           echo "tag=$(date -u +%Y%m%d-%H%M%S)-${ENV}-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
@@ -81,6 +88,7 @@ jobs:
             echo "NEXT_PUBLIC_API_BASE_URL=${{ steps.target.outputs.api_url }}"
             echo "NEXT_PUBLIC_DEFAULT_INSTANCE=${{ steps.target.outputs.default_instance }}"
             echo "NEXT_PUBLIC_CHAT_SERVICE_URL=${{ steps.target.outputs.chat_service_url }}"
+            echo "NEXT_PUBLIC_DRIVE_APP_HOST=${{ steps.target.outputs.drive_app_host }}"
             # Build provenance shown bottom-left in the sidebar (links to
             # the exact commit on GitHub).
             echo "NEXT_PUBLIC_COMMIT_SHA=${GITHUB_SHA}"
