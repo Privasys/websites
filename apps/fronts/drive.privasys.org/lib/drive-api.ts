@@ -631,6 +631,63 @@ export async function listLinkRequests(
     return data.requests ?? [];
 }
 
+// ---- Access metrics (Insights) ---------------------------------------
+
+/** One day of tenant activity (series is ascending and sparse). */
+export interface MetricsPoint {
+    date: string; // YYYY-MM-DD
+    views: number;
+    downloads: number;
+    unique_subs: number;
+}
+
+export interface MetricsTopNode {
+    node_id: string;
+    name: string;
+    views: number;
+    last_at: string; // RFC3339
+}
+
+/** Per-visitor aggregates; subs are opaque pairwise IDs, never names. */
+export interface MetricsVisitor {
+    sub: string;
+    views: number;
+    downloads: number;
+    bytes: number;
+    total_ms: number;
+    first_at: string; // RFC3339
+    last_at: string; // RFC3339
+}
+
+export interface TenantMetrics {
+    days: number;
+    series: MetricsPoint[];
+    top_nodes: MetricsTopNode[]; // max 20
+    subs: MetricsVisitor[]; // max 100
+    /** Distinct visitors across the whole window (not capped). */
+    unique_subs: number;
+}
+
+/** Owner/admin: access metrics for the tenant over the last N days. */
+export async function getTenantMetrics(
+    session: SealedSession,
+    tenantID: string,
+    days = 30
+): Promise<TenantMetrics> {
+    const data = await json<TenantMetrics>(
+        session,
+        'GET',
+        `/v1/tenants/${tenantID}/metrics?days=${days}`
+    );
+    return {
+        days: data.days ?? days,
+        series: data.series ?? [],
+        top_nodes: data.top_nodes ?? [],
+        subs: data.subs ?? [],
+        unique_subs: data.unique_subs ?? (data.subs ?? []).length
+    };
+}
+
 /** Owner: approve or deny a restricted-link request. */
 export function decideLinkRequest(
     session: SealedSession,
