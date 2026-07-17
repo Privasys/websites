@@ -23,7 +23,7 @@ Privasys-defined OIDs sit under `1.3.6.1.4.1.65230`. The ones most relevant to c
 | --- | --- | --- |
 | `1.3.6.1.4.1.65230.1.1` | Config Merkle root | SHA-256 root over all platform configuration inputs. |
 | `1.3.6.1.4.1.65230.2.x` | Platform extensions | Bind the enclave configuration: combined workloads hash (`2.5`), DEK origin (`2.6`), attestation server set (`2.7`), image profile (`2.8` — `production` or `dev`). |
-| `1.3.6.1.4.1.65230.3.5` | `MODEL_DIGEST` | The dm-verity root hash of the model disk currently mounted, or - if no verity disk is in use - a deterministic SHA-256 over the model's index file. |
+| `1.3.6.1.4.1.65230.3.5.5` | `MODEL_DIGEST` | The dm-verity root hash of the model disk currently mounted, or - if no verity disk is in use - a deterministic SHA-256 over the model's index file. Lives under the app arc `3.5.*`; also emitted at the legacy literal `3.5` while older clients still pin it there. |
 | `1.3.6.1.4.1.65230.3.5.7` | `TOOLS_DIGEST` | SHA-256 over the canonical, sorted JSON of the configured MCP tool servers, so a verifier can prove exactly which tools the AI enclave exposes. Lives under the app arc `3.5.*` because it is an application extension, not a platform-standard OID (older fleet images emitted it at the top-level `3.7`). |
 | `1.3.6.1.4.1.65230.3.x` | Workload extensions | Per-workload bindings: config root (`3.1`), image digest (`3.2`), image reference (`3.3`), key source (`3.4`), platform-assigned app id (`3.6`). |
 

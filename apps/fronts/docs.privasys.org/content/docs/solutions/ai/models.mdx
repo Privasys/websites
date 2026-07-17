@@ -41,7 +41,7 @@ The disk-mounter, run by `manager` early in boot:
    ```
 
 4. Mounts the resulting `/dev/mapper/model-<name>` read-only at `/mnt/<name>`.
-5. Writes the validated root hash to `/var/lib/enclave-os/model-roothashes/<name>.roothash` so the confidential-ai proxy can surface it via OID `1.3.6.1.4.1.65230.3.5`.
+5. Writes the validated root hash to `/var/lib/enclave-os/model-roothashes/<name>.roothash` so the confidential-ai proxy can surface it via OID `1.3.6.1.4.1.65230.3.5.5`.
 
 Any tampering with the model bytes - even a single bit flip - is caught when dm-verity reads the affected block, the read fails, and inference produces an attestable error rather than a silent substitution.
 

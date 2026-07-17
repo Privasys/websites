@@ -682,7 +682,7 @@ function checkExpectation(
         expected = norm(expectations?.workloadImageDigest) || norm(cwasmHash);
         label = expectations?.labels?.workloadImageDigest
             || (cwasmHash ? 'matches uploaded CWASM hash' : 'matches expected workload image digest');
-    } else if (ext.oid === PRIVASYS_OID.MODEL_DIGEST) {
+    } else if (ext.oid === PRIVASYS_OID.MODEL_DIGEST || ext.oid === PRIVASYS_OID.MODEL_DIGEST_LEGACY) {
         expected = norm(expectations?.modelDigest);
         label = expectations?.labels?.modelDigest || 'matches expected AI model digest';
     } else if (ext.oid === PRIVASYS_OID.APP_ID) {
