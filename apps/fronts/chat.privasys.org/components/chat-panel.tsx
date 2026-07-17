@@ -4,8 +4,11 @@ import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } f
 import type { AvailableModel, Instance } from '~/lib/types';
 import {
     streamChatCompletion,
-    ModelLoadingError
+    ModelLoadingError,
+    type ChatMessage
 } from '~/lib/chat-stream';
+import type { AttachIntent } from '~/lib/drive-chat-api';
+import type { AttachmentChip } from './composer';
 import { DEFAULT_SAMPLING, type SamplingParams } from '~/lib/sampling';
 import { modelLabel } from '~/lib/model-label';
 import type { PersistedMessage, Rating, ToolInvocation } from '~/lib/conversations';
@@ -94,7 +97,11 @@ export function ChatPanel({
     transport = 'ok',
     staleReason = null,
     onStreamError,
-    onReconnect
+    onReconnect,
+    buildAugmentation,
+    attachments,
+    onAttachFile,
+    attachEnabled
 }: {
     instance: Instance;
     model: AvailableModel | null;
@@ -155,6 +162,24 @@ export function ChatPanel({
     onStreamError?: (err: Error) => void;
     /** Invoked when the user clicks "Reconnect" on a stale-back-end banner. */
     onReconnect?: () => void;
+    /**
+     * Drive RAG memory (§8.7): per-turn hook that returns extra system
+     * context (inlined Memory at conversation start + semantically retrieved
+     * excerpts from the user's Drive) to fold into the prompt. Best effort:
+     * the shell returns an empty list when Drive is unavailable. Provenance
+     * accumulation is handled inside the shell's implementation.
+     */
+    buildAugmentation?: (a: {
+        userText: string;
+        isFirstTurn: boolean;
+        conversationId: string | null;
+    }) => Promise<{ messages: ChatMessage[] }>;
+    /** Drive attachment chips for the current conversation (§8.7). */
+    attachments?: AttachmentChip[];
+    /** Upload a picked file into the current conversation with an intent. */
+    onAttachFile?: (file: File, intent: AttachIntent) => void;
+    /** Whether the Attach affordance is available (Drive enabled). */
+    attachEnabled?: boolean;
 }) {
     const [messages, setMessages] = useState<DisplayMessage[]>(
         () => initialMessages.map((m) => ({ ...m }))
@@ -302,6 +327,31 @@ export function ChatPanel({
             );
         }
 
+        // Drive RAG augmentation (§8.7): fetch inlined Memory (first turn)
+        // and semantically retrieved Drive excerpts for this prompt, then
+        // fold them into the SINGLE system message. We deliberately merge
+        // into one system message rather than sending several: the
+        // confidential-ai/vLLM proxy conditions on one system turn. This
+        // augmentation is dynamic retrieval, so it is not covered by the
+        // pinned system_prompt hash (which documents the base policy prompt).
+        let augText = '';
+        if (buildAugmentation) {
+            try {
+                const aug = await buildAugmentation({
+                    userText: text,
+                    isFirstTurn: baseHistory.length === 0,
+                    conversationId: localConvIdRef.current
+                });
+                augText = aug.messages
+                    .map((m) => m.content)
+                    .filter(Boolean)
+                    .join('\n\n');
+            } catch (e) {
+                console.warn('[chat-drive] augmentation failed:', (e as Error)?.message ?? e);
+            }
+        }
+        const systemContent = augText ? `${SYSTEM_PROMPT}\n\n${augText}` : SYSTEM_PROMPT;
+
         // The authoritative final text of the assistant turn, set by the
         // stream's onDone. The on-screen content is built incrementally by
         // the smoother (below) and can lag or lose frames; anything we
@@ -357,7 +407,7 @@ export function ChatPanel({
                 model: model.name,
                 sampling: samplingSnapshot,
                 messages: [
-                    { role: 'system' as const, content: SYSTEM_PROMPT },
+                    { role: 'system' as const, content: systemContent },
                     ...history.map(({ role, content }) => ({ role, content }))
                 ],
                 token,
@@ -667,7 +717,7 @@ export function ChatPanel({
                 return next;
             });
         }
-    }, [streaming, model, instance.endpoint, instance.id, instance.session_relay, token, sampling, mode, persist, chatSession, enabledTools, onStreamError]);
+    }, [streaming, model, instance.endpoint, instance.id, instance.session_relay, token, sampling, mode, persist, chatSession, enabledTools, onStreamError, buildAugmentation]);
 
     // Dispatch a queued replay once its branched conversation is hydrated
     // (last message = the original user prompt). Consumed exactly once.
@@ -764,6 +814,9 @@ export function ChatPanel({
             onToggleUserTool={onToggleUserTool}
             onManageTools={onManageTools}
             onRemoveUserTool={onRemoveUserTool}
+            attachEnabled={attachEnabled}
+            attachments={attachments}
+            onAttachFile={onAttachFile}
             placeholder={
                 model
                     ? `Message ${modelLabel(model)}\u2026`

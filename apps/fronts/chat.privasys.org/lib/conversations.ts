@@ -94,6 +94,16 @@ export interface Conversation {
      *  started; used by the sidebar to disambiguate similarly titled
      *  chats. May be undefined for very old entries. */
     modelLabel?: string;
+    /** When the conversation is backed by Drive (§8.7), the Drive
+     *  conversation id it syncs to. Absent for purely local conversations
+     *  and for Drive conversations not yet created (created lazily on the
+     *  first completed turn). */
+    driveConversationId?: string;
+    /** Drive-backed only: the conversation has been finalised into a digest
+     *  and is read-only (no further turns are appended). */
+    finalized?: boolean;
+    /** Drive-backed only: the digest node id produced by finalise. */
+    digestId?: string;
 }
 
 const STORAGE_VERSION = 1;

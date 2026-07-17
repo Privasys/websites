@@ -7,6 +7,19 @@ import { useAuth } from '~/lib/privasys-auth';
 import { jwtSub } from '~/lib/jwt';
 import { modelLabel } from '~/lib/model-label';
 import { useConversations } from '~/lib/use-conversations';
+import { useDriveConversations } from '~/lib/use-drive-conversations';
+import { useChatDrive } from '~/lib/use-chat-drive';
+import {
+    attachToConversation,
+    bytesToBase64,
+    driveEnabled,
+    finalizeConversation,
+    type AttachIntent,
+    type ProvenanceRef
+} from '~/lib/drive-chat-api';
+import { fetchMemoryContext, mergeProvenance, retrieveContext } from '~/lib/drive-rag';
+import type { ChatMessage } from '~/lib/chat-stream';
+import type { AttachmentChip } from './composer';
 import { useEnabledTools } from '~/lib/use-enabled-tools';
 import { useUserTools } from '~/lib/use-user-tools';
 import { ToolsView } from './tools-view';
@@ -24,6 +37,23 @@ type ShellView = 'chat' | 'security' | 'tools' | 'signin';
 type TransportState = 'ok' | 'reconnecting' | 'stale';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// Client-side threshold for "read in full" vs "indexed" attachments. Roughly
+// 32k tokens of text at ~4 chars/token; larger files are indexed and looked
+// up on demand rather than inlined into the chat context (§8.7).
+const INLINE_THRESHOLD_BYTES = 128 * 1024;
+
+// Whether a file's bytes can be inlined as text (used for the small-file
+// "read in full" path). Conservative: only obvious text-ish types.
+function isTextualFile(mime: string, name: string): boolean {
+    const m = (mime || '').toLowerCase();
+    if (m.startsWith('text/')) return true;
+    if (/^application\/(json|xml|x-yaml|yaml|toml|x-ndjson)$/.test(m)) return true;
+    if (/\.(txt|md|markdown|json|csv|tsv|yml|yaml|toml|xml|log|html?|css|js|ts|tsx|py|go|rs|java|rb|sh)$/i.test(name)) {
+        return true;
+    }
+    return false;
+}
 
 // Gemini-style two-pane shell: persistent left sidebar + main column.
 //
@@ -287,11 +317,177 @@ export function ChatShell({
     const [attestationStatus, setAttestationStatus] = useState<AggregateAttestationStatus>('verifying');
 
     const sub = useMemo(() => jwtSub(session?.accessToken), [session?.accessToken]);
-    const conv = useConversations({
+
+    // Drive integration (§8.7). Behind the `driveEnabled()` flag (presence of
+    // NEXT_PUBLIC_DRIVE_APP_HOST), conversations live in the caller's Drive,
+    // files attach from/to Drive, and the agent uses Drive as RAG memory. The
+    // flag is a stable build-time value, so both conversation hooks are always
+    // called (hooks-order safe) and we simply select which one drives the UI.
+    const useDrive = driveEnabled();
+    const drive = useChatDrive();
+    const convModelLabel = model ? modelLabel(model) : undefined;
+    const localConv = useConversations({ instanceId: instance.id, sub, modelLabel: convModelLabel });
+    const driveConv = useDriveConversations({
         instanceId: instance.id,
         sub,
-        modelLabel: model ? modelLabel(model) : undefined
+        modelLabel: convModelLabel,
+        session: drive.session,
+        tenantId: drive.tenantId
     });
+    const conv = useDrive ? driveConv : localConv;
+
+    // Per-conversation Drive state (keyed by LOCAL conversation id):
+    //   - provenance chips (node_id + section_id) from retrieval actually used,
+    //   - which conversations have had Memory injected (first turn only),
+    //   - session-attached file text to inline ("read in full"),
+    //   - attachment chips shown in the composer.
+    const provenanceRef = useRef<Map<string, ProvenanceRef[]>>(new Map());
+    const memoryInjectedRef = useRef<Set<string>>(new Set());
+    const sessionCtxRef = useRef<Map<string, { name: string; text: string }[]>>(new Map());
+    const [attachmentsByConv, setAttachmentsByConv] = useState<Record<string, AttachmentChip[]>>({});
+    const [driveNotice, setDriveNotice] = useState<string | null>(null);
+    const [finalizing, setFinalizing] = useState(false);
+
+    const addProvenance = useCallback((key: string, refs: ProvenanceRef[]) => {
+        if (!refs.length) return;
+        provenanceRef.current.set(key, mergeProvenance(provenanceRef.current.get(key) ?? [], refs));
+    }, []);
+
+    // Per-turn RAG augmentation: inline Memory at conversation start + the
+    // semantically retrieved Drive excerpts for this prompt, plus any
+    // session-attached files that should be read in full. Best effort.
+    const buildAugmentation = useCallback(
+        async ({
+            userText,
+            isFirstTurn,
+            conversationId
+        }: {
+            userText: string;
+            isFirstTurn: boolean;
+            conversationId: string | null;
+        }): Promise<{ messages: ChatMessage[] }> => {
+            const messages: ChatMessage[] = [];
+            if (!useDrive || !drive.session || !drive.tenantId) return { messages };
+            const key = conversationId ?? '__pending__';
+            if (isFirstTurn && !memoryInjectedRef.current.has(key)) {
+                memoryInjectedRef.current.add(key);
+                const mem = await fetchMemoryContext(drive.session, drive.tenantId);
+                messages.push(...mem.messages);
+                addProvenance(key, mem.provenance);
+            }
+            for (const f of sessionCtxRef.current.get(key) ?? []) {
+                messages.push({
+                    role: 'system',
+                    content: `Attached file "${f.name}" provided by the user for this chat:\n\n${f.text}`
+                });
+            }
+            const ret = await retrieveContext(drive.session, drive.tenantId, userText);
+            messages.push(...ret.messages);
+            addProvenance(key, ret.provenance);
+            return { messages };
+        },
+        [useDrive, drive.session, drive.tenantId, addProvenance]
+    );
+
+    // Attach a picked file to the current conversation with an intent.
+    const onAttachFile = useCallback(
+        async (file: File, intent: AttachIntent) => {
+            if (!useDrive) return;
+            const chipId = `att-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+            const textual = isTextualFile(file.type, file.name);
+            const small = file.size <= INLINE_THRESHOLD_BYTES;
+            // "session" small text files are read in full; everything else is
+            // indexed (looked up on demand).
+            const willIndex = !(intent === 'session' && textual && small);
+            let key = driveConv.currentId ?? '__pending__';
+            const chip: AttachmentChip = {
+                id: chipId,
+                name: file.name,
+                sizeBytes: file.size,
+                intent,
+                indexed: willIndex,
+                status: 'uploading'
+            };
+            setAttachmentsByConv((prev) => ({ ...prev, [key]: [...(prev[key] ?? []), chip] }));
+            try {
+                const ensured = await drive.ensureSession(() =>
+                    setDriveNotice('Approve Drive access on your phone to attach files.')
+                );
+                if (!ensured) throw new Error('Drive is not connected.');
+                setDriveNotice(null);
+                const target = await driveConv.ensureDriveConversationId(
+                    ensured.session,
+                    ensured.tenantId,
+                    file.name
+                );
+                if (!target) throw new Error('Could not open the conversation in Drive.');
+                // The conversation may have just been minted; migrate the chip
+                // to its real local id so it shows under the active view.
+                if (target.localId !== key) {
+                    const from = key;
+                    key = target.localId;
+                    setAttachmentsByConv((prev) => {
+                        const src = (prev[from] ?? []).filter((c) => c.id !== chipId);
+                        const dst = [...(prev[key] ?? []), chip];
+                        return { ...prev, [from]: src, [key]: dst };
+                    });
+                }
+                const bytes = new Uint8Array(await file.arrayBuffer());
+                await attachToConversation(ensured.session, ensured.tenantId, target.driveId, {
+                    name: file.name,
+                    mime: file.type || 'application/octet-stream',
+                    contentBase64: bytesToBase64(bytes),
+                    intent
+                });
+                if (intent === 'session' && textual && small) {
+                    const list = sessionCtxRef.current.get(key) ?? [];
+                    list.push({ name: file.name, text: new TextDecoder().decode(bytes) });
+                    sessionCtxRef.current.set(key, list);
+                }
+                setAttachmentsByConv((prev) => ({
+                    ...prev,
+                    [key]: (prev[key] ?? []).map((c) =>
+                        c.id === chipId ? { ...c, status: 'ready' as const } : c
+                    )
+                }));
+            } catch (e) {
+                const msg = e instanceof Error ? e.message : 'Attach failed.';
+                setAttachmentsByConv((prev) => ({
+                    ...prev,
+                    [key]: (prev[key] ?? []).map((c) =>
+                        c.id === chipId ? { ...c, status: 'error' as const, error: msg } : c
+                    )
+                }));
+            }
+        },
+        [useDrive, drive, driveConv]
+    );
+
+    // Finalise the current conversation into a cited digest.
+    const onMarkComplete = useCallback(async () => {
+        if (!useDrive || !drive.session || !drive.tenantId) return;
+        const cur = driveConv.current;
+        if (!cur?.driveConversationId || !driveConv.currentId) return;
+        setFinalizing(true);
+        try {
+            const prov = provenanceRef.current.get(driveConv.currentId) ?? [];
+            const res = await finalizeConversation(
+                drive.session,
+                drive.tenantId,
+                cur.driveConversationId,
+                prov
+            );
+            driveConv.markFinalized(driveConv.currentId, res.digest_id);
+            setDriveNotice(
+                `Conversation completed. Digest ${res.digest_id.slice(0, 12)}… saved to your Drive` +
+                    (res.cited ? ` (${res.cited} citation${res.cited === 1 ? '' : 's'}).` : '.')
+            );
+        } catch (e) {
+            setDriveNotice(`Could not finalise: ${e instanceof Error ? e.message : 'unknown error'}`);
+        } finally {
+            setFinalizing(false);
+        }
+    }, [useDrive, drive.session, drive.tenantId, driveConv]);
 
     const tools = useEnabledTools(instance.id, instance.available_tools);
     const userTools = useUserTools(chatSession, session?.accessToken, ensureChatSession);
@@ -395,6 +591,25 @@ export function ChatShell({
                             · {instance.endpoint}
                         </span>
                     )}
+                    {view === 'chat' && useDrive && driveConv.current?.driveConversationId && (
+                        <div className="ml-auto flex items-center gap-2">
+                            {driveConv.current.finalized ? (
+                                <span className="inline-flex items-center gap-1 rounded-md border border-[var(--color-primary-green)]/40 px-2.5 py-1 text-xs text-[var(--color-primary-green)]">
+                                    Completed
+                                </span>
+                            ) : (
+                                <button
+                                    type="button"
+                                    onClick={() => void onMarkComplete()}
+                                    disabled={finalizing}
+                                    title="Finalise this conversation into a cited digest saved to your Drive"
+                                    className="rounded-md border border-[var(--color-border-dark)] bg-[var(--color-surface-2)]/50 px-3 py-1 text-xs text-[var(--color-text-secondary)] hover:border-[var(--color-primary-blue)]/60 hover:text-[var(--color-primary-blue)] disabled:opacity-50"
+                                >
+                                    {finalizing ? 'Finalising…' : 'Mark complete'}
+                                </button>
+                            )}
+                        </div>
+                    )}
                     {view !== 'chat' && (
                         <button
                             type="button"
@@ -405,6 +620,20 @@ export function ChatShell({
                         </button>
                     )}
                 </header>
+
+                {view === 'chat' && driveNotice && (
+                    <div className="flex items-center justify-between gap-3 border-b border-[var(--color-border-dark)]/60 bg-[var(--color-surface-2)]/40 px-5 py-2 text-xs text-[var(--color-text-secondary)]">
+                        <span>{driveNotice}</span>
+                        <button
+                            type="button"
+                            onClick={() => setDriveNotice(null)}
+                            className="shrink-0 text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
+                            aria-label="Dismiss"
+                        >
+                            Dismiss
+                        </button>
+                    </div>
+                )}
 
                 {view === 'security' && instance.endpoint && session && (
                     <SecurityView instance={instance} onStatus={setAttestationStatus} />
@@ -464,6 +693,10 @@ export function ChatShell({
                         staleReason={staleReason}
                         onStreamError={onTransportError}
                         onReconnect={() => setView('signin')}
+                        buildAugmentation={useDrive ? buildAugmentation : undefined}
+                        attachEnabled={useDrive && !!session}
+                        attachments={attachmentsByConv[conv.currentId ?? '__pending__'] ?? []}
+                        onAttachFile={useDrive ? onAttachFile : undefined}
                     />
                 )}
             </div>
