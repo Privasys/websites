@@ -166,25 +166,19 @@ export default function AppDetailPage() {
         load();
     }, [id, load]));
 
-    async function handleDelete() {
+    // Typing the app name in the danger zone IS the confirmation; withVolume
+    // comes from the danger-zone checkbox. No native confirm() dialogs. Volume
+    // policy: by default the app's encrypted volume SURVIVES and keeps billing
+    // per GB-hour until deleted on the Volumes page.
+    async function handleDelete(withVolume: boolean) {
         if (!session?.accessToken || !id || !app) return;
-        if (!confirm(`Delete "${app.display_name || app.name}"? This cannot be undone.`)) return;
-        // Volume policy: by default the app's encrypted volume SURVIVES and
-        // keeps billing per GB-hour until deleted on the Volumes page. Offer
-        // the one-step deletion, defaulting to KEEP.
-        let withVolume = false;
-        if (app.app_type === 'container' && app.container_storage) {
-            withVolume = confirm(
-                'Also delete the app’s encrypted VOLUME?\n\n' +
-                'OK — delete the volume too (its data is destroyed; export the key first if you want it).\n' +
-                'Cancel — keep the volume; it keeps billing until you delete it on the Volumes page.'
-            );
-        }
+        const hasVolume = app.app_type === 'container' && !!app.container_storage;
         setDeleting(true);
         try {
             await deleteApp(session.accessToken, id, withVolume);
             window.dispatchEvent(new Event('apps:changed'));
-            router.push(withVolume ? '/dashboard' : '/dashboard/volumes');
+            // Send the user to the surviving volume when they kept it, else home.
+            router.push(hasVolume && !withVolume ? '/dashboard/volumes' : '/dashboard');
         } catch (e) {
             setError(e instanceof Error ? e.message : 'Delete failed');
             setDeleting(false);
@@ -363,9 +357,11 @@ export default function AppDetailPage() {
 }
 
 // ------- Danger Zone -------
-function DangerZone({ app, deleting, onDelete }: { app: App; deleting: boolean; onDelete: () => void }) {
+function DangerZone({ app, deleting, onDelete }: { app: App; deleting: boolean; onDelete: (withVolume: boolean) => void }) {
     const [confirmName, setConfirmName] = useState('');
+    const [deleteVolume, setDeleteVolume] = useState(false);
     const confirmed = confirmName === app.name;
+    const hasVolume = app.app_type === 'container' && !!app.container_storage;
     const isDeployed = app.status === 'deployed' || app.status === 'deploying';
 
     return (
@@ -376,6 +372,21 @@ function DangerZone({ app, deleting, onDelete }: { app: App; deleting: boolean; 
                     Once deleted, the application, all versions, build history, and deployment records are permanently removed. This action cannot be undone.
                     {isDeployed && <> Active deployments will be automatically stopped before deletion.</>}
                 </p>
+
+                {hasVolume && (
+                    <label className="mt-3 flex items-start gap-2 max-w-xl text-xs text-black/60 dark:text-white/60 cursor-pointer">
+                        <input
+                            type="checkbox"
+                            checked={deleteVolume}
+                            onChange={e => setDeleteVolume(e.target.checked)}
+                            className="mt-0.5 accent-red-600"
+                        />
+                        <span>
+                            Also delete the app’s encrypted volume. Its data is destroyed permanently — export the key first if you need it.
+                            If left unchecked, the volume is kept and keeps billing per GB-hour until you delete it on the Volumes page.
+                        </span>
+                    </label>
+                )}
 
                 <div className="mt-3 flex items-end gap-3">
                     <div className="flex-1 max-w-xs">
@@ -391,7 +402,7 @@ function DangerZone({ app, deleting, onDelete }: { app: App; deleting: boolean; 
                         />
                     </div>
                     <button
-                        onClick={onDelete}
+                        onClick={() => onDelete(hasVolume && deleteVolume)}
                         disabled={!confirmed || deleting}
                         className="px-4 py-2 text-sm font-medium rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                     >
@@ -1099,7 +1110,7 @@ const STORE_CATEGORIES = [
 const ICON_DIMS = '512 x 512 px square';
 const SHOT_DIMS = '1280 x 800 px (16:10 landscape)';
 
-function AppStoreTab({ app, token, deployed, hostname, onSave, deleting, onDelete }: { app: App; token: string; deployed: boolean; hostname?: string; onSave: (updated: App) => void; deleting: boolean; onDelete: () => void }) {
+function AppStoreTab({ app, token, deployed, hostname, onSave, deleting, onDelete }: { app: App; token: string; deployed: boolean; hostname?: string; onSave: (updated: App) => void; deleting: boolean; onDelete: (withVolume: boolean) => void }) {
     const [saving, setSaving] = useState(false);
     const [saved, setSaved] = useState(false);
     const [error, setError] = useState<string | null>(null);
