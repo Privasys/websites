@@ -43,16 +43,19 @@ function missingStoreFields(app: App): string[] {
 
 // instanceSizeLabel renders a container deployment's Confidential-* instance
 // size (chosen at deploy time) for the current-instance tile. Falls back to
-// the bare slug when it is not in the known catalogue.
+// the bare slug when it is not in the known catalogue. Sizes price COMPUTE
+// only (vCPU + RAM caps on the shared host); the app's storage is its own
+// volume, sized separately and billed per GB-hour.
 function instanceSizeLabel(slug: string): string {
     const s = FALLBACK_INSTANCE_SIZES.find(x => x.slug === slug);
     if (!s) return slug;
-    return `${s.size} · ${s.vcpu} vCPU · ${s.ram_gb} GB · ${s.storage_gb} GB Storage · ${priceLabel(s)}`;
+    return `${s.size} · ${s.vcpu} vCPU · ${s.ram_gb} GB RAM · ${priceLabel(s)}`;
 }
 
 // sizeOptionLabel is the <option> text for the deploy-time Size picker.
+// Compute only — storage is the separate Storage (GB) input.
 function sizeOptionLabel(s: InstanceSize): string {
-    return `${s.size} — ${s.vcpu} vCPU · ${s.ram_gb} GB · ${s.storage_gb} GB Storage · ${priceLabel(s)}`;
+    return `${s.size} — ${s.vcpu} vCPU · ${s.ram_gb} GB RAM · ${priceLabel(s)}`;
 }
 
 // priceLabel: the meter tick (credits per started hour — billing decision

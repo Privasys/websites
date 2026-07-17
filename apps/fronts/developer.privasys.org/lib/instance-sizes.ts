@@ -1,8 +1,11 @@
 import { getApiBaseUrl } from './api-base-url';
 
 // Confidential-* container instance sizes (the platform price book's container
-// instance catalogue). A container app gets a fixed size chosen at creation;
-// there is no resize. 1 credit = £0.000001 → £1 = 1,000,000 credits.
+// instance catalogue). Sizes price COMPUTE only (vCPU + RAM caps), chosen at
+// deploy time (a redeploy with a new size is the resize). storage_gb is the
+// legacy bundled figure kept for API compatibility — the app's storage is a
+// separate user-sized volume billed per GB-hour; do not display it as
+// included. 1 credit = £0.000001 → £1 = 1,000,000 credits.
 
 export interface InstanceSize {
     slug: string;

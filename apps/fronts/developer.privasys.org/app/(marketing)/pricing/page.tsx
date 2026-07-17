@@ -75,12 +75,13 @@ const WASM_PRICES: { resource: string; price: string; basis: string }[] = [
 // dashboard's deploy picker uses), so the two never drift. Prices are shown
 // as the meter tick (credits per started hour) plus the always-on GBP
 // monthly equivalent.
-const CONTAINER_SIZES: { size: string; cpu: string; ram: string; storage: string; perHour: string; perMonth: string }[] =
+// Sizes price COMPUTE only (vCPU + RAM). Storage is a separate, user-sized
+// encrypted volume billed per GB-hour at the host region's rate.
+const CONTAINER_SIZES: { size: string; cpu: string; ram: string; perHour: string; perMonth: string }[] =
     FALLBACK_INSTANCE_SIZES.map((s) => ({
         size: s.size,
         cpu: String(s.vcpu),
         ram: `${s.ram_gb} GB`,
-        storage: `${s.storage_gb} GB`,
         perHour: s.credits_per_hour.toLocaleString('en-GB'),
         perMonth: `£${monthlyGBP(s).toFixed(2)}`
     }));
@@ -304,7 +305,6 @@ export default function PricingPage() {
                                     <th className="py-3 pr-4 font-medium">Size</th>
                                     <th className="py-3 pr-4 font-medium">vCPU</th>
                                     <th className="py-3 pr-4 font-medium">RAM</th>
-                                    <th className="py-3 pr-4 font-medium">Storage</th>
                                     <th className="py-3 pr-4 font-medium">Credits / hour</th>
                                     <th className="py-3 font-medium">≈ £ / month</th>
                                 </tr>
@@ -315,7 +315,6 @@ export default function PricingPage() {
                                         <td className="py-3 pr-4 font-medium">{s.size}</td>
                                         <td className="py-3 pr-4">{s.cpu}</td>
                                         <td className="py-3 pr-4">{s.ram}</td>
-                                        <td className="py-3 pr-4">{s.storage}</td>
                                         <td className="py-3 pr-4 whitespace-nowrap">{s.perHour}</td>
                                         <td className="py-3 whitespace-nowrap">{s.perMonth}</td>
                                     </tr>
@@ -325,8 +324,12 @@ export default function PricingPage() {
                     </div>
                     <p className="mt-4 text-sm text-black/50 dark:text-white/50">
                         Charged per started hour while deployed. The size is chosen at deploy time and a
-                        redeploy with a new size is the resize. At zero balance the app is paused with
-                        reason “credits exhausted”, staying fully attestable.
+                        redeploy with a new size is the resize. Sizes price compute; your app&apos;s
+                        <strong> encrypted storage volume</strong> is sized by you (10 GB by default,
+                        growable online) and billed separately at 278 credits per GB-hour
+                        (≈ £0.20/GB per month), whether the app is running or not, until you delete the
+                        volume. At zero balance the app is paused with reason “credits exhausted”,
+                        staying fully attestable.
                     </p>
                 </div>
 
