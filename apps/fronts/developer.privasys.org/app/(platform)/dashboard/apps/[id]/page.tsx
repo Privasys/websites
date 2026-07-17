@@ -2281,6 +2281,41 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
         );
     }
 
+    // Cost line for an in-place upgrade (the deployment already exists, so its
+    // tenancy is fixed — we can't key on tenancyChoice, which upgrades force to
+    // 'shared'). Shows the new compute rate and the delta vs the running size;
+    // storage is on its own volume and unchanged by a size upgrade.
+    function renderUpgradeCost(dep: AppDeployment) {
+        if (app.app_type !== 'container') return null;
+        const newSize = sizes.find(s => s.slug === pickSize);
+        if (!newSize) return null;
+        const curSlug = dep.instance_size || app.instance_size || 'micro';
+        const curSize = sizes.find(s => s.slug === curSlug);
+        const newHour = newSize.credits_per_hour;
+        const curHour = curSize?.credits_per_hour ?? newHour;
+        const delta = newHour - curHour;
+        const deltaLabel = delta === 0 ? null : ` (${delta > 0 ? '+' : '−'}${Math.abs(delta).toLocaleString('en-GB')}/h vs now)`;
+
+        // Dedicated/instance-hosted deployments are machine-billed; a resize
+        // changes the resource envelope, not a per-app compute line, and we
+        // can't reliably tell an owned instance (resize free) from a whole
+        // dedicated VM (shape rate changes) here — so state it plainly rather
+        // than assert a number.
+        if ((dep.tenancy || 'mutualised') === 'dedicated') {
+            return (
+                <div className="mt-2 text-[11px] text-black/40 dark:text-white/40">
+                    This deployment is on a dedicated machine (billed per hour); the size sets its resource envelope.
+                </div>
+            );
+        }
+        const monthly = (newHour * 720) / 1_000_000;
+        return (
+            <div className="mt-2 text-[11px] text-black/40 dark:text-white/40">
+                Estimated compute after upgrade: {newHour.toLocaleString('en-GB')} credits/hour · ≈ £{monthly.toFixed(2)}/mo{deltaLabel}. Storage is billed separately on its volume.
+            </div>
+        );
+    }
+
     // Tenancy control (container apps, first deploy). 'My instance' appears
     // only when the owner has a running dedicated instance to target.
     function renderTenancyPicker() {
@@ -2521,9 +2556,7 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                                                 {working ? 'Upgrading…' : 'Upgrade'}
                                             </button>
                                         </div>
-                                        {app.app_type === 'container' && (
-                                            <p className="mt-1.5 text-xs text-black/40 dark:text-white/40">Changing the size takes effect on this deployment.</p>
-                                        )}
+                                        {app.app_type === 'container' && renderUpgradeCost(dep)}
                                         {storeMissing.length > 0 && (
                                             <div className="mt-2 text-xs text-amber-700 dark:text-amber-400">
                                                 Complete your App Store listing ({storeMissing.join(', ')}) before upgrading. <Link href={`/dashboard/apps/${app.id}?tab=store`} className="underline font-medium">Open App Store</Link>
