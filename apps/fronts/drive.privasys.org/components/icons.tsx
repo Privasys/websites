@@ -200,6 +200,15 @@ export const ChartIcon = (p: P) => (
     </svg>
 );
 
+export const GraphIcon = (p: P) => (
+    <svg {...base(p)}>
+        <circle cx="5" cy="6" r="2.5" />
+        <circle cx="18" cy="5" r="2.5" />
+        <circle cx="13" cy="18" r="2.5" />
+        <path d="m7.4 5.6 8.2-0.8M6.4 8.2l5.2 8M15.6 6.9l-2 8.6" />
+    </svg>
+);
+
 export const MoreIcon = (p: P) => (
     <svg {...base(p)}>
         <circle cx="5" cy="12" r="1.4" fill="currentColor" stroke="none" />
