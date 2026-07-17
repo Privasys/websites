@@ -2,7 +2,10 @@
 
 import { useAuth, hasAdminRole } from '~/lib/privasys-auth';
 import { useEffect, useMemo, useState, useCallback } from 'react';
-import { adminListUsers, adminDeleteUser, type AdminUser } from '~/lib/api';
+import { adminListUsers, adminDeleteUser, adminGrantUserCredits, type AdminUser } from '~/lib/api';
+
+// Ledger unit: 1,000,000 credits = £1 (matches the included monthly allowance).
+const CREDITS_PER_GBP = 1_000_000;
 
 interface UserRow extends AdminUser {
     roles: string[];
@@ -59,6 +62,10 @@ export default function AdminUsersPage() {
     const [grantRole, setGrantRole] = useState('');
     const [page, setPage] = useState(0);
     const [deleting, setDeleting] = useState<string | null>(null);
+    const [creditUser, setCreditUser] = useState<string | null>(null);
+    const [creditGbp, setCreditGbp] = useState('');
+    const [creditBusy, setCreditBusy] = useState(false);
+    const [creditMsg, setCreditMsg] = useState<string | null>(null);
 
     const isAdmin = hasAdminRole(session?.roles);
 
@@ -131,6 +138,28 @@ export default function AdminUsersPage() {
             await loadUsers();
         } catch (e) {
             setActionError(e instanceof Error ? e.message : 'Failed to revoke role');
+        }
+    };
+
+    const handleGrantCredits = async (sub: string) => {
+        setActionError(null);
+        setCreditMsg(null);
+        if (!session?.accessToken) return;
+        const gbp = parseFloat(creditGbp);
+        if (!isFinite(gbp) || gbp <= 0) {
+            setCreditMsg('Enter a positive amount in £.');
+            return;
+        }
+        const credits = Math.round(gbp * CREDITS_PER_GBP);
+        setCreditBusy(true);
+        try {
+            const res = await adminGrantUserCredits(session.accessToken, sub, credits);
+            setCreditMsg(`Granted £${gbp.toFixed(2)}. New balance: £${(res.balance / CREDITS_PER_GBP).toFixed(2)}.`);
+            setCreditGbp('');
+        } catch (e) {
+            setActionError(e instanceof Error ? e.message : 'Failed to grant credits');
+        } finally {
+            setCreditBusy(false);
         }
     };
 
@@ -212,7 +241,7 @@ export default function AdminUsersPage() {
                             <th className="text-left px-3 py-2 font-medium">User ID</th>
                             <th className="text-left px-3 py-2 font-medium">Roles</th>
                             <th className="text-left px-3 py-2 font-medium whitespace-nowrap">Registered</th>
-                            <th className="w-20 px-3 py-2" />
+                            <th className="w-28 px-3 py-2" />
                         </tr>
                     </thead>
                     <tbody>
@@ -265,8 +294,15 @@ export default function AdminUsersPage() {
                                     </td>
                                     <td className="px-3 py-1.5 whitespace-nowrap text-right">
                                         <button
-                                            onClick={() => setExpandedUser(expandedUser === user.sub ? null : user.sub)}
-                                            className="inline-flex items-center justify-center w-6 h-6 text-black/40 dark:text-white/40 hover:text-black dark:hover:text-white transition-colors"
+                                            onClick={() => { setCreditUser(creditUser === user.sub ? null : user.sub); setExpandedUser(null); setCreditGbp(''); setCreditMsg(null); }}
+                                            className="inline-flex items-center justify-center w-6 h-6 font-semibold text-black/40 dark:text-white/40 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
+                                            title="Give credits"
+                                        >
+                                            £
+                                        </button>
+                                        <button
+                                            onClick={() => { setExpandedUser(expandedUser === user.sub ? null : user.sub); setCreditUser(null); }}
+                                            className="inline-flex items-center justify-center w-6 h-6 ml-1 text-black/40 dark:text-white/40 hover:text-black dark:hover:text-white transition-colors"
                                             title="Add role"
                                         >
                                             <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
@@ -324,6 +360,48 @@ export default function AdminUsersPage() {
                                         >
                                             Cancel
                                         </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        )}
+                        {creditUser && pageUsers.some((u) => u.sub === creditUser) && (
+                            <tr className="bg-black/[0.02] dark:bg-white/[0.02]">
+                                <td colSpan={6} className="px-3 py-2">
+                                    <div className="flex flex-wrap items-center gap-3">
+                                        <span className="text-xs text-black/50 dark:text-white/50">
+                                            Give credits to <strong>{(() => { const u = users.find((x) => x.sub === creditUser); return u ? (u.display_name || u.name || u.email || u.sub) : creditUser; })()}</strong>:
+                                        </span>
+                                        <div className="relative">
+                                            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-black/40 dark:text-white/40">£</span>
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                step="0.01"
+                                                value={creditGbp}
+                                                onChange={(e) => setCreditGbp(e.target.value)}
+                                                onKeyDown={(e) => { if (e.key === 'Enter') handleGrantCredits(creditUser); }}
+                                                placeholder="5.00"
+                                                autoFocus
+                                                className="w-28 text-sm border border-black/10 dark:border-white/10 rounded-lg pl-6 pr-3 py-1.5 bg-transparent"
+                                            />
+                                        </div>
+                                        <span className="text-xs text-black/40 dark:text-white/40">
+                                            = {creditGbp && parseFloat(creditGbp) > 0 ? Math.round(parseFloat(creditGbp) * CREDITS_PER_GBP).toLocaleString() : '0'} credits
+                                        </span>
+                                        <button
+                                            onClick={() => handleGrantCredits(creditUser)}
+                                            disabled={creditBusy || !creditGbp || parseFloat(creditGbp) <= 0}
+                                            className="px-3 py-1.5 text-xs font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-80 transition-opacity disabled:opacity-30"
+                                        >
+                                            {creditBusy ? 'Granting…' : 'Give credits'}
+                                        </button>
+                                        <button
+                                            onClick={() => { setCreditUser(null); setCreditGbp(''); setCreditMsg(null); }}
+                                            className="text-xs text-black/40 dark:text-white/40 hover:text-black dark:hover:text-white"
+                                        >
+                                            Cancel
+                                        </button>
+                                        {creditMsg && <span className="text-xs text-emerald-600 dark:text-emerald-400">{creditMsg}</span>}
                                     </div>
                                 </td>
                             </tr>
