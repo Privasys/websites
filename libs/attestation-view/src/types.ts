@@ -161,21 +161,26 @@ export interface QuoteVerifyResult {
 }
 
 // Well-known Privasys OIDs (subset surfaced by the proxy / manager).
+// Aligned with the canonical per-workload scheme (enclave-os oids +
+// ra-tls-clients): 3.1 config root, 3.2 image/code digest, 3.3 image ref,
+// 3.4 key source / volume encryption, 3.5 configuration hash (Mini) /
+// AI model digest (Virtual) with app-defined extensions at 3.5.*,
+// 3.6 platform-assigned app id, 3.7 AI tools digest (declared by the
+// Confidential AI container).
 export const PRIVASYS_OID = {
-    QUOTE: '1.3.6.1.4.1.65230.3.0',
     APP_CODE_HASH: '1.3.6.1.4.1.65230.3.2',
-    EVENT_LOG: '1.3.6.1.4.1.65230.3.3',
-    APP_EVENTS: '1.3.6.1.4.1.65230.3.4',
+    IMAGE_REF: '1.3.6.1.4.1.65230.3.3',
+    KEY_SOURCE: '1.3.6.1.4.1.65230.3.4',
     MODEL_DIGEST: '1.3.6.1.4.1.65230.3.5',
-    MULTIMODAL_DIGEST: '1.3.6.1.4.1.65230.3.6',
+    APP_ID: '1.3.6.1.4.1.65230.3.6',
     TOOLS_DIGEST: '1.3.6.1.4.1.65230.3.7',
     GPU_EVIDENCE: '1.3.6.1.4.1.65230.5.1'
 } as const;
 
 // OIDs whose value bytes are UTF-8 strings, not raw hashes.
 export const TEXT_OIDS: ReadonlySet<string> = new Set([
-    PRIVASYS_OID.EVENT_LOG,
-    PRIVASYS_OID.APP_EVENTS
+    PRIVASYS_OID.IMAGE_REF,
+    PRIVASYS_OID.KEY_SOURCE
 ]);
 
 // Optional expected values that the consumer can supply so the
@@ -189,17 +194,18 @@ export interface AttestationExpectations {
     workloadImageDigest?: string;
     /** Expected MODEL_DIGEST (OID 3.5) - SHA-256 of the active AI model. */
     modelDigest?: string;
-    /** Expected MULTIMODAL_DIGEST (OID 3.6). */
-    multimodalDigest?: string;
     /** Expected TOOLS_DIGEST (OID 3.7) - sha256 over the canonical JSON
      *  of the configured MCP tool servers. */
     toolsDigest?: string;
+    /** Expected APP_ID (OID 3.6) - the management app id as undashed
+     *  lowercase hex (raw 16-byte UUID). */
+    appId?: string;
     /** Optional friendly labels shown in the verification badge.
      *  Defaults to a generic "Matches expected value". */
     labels?: {
         workloadImageDigest?: string;
         modelDigest?: string;
-        multimodalDigest?: string;
         toolsDigest?: string;
+        appId?: string;
     };
 }

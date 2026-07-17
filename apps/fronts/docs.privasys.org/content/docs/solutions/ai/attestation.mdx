@@ -24,7 +24,8 @@ Privasys-defined OIDs sit under `1.3.6.1.4.1.65230`. The ones most relevant to c
 | `1.3.6.1.4.1.65230.1.1` | Config Merkle root | SHA-256 root over all platform configuration inputs. |
 | `1.3.6.1.4.1.65230.2.x` | Platform extensions | Bind the enclave configuration: combined workloads hash (`2.5`), DEK origin (`2.6`), attestation server set (`2.7`), image profile (`2.8` — `production` or `dev`). |
 | `1.3.6.1.4.1.65230.3.5` | `MODEL_DIGEST` | The dm-verity root hash of the model disk currently mounted, or - if no verity disk is in use - a deterministic SHA-256 over the model's index file. |
-| `1.3.6.1.4.1.65230.3.x` | Workload extensions | Per-workload bindings: code hash, image reference, permissions hash, key source. |
+| `1.3.6.1.4.1.65230.3.7` | `TOOLS_DIGEST` | SHA-256 over the canonical, sorted JSON of the configured MCP tool servers, so a verifier can prove exactly which tools the AI enclave exposes. |
+| `1.3.6.1.4.1.65230.3.x` | Workload extensions | Per-workload bindings: config root (`3.1`), image digest (`3.2`), image reference (`3.3`), key source (`3.4`), platform-assigned app id (`3.6`). |
 
 The `MODEL_DIGEST` value is published by `publish-model-disk.sh` (see [Models](models)) and recorded in the dm-verity disk header. The manager mounts the disk with `veritysetup open --hash-offset=4096` and writes the root hash to `/var/lib/enclave-os/model-roothashes/<name>.roothash`. The confidential-ai proxy reads that file at attestation time, so a client can compare the OID value against a previously audited or signed roothash without having to trust the operator.
 
