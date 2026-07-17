@@ -8,9 +8,10 @@ import { FileBrowser } from './file-browser';
 import { SharedView } from './shared-view';
 import { RequestsView } from './requests-view';
 import { MembersView } from './members-view';
-import { FolderIcon, HomeIcon, InboxIcon, PeopleIcon, PlusIcon, ShieldCheck } from './icons';
+import { InsightsView } from './insights-view';
+import { ChartIcon, FolderIcon, HomeIcon, InboxIcon, PeopleIcon, PlusIcon, ShieldCheck } from './icons';
 
-type View = 'files' | 'shared' | 'requests' | 'members';
+type View = 'files' | 'shared' | 'requests' | 'members' | 'insights';
 
 const FOOTER_LINKS = [{ label: 'Legal', href: 'https://privasys.org/legal/', external: true }];
 
@@ -27,6 +28,9 @@ export function DriveApp() {
     const personal = tenants.find((t) => t.kind === 'user');
     const workspaces = tenants.filter((t) => t.kind === 'enterprise');
     const isEnterprise = tenant.kind === 'enterprise';
+    // Insights is owner/admin only (a personal drive is always yours).
+    const canSeeInsights =
+        tenant.kind === 'user' || tenant.role === 'owner' || tenant.role === 'admin';
 
     const pick = (t: typeof tenant) => {
         switchTenant(t);
@@ -97,6 +101,14 @@ export function DriveApp() {
                             icon={<InboxIcon width={18} height={18} />}
                             label="Requests"
                         />
+                        {canSeeInsights && (
+                            <SidebarItem
+                                active={view === 'insights'}
+                                onClick={() => setView('insights')}
+                                icon={<ChartIcon width={18} height={18} />}
+                                label="Insights"
+                            />
+                        )}
 
                         {/* Workspaces (enterprise tenants) */}
                         <div
@@ -172,6 +184,8 @@ export function DriveApp() {
                         <SharedView session={session} />
                     ) : view === 'requests' ? (
                         <RequestsView session={session} tenant={tenant} />
+                    ) : view === 'insights' ? (
+                        <InsightsView key={tenant.id} session={session} tenant={tenant} />
                     ) : (
                         <MembersView session={session} tenant={tenant} mySub={me?.sub ?? ''} />
                     )}

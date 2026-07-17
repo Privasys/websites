@@ -21,6 +21,12 @@
     --drv-text-muted: #64748b;
     --drv-hover: rgba(0, 188, 242, 0.07);
     --drv-selected: rgba(0, 188, 242, 0.14);
+
+    /* Insights chart series. Validated per mode for the lightness band,
+       chroma floor, CVD separation and >=3:1 contrast on the card surface
+       (dataviz six-checks validator, 2026-07-17). */
+    --drv-chart-views: #2a78d6;
+    --drv-chart-downloads: #b45309;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -34,6 +40,10 @@
         --drv-text-muted: #94a3b8;
         --drv-hover: rgba(52, 232, 158, 0.08);
         --drv-selected: rgba(52, 232, 158, 0.16);
+
+        /* Dark steps of the same hues, re-validated on the dark surface. */
+        --drv-chart-views: #2a78d6;
+        --drv-chart-downloads: #d97706;
     }
 }
 

@@ -45,6 +45,39 @@ export function formatDate(iso?: string): string {
     return d.getFullYear() === new Date().getFullYear() ? base : `${base} ${d.getFullYear()}`;
 }
 
+/** Human duration from milliseconds: "45 s", "12 min 5 s", "3 h 20 min". */
+export function formatDuration(ms: number): string {
+    if (!ms || ms <= 0) return '0 s';
+    if (ms < 1000) return '<1 s';
+    const s = Math.round(ms / 1000);
+    if (s < 60) return `${s} s`;
+    const m = Math.floor(s / 60);
+    if (m < 60) {
+        const rs = s % 60;
+        return rs ? `${m} min ${rs} s` : `${m} min`;
+    }
+    const h = Math.floor(m / 60);
+    const rm = m % 60;
+    return rm ? `${h} h ${rm} min` : `${h} h`;
+}
+
+/** Relative time: "just now", "5 min ago", "3 h ago", else a compact date. */
+export function relativeTime(iso?: string): string {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '';
+    const diff = Date.now() - d.getTime();
+    if (diff < 60_000) return 'just now';
+    const min = Math.floor(diff / 60_000);
+    if (min < 60) return `${min} min ago`;
+    const h = Math.floor(min / 60);
+    if (h < 24) return `${h} h ago`;
+    const days = Math.floor(h / 24);
+    if (days === 1) return 'yesterday';
+    if (days < 7) return `${days} days ago`;
+    return formatDate(iso);
+}
+
 /** subject:<sub> -> <sub>; leaves link/app subjects intact. */
 export function granteeLabel(subject: string): string {
     if (subject.startsWith('subject:')) return subject.slice('subject:'.length);

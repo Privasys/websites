@@ -191,6 +191,15 @@ export const CloseIcon = (p: P) => (
     </svg>
 );
 
+export const ChartIcon = (p: P) => (
+    <svg {...base(p)}>
+        <path d="M4 20V13" />
+        <path d="M10 20V4" />
+        <path d="M16 20v-9" />
+        <path d="M22 20H2" />
+    </svg>
+);
+
 export const MoreIcon = (p: P) => (
     <svg {...base(p)}>
         <circle cx="5" cy="12" r="1.4" fill="currentColor" stroke="none" />
