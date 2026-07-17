@@ -688,7 +688,7 @@ function checkExpectation(
     } else if (ext.oid === PRIVASYS_OID.APP_ID) {
         expected = norm(expectations?.appId);
         label = expectations?.labels?.appId || 'matches expected app identity';
-    } else if (ext.oid === PRIVASYS_OID.TOOLS_DIGEST) {
+    } else if (ext.oid === PRIVASYS_OID.TOOLS_DIGEST || ext.oid === PRIVASYS_OID.TOOLS_DIGEST_LEGACY) {
         expected = norm(expectations?.toolsDigest);
         label = expectations?.labels?.toolsDigest || 'matches expected AI tool set';
     }

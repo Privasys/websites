@@ -165,15 +165,18 @@ export interface QuoteVerifyResult {
 // ra-tls-clients): 3.1 config root, 3.2 image/code digest, 3.3 image ref,
 // 3.4 key source / volume encryption, 3.5 configuration hash (Mini) /
 // AI model digest (Virtual) with app-defined extensions at 3.5.*,
-// 3.6 platform-assigned app id, 3.7 AI tools digest (declared by the
-// Confidential AI container).
+// 3.6 platform-assigned app id. App-specific values live UNDER 3.5.* —
+// e.g. the Confidential AI tools digest at 3.5.7 (top-level 3.x slots are
+// reserved for manager-stamped extensions; 3.7 was its pre-migration slot).
 export const PRIVASYS_OID = {
     APP_CODE_HASH: '1.3.6.1.4.1.65230.3.2',
     IMAGE_REF: '1.3.6.1.4.1.65230.3.3',
     KEY_SOURCE: '1.3.6.1.4.1.65230.3.4',
     MODEL_DIGEST: '1.3.6.1.4.1.65230.3.5',
     APP_ID: '1.3.6.1.4.1.65230.3.6',
-    TOOLS_DIGEST: '1.3.6.1.4.1.65230.3.7',
+    TOOLS_DIGEST: '1.3.6.1.4.1.65230.3.5.7',
+    /** Pre-migration tools-digest slot, emitted by fleet images before v0.5. */
+    TOOLS_DIGEST_LEGACY: '1.3.6.1.4.1.65230.3.7',
     GPU_EVIDENCE: '1.3.6.1.4.1.65230.5.1'
 } as const;
 
