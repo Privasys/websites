@@ -9,9 +9,10 @@ import { SharedView } from './shared-view';
 import { RequestsView } from './requests-view';
 import { MembersView } from './members-view';
 import { InsightsView } from './insights-view';
-import { ChartIcon, FolderIcon, HomeIcon, InboxIcon, PeopleIcon, PlusIcon, ShieldCheck } from './icons';
+import { GraphView } from './graph-view';
+import { ChartIcon, FolderIcon, GraphIcon, HomeIcon, InboxIcon, PeopleIcon, PlusIcon, ShieldCheck } from './icons';
 
-type View = 'files' | 'shared' | 'requests' | 'members' | 'insights';
+type View = 'files' | 'shared' | 'requests' | 'members' | 'insights' | 'graph';
 
 const FOOTER_LINKS = [{ label: 'Legal', href: 'https://privasys.org/legal/', external: true }];
 
@@ -101,6 +102,12 @@ export function DriveApp() {
                             icon={<InboxIcon width={18} height={18} />}
                             label="Requests"
                         />
+                        <SidebarItem
+                            active={view === 'graph'}
+                            onClick={() => setView('graph')}
+                            icon={<GraphIcon width={18} height={18} />}
+                            label="Graph"
+                        />
                         {canSeeInsights && (
                             <SidebarItem
                                 active={view === 'insights'}
@@ -186,6 +193,8 @@ export function DriveApp() {
                         <RequestsView session={session} tenant={tenant} />
                     ) : view === 'insights' ? (
                         <InsightsView key={tenant.id} session={session} tenant={tenant} />
+                    ) : view === 'graph' ? (
+                        <GraphView key={tenant.id} session={session} tenant={tenant} />
                     ) : (
                         <MembersView session={session} tenant={tenant} mySub={me?.sub ?? ''} />
                     )}

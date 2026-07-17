@@ -393,7 +393,8 @@ export interface SearchHit {
     node_id: string;
     name: string;
     mime_hint?: string;
-    section_id?: number;
+    /** Stable content-derived section anchor, safe to store in a citation. */
+    section_id?: string;
     /** Title chain from the document root ("Report" › "Results" › …). */
     section_path?: string[];
     chunk_index: number;
@@ -696,4 +697,66 @@ export function decideLinkRequest(
     decision: 'approve' | 'deny'
 ): Promise<{ status: string }> {
     return json(session, 'POST', `/v1/tenants/${tenantID}/link-requests/${requestID}/${decision}`);
+}
+
+// ---- Knowledge graph -------------------------------------------------
+
+/** Colour class for a node: drives the graph hue. Kept open for forwards
+ *  compatibility with classes the enclave may add. */
+export type NodeClass = 'memory' | 'conversation' | 'document' | string;
+
+/** A typed knowledge edge: the folder tree plus the links between files. */
+export type GraphEdgeKind = 'citation' | 'wikilink' | 'containment' | string;
+
+export interface GraphNode {
+    node_id: string;
+    name: string;
+    kind: NodeKind;
+    class: NodeClass;
+    /** Containing folder, or '' at the tenant root. */
+    parent_id?: string;
+}
+
+export interface GraphEdge {
+    from_node: string;
+    /** Target node; '' for a dangling wikilink (see to_name). */
+    to_node: string;
+    /** The written link target; the label for a dangling wikilink. */
+    to_name: string;
+    kind: GraphEdgeKind;
+}
+
+export interface DriveGraph {
+    nodes: GraphNode[];
+    edges: GraphEdge[];
+}
+
+/** The tenant's knowledge graph: nodes plus containment and typed links. */
+export async function getGraph(session: SealedSession, tenantID: string): Promise<DriveGraph> {
+    const data = await json<DriveGraph>(session, 'GET', `/v1/tenants/${tenantID}/graph`);
+    return {
+        nodes: data.nodes ?? [],
+        edges: data.edges ?? []
+    };
+}
+
+export interface DanglingLink {
+    from_node: string;
+    to_name: string;
+    kind: GraphEdgeKind;
+}
+
+export interface GraphLint {
+    dangling_links: DanglingLink[];
+    /** Node IDs with no incoming or outgoing typed links. */
+    orphan_nodes: string[];
+}
+
+/** Graph hygiene: links that point nowhere and nodes nothing links to. */
+export async function getLint(session: SealedSession, tenantID: string): Promise<GraphLint> {
+    const data = await json<GraphLint>(session, 'GET', `/v1/tenants/${tenantID}/lint`);
+    return {
+        dangling_links: data.dangling_links ?? [],
+        orphan_nodes: data.orphan_nodes ?? []
+    };
 }
