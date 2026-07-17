@@ -52,10 +52,11 @@ function instanceSizeLabel(slug: string): string {
     return `${s.size} · ${s.vcpu} vCPU · ${s.ram_gb} GB RAM · ${priceLabel(s)}`;
 }
 
-// sizeOptionLabel is the <option> text for the deploy-time Size picker.
-// Compute only — storage is the separate Storage (GB) input.
+// sizeOptionLabel is the <option> text for the deploy-time Size picker: the
+// resource cap only. Price is shown once, live, in the cost estimate above the
+// Deploy button — never per option.
 function sizeOptionLabel(s: InstanceSize): string {
-    return `${s.size} — ${s.vcpu} vCPU · ${s.ram_gb} GB RAM · ${priceLabel(s)}`;
+    return `${s.size} — ${s.vcpu} vCPU · ${s.ram_gb} GB RAM`;
 }
 
 // priceLabel: the meter tick (credits per started hour — billing decision
@@ -1999,10 +2000,12 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
         return () => { alive = false; };
     }, [token, app.id]);
 
-    // Preselect the sole location on a first deploy (nothing to upgrade-pin to).
+    // Preselect a location on a first deploy (nothing to upgrade-pin to): the
+    // sole match when there is one, else the first — never leave the field in a
+    // dead "Select location…" state, since every listed location is valid.
     useEffect(() => {
         if (currentDeployment) return;
-        if (!pickLocation && locations.length === 1) setPickLocation(locations[0].code);
+        if (!pickLocation && locations.length > 0) setPickLocation(locations[0].code);
     }, [currentDeployment, locations, pickLocation]);
 
     // Load the Confidential-* size catalogue once (container apps). Best-effort:
@@ -2214,8 +2217,10 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
 
     // The deploy-time Size control (container apps only; wasm deploys show no
     // size control). Options come from the live catalogue with static fallback.
-    // Dedicated VMs are offered for Medium and Large only (the platform's
-    // dedicated shape catalogue); shared placements offer every size.
+    //   - shared: the full mutualised catalogue — the size is the CPU/RAM CAP
+    //     for your app on the shared host.
+    //   - dedicated: only the sizes that map to a whole GCP machine
+    //     (Medium → c3-standard-4, Large → c3-standard-8).
     const DEDICATED_SIZE_SLUGS = ['medium', 'large'];
     function renderSizePicker() {
         const opts = tenancyChoice === 'dedicated' ? sizes.filter(s => DEDICATED_SIZE_SLUGS.includes(s.slug)) : sizes;
@@ -2223,6 +2228,45 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
             <select value={pickSize} onChange={e => setPickSize(e.target.value)} className={selectCls}>
                 {opts.map(s => (<option key={s.slug} value={s.slug}>{sizeOptionLabel(s)}</option>))}
             </select>
+        );
+    }
+
+    // Live cost estimate for the current picks, shown just above Deploy. Storage
+    // is £0.20/GB·month = 278 credits/GB·hour (mirrors the volume meter). Shared:
+    // compute (size) + storage volume. Dedicated: the whole-machine hourly (the
+    // size's rate), storage included on the machine. Instance: no extra charge.
+    const STORAGE_CREDITS_PER_GB_HOUR = 278;
+    function renderCostEstimate() {
+        if (app.app_type !== 'container') return null;
+        const size = sizes.find(s => s.slug === pickSize);
+        if (!size) return null;
+        const storageGB = app.container_storage ? Math.max(0, Math.floor(Number(pickStorageGB) || 0)) : 0;
+
+        if (tenancyChoice === 'instance') {
+            return (
+                <div className="rounded-lg border border-black/10 dark:border-white/10 bg-black/[0.02] dark:bg-white/[0.03] px-4 py-3">
+                    <div className="text-xs text-black/50 dark:text-white/50">Estimated cost</div>
+                    <div className="mt-0.5 text-sm">No extra charge — compute and storage are covered by your instance&apos;s machine bill.</div>
+                </div>
+            );
+        }
+
+        const computeHour = size.credits_per_hour;
+        const storageHour = tenancyChoice === 'shared' ? storageGB * STORAGE_CREDITS_PER_GB_HOUR : 0;
+        const totalHour = computeHour + storageHour;
+        const monthly = (totalHour * 720) / 1_000_000;
+        return (
+            <div className="rounded-lg border border-black/10 dark:border-white/10 bg-black/[0.02] dark:bg-white/[0.03] px-4 py-3">
+                <div className="flex items-baseline justify-between gap-3">
+                    <span className="text-xs text-black/50 dark:text-white/50">Estimated cost</span>
+                    <span className="text-sm font-semibold whitespace-nowrap">{totalHour.toLocaleString('en-GB')} credits/hour · ≈ £{monthly.toFixed(2)}/mo</span>
+                </div>
+                <div className="mt-1 text-[11px] text-black/40 dark:text-white/40">
+                    {tenancyChoice === 'dedicated'
+                        ? <>Whole {size.size} confidential VM, billed per started hour; the apps and storage on it are included.</>
+                        : <>Compute {computeHour.toLocaleString('en-GB')}/h{storageGB > 0 && <> · storage {storageHour.toLocaleString('en-GB')}/h ({storageGB} GB)</>}. Billed per started hour while deployed{storageGB > 0 && <>; the volume keeps billing until you delete it</>}.</>}
+                </div>
+            </div>
         );
     }
 
@@ -2521,9 +2565,12 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                                     <label className="text-xs text-black/50 dark:text-white/50 block mb-1">Location</label>
                                     {!locationsLoaded
                                         ? <div className="text-xs text-black/40 dark:text-white/40 py-2">Loading locations…</div>
-                                        : locations.length > 0
-                                            ? <select value={pickLocation} onChange={e => setPickLocation(e.target.value)} className={selectCls}><option value="">Select location…</option>{locations.map(l => (<option key={l.code} value={l.code}>{locationLabel(l)}</option>))}</select>
-                                            : <div className="text-xs text-black/40 dark:text-white/40 py-2">No locations available for this app.</div>}
+                                        : locations.length === 0
+                                            ? <div className="text-xs text-amber-700 dark:text-amber-400 py-2">No shared capacity available for this app.</div>
+                                            : locations.length === 1
+                                                // Single match: nothing to choose — show it read-only.
+                                                ? <div className="px-3 py-2 text-sm rounded-lg border border-black/10 dark:border-white/10 bg-black/[0.02] dark:bg-white/[0.03] text-black/60 dark:text-white/60">{locationLabel(locations[0])}</div>
+                                                : <select value={pickLocation} onChange={e => setPickLocation(e.target.value)} className={selectCls}>{locations.map(l => (<option key={l.code} value={l.code}>{locationLabel(l)}</option>))}</select>}
                                 </div>
                             )}
                             {tenancyChoice === 'dedicated' && (
@@ -2544,9 +2591,11 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                                 <div>
                                     <label className="text-xs text-black/50 dark:text-white/50 block mb-1">Size</label>
                                     {renderSizePicker()}
-                                    {tenancyChoice === 'instance' && (
-                                        <div className="mt-1 text-[11px] text-black/40 dark:text-white/40">Sizes cap resources on your instance; oversubscription is allowed.</div>
-                                    )}
+                                    <div className="mt-1 text-[11px] text-black/40 dark:text-white/40">
+                                        {tenancyChoice === 'shared' && 'Maximum vCPU and memory for your app on the shared host.'}
+                                        {tenancyChoice === 'dedicated' && 'The confidential VM provisioned for your app.'}
+                                        {tenancyChoice === 'instance' && 'Caps resources on your instance; oversubscription is allowed.'}
+                                    </div>
                                 </div>
                             )}
                             {app.app_type === 'container' && app.container_storage && (
@@ -2558,11 +2607,12 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                                         className={selectCls}
                                     />
                                     <div className="mt-1 text-[11px] text-black/40 dark:text-white/40">
-                                        Sizes the app&apos;s encrypted volume (≈ £{(((Number(pickStorageGB) || 0)) * 0.2).toFixed(2)}/month, billed per GB-hour). Grow it later on the Volumes page.
+                                        The app&apos;s encrypted volume. Grow it later on the Volumes page.
                                     </div>
                                 </div>
                             )}
                         </div>
+                        {app.app_type === 'container' && renderCostEstimate()}
                         {storeMissing.length > 0 && (
                             <div className="text-xs text-amber-700 dark:text-amber-400">Complete your App Store listing ({storeMissing.join(', ')}) before deploying. <Link href={`/dashboard/apps/${app.id}?tab=store`} className="underline font-medium">Open App Store</Link></div>
                         )}

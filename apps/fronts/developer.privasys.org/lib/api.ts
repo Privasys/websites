@@ -782,6 +782,21 @@ export function adminDeleteUser(token: string, sub: string): Promise<void> {
     });
 }
 
+export interface AdminGrantCreditsResponse {
+    account_id: string;
+    credits: number;
+    balance: number;
+}
+
+/** Grant free platform credits (ledger units; 1,000,000 = £1) to the account
+ *  owned by `sub`. Manager role required. */
+export function adminGrantUserCredits(token: string, sub: string, credits: number, reason?: string): Promise<AdminGrantCreditsResponse> {
+    return request<AdminGrantCreditsResponse>(`/api/v1/admin/users/${encodeURIComponent(sub)}/credits`, token, {
+        method: 'POST',
+        body: JSON.stringify(reason ? { credits, reason } : { credits })
+    });
+}
+
 // ---------------------------------------------------------------------------
 // Deployments API
 // ---------------------------------------------------------------------------
