@@ -163,16 +163,21 @@ export interface QuoteVerifyResult {
 // Well-known Privasys OIDs (subset surfaced by the proxy / manager).
 // Aligned with the canonical per-workload scheme (enclave-os oids +
 // ra-tls-clients): 3.1 config root, 3.2 image/code digest, 3.3 image ref,
-// 3.4 key source / volume encryption, 3.5 configuration hash (Mini) /
-// AI model digest (Virtual) with app-defined extensions at 3.5.*,
-// 3.6 platform-assigned app id. App-specific values live UNDER 3.5.* —
-// e.g. the Confidential AI tools digest at 3.5.7 (top-level 3.x slots are
-// reserved for manager-stamped extensions; 3.7 was its pre-migration slot).
+// 3.4 key source / volume encryption, 3.5 runtime-stamped configuration
+// hash (Mini), 3.6 platform-assigned app id. App-specific values live
+// UNDER the app arc 3.5.* — the Confidential AI model digest at 3.5.5 and
+// tools digest at 3.5.7 — because top-level 3.x slots are reserved for
+// runtime-stamped extensions. Pre-migration slots (model digest at literal
+// 3.5, tools digest at 3.7) are kept as *_LEGACY while older fleet images
+// are live.
 export const PRIVASYS_OID = {
     APP_CODE_HASH: '1.3.6.1.4.1.65230.3.2',
     IMAGE_REF: '1.3.6.1.4.1.65230.3.3',
     KEY_SOURCE: '1.3.6.1.4.1.65230.3.4',
-    MODEL_DIGEST: '1.3.6.1.4.1.65230.3.5',
+    MODEL_DIGEST: '1.3.6.1.4.1.65230.3.5.5',
+    /** Pre-migration model-digest slot (collides with Mini's runtime-stamped
+     *  configuration hash), emitted by fleet images before v0.5. */
+    MODEL_DIGEST_LEGACY: '1.3.6.1.4.1.65230.3.5',
     APP_ID: '1.3.6.1.4.1.65230.3.6',
     TOOLS_DIGEST: '1.3.6.1.4.1.65230.3.5.7',
     /** Pre-migration tools-digest slot, emitted by fleet images before v0.5. */

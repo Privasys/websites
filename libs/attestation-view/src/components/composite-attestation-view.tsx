@@ -291,12 +291,12 @@ export function computeAttestationSummary(
         const exts = state.result.extensions ?? [];
         const get = (oid: string) => exts.find((e: { oid: string; value_hex?: string }) => e.oid === oid)?.value_hex?.toLowerCase();
         const norm = (v?: string) => (v || '').toLowerCase().replace(/^0x/, '');
-        // Each check may match at more than one OID: the tools digest moved
-        // from the top-level 3.7 into the app arc at 3.5.7, and older fleet
-        // images still emit the legacy slot.
+        // Each check may match at more than one OID: the AI model and tools
+        // digests moved into the app arc (3.5 -> 3.5.5, 3.7 -> 3.5.7), and
+        // older fleet images still emit the legacy slots.
         const checks: Array<[string[], string | undefined]> = [
             [['1.3.6.1.4.1.65230.3.2'], expectations.workloadImageDigest],
-            [['1.3.6.1.4.1.65230.3.5'], expectations.modelDigest],
+            [['1.3.6.1.4.1.65230.3.5.5', '1.3.6.1.4.1.65230.3.5'], expectations.modelDigest],
             [['1.3.6.1.4.1.65230.3.6'], expectations.appId],
             [['1.3.6.1.4.1.65230.3.5.7', '1.3.6.1.4.1.65230.3.7'], expectations.toolsDigest]
         ];
