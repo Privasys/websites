@@ -47,12 +47,28 @@ const OID_DESCRIPTIONS: Record<string, string> = {
         'Merkle root of this specific workload\'s configuration.',
     'Workload Code Hash':
         'SHA-256 hash of the compiled WASM bytecode for this workload.',
+    'Workload Image Digest':
+        'SHA-256 digest of the OCI image this workload was loaded from.',
     'Workload Image Ref':
+        'Container image reference from which the workload was loaded.',
+    'Container Image Ref':
         'Container image reference from which the workload was loaded.',
     'Workload Key Source':
         'Indicates how the workload\'s encryption keys are sourced and managed.',
+    'Volume Encryption':
+        'How this workload\'s encrypted data volume key was provisioned (vault-backed or operator-supplied).',
+    'Workload Configuration Hash':
+        'Hash of the workload\'s configuration metadata; reflects which settings and secrets are configured, never their values.',
     'Workload Permissions Hash':
         'Hash of the security permissions granted to this workload.',
+    'Workload App ID':
+        'Platform-assigned app identity (management app id), stamped by the measured runtime so it cannot be forged by the workload.',
+    'AI Tools Digest':
+        'SHA-256 over the canonical JSON of the MCP tool servers this AI enclave exposes.',
+    'Image Profile':
+        'Build flavor of the enclave VM image: "production" or "dev". Verifiers reject dev images unless explicitly opted in.',
+    'Attested Dependency Set':
+        'The fixed set of cross-enclave dependency identities this workload is pinned to, written by the runtime.',
     'NVIDIA GPU Evidence':
         'NVIDIA Confidential-Computing attestation evidence (SPDM report + certificate chain) collected from the GPU and bound to this certificate.'
 };
@@ -669,9 +685,9 @@ function checkExpectation(
     } else if (ext.oid === PRIVASYS_OID.MODEL_DIGEST) {
         expected = norm(expectations?.modelDigest);
         label = expectations?.labels?.modelDigest || 'matches expected AI model digest';
-    } else if (ext.oid === PRIVASYS_OID.MULTIMODAL_DIGEST) {
-        expected = norm(expectations?.multimodalDigest);
-        label = expectations?.labels?.multimodalDigest || 'matches expected multimodal model digest';
+    } else if (ext.oid === PRIVASYS_OID.APP_ID) {
+        expected = norm(expectations?.appId);
+        label = expectations?.labels?.appId || 'matches expected app identity';
     } else if (ext.oid === PRIVASYS_OID.TOOLS_DIGEST) {
         expected = norm(expectations?.toolsDigest);
         label = expectations?.labels?.toolsDigest || 'matches expected AI tool set';

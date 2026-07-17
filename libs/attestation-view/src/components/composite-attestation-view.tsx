@@ -294,7 +294,7 @@ export function computeAttestationSummary(
         const checks: Array<[string, string | undefined]> = [
             ['1.3.6.1.4.1.65230.3.2', expectations.workloadImageDigest],
             ['1.3.6.1.4.1.65230.3.5', expectations.modelDigest],
-            ['1.3.6.1.4.1.65230.3.6', expectations.multimodalDigest],
+            ['1.3.6.1.4.1.65230.3.6', expectations.appId],
             ['1.3.6.1.4.1.65230.3.7', expectations.toolsDigest]
         ];
         for (const [oid, want] of checks) {
