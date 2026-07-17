@@ -165,11 +165,22 @@ export default function AppDetailPage() {
     async function handleDelete() {
         if (!session?.accessToken || !id || !app) return;
         if (!confirm(`Delete "${app.display_name || app.name}"? This cannot be undone.`)) return;
+        // Volume policy: by default the app's encrypted volume SURVIVES and
+        // keeps billing per GB-hour until deleted on the Volumes page. Offer
+        // the one-step deletion, defaulting to KEEP.
+        let withVolume = false;
+        if (app.app_type === 'container' && app.container_storage) {
+            withVolume = confirm(
+                'Also delete the app’s encrypted VOLUME?\n\n' +
+                'OK — delete the volume too (its data is destroyed; export the key first if you want it).\n' +
+                'Cancel — keep the volume; it keeps billing until you delete it on the Volumes page.'
+            );
+        }
         setDeleting(true);
         try {
-            await deleteApp(session.accessToken, id);
+            await deleteApp(session.accessToken, id, withVolume);
             window.dispatchEvent(new Event('apps:changed'));
-            router.push('/dashboard');
+            router.push(withVolume ? '/dashboard' : '/dashboard/volumes');
         } catch (e) {
             setError(e instanceof Error ? e.message : 'Delete failed');
             setDeleting(false);
@@ -1837,6 +1848,10 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
     const [pickTenancy, setPickTenancy] = useState<'shared' | 'dedicated' | 'instance'>('shared');
     const [pickInstance, setPickInstance] = useState('');
     const [myInstances, setMyInstances] = useState<Instance[]>([]);
+    // Volume size for the FIRST deploy (10 GB default). An existing volume
+    // keeps its size — growing is the Volumes page's resize, never a deploy
+    // side effect — so the input only shows before the first deployment.
+    const [pickStorageGB, setPickStorageGB] = useState('10');
     const [cwasmFile, setCwasmFile] = useState<File | null>(null);
     const [working, setWorking] = useState(false);
     const [workMsg, setWorkMsg] = useState<string | null>(null);
@@ -2112,11 +2127,14 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
             // Tenancy → deploy payload: shared = location placement (default);
             // dedicated = the platform provisions a whole VM for this app;
             // instance = deploy onto an owned running dedicated VM.
+            const storageGB = app.app_type === 'container' && app.container_storage && !currentDeployment
+                ? Math.max(1, Math.floor(Number(pickStorageGB) || 10))
+                : undefined;
             const deployOpts = tenancyChoice === 'dedicated'
-                ? { tenancy: 'dedicated' as const }
+                ? { tenancy: 'dedicated' as const, storageGB }
                 : tenancyChoice === 'instance'
-                    ? { instanceId: pickInstance }
-                    : undefined;
+                    ? { instanceId: pickInstance, storageGB }
+                    : storageGB ? { storageGB } : undefined;
             setWorkMsg('Deploying…');
             try {
                 await deployDirect(token, app.id, versionId, pickLocation, sizeArg, deployOpts);
@@ -2526,6 +2544,19 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                                     {tenancyChoice === 'instance' && (
                                         <div className="mt-1 text-[11px] text-black/40 dark:text-white/40">Sizes cap resources on your instance; oversubscription is allowed.</div>
                                     )}
+                                </div>
+                            )}
+                            {app.app_type === 'container' && app.container_storage && (
+                                <div>
+                                    <label className="text-xs text-black/50 dark:text-white/50 block mb-1">Storage (GB)</label>
+                                    <input
+                                        type="number" min={1} value={pickStorageGB}
+                                        onChange={e => setPickStorageGB(e.target.value)}
+                                        className={selectCls}
+                                    />
+                                    <div className="mt-1 text-[11px] text-black/40 dark:text-white/40">
+                                        Sizes the app&apos;s encrypted volume (≈ £{(((Number(pickStorageGB) || 0)) * 0.2).toFixed(2)}/month, billed per GB-hour). Grow it later on the Volumes page.
+                                    </div>
                                 </div>
                             )}
                         </div>

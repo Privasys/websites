@@ -75,8 +75,12 @@ export function detectAppType(token: string, commitUrl: string): Promise<{ app_t
     return request<{ app_type: string; owner_repo: string; commit_sha: string }>(`/api/v1/detect-app-type?commit_url=${encodeURIComponent(commitUrl)}`, token);
 }
 
-export function deleteApp(token: string, id: string): Promise<void> {
-    return request<void>(`/api/v1/apps/${encodeURIComponent(id)}`, token, {
+export function deleteApp(token: string, id: string, withVolume = false): Promise<void> {
+    // By default the app's encrypted volume SURVIVES deletion (and keeps
+    // billing per GB-hour until deleted on the Volumes page); withVolume
+    // removes both in one step.
+    const qs = withVolume ? '?with_volume=true' : '';
+    return request<void>(`/api/v1/apps/${encodeURIComponent(id)}${qs}`, token, {
         method: 'DELETE'
     });
 }
@@ -1078,16 +1082,18 @@ export function deployDirect(
     versionId: string,
     location: string,
     instanceSize?: string,
-    opts?: { tenancy?: 'mutualised' | 'dedicated'; instanceId?: string }
+    opts?: { tenancy?: 'mutualised' | 'dedicated'; instanceId?: string; storageGB?: number }
 ): Promise<AppDeployment> {
     // Deploying onto an owned dedicated instance (opts.instanceId) implies
     // dedicated tenancy and needs no location; otherwise a location selects a
-    // mutualised host (Phase 6).
-    const body: { location?: string; instance_size?: string; tenancy?: string; instance_id?: string } = {};
+    // mutualised host (Phase 6). storageGB sizes the app's volume on FIRST
+    // deploy only (10 GB default; an existing volume keeps its size).
+    const body: { location?: string; instance_size?: string; tenancy?: string; instance_id?: string; storage_gb?: number } = {};
     if (opts?.instanceId) body.instance_id = opts.instanceId;
     else body.location = location;
     if (instanceSize) body.instance_size = instanceSize;
     if (opts?.tenancy) body.tenancy = opts.tenancy;
+    if (opts?.storageGB && opts.storageGB > 0) body.storage_gb = opts.storageGB;
     return request<AppDeployment>(
         `/api/v1/apps/${encodeURIComponent(appId)}/versions/${encodeURIComponent(versionId)}/deploy`,
         token,
@@ -1110,6 +1116,48 @@ export interface Instance {
     tenancy: string;
     created_at: string;
     updated_at: string;
+}
+
+// --- First-class volumes: encrypted storage owned independently of apps ---
+
+export interface Volume {
+    id: string;
+    app_id?: string;
+    app_name?: string;
+    name: string;
+    lv_name: string;
+    size_gb: number;
+    provider: string;
+    region: string;
+    status: string;
+    attached: boolean;
+    used_mb?: number;
+    avail_mb?: number;
+    usage_error?: string;
+    created_at: string;
+    updated_at: string;
+}
+
+export async function listVolumes(token: string): Promise<Volume[]> {
+    const res = await request<{ volumes: Volume[] }>('/api/v1/volumes', token);
+    return res.volumes ?? [];
+}
+
+export function getVolume(token: string, id: string): Promise<Volume> {
+    return request<Volume>(`/api/v1/volumes/${encodeURIComponent(id)}`, token);
+}
+
+export function resizeVolume(token: string, id: string, sizeGB: number): Promise<Volume> {
+    return request<Volume>(`/api/v1/volumes/${encodeURIComponent(id)}/resize`, token, {
+        method: 'POST',
+        body: JSON.stringify({ size_gb: sizeGB })
+    });
+}
+
+export function deleteVolume(token: string, id: string): Promise<{ status: string }> {
+    return request<{ status: string }>(`/api/v1/volumes/${encodeURIComponent(id)}`, token, {
+        method: 'DELETE'
+    });
 }
 
 export async function listInstances(token: string): Promise<Instance[]> {
