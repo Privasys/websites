@@ -320,6 +320,10 @@ export interface AppDeployment {
     // Confidential-* instance size slug this deployment runs on (container
     // apps). Chosen at deploy time; defaults to the app's instance_size.
     instance_size?: string;
+    // Hosting tenancy of this deployment: 'mutualised' (shared host) or
+    // 'dedicated' (a whole confidential VM, or an owned instance). Drives the
+    // upgrade cost model.
+    tenancy?: string;
     deployed_by: string;
     deployed_at?: string;
     stopped_at?: string;
