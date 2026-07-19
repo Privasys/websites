@@ -20,6 +20,7 @@ import { waitForModelReady } from '~/lib/instance-api';
 import { fetchToolGrant } from '~/lib/chat-service-api';
 import { isTransportError } from '~/lib/transport';
 import { Composer, type ChatMode } from './composer';
+import { AttachDropZone } from './attach-drop-zone';
 import { Markdown } from './markdown';
 import { MetadataDialog } from './metadata-dialog';
 import { ThinkingBlock } from './thinking-block';
@@ -828,8 +829,8 @@ export function ChatPanel({
     );
 
     // Empty / new-chat state — Gemini-style centered hero.
-    if (messages.length === 0) {
-        return (
+    const body =
+        messages.length === 0 ? (
             <div className='flex flex-1 flex-col items-center justify-center px-4'>
                 <div className='w-full max-w-2xl'>
                     <div className='mb-8 text-center'>
@@ -874,94 +875,99 @@ export function ChatPanel({
                     )}
                 </div>
             </div>
-        );
-    }
-
-    // Active chat state — scrollable transcript + docked composer.
-    return (
-        <div className='flex flex-1 flex-col'>
-            <div ref={scrollRef} className='flex-1 overflow-y-auto px-4 py-6'>
-                <div className='mx-auto flex max-w-3xl flex-col gap-6'>
-                    {messages.map((m) => (
-                        <Message
-                            key={m.id}
-                            message={m}
-                            instanceEndpoint={instance.endpoint}
-                            token={token}
-                            onShowMeta={() => setMetaFor(m)}
-                            onRate={(rating, comment) => rateMessage(m.id, rating, comment)}
-                            onEdit={
-                                m.role === 'user' && !streaming
-                                    ? (text) => editMessage(m.id, text)
-                                    : undefined
-                            }
-                            onBranch={
-                                onBranchFromMessage
-                                    ? () => onBranchFromMessage(m.id)
-                                    : undefined
-                            }
-                            onReplay={
-                                onReplayFromMessage &&
+        ) : (
+            // Active chat state — scrollable transcript + docked composer.
+            <div className='flex flex-1 flex-col'>
+                <div ref={scrollRef} className='flex-1 overflow-y-auto px-4 py-6'>
+                    <div className='mx-auto flex max-w-3xl flex-col gap-6'>
+                        {messages.map((m) => (
+                            <Message
+                                key={m.id}
+                                message={m}
+                                instanceEndpoint={instance.endpoint}
+                                token={token}
+                                onShowMeta={() => setMetaFor(m)}
+                                onRate={(rating, comment) => rateMessage(m.id, rating, comment)}
+                                onEdit={
+                                    m.role === 'user' && !streaming
+                                        ? (text) => editMessage(m.id, text)
+                                        : undefined
+                                }
+                                onBranch={
+                                    onBranchFromMessage
+                                        ? () => onBranchFromMessage(m.id)
+                                        : undefined
+                                }
+                                onReplay={
+                                    onReplayFromMessage &&
                                 m.role === 'assistant' &&
                                 m.meta?.seed !== undefined &&
                                 m.meta?.dynamic_context
-                                    ? () => onReplayFromMessage(m.id)
-                                    : undefined
-                            }
-                            onConsentDecision={(callId, allowed) => {
+                                        ? () => onReplayFromMessage(m.id)
+                                        : undefined
+                                }
+                                onConsentDecision={(callId, allowed) => {
                                 // Optimistically reflect the decision in
                                 // the local card immediately; the SSE
                                 // tool_result will fill in real timing
                                 // when the server side completes.
-                                setMessages((prev) =>
-                                    prev.map((mm) => {
-                                        if (mm.id !== m.id || !mm.toolInvocations) return mm;
-                                        return {
-                                            ...mm,
-                                            toolInvocations: mm.toolInvocations.map((inv) =>
-                                                inv.id === callId
-                                                    ? {
-                                                        ...inv,
-                                                        consent: allowed ? 'allowed' : 'denied'
-                                                    }
-                                                    : inv
-                                            )
-                                        };
-                                    })
-                                );
-                            }}
-                        />
-                    ))}
+                                    setMessages((prev) =>
+                                        prev.map((mm) => {
+                                            if (mm.id !== m.id || !mm.toolInvocations) return mm;
+                                            return {
+                                                ...mm,
+                                                toolInvocations: mm.toolInvocations.map((inv) =>
+                                                    inv.id === callId
+                                                        ? {
+                                                            ...inv,
+                                                            consent: allowed ? 'allowed' : 'denied'
+                                                        }
+                                                        : inv
+                                                )
+                                            };
+                                        })
+                                    );
+                                }}
+                            />
+                        ))}
+                    </div>
                 </div>
-            </div>
 
-            <div className='px-4 pb-5'>
-                <div className='mx-auto max-w-3xl'>
-                    {transportBanner}
-                    {composer}
+                <div className='px-4 pb-5'>
+                    <div className='mx-auto max-w-3xl'>
+                        {transportBanner}
+                        {composer}
+                    </div>
+                    <p className='mx-auto mt-2 max-w-3xl text-center text-[11px] text-[var(--color-text-muted)]'>
+                        Replies are signed by the hardware running the model. Only you
+                        can see your chats and they can&apos;t be used to improve the
+                        model. {model ? modelLabel(model) : 'The model'} can make
+                        mistakes, double-check important info.
+                    </p>
                 </div>
-                <p className='mx-auto mt-2 max-w-3xl text-center text-[11px] text-[var(--color-text-muted)]'>
-                    Replies are signed by the hardware running the model. Only you
-                    can see your chats and they can&apos;t be used to improve the
-                    model. {model ? modelLabel(model) : 'The model'} can make
-                    mistakes, double-check important info.
-                </p>
-            </div>
 
-            {metaFor && (
-                <MetadataDialog
-                    sampling={metaFor.sampling}
-                    reproducibility={metaFor.meta}
-                    elapsedMs={
-                        metaFor.startedAt && metaFor.finishedAt
-                            ? metaFor.finishedAt - metaFor.startedAt
-                            : undefined
-                    }
-                    onClose={() => setMetaFor(null)}
-                />
-            )}
-        </div>
-    );
+                {metaFor && (
+                    <MetadataDialog
+                        sampling={metaFor.sampling}
+                        reproducibility={metaFor.meta}
+                        elapsedMs={
+                            metaFor.startedAt && metaFor.finishedAt
+                                ? metaFor.finishedAt - metaFor.startedAt
+                                : undefined
+                        }
+                        onClose={() => setMetaFor(null)}
+                    />
+                )}
+            </div>
+        );
+
+    // Drag-and-drop attach (§8.7): dropping a file anywhere over the
+    // conversation opens the intent chooser, then routes through the same
+    // onAttachFile path the composer's paperclip uses.
+    if (attachEnabled && onAttachFile) {
+        return <AttachDropZone onAttach={onAttachFile}>{body}</AttachDropZone>;
+    }
+    return body;
 }
 
 function Message({

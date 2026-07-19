@@ -30,6 +30,7 @@ export function AppSidebar({
     onRenameConversation,
     onShowSecurity,
     onShowTools,
+    onShowKnowledge,
     onShowSignIn
 }: {
     instance: Instance | null;
@@ -45,6 +46,9 @@ export function AppSidebar({
     onRenameConversation: (id: string, title: string) => void;
     onShowSecurity: () => void;
     onShowTools?: () => void;
+    /** Open the assistant Knowledge (Drive AI-scope) view. Only shown when
+     *  Drive is wired (the chat passes it conditionally). */
+    onShowKnowledge?: () => void;
     onShowSignIn: () => void;
 }) {
     const { session, signOut } = useAuth();
@@ -128,6 +132,16 @@ export function AppSidebar({
                     >
                         <WrenchIcon />
                         <span className="flex-1">AI Tools</span>
+                    </button>
+                )}
+                {session && onShowKnowledge && (
+                    <button
+                        type="button"
+                        onClick={onShowKnowledge}
+                        className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-surface-2)]/60"
+                    >
+                        <BookIcon />
+                        <span className="flex-1">Knowledge</span>
                     </button>
                 )}
                 {session && (
@@ -460,6 +474,15 @@ function ShieldIcon() {
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
             <path d="m9 12 2 2 4-4" />
+        </svg>
+    );
+}
+
+function BookIcon() {
+    return (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
         </svg>
     );
 }

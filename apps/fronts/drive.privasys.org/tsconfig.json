@@ -19,7 +19,9 @@
             ],
             "@privasys/ui": ["../../../libs/ui/src/index.ts"],
             "@privasys/ui/*": ["../../../libs/ui/src/*"],
-            "@privasys/attestation-view": ["../../../libs/attestation-view/src/index.ts"]
+            "@privasys/attestation-view": ["../../../libs/attestation-view/src/index.ts"],
+            "@privasys/drive-client": ["../../../libs/drive-client/src/index.ts"],
+            "@privasys/drive-client/*": ["../../../libs/drive-client/src/*"]
         },
         "plugins": [
             {

@@ -10,7 +10,7 @@ const nextConfig = {
     experimental: {
         reactCompiler: true
     },
-    transpilePackages: ['@privasys/ui'],
+    transpilePackages: ['@privasys/ui', '@privasys/drive-client'],
     output: 'export',
     trailingSlash: true,
     poweredByHeader: false,
