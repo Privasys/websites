@@ -717,7 +717,14 @@ interface RowExtra {
     isDropTarget: boolean;
 }
 
-const LIST_COLS = 'grid-cols-[28px_minmax(0,1fr)_90px_110px_90px_44px]';
+// The Owner / Modified / Size columns are hidden below `sm`, but their grid
+// tracks are still reserved by grid-template-columns — on a phone that fixed
+// 90+110+90px overflows the viewport and collapses the Name column
+// (minmax(0,1fr)) to ~0px, clipping the file name and icon to nothing. Match
+// the tracks to the columns actually rendered at each breakpoint: name + status
+// on mobile, the full set from `sm` up.
+const LIST_COLS =
+    'grid-cols-[28px_minmax(0,1fr)_44px] sm:grid-cols-[28px_minmax(0,1fr)_90px_110px_90px_44px]';
 
 function ListLayout({
     nodes,
