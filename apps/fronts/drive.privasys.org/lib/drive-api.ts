@@ -7,20 +7,31 @@
 // relay asserts the wallet-vouched sub (X-Privasys-Sub) toward the app, so
 // no bearer travels in the clear. Mirrors chat's lib/chat-service-api.ts.
 
-import type { SealedResponse, SealedSession } from '@privasys/auth';
+import type { SealedSession } from '@privasys/auth';
+import {
+    DriveError,
+    driveHostFromEnv,
+    json,
+    ok,
+    decodeError,
+    timed,
+    uploadFile,
+    uploadFileStreaming,
+    STREAM_THRESHOLD,
+    REQUEST_TIMEOUT_MS,
+    TRANSFER_TIMEOUT_MS
+} from '@privasys/drive-client';
+
+// The sealed-transport core and the file-upload helpers live in the shared
+// @privasys/drive-client lib, consumed by chat.privasys.org too so they never
+// drift. Re-exported here so this app's components keep importing them from
+// `../lib/drive-api` unchanged.
+export { DriveError, uploadFile, uploadFileStreaming, STREAM_THRESHOLD };
 
 /** Bare host of the Drive enclave backend (no scheme), or '' when unset. */
 export function driveHost(): string {
-    const raw = process.env.NEXT_PUBLIC_DRIVE_APP_HOST ?? '';
-    if (!raw) return '';
-    try {
-        return raw.includes('://') ? new URL(raw).host : raw;
-    } catch {
-        return raw;
-    }
+    return driveHostFromEnv(process.env.NEXT_PUBLIC_DRIVE_APP_HOST);
 }
-
-const decoder = new TextDecoder();
 
 export type NodeKind = 'folder' | 'file';
 
@@ -85,88 +96,6 @@ export interface SharedItem {
     scope: string;
     shared_by: string;
     size_bytes: number;
-}
-
-/** A Drive API error carrying the enclave's HTTP status + message. */
-export class DriveError extends Error {
-    status: number;
-    constructor(status: number, message: string) {
-        super(message);
-        this.status = status;
-        this.name = 'DriveError';
-    }
-}
-
-function decodeError(res: SealedResponse): DriveError {
-    // A reply without a numeric status is not an HTTP error but a sealed
-    // channel hiccup (typically the enclave session still settling right
-    // after a fresh ceremony) — name it, and mark it retryable.
-    if (typeof res.status !== 'number') {
-        return new DriveError(0, 'The sealed channel is not ready yet. Retrying usually fixes this.');
-    }
-    const text = res.body && res.body.byteLength ? decoder.decode(res.body) : '';
-    let msg = `HTTP ${res.status}`;
-    try {
-        const j = text ? (JSON.parse(text) as { error?: string; code?: string }) : null;
-        if (j?.error) msg = j.error;
-    } catch {
-        if (text) msg = text;
-    }
-    return new DriveError(res.status, msg);
-}
-
-function ok(res: SealedResponse): boolean {
-    return typeof res.status === 'number' && res.status >= 200 && res.status < 300;
-}
-
-// A sealed request to an unreachable enclave can otherwise hang forever
-// (the iframe RPC has no deadline of its own), leaving the UI silently
-// stuck. Cap every call so the failure surfaces and can be retried.
-const REQUEST_TIMEOUT_MS = 30_000;
-const TRANSFER_TIMEOUT_MS = 180_000; // uploads/downloads of larger files
-
-function timed(
-    session: SealedSession,
-    method: string,
-    path: string,
-    body: unknown,
-    ms: number
-): Promise<SealedResponse> {
-    return new Promise<SealedResponse>((resolve, reject) => {
-        const t = setTimeout(
-            () =>
-                reject(
-                    new DriveError(
-                        0,
-                        'The Drive enclave is not responding. It may be restarting or unreachable.'
-                    )
-                ),
-            ms
-        );
-        session.request(method, path, body).then(
-            (r) => {
-                clearTimeout(t);
-                resolve(r);
-            },
-            (e: unknown) => {
-                clearTimeout(t);
-                reject(e instanceof Error ? e : new Error(String(e)));
-            }
-        );
-    });
-}
-
-/** JSON request over the sealed session; throws DriveError on non-2xx. */
-async function json<T>(
-    session: SealedSession,
-    method: string,
-    path: string,
-    body?: unknown
-): Promise<T> {
-    const res = await timed(session, method, path, body, REQUEST_TIMEOUT_MS);
-    if (!ok(res)) throw decodeError(res);
-    const text = res.body && res.body.byteLength ? decoder.decode(res.body) : '';
-    return (text ? JSON.parse(text) : {}) as T;
 }
 
 // ---- Identity + workspace --------------------------------------------
@@ -273,92 +202,6 @@ export function createFolder(
         parent_id: parentID ?? '',
         name
     });
-}
-
-/** Upload a file's bytes (sealed). Small-file path (single request). */
-export async function uploadFile(
-    session: SealedSession,
-    tenantID: string,
-    parentID: string | null,
-    name: string,
-    mime: string,
-    bytes: Uint8Array
-): Promise<DriveNode> {
-    const qs = new URLSearchParams({ name });
-    if (mime) qs.set('mime', mime);
-    if (parentID) qs.set('parent_id', parentID);
-    const res = await timed(
-        session,
-        'POST',
-        `/v1/tenants/${tenantID}/files?${qs.toString()}`,
-        bytes,
-        TRANSFER_TIMEOUT_MS
-    );
-    if (!ok(res)) throw decodeError(res);
-    const text = res.body && res.body.byteLength ? decoder.decode(res.body) : '';
-    return JSON.parse(text) as DriveNode;
-}
-
-// Files above this go through the chunked upload session; below it, one
-// sealed request. Parts stay well under the transport's comfort zone.
-export const STREAM_THRESHOLD = 8 * 1024 * 1024;
-const PART_SIZE = 4 * 1024 * 1024;
-
-/**
- * Upload of any size with progress: small files in one sealed request,
- * larger ones as a chunked session (sequential sealed parts, finalized
- * through the same seal path server-side).
- */
-export async function uploadFileStreaming(
-    session: SealedSession,
-    tenantID: string,
-    parentID: string | null,
-    file: File,
-    onProgress?: (sentBytes: number, totalBytes: number) => void
-): Promise<DriveNode> {
-    if (file.size <= STREAM_THRESHOLD) {
-        onProgress?.(0, file.size);
-        const bytes = new Uint8Array(await file.arrayBuffer());
-        const node = await uploadFile(session, tenantID, parentID, file.name, file.type, bytes);
-        onProgress?.(file.size, file.size);
-        return node;
-    }
-    const created = await json<{ id: string }>(session, 'POST', `/v1/tenants/${tenantID}/uploads`, {
-        parent_id: parentID ?? '',
-        name: file.name,
-        mime: file.type,
-        size: file.size
-    });
-    try {
-        let sent = 0;
-        let index = 0;
-        while (sent < file.size) {
-            const slice = file.slice(sent, Math.min(sent + PART_SIZE, file.size));
-            const bytes = new Uint8Array(await slice.arrayBuffer());
-            const res = await timed(
-                session,
-                'PUT',
-                `/v1/tenants/${tenantID}/uploads/${created.id}/chunks/${index}`,
-                bytes,
-                TRANSFER_TIMEOUT_MS
-            );
-            if (!ok(res)) throw decodeError(res);
-            sent += bytes.byteLength;
-            index += 1;
-            onProgress?.(sent, file.size);
-        }
-        return await json<DriveNode>(
-            session,
-            'POST',
-            `/v1/tenants/${tenantID}/uploads/${created.id}/finalize`
-        );
-    } catch (e) {
-        // Best-effort cleanup of the staged session.
-        void session
-            .request('DELETE', `/v1/tenants/${tenantID}/uploads/${created.id}`)
-            .catch(() => undefined);
-        throw e;
-    }
 }
 
 /** Download a file's plaintext bytes (decrypted inside the enclave). */

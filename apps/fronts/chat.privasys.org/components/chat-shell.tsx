@@ -11,12 +11,15 @@ import { useDriveConversations } from '~/lib/use-drive-conversations';
 import { useChatDrive } from '~/lib/use-chat-drive';
 import {
     attachToConversation,
+    attachLargeFileToConversation,
     bytesToBase64,
     driveEnabled,
     finalizeConversation,
+    getConversation,
     type AttachIntent,
     type ProvenanceRef
 } from '~/lib/drive-chat-api';
+import { STREAM_THRESHOLD } from '@privasys/drive-client';
 import { fetchMemoryContext, mergeProvenance, retrieveContext } from '~/lib/drive-rag';
 import type { ChatMessage } from '~/lib/chat-stream';
 import type { AttachmentChip } from './composer';
@@ -30,9 +33,10 @@ import type { SealedSession } from '@privasys/auth';
 import { AppSidebar } from './app-sidebar';
 import { ChatPanel, type PendingReplay } from './chat-panel';
 import { SecurityView } from './security-view';
+import { KnowledgeView } from './knowledge-view';
 import { SignInGate } from './signin-view';
 
-type ShellView = 'chat' | 'security' | 'tools' | 'signin';
+type ShellView = 'chat' | 'security' | 'tools' | 'knowledge' | 'signin';
 
 type TransportState = 'ok' | 'reconnecting' | 'stale';
 
@@ -396,15 +400,22 @@ export function ChatShell({
             const chipId = `att-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
             const textual = isTextualFile(file.type, file.name);
             const small = file.size <= INLINE_THRESHOLD_BYTES;
-            // "session" small text files are read in full; everything else is
-            // indexed (looked up on demand).
-            const willIndex = !(intent === 'session' && textual && small);
+            // A "session" (use-in-this-chat) file must fit the model context
+            // budget (~32k tokens). Anything larger can't be inlined, so it
+            // falls back to a KNOWLEDGE file — indexed, chunked and looked up
+            // on demand rather than read in full (§8.7, decided 2026-07-19).
+            const sessionTooBig = intent === 'session' && !(textual && small);
+            const effectiveIntent: AttachIntent = sessionTooBig ? 'knowledge' : intent;
+            const willIndex = effectiveIntent === 'knowledge' || !(textual && small);
+            // Over the 8 MiB single-request cap → chunked upload into the
+            // conversation's files/ folder (indexed) instead of base64 attach.
+            const needsStreaming = file.size > STREAM_THRESHOLD;
             let key = driveConv.currentId ?? '__pending__';
             const chip: AttachmentChip = {
                 id: chipId,
                 name: file.name,
                 sizeBytes: file.size,
-                intent,
+                intent: effectiveIntent,
                 indexed: willIndex,
                 status: 'uploading'
             };
@@ -414,7 +425,11 @@ export function ChatShell({
                     setDriveNotice('Approve Drive access on your phone to attach files.')
                 );
                 if (!ensured) throw new Error('Drive is not connected.');
-                setDriveNotice(null);
+                setDriveNotice(
+                    sessionTooBig
+                        ? `“${file.name}” is large, so I’ve added it to your knowledge base and I’ll look up the relevant parts.`
+                        : null
+                );
                 const target = await driveConv.ensureDriveConversationId(
                     ensured.session,
                     ensured.tenantId,
@@ -432,17 +447,38 @@ export function ChatShell({
                         return { ...prev, [from]: src, [key]: dst };
                     });
                 }
-                const bytes = new Uint8Array(await file.arrayBuffer());
-                await attachToConversation(ensured.session, ensured.tenantId, target.driveId, {
-                    name: file.name,
-                    mime: file.type || 'application/octet-stream',
-                    contentBase64: bytesToBase64(bytes),
-                    intent
-                });
-                if (intent === 'session' && textual && small) {
-                    const list = sessionCtxRef.current.get(key) ?? [];
-                    list.push({ name: file.name, text: new TextDecoder().decode(bytes) });
-                    sessionCtxRef.current.set(key, list);
+                if (needsStreaming) {
+                    // Resolve the conversation's files/ folder and stream the
+                    // file into it in chunks (always a knowledge file).
+                    const detail = await getConversation(
+                        ensured.session,
+                        ensured.tenantId,
+                        target.driveId
+                    );
+                    const filesFolderId = (detail.conversation as { files_folder_id?: string })
+                        .files_folder_id;
+                    if (!filesFolderId) {
+                        throw new Error('Could not locate the conversation files folder.');
+                    }
+                    await attachLargeFileToConversation(
+                        ensured.session,
+                        ensured.tenantId,
+                        filesFolderId,
+                        file
+                    );
+                } else {
+                    const bytes = new Uint8Array(await file.arrayBuffer());
+                    await attachToConversation(ensured.session, ensured.tenantId, target.driveId, {
+                        name: file.name,
+                        mime: file.type || 'application/octet-stream',
+                        contentBase64: bytesToBase64(bytes),
+                        intent: effectiveIntent
+                    });
+                    if (effectiveIntent === 'session' && textual && small) {
+                        const list = sessionCtxRef.current.get(key) ?? [];
+                        list.push({ name: file.name, text: new TextDecoder().decode(bytes) });
+                        sessionCtxRef.current.set(key, list);
+                    }
                 }
                 setAttachmentsByConv((prev) => ({
                     ...prev,
@@ -579,6 +615,7 @@ export function ChatShell({
                 onRenameConversation={conv.rename}
                 onShowSecurity={() => setView('security')}
                 onShowTools={() => setView('tools')}
+                onShowKnowledge={useDrive ? () => setView('knowledge') : undefined}
                 onShowSignIn={() => setView('signin')}
             />
             <div className="flex min-w-0 flex-1 flex-col">
@@ -637,6 +674,18 @@ export function ChatShell({
 
                 {view === 'security' && instance.endpoint && session && (
                     <SecurityView instance={instance} onStatus={setAttestationStatus} />
+                )}
+                {view === 'knowledge' && session && (
+                    <KnowledgeView
+                        session={drive.session}
+                        tenantId={drive.tenantId}
+                        onConnect={async () => {
+                            await drive.ensureSession(() =>
+                                setDriveNotice('Approve Drive access on your phone to connect.')
+                            );
+                            setDriveNotice(null);
+                        }}
+                    />
                 )}
                 {view === 'tools' && session && (
                     <ToolsView
@@ -710,6 +759,8 @@ function viewTitle(view: ShellView, fallback: string): string {
             return 'Security';
         case 'tools':
             return 'AI Tools';
+        case 'knowledge':
+            return 'Knowledge';
         case 'signin':
             return 'Sign in';
         default:

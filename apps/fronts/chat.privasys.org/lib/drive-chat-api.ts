@@ -10,17 +10,29 @@
 // conventions in drive.privasys.org/lib/drive-api.ts and this app's own
 // lib/chat-service-api.ts.
 
-import type { SealedResponse, SealedSession } from '@privasys/auth';
+import type { SealedSession } from '@privasys/auth';
+import {
+    DriveError,
+    bytesToBase64,
+    driveHostFromEnv,
+    json,
+    ok,
+    decodeError,
+    timed,
+    uploadFileStreaming,
+    REQUEST_TIMEOUT_MS,
+    TRANSFER_TIMEOUT_MS
+} from '@privasys/drive-client';
+
+// The sealed-transport core (DriveError, timed, json, ok, timeouts) and the
+// upload helpers live in the shared @privasys/drive-client lib so they never
+// drift from drive.privasys.org. This module keeps only the CHAT-specific
+// Drive surface: conversations, attachment intents, memory + RAG tools.
+export { DriveError, bytesToBase64 };
 
 /** Bare host of the Drive enclave backend (no scheme), or '' when unset. */
 export function driveHost(): string {
-    const raw = process.env.NEXT_PUBLIC_DRIVE_APP_HOST ?? '';
-    if (!raw) return '';
-    try {
-        return raw.includes('://') ? new URL(raw).host : raw;
-    } catch {
-        return raw;
-    }
+    return driveHostFromEnv(process.env.NEXT_PUBLIC_DRIVE_APP_HOST);
 }
 
 /** True when this deployment is wired to a Drive enclave. Gates every
@@ -29,8 +41,6 @@ export function driveHost(): string {
 export function driveEnabled(): boolean {
     return driveHost() !== '';
 }
-
-const decoder = new TextDecoder();
 
 // ---- Shared identity/workspace types (subset mirrored from drive-api) --
 
@@ -133,91 +143,6 @@ export interface SemanticHit {
     score: number;
     char_start?: number;
     char_end?: number;
-}
-
-// ---- Error handling + timed sealed requests ---------------------------
-
-/** A Drive API error carrying the enclave's HTTP status + message. */
-export class DriveError extends Error {
-    status: number;
-    constructor(status: number, message: string) {
-        super(message);
-        this.status = status;
-        this.name = 'DriveError';
-    }
-}
-
-function decodeError(res: SealedResponse): DriveError {
-    // A reply without a numeric status is not an HTTP error but a sealed
-    // channel hiccup (typically the enclave session still settling right
-    // after a fresh ceremony) - name it, and mark it retryable.
-    if (typeof res.status !== 'number') {
-        return new DriveError(0, 'The sealed channel is not ready yet. Retrying usually fixes this.');
-    }
-    const text = res.body && res.body.byteLength ? decoder.decode(res.body) : '';
-    let msg = `HTTP ${res.status}`;
-    try {
-        const j = text ? (JSON.parse(text) as { error?: string; code?: string }) : null;
-        if (j?.error) msg = j.error;
-    } catch {
-        if (text) msg = text;
-    }
-    return new DriveError(res.status, msg);
-}
-
-function ok(res: SealedResponse): boolean {
-    return typeof res.status === 'number' && res.status >= 200 && res.status < 300;
-}
-
-// A sealed request to an unreachable enclave can otherwise hang forever
-// (the iframe RPC has no deadline of its own), leaving the UI silently
-// stuck. Cap every call so the failure surfaces and can be retried.
-const REQUEST_TIMEOUT_MS = 30_000;
-const TRANSFER_TIMEOUT_MS = 180_000; // uploads/downloads of larger files
-
-function timed(
-    session: SealedSession,
-    method: string,
-    path: string,
-    body: unknown,
-    ms: number
-): Promise<SealedResponse> {
-    return new Promise<SealedResponse>((resolve, reject) => {
-        const t = setTimeout(
-            () =>
-                reject(
-                    new DriveError(
-                        0,
-                        'The Drive enclave is not responding. It may be restarting or unreachable.'
-                    )
-                ),
-            ms
-        );
-        session.request(method, path, body).then(
-            (r) => {
-                clearTimeout(t);
-                resolve(r);
-            },
-            (e: unknown) => {
-                clearTimeout(t);
-                reject(e instanceof Error ? e : new Error(String(e)));
-            }
-        );
-    });
-}
-
-/** JSON request over the sealed session; throws DriveError on non-2xx. */
-async function json<T>(
-    session: SealedSession,
-    method: string,
-    path: string,
-    body?: unknown,
-    ms: number = REQUEST_TIMEOUT_MS
-): Promise<T> {
-    const res = await timed(session, method, path, body, ms);
-    if (!ok(res)) throw decodeError(res);
-    const text = res.body && res.body.byteLength ? decoder.decode(res.body) : '';
-    return (text ? JSON.parse(text) : {}) as T;
 }
 
 // ---- Identity + workspace ---------------------------------------------
@@ -334,6 +259,60 @@ export function finalizeConversation(
     );
 }
 
+// ---- AI scope (what the assistant may draw on) ------------------------
+
+/** One directory the assistant is explicitly allowed to search (a grant). */
+export interface AIScopeEntry {
+    grant_id: string;
+    node_id: string;
+    name: string;
+}
+
+/** The tenant's assistant scope: explicit directory grants plus the
+ *  always-scoped defaults (Memory/), and whether whole-Drive scope is on. */
+export interface AIScopeView {
+    scoped: AIScopeEntry[];
+    always_scoped: string[];
+    all_scoped: boolean;
+}
+
+export async function listAIScope(session: SealedSession, tenantID: string): Promise<AIScopeView> {
+    const data = await json<Partial<AIScopeView>>(session, 'GET', `/v1/tenants/${tenantID}/ai-scope`);
+    return {
+        scoped: data.scoped ?? [],
+        always_scoped: data.always_scoped ?? [],
+        all_scoped: data.all_scoped ?? false
+    };
+}
+
+/** Grant the assistant read access to a directory subtree ("Enable for AI"). */
+export function enableAIScope(
+    session: SealedSession,
+    tenantID: string,
+    nodeID: string
+): Promise<{ grant_id: string; already?: boolean }> {
+    return json(session, 'POST', `/v1/tenants/${tenantID}/nodes/${nodeID}/ai-scope`);
+}
+
+/** Revoke the assistant's access to a directory subtree. */
+export function disableAIScope(
+    session: SealedSession,
+    tenantID: string,
+    nodeID: string
+): Promise<{ disabled: boolean }> {
+    return json(session, 'DELETE', `/v1/tenants/${tenantID}/nodes/${nodeID}/ai-scope`);
+}
+
+/** Enable/disable whole-Drive assistant scope (every directory, including
+ *  ones added later — the scope is recomputed per search). */
+export function setEntireDriveAIScope(
+    session: SealedSession,
+    tenantID: string,
+    on: boolean
+): Promise<unknown> {
+    return json(session, on ? 'POST' : 'DELETE', `/v1/tenants/${tenantID}/ai-scope/all`);
+}
+
 // ---- Memory + agent RAG tools -----------------------------------------
 
 export function getMemory(session: SealedSession, tenantID: string): Promise<MemoryView> {
@@ -418,19 +397,26 @@ export async function readFile(
     return data.text ?? data.content ?? '';
 }
 
+/**
+ * Attach a LARGE file (over the 8 MiB single-request `attach` cap) to a
+ * conversation by streaming it into the conversation's `files/` folder via
+ * the chunked upload path. The file is uploaded indexed (knowledge intent) —
+ * a session file can never exceed the model context budget, so large files
+ * are always knowledge (§8.7, decided 2026-07-19). Returns the created node.
+ */
+export function attachLargeFileToConversation(
+    session: SealedSession,
+    tenantID: string,
+    filesFolderID: string,
+    file: File,
+    onProgress?: (sentBytes: number, totalBytes: number) => void
+): Promise<DriveNodeRef> {
+    return uploadFileStreaming<DriveNodeRef>(session, tenantID, filesFolderID, file, onProgress);
+}
+
 // ---- helpers ----------------------------------------------------------
 
 /** Today's date as YYYY-MM-DD in the caller's locale-neutral calendar. */
 export function todayISODate(): string {
     return new Date().toISOString().slice(0, 10);
-}
-
-/** Base64-encode raw bytes (browser-safe, chunked to avoid arg limits). */
-export function bytesToBase64(bytes: Uint8Array): string {
-    let binary = '';
-    const chunk = 0x8000;
-    for (let i = 0; i < bytes.length; i += chunk) {
-        binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
-    }
-    return btoa(binary);
 }

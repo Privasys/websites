@@ -1,0 +1,7 @@
+{
+    "name": "@privasys/drive-client",
+    "$schema": "../../node_modules/nx/schemas/project-schema.json",
+    "sourceRoot": "libs/drive-client/src",
+    "projectType": "library",
+    "tags": ["scope:shared"]
+}

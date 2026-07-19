@@ -9,7 +9,7 @@ try {
 const nextConfig = {
     nx: { svgr: false },
     output: 'standalone',
-    transpilePackages: ['@privasys/ui', '@privasys/attestation-view'],
+    transpilePackages: ['@privasys/ui', '@privasys/attestation-view', '@privasys/drive-client'],
     trailingSlash: true,
     poweredByHeader: false,
     env: {
