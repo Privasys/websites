@@ -494,10 +494,19 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
                 // `rejected:enc-changed`) — keep it so the stale banner can
                 // say WHAT changed instead of a generic reconnect prompt.
                 if (msg.includes('rejected')) {
+                    // Log the enclave's reason: without this the console shows
+                    // NOTHING for the primary appHost's reject (only the
+                    // best-effort chat-service/drive frames log), which made
+                    // the 2026-07-19 sealed-401 spiral undiagnosable from the
+                    // browser.
+                    console.warn(`[chat-auth] sealed session for ${appHost} rejected:`, msg);
                     setStaleReason(parseStaleReason(msg));
                     return 'rejected';
                 }
-                if (msg.includes('no-voucher')) return 'no-voucher';
+                if (msg.includes('no-voucher')) {
+                    console.warn(`[chat-auth] no voucher for ${appHost} — interactive sign-in needed`);
+                    return 'no-voucher';
+                }
                 console.log('[chat-auth] sealed reestablish failed:', msg);
                 return 'unavailable';
             }

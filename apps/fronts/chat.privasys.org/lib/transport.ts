@@ -32,5 +32,18 @@ export function isTransportError(message: string): boolean {
     if (/secure session required|sign in to establish/i.test(message)) {
         return true;
     }
+    // APP-LEVEL auth rejections are not transport failures. The enclave's
+    // inference gate answers 401 {"error":"authentication required"} /
+    // "invalid credential" when the CALLER is unauthenticated — the sealed
+    // session itself is healthy, so tearing it down and retrying can never
+    // succeed. Treating these as transport put the UI in a silent
+    // reconnect spiral (rebuild → same 401 → rebuild …) that ended with the
+    // prompt swallowed and no visible error (2026-07-19, confidential-ai
+    // pre-v0.5.2 ignoring the relay-asserted sub). Session-level 401s keep
+    // the reconnect flow: their bodies say "unknown or expired session" /
+    // "aead open" / "replay", none of which match here.
+    if (/authentication required|invalid credential/i.test(message)) {
+        return false;
+    }
     return /\b401\b/.test(message);
 }
