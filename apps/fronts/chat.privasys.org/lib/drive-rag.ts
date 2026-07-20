@@ -18,13 +18,13 @@
 // actually use is accumulated so the conversation can be finalised into a
 // cited digest.
 //
-// TODO(server-side, platform/confidential-ai): move this retrieval into the
-// agent loop. Give the inference enclave a Drive tool-grant (mirroring the
-// chat-service X-Privasys-Tool-Grant flow) so it can call
-// /tools/search_semantic, /tools/get_folder_tree, /tools/read_section and
-// /tools/read_file directly, and emit the same provenance back to the front
-// via the reproducibility/tool_result stream. Then this module becomes a
-// no-op fallback for deployments without the grant.
+// STATUS (2026-07-19): the server-side hookup has landed. When the inference
+// enclave advertises the built-in `drive__*` tools (DRIVE_MCP_URL configured
+// on confidential-ai), the agent calls Drive's RAG tools itself under the
+// user's identity (Assistant credential + X-Privasys-On-Behalf-Of), and this
+// CLIENT-SIDE module STANDS DOWN — chat-shell only wires buildAugmentation
+// when the enclave does NOT advertise Drive tools. So this is now the
+// FALLBACK path for deployments whose inference enclave has no Drive grant.
 
 import type { SealedSession } from '@privasys/auth';
 import type { ChatMessage } from './chat-stream';
