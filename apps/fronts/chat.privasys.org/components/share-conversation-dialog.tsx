@@ -26,12 +26,16 @@ export function ShareConversationDialog({
     tenantId,
     conversationId,
     title,
+    instanceId,
     onClose
 }: {
     session: SealedSession;
     tenantId: string;
     conversationId: string;
     title: string;
+    /** The current inference instance, so a fork can drop the recipient into
+     *  the same instance from the /shared page. */
+    instanceId?: string;
     onClose: () => void;
 }) {
     const [mode, setMode] = useState<ShareMode>('open');
@@ -44,7 +48,7 @@ export function ShareConversationDialog({
     const [requests, setRequests] = useState<ShareRequest[]>([]);
     const [deciding, setDeciding] = useState<string | null>(null);
 
-    const url = link ? shareLinkURL(link) : '';
+    const url = link ? shareLinkURL(link, { instanceId }) : '';
 
     const refreshRequests = useCallback(async () => {
         try {

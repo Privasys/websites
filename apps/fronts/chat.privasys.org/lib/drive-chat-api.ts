@@ -421,10 +421,11 @@ export function attachLargeFileToConversation(
 //   - 'open'       : anyone with a Wallet and the link gets read on sign-in.
 //   - 'restricted' : the visitor must present the required attributes and the
 //                    owner approves each request before a read grant is cut.
-// The recipient lands on the Drive front's existing /l page (resolve + redeem
-// + attribute prompt), which grants read on the conversation folder — from
-// there they can read the transcript and fork it into their own drive. We
-// deliberately do not expose write/share scope: recipients are read-only.
+// The recipient lands on the chat front's own /shared route (resolve + redeem
+// + attribute prompt), which grants read on the conversation folder and then
+// renders the transcript as a read-only chat they can fork into their own
+// drive. We deliberately do not expose write/share scope: recipients are
+// read-only.
 
 export type ShareMode = 'open' | 'restricted';
 
@@ -508,24 +509,96 @@ export function decideShareRequest(
     );
 }
 
-/** The Drive front web origin that hosts the /l recipient landing (distinct
- *  from the sealed Drive service host). Configured, with a sane default. */
-export function driveWebOrigin(): string {
-    return (process.env.NEXT_PUBLIC_DRIVE_WEB_ORIGIN || 'https://drive.privasys.org').replace(
-        /\/+$/,
-        ''
-    );
+/**
+ * Build the recipient URL for a share link. The recipient lands on the chat
+ * front's own /shared route, which renders the conversation read-only. The
+ * secret rides in the fragment so it never reaches a server log; the /shared
+ * page reads it there and redeems it. `instanceId` (optional) lets the fork
+ * action send the recipient into the same inference instance. `origin`
+ * defaults to the current page origin (sharer and recipient share a front).
+ */
+export function shareLinkURL(
+    link: CreatedShareLink,
+    opts?: { origin?: string; instanceId?: string }
+): string {
+    const base = (
+        opts?.origin ?? (typeof window !== 'undefined' ? window.location.origin : '')
+    ).replace(/\/+$/, '');
+    const q = opts?.instanceId ? `?i=${encodeURIComponent(opts.instanceId)}` : '';
+    return `${base}/shared/${encodeURIComponent(link.id)}${q}#${encodeURIComponent(link.secret)}`;
+}
+
+// ---- Recipient side (resolve, redeem, fork) ---------------------------
+
+export type NodeKind = 'folder' | 'file';
+
+/** A share link's target metadata, fetched with the secret. `already_granted`
+ *  short-circuits redemption; `request_status` tracks a restricted request. */
+export interface ResolvedLink {
+    link_id: string;
+    mode: ShareMode;
+    scope: string[];
+    required_attributes?: string[];
+    tenant_id: string;
+    owner_name: string;
+    already_granted: boolean;
+    request_status: string; // '' | 'pending' | 'approved' | 'denied'
+    node: { id: string; name: string; kind: NodeKind; size_bytes: number };
+}
+
+/** Outcome of redeeming a link: `granted` (open, or approved restricted) or
+ *  `pending` (restricted, awaiting the owner's decision). */
+export interface RedeemResult {
+    status: 'granted' | 'pending';
+    tenant_id: string;
+    node_id: string;
+    name: string;
+    kind: NodeKind;
+    request_id?: string;
+}
+
+/** Recipient: fetch a link's target metadata (requires the secret). */
+export function resolveLink(
+    session: SealedSession,
+    linkID: string,
+    secret: string
+): Promise<ResolvedLink> {
+    return json<ResolvedLink>(session, 'POST', `/v1/links/${linkID}/resolve`, { secret });
+}
+
+/** Recipient: redeem a link. Open grants read immediately; restricted opens a
+ *  pending request (attributes presented here) for the owner to approve. */
+export function redeemLink(
+    session: SealedSession,
+    linkID: string,
+    secret: string,
+    attributes?: Record<string, string>
+): Promise<RedeemResult> {
+    return json<RedeemResult>(session, 'POST', `/v1/links/${linkID}/redeem`, { secret, attributes });
 }
 
 /**
- * Build the recipient URL for a share link. The secret rides in the fragment
- * (never sent to a server) and the Drive front's /l page redeems it: the
- * visitor signs in with their Wallet, presents any required attributes, and
- * is granted read on the conversation folder.
+ * Fork a conversation the caller can read (their own, or one shared to them)
+ * into a brand-new conversation in `myTenantID`. Cross-tenant CEKs cannot be
+ * copied, so a fork re-creates the conversation from its transcript: we read
+ * the source turns and re-append them under a fresh conversation the recipient
+ * owns. Attachments are not copied (the transcript is the shareable content).
+ * Returns the new conversation id in the caller's own drive.
  */
-export function shareLinkURL(link: CreatedShareLink, driveOrigin?: string): string {
-    const base = (driveOrigin ?? driveWebOrigin()).replace(/\/+$/, '');
-    return `${base}/l?id=${encodeURIComponent(link.id)}#${encodeURIComponent(link.secret)}`;
+export async function forkConversation(
+    session: SealedSession,
+    sourceTenantID: string,
+    sourceConversationID: string,
+    myTenantID: string,
+    title: string
+): Promise<string> {
+    const detail = await getConversation(session, sourceTenantID, sourceConversationID);
+    const created = await createConversation(session, myTenantID, title, todayISODate());
+    const lines = detail.transcript.split('\n').filter((l) => l.trim() !== '');
+    for (const line of lines) {
+        await appendTurn(session, myTenantID, created.conversation_id, line);
+    }
+    return created.conversation_id;
 }
 
 // ---- helpers ----------------------------------------------------------

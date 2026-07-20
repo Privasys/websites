@@ -772,6 +772,7 @@ export function ChatShell({
                             tenantId={drive.tenantId}
                             conversationId={target.driveConversationId}
                             title={target.title}
+                            instanceId={instance.id}
                             onClose={() => setShareTargetId(null)}
                         />
                     );
