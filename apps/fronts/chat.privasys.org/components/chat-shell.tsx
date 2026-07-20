@@ -328,6 +328,14 @@ export function ChatShell({
     // flag is a stable build-time value, so both conversation hooks are always
     // called (hooks-order safe) and we simply select which one drives the UI.
     const useDrive = driveEnabled();
+    // When the inference enclave advertises the built-in Drive tools (§8.7
+    // RAG-in-enclave), the model retrieves from Drive itself over the sealed
+    // tool-grant. In that case the CLIENT-side retrieval (drive-rag) stands
+    // down to a fallback so we don't retrieve twice; memory + search happen
+    // inside the enclave with provenance in the tool_result stream.
+    const enclaveHasDriveRAG = (instance.available_tools ?? []).some((t) =>
+        t.name?.startsWith('drive__')
+    );
     const drive = useChatDrive();
     const convModelLabel = model ? modelLabel(model) : undefined;
     const localConv = useConversations({ instanceId: instance.id, sub, modelLabel: convModelLabel });
@@ -742,7 +750,7 @@ export function ChatShell({
                         staleReason={staleReason}
                         onStreamError={onTransportError}
                         onReconnect={() => setView('signin')}
-                        buildAugmentation={useDrive ? buildAugmentation : undefined}
+                        buildAugmentation={useDrive && !enclaveHasDriveRAG ? buildAugmentation : undefined}
                         attachEnabled={useDrive && !!session}
                         attachments={attachmentsByConv[conv.currentId ?? '__pending__'] ?? []}
                         onAttachFile={useDrive ? onAttachFile : undefined}
