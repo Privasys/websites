@@ -67,6 +67,7 @@ export default function SharedConversationPage({
     const [messages, setMessages] = useState<PersistedMessage[]>([]);
     const [forkedId, setForkedId] = useState<string | null>(null);
     const [forking, setForking] = useState(false);
+    const [attrValues, setAttrValues] = useState<Record<string, string>>({});
 
     // The secret and the optional instance hint live in the URL, read once on
     // the client (the fragment never reaches the server).
@@ -140,13 +141,18 @@ export default function SharedConversationPage({
     );
 
     const doRedeem = useCallback(
-        async (r: ResolvedLink) => {
+        async (r: ResolvedLink, attrs?: Record<string, string>) => {
             if (!drive.session) return;
-            const res = await redeemLink(drive.session, linkId, secret ?? '');
-            if (res.status === 'granted') {
-                await loadTranscript(r);
-            } else {
-                setPhase('pending');
+            try {
+                const res = await redeemLink(drive.session, linkId, secret ?? '', attrs);
+                if (res.status === 'granted') {
+                    await loadTranscript(r);
+                } else {
+                    setPhase('pending');
+                }
+            } catch (e) {
+                setError(e instanceof Error ? e.message : 'Could not request access.');
+                setPhase('attributes');
             }
         },
         [drive.session, linkId, secret, loadTranscript]
@@ -253,19 +259,41 @@ export default function SharedConversationPage({
     }
 
     if (phase === 'attributes' && resolved) {
+        const required = resolved.required_attributes ?? [];
+        const allPresented = required.every((k) => (attrValues[k] ?? '').trim() !== '');
         return (
             <Centered
                 title="This conversation is shared privately."
                 detail={
-                    resolved.required_attributes?.length
-                        ? `The owner may check: ${resolved.required_attributes.join(', ')}.`
-                        : 'The owner approves each viewer.'
+                    required.length
+                        ? 'Present the details the owner asked for. The owner then approves your request; nothing you enter is stored by the drive.'
+                        : `${resolved.owner_name || 'The owner'} approves each viewer. Send a request to read it.`
                 }
             >
+                {error && <ErrorBanner message={error} />}
+                {required.length > 0 && (
+                    <div className="flex w-full max-w-xs flex-col gap-2">
+                        {required.map((k) => (
+                            <label key={k} className="text-left">
+                                <span className="mb-1 block text-xs text-[var(--color-text-secondary)]">
+                                    {k}
+                                </span>
+                                <input
+                                    value={attrValues[k] ?? ''}
+                                    onChange={(e) =>
+                                        setAttrValues((v) => ({ ...v, [k]: e.target.value }))
+                                    }
+                                    className="w-full rounded-md border border-[var(--color-border-dark)] bg-transparent px-2 py-1.5 text-sm outline-none focus:border-[var(--color-primary-blue)]"
+                                />
+                            </label>
+                        ))}
+                    </div>
+                )}
                 <button
                     type="button"
-                    onClick={() => resolved && void doRedeem(resolved)}
-                    className="rounded-full bg-[var(--color-primary-blue)] px-6 py-2.5 text-sm font-semibold text-white hover:opacity-90"
+                    disabled={!allPresented}
+                    onClick={() => void doRedeem(resolved, required.length ? attrValues : undefined)}
+                    className="rounded-full bg-[var(--color-primary-blue)] px-6 py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60"
                 >
                     Request access
                 </button>
