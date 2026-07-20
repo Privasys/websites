@@ -414,6 +414,120 @@ export function attachLargeFileToConversation(
     return uploadFileStreaming<DriveNodeRef>(session, tenantID, filesFolderID, file, onProgress);
 }
 
+// ---- Sharing (read-only conversation links) ---------------------------
+//
+// A conversation is a Drive folder, so sharing one is just minting a share
+// link on that folder node. Two modes (§7.6 sharing model):
+//   - 'open'       : anyone with a Wallet and the link gets read on sign-in.
+//   - 'restricted' : the visitor must present the required attributes and the
+//                    owner approves each request before a read grant is cut.
+// The recipient lands on the Drive front's existing /l page (resolve + redeem
+// + attribute prompt), which grants read on the conversation folder — from
+// there they can read the transcript and fork it into their own drive. We
+// deliberately do not expose write/share scope: recipients are read-only.
+
+export type ShareMode = 'open' | 'restricted';
+
+/** A freshly minted share link. `secret` is returned exactly once — it rides
+ *  in the URL fragment and is never persisted server-side in the clear. */
+export interface CreatedShareLink {
+    id: string;
+    secret: string;
+    mode: ShareMode;
+    scope: string[];
+    node_id: string;
+    required_attributes?: string[];
+    expires_at?: string;
+}
+
+/** A pending restricted-link access request awaiting the owner's decision. */
+export interface ShareRequest {
+    id: string;
+    node_id: string;
+    node_name: string;
+    requester_sub: string;
+    attributes: Record<string, string>;
+    scope: string[];
+    status: string;
+    created_at: string;
+}
+
+/**
+ * Mint a read-only share link on a conversation. `open` grants read to anyone
+ * with a Wallet who opens the link; `restricted` gates on `requiredAttributes`
+ * and holds each visitor as a pending request until the owner approves. The
+ * scope is always read — a shared conversation is never writable by the
+ * recipient (they fork it to make it their own).
+ */
+export function shareConversation(
+    session: SealedSession,
+    tenantID: string,
+    conversationID: string,
+    opts: { mode: ShareMode; requiredAttributes?: string[]; expiresUnix?: number; label?: string }
+): Promise<CreatedShareLink> {
+    return json<CreatedShareLink>(
+        session,
+        'POST',
+        `/v1/tenants/${tenantID}/nodes/${conversationID}/links`,
+        {
+            mode: opts.mode,
+            scope: ['read'],
+            required_attributes: opts.mode === 'restricted' ? opts.requiredAttributes ?? [] : undefined,
+            expires_unix: opts.expiresUnix,
+            label: opts.label
+        }
+    );
+}
+
+/** Owner: list restricted-link access requests (default pending only). */
+export async function listShareRequests(
+    session: SealedSession,
+    tenantID: string,
+    status = 'pending'
+): Promise<ShareRequest[]> {
+    const data = await json<{ requests: ShareRequest[] }>(
+        session,
+        'GET',
+        `/v1/tenants/${tenantID}/link-requests?status=${encodeURIComponent(status)}`
+    );
+    return data.requests ?? [];
+}
+
+/** Owner: approve or deny a pending restricted-link request. Approval cuts the
+ *  requester's read grant; either decision notifies their wallet. */
+export function decideShareRequest(
+    session: SealedSession,
+    tenantID: string,
+    requestID: string,
+    decision: 'approve' | 'deny'
+): Promise<{ status: string }> {
+    return json(
+        session,
+        'POST',
+        `/v1/tenants/${tenantID}/link-requests/${requestID}/${decision}`
+    );
+}
+
+/** The Drive front web origin that hosts the /l recipient landing (distinct
+ *  from the sealed Drive service host). Configured, with a sane default. */
+export function driveWebOrigin(): string {
+    return (process.env.NEXT_PUBLIC_DRIVE_WEB_ORIGIN || 'https://drive.privasys.org').replace(
+        /\/+$/,
+        ''
+    );
+}
+
+/**
+ * Build the recipient URL for a share link. The secret rides in the fragment
+ * (never sent to a server) and the Drive front's /l page redeems it: the
+ * visitor signs in with their Wallet, presents any required attributes, and
+ * is granted read on the conversation folder.
+ */
+export function shareLinkURL(link: CreatedShareLink, driveOrigin?: string): string {
+    const base = (driveOrigin ?? driveWebOrigin()).replace(/\/+$/, '');
+    return `${base}/l?id=${encodeURIComponent(link.id)}#${encodeURIComponent(link.secret)}`;
+}
+
 // ---- helpers ----------------------------------------------------------
 
 /** Today's date as YYYY-MM-DD in the caller's locale-neutral calendar. */
