@@ -28,6 +28,7 @@ export function AppSidebar({
     onSelectConversation,
     onDeleteConversation,
     onRenameConversation,
+    onShareConversation,
     onShowSecurity,
     onShowTools,
     onShowKnowledge,
@@ -44,6 +45,9 @@ export function AppSidebar({
     onSelectConversation: (id: string) => void;
     onDeleteConversation: (id: string) => void;
     onRenameConversation: (id: string, title: string) => void;
+    /** Share a conversation read-only. Only wired when Drive is on; the row
+     *  hides the action until the conversation has synced to Drive. */
+    onShareConversation?: (id: string) => void;
     onShowSecurity: () => void;
     onShowTools?: () => void;
     /** Open the assistant Knowledge (Drive AI-scope) view. Only shown when
@@ -116,6 +120,11 @@ export function AppSidebar({
                                 onSelect={() => onSelectConversation(c.id)}
                                 onDelete={() => onDeleteConversation(c.id)}
                                 onRename={(t) => onRenameConversation(c.id, t)}
+                                onShare={
+                                    onShareConversation && c.driveConversationId
+                                        ? () => onShareConversation(c.id)
+                                        : undefined
+                                }
                             />
                         ))}
                     </ul>
@@ -359,13 +368,15 @@ function ConversationRow({
     active,
     onSelect,
     onDelete,
-    onRename
+    onRename,
+    onShare
 }: {
     conversation: Conversation;
     active: boolean;
     onSelect: () => void;
     onDelete: () => void;
     onRename: (title: string) => void;
+    onShare?: () => void;
 }) {
     const [editing, setEditing] = useState(false);
     const [draft, setDraft] = useState(conversation.title);
@@ -416,6 +427,16 @@ function ConversationRow({
             )}
             {!editing && (
                 <span className="ml-1 hidden shrink-0 items-center gap-0.5 group-hover:inline-flex">
+                    {onShare && (
+                        <button
+                            type="button"
+                            onClick={onShare}
+                            title="Share"
+                            className="rounded p-1 text-[var(--color-text-muted)] hover:text-[var(--color-primary-blue)]"
+                        >
+                            <ShareIcon />
+                        </button>
+                    )}
                     <button
                         type="button"
                         onClick={() => setEditing(true)}
@@ -457,6 +478,17 @@ function TrashIcon() {
             <path d="M3 6h18" />
             <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
             <path d="M19 6 17.5 20a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2L5 6" />
+        </svg>
+    );
+}
+
+function ShareIcon() {
+    return (
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="18" cy="5" r="3" />
+            <circle cx="6" cy="12" r="3" />
+            <circle cx="18" cy="19" r="3" />
+            <path d="m8.6 13.5 6.8 4M15.4 6.5l-6.8 4" />
         </svg>
     );
 }

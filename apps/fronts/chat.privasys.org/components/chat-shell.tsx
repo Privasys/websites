@@ -31,6 +31,7 @@ import { probeInstanceHealth } from '~/lib/instance-api';
 import { isTransportError } from '~/lib/transport';
 import type { SealedSession } from '@privasys/auth';
 import { AppSidebar } from './app-sidebar';
+import { ShareConversationDialog } from './share-conversation-dialog';
 import { ChatPanel, type PendingReplay } from './chat-panel';
 import { SecurityView } from './security-view';
 import { KnowledgeView } from './knowledge-view';
@@ -359,6 +360,7 @@ export function ChatShell({
     const [attachmentsByConv, setAttachmentsByConv] = useState<Record<string, AttachmentChip[]>>({});
     const [driveNotice, setDriveNotice] = useState<string | null>(null);
     const [finalizing, setFinalizing] = useState(false);
+    const [shareTargetId, setShareTargetId] = useState<string | null>(null);
 
     const addProvenance = useCallback((key: string, refs: ProvenanceRef[]) => {
         if (!refs.length) return;
@@ -621,6 +623,7 @@ export function ChatShell({
                 }}
                 onDeleteConversation={conv.remove}
                 onRenameConversation={conv.rename}
+                onShareConversation={useDrive ? setShareTargetId : undefined}
                 onShowSecurity={() => setView('security')}
                 onShowTools={() => setView('tools')}
                 onShowKnowledge={useDrive ? () => setView('knowledge') : undefined}
@@ -757,6 +760,22 @@ export function ChatShell({
                     />
                 )}
             </div>
+            {shareTargetId &&
+                drive.session &&
+                drive.tenantId &&
+                (() => {
+                    const target = conv.conversations.find((c) => c.id === shareTargetId);
+                    if (!target?.driveConversationId) return null;
+                    return (
+                        <ShareConversationDialog
+                            session={drive.session}
+                            tenantId={drive.tenantId}
+                            conversationId={target.driveConversationId}
+                            title={target.title}
+                            onClose={() => setShareTargetId(null)}
+                        />
+                    );
+                })()}
         </div>
     );
 }
