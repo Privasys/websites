@@ -129,9 +129,16 @@ export default function AppDetailPage() {
     // Poll every 5s while app is in a transitional state (SSE fallback)
     useEffect(() => {
         const transitional = app && ['building', 'deploying', 'submitted', 'under_review'].includes(app.status);
-        // Also poll when any deployment is in "starting" status (container initialising)
-        const hasStartingDeploy = deployments?.some(d => d.status === 'starting' || d.status === 'deploying');
-        if (!transitional && !hasStartingDeploy) return;
+        // Also poll while any deployment is still settling: initialising
+        // (starting/deploying), OR deployed (active) but its readiness probe
+        // has not reported yet — container_state unknown ("Not yet probed"),
+        // pulling, or auto-redeploying. Without the container_state case the
+        // status stuck at "Not yet probed" until a manual refetch (tab change).
+        const settling = deployments?.some(d =>
+            d.status === 'starting' || d.status === 'deploying' ||
+            (d.status === 'active' && !!d.container_state && ['unknown', 'pulling', 'missing'].includes(d.container_state))
+        );
+        if (!transitional && !settling) return;
         const interval = setInterval(load, 5000);
         return () => clearInterval(interval);
     }, [app?.status, deployments, load]);
