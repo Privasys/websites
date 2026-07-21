@@ -5,15 +5,23 @@ const API_URL = getApiBaseUrl();
 
 class ApiError extends Error {
     status: number;
-    constructor(message: string, status: number) {
+    code?: string;
+    constructor(message: string, status: number, code?: string) {
         super(message);
         this.name = 'ApiError';
         this.status = status;
+        this.code = code;
     }
 }
 
 export function isApiStatus(error: unknown, status: number): boolean {
     return error instanceof ApiError && error.status === status;
+}
+
+// apiErrorCode returns the machine-readable `code` a management-service error
+// response may carry (e.g. "cwasm_version_mismatch"), or undefined otherwise.
+export function apiErrorCode(error: unknown): string | undefined {
+    return error instanceof ApiError ? error.code : undefined;
 }
 
 // proxied: the endpoint forwards an app/enclave HTTP status (e.g. /rpc, /schema
@@ -34,7 +42,7 @@ async function request<T>(path: string, token: string, init?: RequestInit, opts?
             window.dispatchEvent(new Event('auth:expired'));
         }
         const body = await res.json().catch(() => ({ error: res.statusText }));
-        throw new ApiError(body.error || `API error ${res.status}`, res.status);
+        throw new ApiError(body.error || `API error ${res.status}`, res.status, body.code);
     }
     if (res.status === 204) return undefined as T;
     return res.json();

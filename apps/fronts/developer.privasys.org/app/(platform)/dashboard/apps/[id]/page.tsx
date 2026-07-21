@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { useAuth } from '~/lib/privasys-auth';
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { getApp, listBuilds, listVersions, listDeployments, listCompatibleEnclaves, deleteApp, deployDirect, stopDeployment, getAppSchema, rpcCall, updateStoreListing, publishApp, identiconUrl, getAppMcp, updateContainerMcp, detectContainerMcp, retryBuild, listAppOwners, addAppOwner, removeAppOwner, createVersion, stageProfile, promoteProfile, listRegistryTags, uploadAsset, listAppCommits, uploadVersionCwasm, getVersion, listCachedImages, listDeployLocations, listAppApiKeys, createAppApiKey, revokeAppApiKey, listInstances } from '~/lib/api';
+import { getApp, listBuilds, listVersions, listDeployments, listCompatibleEnclaves, deleteApp, deployDirect, stopDeployment, getAppSchema, rpcCall, updateStoreListing, publishApp, identiconUrl, getAppMcp, updateContainerMcp, detectContainerMcp, retryBuild, listAppOwners, addAppOwner, removeAppOwner, createVersion, stageProfile, promoteProfile, listRegistryTags, uploadAsset, listAppCommits, uploadVersionCwasm, getVersion, listCachedImages, listDeployLocations, listAppApiKeys, createAppApiKey, revokeAppApiKey, listInstances, apiErrorCode } from '~/lib/api';
 
 // Public store base — where a published app is browsable.
 const STORE_BASE_URL = 'https://store.privasys.org';
@@ -1835,6 +1835,10 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
     const [stopping, setStopping] = useState<string | null>(null);
     const [stopErrors, setStopErrors] = useState<Record<string, string>>({});
     const [error, setError] = useState<string | null>(null);
+    // Set when a deploy is refused because the app's .cwasm was AOT-compiled for
+    // an older WASM engine than the enclave now runs. The server auto-triggers a
+    // recompile, so this drives a calm blue notice instead of a red error.
+    const [recompiling, setRecompiling] = useState(false);
     const { enabled: billingEnabled, frozen: balanceEmpty } = useBalance();
     // Only block when we know the balance is empty; "unknown" never gates a deploy.
     const deployBlockedByCredits = billingEnabled && balanceEmpty;
@@ -2108,6 +2112,7 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
         }
         setWorking(true);
         setError(null);
+        setRecompiling(false);
         setBuildLink(null);
         try {
             // Resolve the version to deploy, by source. Package/cloud-image/upload are
@@ -2172,7 +2177,14 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
             }
             if (!currentDeployment) { setPickVersion(''); setCwasmFile(null); }
         } catch (e) {
-            setError(e instanceof Error ? e.message : 'Deployment failed');
+            // A .cwasm compiled for a superseded WASM engine: the server has
+            // already kicked off a recompile, so show a calm notice (and let the
+            // build tile take over) rather than a red failure.
+            if (apiErrorCode(e) === 'cwasm_version_mismatch') {
+                setRecompiling(true);
+            } else {
+                setError(e instanceof Error ? e.message : 'Deployment failed');
+            }
         } finally {
             setWorking(false);
             setWorkMsg(null);
@@ -2373,6 +2385,16 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
             {error && (
                 <div className="p-3 rounded-lg bg-red-50 dark:bg-red-900/20 text-sm text-red-700 dark:text-red-300">
                     {error}
+                </div>
+            )}
+
+            {/* Calm notice when a deploy triggers an automatic recompile because
+                the enclave's WASM engine (wasmtime) was upgraded and the stored
+                .cwasm was built for the previous version. */}
+            {recompiling && (
+                <div className="flex items-start gap-2 p-3 rounded-lg text-xs border bg-blue-50 dark:bg-blue-900/15 border-blue-200 dark:border-blue-800/30 text-blue-700 dark:text-blue-300">
+                    <span className="w-1.5 h-1.5 mt-1 rounded-full bg-blue-500 animate-pulse shrink-0" />
+                    <span>The confidential WASM runtime was upgraded, so this app is being recompiled to match it. It will be deployable again once the build below finishes.</span>
                 </div>
             )}
 
