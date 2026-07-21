@@ -205,6 +205,16 @@ export default function EnclaveVaults() {
                             </Balancer>
                         </p>
                     </div>
+                    <div>
+                        <h3 className='text-xl lg:text-3xl'>Electronic signatures and seals with legal effect</h3>
+                        <p>
+                            <Balancer>
+                                Sign documents and seal artefacts with keys the vault holds.
+                                Under eIDAS, an electronic signature or seal cannot be denied legal effect in an EU court merely because it is electronic or not qualified.
+                                Policy-enforced sole control, per-signature wallet approvals, and tamper-evident results support the Regulation&rsquo;s criteria for advanced signatures and seals.
+                            </Balancer>
+                        </p>
+                    </div>
                 </div>
             </section>
 
@@ -218,6 +228,14 @@ export default function EnclaveVaults() {
                     Its security model rests on hardware isolation, on attested identity for every connection, and, for distributed secrets, on the unlinkability of Shamir shares across independent enclaves.
                     For most threat models we see in the wild this improves on a single appliance you have to take on faith.
                     Where a specific FIPS certification is a hard legal requirement, dedicated certified HSMs remain the right choice.
+                </p>
+                <p className='mt-6 text-lg'>
+                    The same honesty applies to eIDAS.
+                    Enclave Vaults is not a qualified trust service, and a vault signature does not carry the legal presumption a qualified one enjoys.
+                    What it carries is evidence, chained to roots a court already recognises: the silicon vendor&rsquo;s attestation for which code ran, certified secure elements on the signer&rsquo;s phone for sole control, and, when the signer&rsquo;s identity is verified through the Privasys Wallet, the government&rsquo;s own passport PKI for who signed.
+                    The only uncertified link is our open-source code, and it is reproducible: an independent expert can verify it instead of taking it on faith.
+                    Where the law mandates a qualified signature, use one.
+                    For everything else, we think evidence a court can examine beats a certificate it has to trust.
                 </p>
                 <p className='mt-6 text-lg'>
                     The standard interfaces come with a deliberate limit too.
