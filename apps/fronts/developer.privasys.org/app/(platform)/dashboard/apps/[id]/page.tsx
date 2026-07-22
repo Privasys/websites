@@ -12,7 +12,7 @@ import type { CreateVersionBody } from '~/lib/api';
 import { isApiStatus } from '~/lib/api';
 import { versionLabel, versionSemverStr, isStrictlyNewer } from '~/lib/version';
 import { displayNameError } from '~/lib/appName';
-import type { AppSchema, ConfigureSection, FunctionSchema, JsonSchemaProp, ActionProgress, WitType, McpManifest, AppTeam, AppCommit, DeployLocation, Instance } from '~/lib/api';
+import type { AppSchema, ConfigureSection, FunctionSchema, JsonSchemaProp, ActionProgress, WitType, McpManifest, AppTeam, AppCommit, DeployLocation, Instance, PriceRule } from '~/lib/api';
 import { useSSE } from '~/lib/sse-context';
 import { useBalance } from '~/lib/use-balance';
 import { getApiBaseUrl } from '~/lib/api-base-url';
@@ -678,6 +678,29 @@ interface CallHistoryEntry {
     timestamp: Date;
 }
 
+// Developer-set per-call API fee (x-privasys.price), shown next to a tool's
+// signature so a caller sees the cost before invoking. 1,000,000 credits = £1.
+function ToolPrice({ price }: { price?: PriceRule }) {
+    const credits = price?.credits ?? 0;
+    if (!credits) {
+        return <span className="ml-3 inline-flex items-center rounded-full bg-black/5 dark:bg-white/10 px-2 py-0.5 text-[10px] font-medium text-black/50 dark:text-white/50">Free</span>;
+    }
+    const gbp = (credits / 1_000_000).toLocaleString('en-GB', { style: 'currency', currency: 'GBP', minimumFractionDigits: 2, maximumFractionDigits: 4 });
+    const sponsored = price?.payer === 'sponsor';
+    const wallet = !sponsored && price?.free_for?.includes('wallet');
+    const label = sponsored
+        ? `Sponsored · ${credits.toLocaleString()} credits (${gbp}), paid by ${price?.sponsor_from || 'sponsor'}`
+        : `${credits.toLocaleString()} credits (${gbp})${wallet ? ' · free for wallet users' : ''}`;
+    return (
+        <span
+            title="Developer-set API fee, charged to the payer on a successful call"
+            className="ml-3 inline-flex items-center rounded-full bg-amber-100 dark:bg-amber-900/25 px-2 py-0.5 text-[10px] font-medium text-amber-800 dark:text-amber-300"
+        >
+            {label}
+        </span>
+    );
+}
+
 function ApiTestingTab({ appId, token, deployments, versions }: { appId: string; token: string; deployments: AppDeployment[]; versions: AppVersion[] }) {
     const versionMap = Object.fromEntries(versions.map(v => [v.id, v]));
     const [selectedDeploymentId, setSelectedDeploymentId] = useState<string>(deployments[0]?.id ?? '');
@@ -959,6 +982,7 @@ function ApiTestingTab({ appId, token, deployments, versions }: { appId: string;
                                 </>
                             )}
                         </code>
+                        <ToolPrice price={currentFunc.x_privasys?.price} />
                     </div>
                 )}
 
