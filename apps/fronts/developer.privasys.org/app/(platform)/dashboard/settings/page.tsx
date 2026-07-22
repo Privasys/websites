@@ -4,6 +4,7 @@ import { useAuth } from '~/lib/privasys-auth';
 import { useEffect, useState, useCallback } from 'react';
 import { getUserInfo, updateProfile } from '~/lib/api';
 import type { UserInfo } from '~/lib/api';
+import { PersonalAccessTokens } from '~/components/personal-access-tokens';
 
 export default function SettingsPage() {
     const { session, signOut } = useAuth();
@@ -171,6 +172,13 @@ export default function SettingsPage() {
                     </button>
                 </section>
             )}
+
+            {/* Personal access tokens */}
+            <section className="mt-10 pt-8 border-t border-black/5 dark:border-white/10">
+                <h2 className="text-lg font-medium">Personal access tokens</h2>
+                <p className="mt-1 mb-4 text-sm text-black/50 dark:text-white/50">Programmatic access to any Privasys app&rsquo;s API, billed to you.</p>
+                <PersonalAccessTokens />
+            </section>
 
             {/* Sign out */}
             <section className="mt-10 pt-8 border-t border-black/5 dark:border-white/10">
