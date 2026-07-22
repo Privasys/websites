@@ -5,12 +5,13 @@ description: Hands-on, end-to-end walkthroughs of real Privasys workflows, with 
 
 import { Cards, Card } from 'fumadocs-ui/components/card';
 
-Practical, end-to-end guides for operating confidential applications on Privasys. Each tutorial walks a complete workflow with the exact CLI commands, and explains what happens underneath so you understand the guarantees, not just the keystrokes.
+Practical, end-to-end guides for building on Privasys. Each tutorial walks a complete workflow with the exact commands or code for every step, and explains what happens underneath so you understand the guarantees, not just the keystrokes.
 
 <Cards>
   <Card title="Upgrading a confidential app" href="/tutorials/enclave-upgrade">
     Ship a new version of a data-holding app: why the vault locks the data on an upgrade, how the owner approves the new measurement, and how to migrate a whole constellation without downtime.
   </Card>
+  <Card title="Gov-backed age verification" href="/tutorials/age-verification">
+    Integrate the auth SDK to prove a customer is 18+ with a passport-backed, enclave-signed credential — the ceremony, the cryptographic evidence, how to verify it, and what to store for the auditor.
+  </Card>
 </Cards>
-
-All tutorials assume the [`privasys` CLI](/solutions/cli) is installed and you are signed in (`privasys auth login`).

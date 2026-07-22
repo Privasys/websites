@@ -3,6 +3,7 @@
     "defaultOpen": false,
     "pages": [
         "index",
-        "enclave-upgrade"
+        "enclave-upgrade",
+        "age-verification"
     ]
 }
