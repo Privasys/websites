@@ -309,7 +309,17 @@ export interface FunctionSchema {
     role?: ToolRole;
     description?: string;
     input_schema?: JsonSchemaObject;
-    x_privasys?: { progress?: ActionProgress };
+    x_privasys?: { progress?: ActionProgress; price?: PriceRule };
+}
+
+// Developer-set per-call API fee (x-privasys.price). A flat `credits` fee is
+// charged to the payer on a successful call; the owner is credited 85%, the
+// platform keeps 15%. Absent / 0 credits = free.
+export interface PriceRule {
+    credits?: number;
+    payer?: 'caller' | 'sponsor';
+    sponsor_from?: string;
+    free_for?: string[];
 }
 
 export interface InterfaceSchema {
