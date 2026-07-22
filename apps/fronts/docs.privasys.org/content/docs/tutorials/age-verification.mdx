@@ -1,0 +1,243 @@
+---
+title: Gov-backed age verification for a betting site
+description: Integrate the Privasys auth SDK to prove a customer is 18 or older with a government-passport-backed, enclave-signed credential — without ever seeing their date of birth. What the ceremony looks like, the cryptographic evidence you receive, how to verify it, and exactly what to store for the auditor.
+---
+
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+**Harbour Bets** is a (fictional) online betting operator. Its licence obliges it to verify that every customer is 18 or older before unlocking a session, to re-verify on each visit, and to keep evidence of every check for the regulator. Today that usually means collecting a passport photo or a date of birth — a pile of regulated PII the operator never wanted.
+
+This tutorial walks the Privasys alternative end to end. By the end, Harbour Bets can prove a customer is 18+ with a **government-passport-backed, enclave-signed credential**, while holding *less* personal data than any incumbent flow: no date of birth, no document number, no name. What it holds instead is a signed receipt that an auditor — or a court-appointed expert — can re-verify offline, years later, without contacting Privasys or the customer.
+
+<Callout type="info">
+The identity verification itself (passport chip + selfie, in the user's Privasys Wallet) is **free for the user** and happens once. What Harbour Bets pays for is each *disclosure* — each signed answer to "is this person over 18?". See [the attribute marketplace](/solutions/privasys-id/attribute-marketplace) for the pricing model.
+</Callout>
+
+## How the flow works
+
+```
+Customer clicks "Verify my age"
+  └─ Auth SDK opens the Privasys ID gate (iframe on privasys.id)
+  └─ IdP sees the identity scope for a billable client
+       → reserves Harbour Bets' credits, mints a disclosure voucher
+         (the voucher names the client and the claim — never the user)
+  └─ Customer approves in their wallet (per-attribute consent screen)
+       → first-time users are guided through free passport verification
+  └─ Wallet asks the identity-verifier ENCLAVE to prove age_over_18:
+       it re-opens the passport birthdate commitment, checks the holder's
+       hardware-key signature, verifies the voucher, and signs an SD-JWT VC
+  └─ The credential lands in the sign-in result; the voucher settles
+  └─ Harbour Bets verifies the credential server-side, stores it, unlocks
+```
+
+Three properties make this different from a checkbox or an uploaded document:
+
+- **The answer is computed from a chip-authenticated passport.** The user's wallet read the passport's NFC chip; the enclave verified the chip's signature chain to the issuing state (ICAO Doc 9303 Passive Authentication) and face-matched the holder. The birthdate itself stays on the user's device — the enclave certifies a *commitment* to it once, then answers yes/no questions against that commitment forever after.
+- **The answer is signed by code you can identify.** The credential's `evidence.measurement` is the digest of the exact enclave build that computed it — a public, reproducible release. Nobody, including Privasys, can alter the logic without changing the fingerprint.
+- **The answer is bound to your site.** Audience-bound, pairwise-subject, minutes-lived. A credential minted for another operator, or replayed from last week, fails verification.
+
+## Step 1 — Register Harbour Bets
+
+On [developer.privasys.org](https://developer.privasys.org), register an OIDC client for the site:
+
+1. Create the client (`client_id: harbour-bets`, redirect URIs, app name and privacy-policy URL — both are shown to the user during consent).
+2. Whitelist the attributes the site may request. For an age gate that is exactly one: `age_over_18`. The whitelist is validated at registration time and is the auditable ceiling of what your client can ever ask for — there is no per-request escalation.
+3. Link a billing account and buy credits. Gov-verified disclosures are paid per answer; a client that is not billable (or is out of credits) is rejected at the toll booth **before the user is ever prompted**.
+
+<Callout type="warn">
+Request the *derived* claim, not the raw data. `age_over_18` gives you a boolean. Requesting `birthdate` would also work technically — it is a certifiable attribute — but then you are back to holding a date of birth you must protect. The entire point of the scheme is that the minimal claim is the strongest position: less PII, same legal force.
+</Callout>
+
+## Step 2 — Add the gate to the site
+
+Install the SDK (`@privasys/auth`, [source](https://github.com/Privasys/identity-platform)) and configure the auth frame with the `identity` scope:
+
+```ts
+import { AuthFrame, InsufficientCreditsError } from '@privasys/auth';
+
+const frame = new AuthFrame({
+    apiBase: 'https://api.developer.privasys.org',
+    appName: 'harbour-bets',
+    clientId: 'harbour-bets',
+    scope: ['openid', 'identity', 'offline_access'],
+    privacyPolicyUrl: 'https://harbourbets.example/privacy',
+    app: { displayName: 'Harbour Bets', logoUrl: 'https://harbourbets.example/logo.svg' },
+});
+
+async function verifyAge() {
+    try {
+        const result = await frame.signIn();
+        // → send result.accessToken + result.disclosures to your backend (Step 4)
+        return result;
+    } catch (e) {
+        if (e instanceof InsufficientCreditsError) {
+            // Your billing account cannot cover the disclosure.
+            // The user was never prompted; top up and retry.
+        }
+        throw e;
+    }
+}
+```
+
+That is the whole client-side integration. The SDK renders the Privasys ID gate (QR code or a push to a paired wallet), the ceremony runs on `privasys.id` and in the user's wallet, and your page gets the result. Nothing about passports, enclaves, or vouchers appears in your code.
+
+## Step 3 — What the customer experiences
+
+- **Already verified** (has the wallet, passport already checked): scan or tap, a consent screen naming *Harbour Bets* and the exact claim ("a passport-certified proof you are 18 or older" — a yes/no, not your birth date), approve with a biometric. Seconds.
+- **New user**: the gate guides them to install the Privasys Wallet and verify their passport once — photograph the data page, tap the passport against the phone (NFC chip read), take a selfie. The verification runs inside an attested enclave and is free. Then the consent screen as above.
+- **Declines**: the user can refuse. No credential is minted, nothing is charged, and your site simply does not unlock. There is no receipt of a refusal — a user saying no leaves no trace.
+
+Consent is genuinely per-attribute and per-site, and repeat visits with standing consent skip straight through — the re-verification you are obliged to do costs the user one biometric tap.
+
+## Step 4 — What comes back
+
+`result.disclosures` carries one entry per gov-verified claim:
+
+```ts
+interface AttributeDisclosure {
+    claim: string;        // "age_over_18"
+    value: unknown;       // true — or false: read it, don't assume (see below)
+    assurance?: string;   // "gov"
+    evidence?: Record<string, unknown>;
+    issuer?: string;      // the verifier enclave origin
+    issuedAt?: number;
+    expiresAt?: number;   // minutes away — the credential is deliberately short-lived
+    token: string;        // the raw SD-JWT VC. THIS is the receipt. Persist it.
+}
+```
+
+The `token` is a compact, enclave-signed **SD-JWT verifiable credential** (`typ: dc+sd-jwt`). Decoded, its payload looks like:
+
+```json
+{
+  "iss": "https://privasys-identity-verifier.apps.privasys.org",
+  "sub": "kX3f…",
+  "aud": "harbour-bets",
+  "vct": "https://privasys.org/vct/identity-disclosure",
+  "claim": "age_over_18",
+  "value": true,
+  "assurance": "gov",
+  "evidence": {
+    "ivr": "bbPZ37dx…",
+    "doc_type": "P",
+    "issuing_state": "FRA",
+    "verified_at": 1783522551,
+    "measurement": "2aaf65f7…",
+    "voucher": "03a8f41a…"
+  },
+  "cnf": { "jwk": { "kty": "EC", "crv": "P-256", "x": "…", "y": "…" } },
+  "iat": 1783586500,
+  "exp": 1783586800
+}
+```
+
+Reading it:
+
+| Field | What it tells the auditor |
+| --- | --- |
+| `claim` / `value` / `assurance` | The answer: 18-or-over, yes, certified from a government document. |
+| `sub` | A **pairwise** subject: stable for your site, meaningless to anyone else. Match it against the ID token's `sub` and your own account record. Operators cannot correlate a customer across sites. |
+| `aud` | Bound to *your* `client_id`. A credential minted for anyone else fails your verification. |
+| `evidence.issuing_state`, `doc_type` | Which state's document backed the claim (a passport, issued by France) — without any document data. |
+| `evidence.measurement` | The digest of the exact enclave build that computed the answer. It matches a public, reproducible release of the (open-source, AGPL) verifier — the same digest the enclave attests in its TLS certificate. |
+| `evidence.voucher` | The paid-ceremony identifier. It ties this credential to one settled billing reservation: proof the check was a real, executed ceremony, not a replayed artefact. |
+| `evidence.ivr` | The identifier of the underlying identity-verification receipt (the one-time passport check this answer derives from). |
+| `cnf.jwk` | The holder's hardware public key. The credential can only ever be derived by the device the passport verification was bound to — a stolen credential file is not a stolen identity. |
+| `iat` / `exp` | Freshness: minted for this sign-in, expires in minutes. The *stored* token remains your receipt of what was verified at `iat`; expiry only means it cannot be replayed as a live proof. |
+
+<Callout type="warn">
+**Read `value`, always.** A failed check (for example the live face did not match during a presence ceremony) can return a *signed failure receipt* with `value: false` and a `failure.retryable` flag — deliberately signed, so "we checked and it failed" is auditable too. Gate your session on `value === true`, never on the mere presence of a credential.
+</Callout>
+
+## Step 5 — Verify it server-side
+
+Never trust the browser: the disclosure travels through the customer's device, so your backend re-verifies it. The issuer publishes SD-JWT VC issuer metadata, so any JOSE library works:
+
+```ts
+import { createLocalJWKSet, jwtVerify } from 'jose';
+
+const ISSUER = 'https://privasys-identity-verifier.apps.privasys.org';
+const CLIENT_ID = 'harbour-bets';
+
+export async function verifyAgeCredential(sdJwt: string, expectedSub: string) {
+    // 1. Issuer keys, from RFC-style issuer metadata. Cache them; snapshot
+    //    them into your audit record (Step 6).
+    const meta = await fetch(`${ISSUER}/.well-known/jwt-vc-issuer`).then(r => r.json());
+    const keys = createLocalJWKSet(meta.jwks);
+
+    // 2. The SD-JWT serialisation is `<JWS>~`; the issuer JWS is the part
+    //    before the first '~'.
+    const jws = sdJwt.split('~')[0];
+    const { payload } = await jwtVerify(jws, keys, {
+        issuer: ISSUER,
+        audience: CLIENT_ID,
+    });
+
+    // 3. The claim itself.
+    if (payload.claim !== 'age_over_18') throw new Error('wrong claim');
+    if (payload.value !== true) throw new Error('age not established');
+    if (payload.assurance !== 'gov') throw new Error('not gov-assured');
+    if (payload.sub !== expectedSub) throw new Error('subject mismatch');
+
+    return payload;
+}
+```
+
+`jwtVerify` covers the signature, `iss`, `aud`, and `exp`. The four asserts cover the meaning. That is the complete mandatory check.
+
+Two optional checks raise the bar from *verified* to *independently audited*:
+
+- **Pin the code.** Compare `evidence.measurement` against the published release digests of the [identity verifier](https://github.com/Privasys/container-app-identity-verifier). This is what makes the evidence *transparent* rather than trusted: the digest identifies the exact open-source build, and the build is reproducible.
+- **Verify the ID token too.** The OIDC ID token (against `privasys.id`'s JWKS) carries the same pairwise `sub` and the ceremony's `acr` / `auth_time` — the standard OIDC half of your record.
+
+## Step 6 — What to store for the auditor
+
+The regulator's question, years later, is: *prove you checked this customer's age before that session.* Store, per successful check:
+
+| Item | Why |
+| --- | --- |
+| **The raw SD-JWT VC** (`disclosure.token`, verbatim) | The receipt. Self-contained, offline re-verifiable: signature, audience, subject, claim, evidence chain. This is the single most important artefact — store the token, not just "passed". |
+| **The ID token** for the same sign-in | Standard OIDC context: `sub` (matching the VC), `auth_time`, `acr`. |
+| **Your verification record** | Timestamp, the checks you ran and their outcomes, and a snapshot of the issuer JWKS you verified against (`/.well-known/jwt-vc-issuer` at that moment). The keys are long-lived, but snapshotting them makes your record self-contained even across key rotations. |
+| **The measurement reference** | `evidence.measurement` plus the published release it matched when you checked. Turns "Privasys said so" into "this exact public code said so, and here is its fingerprint". |
+| **Session linkage** | Your own account id ↔ the pairwise `sub`, and which session the check unlocked. |
+| Failure receipts (`value: false` tokens), if any | Evidence of checks that ran and failed — part of the same audit trail. |
+
+Retention: whatever your licence dictates (gambling regulators typically require the age-verification record for the life of the account plus several years). The stored token does not become less verifiable with time — expiry limits *replay*, not *audit*.
+
+**What you never hold, and should not try to:** date of birth, name, document number, MRZ, portrait, selfie. The raw data lives in the customer's wallet; the biometric comparison happened inside the enclave and was discarded. Your entire regulated-PII surface for age compliance is a boolean, a country code, and signed receipts. If your database leaks, the attacker learns that some pseudonymous subjects are adults.
+
+## Step 7 — The next visit
+
+Your obligation is per-session, so repeat the ceremony: call `frame.signIn()` again on the next visit. The customer's standing consent makes it a single wallet tap; a fresh voucher is reserved, a fresh credential is minted and settled, and you store the new receipt alongside the old. Each stored token is one provable check — your audit trail is a sequence of independently verifiable receipts, one per unlocked session.
+
+Because each disclosure is individually priced, your compliance cost is exactly proportional to verified sessions — see [pricing](https://developer.privasys.org/pricing) for the current per-attribute rates.
+
+## The evidence chain, end to end
+
+Every link in the claim "this session's customer is 18+" is independently checkable:
+
+1. **A real passport**: the enclave verified the chip's Document Security Object against the issuing state's certificate chain, rooted in the ICAO master list in force (the trust-anchor set is itself attested by the enclave).
+2. **The right person**: the passport portrait was face-matched against a live selfie at verification time, and the resulting receipt is bound to the holder's hardware key (`cnf.jwk`) — every later disclosure requires that device to sign.
+3. **Honest computation**: the yes/no was computed inside an attested enclave whose build fingerprint (`evidence.measurement`) matches a public, reproducible, open-source release.
+4. **Your ceremony, paid and consented**: audience-bound to your client, minted after the user's explicit consent, tied to a settled billing record (`evidence.voucher`) that carries no user identity.
+5. **Your verification**: your stored record shows you checked all of the above at session time.
+
+No step asks the auditor to trust Privasys: the passport chain roots in government PKI, the device binding in the phone's certified secure element, the code identity in the CPU vendor's attestation — and our part is open source and reproducible.
+
+## Honest boundaries
+
+- The credential proves the passport holder verified on that wallet is 18+; the standard sign-in proves possession of that wallet plus its biometric unlock. If your risk model requires proof that *the verified person is physically present at this session*, a stronger ceremony (`gov-presence`: a fresh in-enclave face match against the passport portrait) exists on the OIDC flow — ask us before designing for it.
+- The liveness check used during verification is a strong software model but not yet ISO/IEC 30107-3 certified; the enclave code is public and reproducible but an external audit report is not yet published. We state both plainly because the evidence model is the product: you should know exactly what each link does and does not claim.
+
+<Cards>
+  <Card title="Attribute marketplace" href="/solutions/privasys-id/attribute-marketplace">
+    How paid disclosures, vouchers, and per-attribute pricing work.
+  </Card>
+  <Card title="Auth SDK" href="/solutions/privasys-id/auth-sdk">
+    The full SDK surface: sign-in, SSO, sealed sessions.
+  </Card>
+  <Card title="Attestation" href="/technology/attestation">
+    How a code measurement ends up in a certificate you can pin.
+  </Card>
+</Cards>
