@@ -29,11 +29,45 @@
 import type { SealedSession } from '@privasys/auth';
 import type { ChatMessage } from './chat-stream';
 import {
+    getFolderTree,
     getMemory,
     searchSemantic,
+    type FolderTreeNode,
     type ProvenanceRef,
     type SemanticHit
 } from './drive-chat-api';
+
+/** Folder name of the conversations root (mirrors drive-service). */
+const CONVERSATIONS_ROOT = 'Chat conversations';
+
+function collectNodeIds(nodes: FolderTreeNode[], into: Set<string>): void {
+    for (const n of nodes) {
+        into.add(n.id);
+        if (n.children?.length) collectNodeIds(n.children, into);
+    }
+}
+
+/**
+ * Fetch the set of node ids under the Chat conversations/ folder so retrieval
+ * can tell a past-conversation hit from a knowledge-base hit. Best effort:
+ * an empty set means hits are all treated as knowledge.
+ */
+export async function fetchConversationNodeIds(
+    session: SealedSession,
+    tenantId: string
+): Promise<Set<string>> {
+    const set = new Set<string>();
+    try {
+        const roots = await getFolderTree(session, tenantId);
+        const conv = roots.find((n) => n.kind === 'folder' && n.name === CONVERSATIONS_ROOT);
+        if (!conv) return set;
+        set.add(conv.id);
+        collectNodeIds(await getFolderTree(session, tenantId, conv.id), set);
+    } catch {
+        /* best effort */
+    }
+    return set;
+}
 
 /** Result of augmenting a single turn with Drive retrieval. */
 export interface Augmentation {
@@ -85,22 +119,41 @@ export async function fetchMemoryContext(
     }
 }
 
+/** Which retrieval sources this turn may draw on (§8.7 per-conversation
+ *  context). Memory is handled separately (fetchMemoryContext). */
+export interface RetrievalSources {
+    pastConversations: boolean;
+    knowledge: boolean;
+    /** Node ids under the Chat conversations/ folder, used to classify each
+     *  hit as a past-conversation vs a knowledge-base result. When absent,
+     *  hits cannot be split and are all treated as knowledge. */
+    conversationNodeIds?: Set<string>;
+}
+
 /** Retrieve relevant Drive context for a user turn and format it for the
- *  prompt. Best effort: returns an empty augmentation on any failure. */
+ *  prompt, limited to the sources enabled for this conversation. Best effort:
+ *  returns an empty augmentation on any failure. */
 export async function retrieveContext(
     session: SealedSession,
     tenantId: string,
-    query: string
+    query: string,
+    sources: RetrievalSources
 ): Promise<Augmentation> {
     const q = query.trim();
-    if (!q) return EMPTY;
+    if (!q || (!sources.pastConversations && !sources.knowledge)) return EMPTY;
     let hits: SemanticHit[];
     try {
         hits = await searchSemantic(session, tenantId, q, MAX_HITS);
     } catch {
         return EMPTY;
     }
-    const useful = hits.filter((h) => (h.score ?? 0) >= MIN_SCORE && h.snippet).slice(0, MAX_HITS);
+    const isConversation = (h: SemanticHit) =>
+        !!sources.conversationNodeIds && sources.conversationNodeIds.has(h.node_id);
+    const useful = hits
+        .filter((h) => (h.score ?? 0) >= MIN_SCORE && h.snippet)
+        // Keep only hits from a source the user enabled for this chat.
+        .filter((h) => (isConversation(h) ? sources.pastConversations : sources.knowledge))
+        .slice(0, MAX_HITS);
     if (useful.length === 0) return EMPTY;
 
     const blocks = useful.map((h, i) => {

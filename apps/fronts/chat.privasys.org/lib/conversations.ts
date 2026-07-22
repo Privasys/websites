@@ -82,6 +82,20 @@ export interface PersistedMessage extends ChatMessage {
     };
 }
 
+/**
+ * Per-conversation context sources (§8.7): what the assistant may draw on for
+ * THIS chat. Overrides the user's global defaults (their AI-scope grants) so
+ * the choice is per-conversation and in-chat, not a buried global switch.
+ * Undefined `contextPrefs` on a conversation means "inherit the global
+ * defaults". Knowledge is the on/off for the user's enabled Drive folders as a
+ * set — the folder selection itself lives in the Knowledge view.
+ */
+export interface ChatContextPrefs {
+    memory: boolean;
+    pastConversations: boolean;
+    knowledge: boolean;
+}
+
 export interface Conversation {
     id: string;
     instanceId: string;

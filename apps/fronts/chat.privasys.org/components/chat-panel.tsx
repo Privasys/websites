@@ -8,6 +8,8 @@ import {
     type ChatMessage
 } from '~/lib/chat-stream';
 import type { AttachIntent } from '~/lib/drive-chat-api';
+import type { ChatContextPrefs } from '~/lib/conversations';
+import type { ScopeFolder } from '~/lib/use-ai-scope';
 import type { AttachmentChip } from './composer';
 import { DEFAULT_SAMPLING, type SamplingParams } from '~/lib/sampling';
 import { modelLabel } from '~/lib/model-label';
@@ -102,7 +104,13 @@ export function ChatPanel({
     buildAugmentation,
     attachments,
     onAttachFile,
-    attachEnabled
+    attachEnabled,
+    contextEnabled,
+    contextPrefs,
+    onToggleContext,
+    knowledgeFolders,
+    knowledgeAllScoped,
+    onManageKnowledge
 }: {
     instance: Instance;
     model: AvailableModel | null;
@@ -181,6 +189,15 @@ export function ChatPanel({
     onAttachFile?: (file: File, intent: AttachIntent) => void;
     /** Whether the Attach affordance is available (Drive enabled). */
     attachEnabled?: boolean;
+    /** Per-conversation context sources (§8.7): what the assistant draws on
+     *  for THIS chat. When contextEnabled, the composer shows a Context chip. */
+    contextEnabled?: boolean;
+    contextPrefs?: ChatContextPrefs;
+    onToggleContext?: (field: keyof ChatContextPrefs, value: boolean) => void;
+    /** The user's AI-enabled Drive folders, listed under Knowledge. */
+    knowledgeFolders?: ScopeFolder[];
+    knowledgeAllScoped?: boolean;
+    onManageKnowledge?: () => void;
 }) {
     const [messages, setMessages] = useState<DisplayMessage[]>(
         () => initialMessages.map((m) => ({ ...m }))
@@ -818,6 +835,12 @@ export function ChatPanel({
             attachEnabled={attachEnabled}
             attachments={attachments}
             onAttachFile={onAttachFile}
+            contextEnabled={contextEnabled}
+            contextPrefs={contextPrefs}
+            onToggleContext={onToggleContext}
+            knowledgeFolders={knowledgeFolders}
+            knowledgeAllScoped={knowledgeAllScoped}
+            onManageKnowledge={onManageKnowledge}
             placeholder={
                 model
                     ? `Message ${modelLabel(model)}\u2026`

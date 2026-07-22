@@ -20,7 +20,14 @@ import {
     type ProvenanceRef
 } from '~/lib/drive-chat-api';
 import { STREAM_THRESHOLD } from '@privasys/drive-client';
-import { fetchMemoryContext, mergeProvenance, retrieveContext } from '~/lib/drive-rag';
+import {
+    fetchConversationNodeIds,
+    fetchMemoryContext,
+    mergeProvenance,
+    retrieveContext
+} from '~/lib/drive-rag';
+import { useAIScope } from '~/lib/use-ai-scope';
+import type { ChatContextPrefs } from '~/lib/conversations';
 import type { ChatMessage } from '~/lib/chat-stream';
 import type { AttachmentChip } from './composer';
 import { useEnabledTools } from '~/lib/use-enabled-tools';
@@ -35,6 +42,7 @@ import { ShareConversationDialog } from './share-conversation-dialog';
 import { ChatPanel, type PendingReplay } from './chat-panel';
 import { SecurityView } from './security-view';
 import { KnowledgeView } from './knowledge-view';
+import { ContextIntroModal } from './context-intro-modal';
 import { SignInGate } from './signin-view';
 
 type ShellView = 'chat' | 'security' | 'tools' | 'knowledge' | 'signin';
@@ -349,6 +357,76 @@ export function ChatShell({
     });
     const conv = useDrive ? driveConv : localConv;
 
+    // The user's global AI-scope (the ceiling of what the assistant may draw
+    // on). Drives the per-conversation context defaults + the Context chip's
+    // Knowledge folder list.
+    const aiScope = useAIScope(drive.session, drive.tenantId);
+    const globalContextDefaults: ChatContextPrefs = useMemo(
+        () => ({
+            memory: true, // Memory is always in scope (sovereign notes)
+            pastConversations: aiScope.conversationsScoped || aiScope.allScoped,
+            knowledge: aiScope.allScoped || aiScope.folders.some((f) => f.scoped)
+        }),
+        [aiScope.conversationsScoped, aiScope.allScoped, aiScope.folders]
+    );
+
+    // Per-conversation context overrides (keyed by LOCAL conversation id).
+    // Undefined for a conversation means "inherit the global defaults" — the
+    // choice is per-chat and in-chat, never a buried global switch (§8.7).
+    const [contextByConv, setContextByConv] = useState<Record<string, ChatContextPrefs>>({});
+    const resolveContext = useCallback(
+        (key: string): ChatContextPrefs => contextByConv[key] ?? globalContextDefaults,
+        [contextByConv, globalContextDefaults]
+    );
+    const setContextPref = useCallback(
+        (key: string, field: keyof ChatContextPrefs, value: boolean) => {
+            setContextByConv((prev) => {
+                const cur = prev[key] ?? globalContextDefaults;
+                return { ...prev, [key]: { ...cur, [field]: value } };
+            });
+        },
+        [globalContextDefaults]
+    );
+
+    // First-run Context prompt: offered once, when the user starts their
+    // SECOND conversation — the point cross-chat recall first helps. Sets the
+    // global "past conversations" default and teaches the per-chat Context
+    // chip. Seen-state is a per-user localStorage flag.
+    const contextPromptSeenKey = sub ? `privasys:chat:ctx-intro:${sub}` : '';
+    const [showContextIntro, setShowContextIntro] = useState(false);
+    useEffect(() => {
+        if (!useDrive || !drive.session || !contextPromptSeenKey) return;
+        if (conv.currentId !== null || conv.conversations.length < 1) return;
+        try {
+            if (localStorage.getItem(contextPromptSeenKey)) return;
+        } catch {
+            return;
+        }
+        setShowContextIntro(true);
+    }, [useDrive, drive.session, contextPromptSeenKey, conv.currentId, conv.conversations.length]);
+    const dismissContextIntro = useCallback(() => {
+        try {
+            if (contextPromptSeenKey) localStorage.setItem(contextPromptSeenKey, '1');
+        } catch {
+            /* private mode: it'll just re-offer next session */
+        }
+        setShowContextIntro(false);
+    }, [contextPromptSeenKey]);
+
+    // Node ids under Chat conversations/, so retrieval can tell a past-chat
+    // hit from a knowledge-base one. Fetched once per Drive session.
+    const conversationNodeIdsRef = useRef<Set<string>>(new Set());
+    useEffect(() => {
+        if (!drive.session || !drive.tenantId) return;
+        let cancelled = false;
+        void fetchConversationNodeIds(drive.session, drive.tenantId).then((ids) => {
+            if (!cancelled) conversationNodeIdsRef.current = ids;
+        });
+        return () => {
+            cancelled = true;
+        };
+    }, [drive.session, drive.tenantId]);
+
     // Per-conversation Drive state (keyed by LOCAL conversation id):
     //   - provenance chips (node_id + section_id) from retrieval actually used,
     //   - which conversations have had Memory injected (first turn only),
@@ -383,7 +461,9 @@ export function ChatShell({
             const messages: ChatMessage[] = [];
             if (!useDrive || !drive.session || !drive.tenantId) return { messages };
             const key = conversationId ?? '__pending__';
-            if (isFirstTurn && !memoryInjectedRef.current.has(key)) {
+            // What the user allows this chat to draw on (per-conversation).
+            const prefs = resolveContext(key);
+            if (prefs.memory && isFirstTurn && !memoryInjectedRef.current.has(key)) {
                 memoryInjectedRef.current.add(key);
                 const mem = await fetchMemoryContext(drive.session, drive.tenantId);
                 messages.push(...mem.messages);
@@ -395,12 +475,16 @@ export function ChatShell({
                     content: `Attached file "${f.name}" provided by the user for this chat:\n\n${f.text}`
                 });
             }
-            const ret = await retrieveContext(drive.session, drive.tenantId, userText);
+            const ret = await retrieveContext(drive.session, drive.tenantId, userText, {
+                pastConversations: prefs.pastConversations,
+                knowledge: prefs.knowledge,
+                conversationNodeIds: conversationNodeIdsRef.current
+            });
             messages.push(...ret.messages);
             addProvenance(key, ret.provenance);
             return { messages };
         },
-        [useDrive, drive.session, drive.tenantId, addProvenance]
+        [useDrive, drive.session, drive.tenantId, addProvenance, resolveContext]
     );
 
     // Attach a picked file to the current conversation with an intent.
@@ -757,9 +841,27 @@ export function ChatShell({
                         attachEnabled={useDrive && !!session}
                         attachments={attachmentsByConv[conv.currentId ?? '__pending__'] ?? []}
                         onAttachFile={useDrive ? onAttachFile : undefined}
+                        contextEnabled={useDrive && !enclaveHasDriveRAG && !!drive.session}
+                        contextPrefs={resolveContext(conv.currentId ?? '__pending__')}
+                        onToggleContext={(field, value) =>
+                            setContextPref(conv.currentId ?? '__pending__', field, value)
+                        }
+                        knowledgeFolders={aiScope.folders}
+                        knowledgeAllScoped={aiScope.allScoped}
+                        onManageKnowledge={() => setView('knowledge')}
                     />
                 )}
             </div>
+            {view === 'chat' && showContextIntro && (
+                <ContextIntroModal
+                    onUsePastChats={async () => {
+                        await drive.ensureSession();
+                        await aiScope.setConversations(true);
+                        dismissContextIntro();
+                    }}
+                    onKeepSeparate={dismissContextIntro}
+                />
+            )}
             {shareTargetId &&
                 drive.session &&
                 drive.tenantId &&
