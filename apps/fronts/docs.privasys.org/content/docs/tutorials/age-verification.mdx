@@ -38,11 +38,11 @@ Three properties make this different from a checkbox or an uploaded document:
 
 ## Step 1: Register Harbour Bets
 
-On [developer.privasys.org](https://developer.privasys.org), register an OIDC client for the site:
+Relying-party registration is operator-assisted today: [contact us](mailto:contact@privasys.org) and we register the client with you during onboarding (self-serve registration from the developer portal is on the roadmap). Registration fixes three things:
 
-1. Create the client (`client_id: harbour-bets`, redirect URIs, app name and privacy-policy URL; both are shown to the user during consent).
-2. Whitelist the attributes the site may request. For an age gate that is exactly one: `age_over_18`. The whitelist is validated at registration time and is the auditable ceiling of what your client can ever ask for: there is no per-request escalation.
-3. Link a billing account and buy credits. Gov-verified disclosures are paid per answer; a client that is not billable (or is out of credits) is rejected at the toll booth **before the user is ever prompted**.
+1. The OIDC client itself: your `client_id` (here `harbour-bets`), display name, and redirect URIs, plus a client secret if your integration is confidential.
+2. The attribute whitelist. For an age gate that is exactly one attribute: `age_over_18`. The whitelist is part of the client record and is the auditable ceiling of what your client can ever ask for: there is no per-request escalation.
+3. The billing link: your client is flagged billable and tied to your platform billing account. You buy credits on [developer.privasys.org](https://developer.privasys.org) as usual. Gov-verified disclosures are paid per answer; a client that is not billable (or is out of credits) is rejected at the toll booth **before the user is ever prompted**.
 
 <Callout type="warn">
 Request the *derived* claim, not the raw data. `age_over_18` gives you a boolean. Requesting `birthdate` would also work technically (it is a certifiable attribute), but then you are back to holding a date of birth you must protect. The entire point of the scheme is that the minimal claim is the strongest position: less PII, same legal force.
