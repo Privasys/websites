@@ -376,6 +376,43 @@ export async function rpcCall(token: string, appId: string, func: string, params
     }, { proxied: true, onResponse });
 }
 
+// --- Relying parties (self-serve OIDC clients; api-fees plan §8) ---
+// The account creates and manages its own OIDC clients; a billable client's
+// sponsored-call fees and attribute-disclosure charges bind to this account.
+
+export interface OAuthClient {
+    client_id: string;
+    client_name: string;
+    rp_id: string;
+    billable: boolean;
+    redirect_uris: string[];
+    required_attributes: string[];
+    created_at?: string;
+}
+
+// The secret is returned ONLY at creation and never again.
+export interface CreatedOAuthClient extends OAuthClient {
+    client_secret: string;
+}
+
+export function listOAuthClients(token: string): Promise<OAuthClient[]> {
+    return request<OAuthClient[]>('/api/v1/oauth-clients', token);
+}
+
+export function createOAuthClient(token: string, body: {
+    client_name: string;
+    redirect_uris: string[];
+    required_attributes: string[];
+    billable_rp: boolean;
+    rp_id?: string;
+}): Promise<CreatedOAuthClient> {
+    return request<CreatedOAuthClient>('/api/v1/oauth-clients', token, { method: 'POST', body: JSON.stringify(body) });
+}
+
+export function updateOAuthClientBilling(token: string, clientId: string, body: { billable_rp: boolean; rp_id?: string }): Promise<{ client_id: string; billable: boolean; rp_id: string }> {
+    return request(`/api/v1/oauth-clients/${encodeURIComponent(clientId)}/billing`, token, { method: 'PUT', body: JSON.stringify(body) });
+}
+
 // --- Personal access tokens (account-level, long-lived, revocable) ---
 // Platform-wide: one token authenticates the caller against any Privasys app's
 // API; usage bills to the token owner (per-caller metering).
