@@ -21,6 +21,20 @@ export default function RelyingPartiesPage() {
     const [redirects, setRedirects] = useState('');
     const [attributes, setAttributes] = useState('');
     const [billable, setBillable] = useState(true);
+
+    // Canonical attribute referential (the IdP's golden list — registration
+    // refuses anything outside it), rendered as checkboxes. Falls back to a
+    // free-text input if the referential cannot be fetched.
+    const [catalog, setCatalog] = useState<{ key: string; label: string; verifiable?: boolean }[] | null>(null);
+    const [selectedAttrs, setSelectedAttrs] = useState<Set<string>>(new Set());
+    useEffect(() => {
+        fetch('https://privasys.id/referential/canonical-attributes.json')
+            .then((r) => (r.ok ? r.json() : null))
+            .then((d: { attributes?: { key: string; label: string; verifiable?: boolean }[] } | null) => {
+                if (d?.attributes?.length) setCatalog(d.attributes.map((a) => ({ key: a.key, label: a.label, verifiable: a.verifiable })));
+            })
+            .catch(() => { /* fallback input stays */ });
+    }, []);
     const [rpId, setRpId] = useState('');
     const [creating, setCreating] = useState(false);
     const [created, setCreated] = useState<CreatedOAuthClient | null>(null);
@@ -39,7 +53,9 @@ export default function RelyingPartiesPage() {
         if (!token || creating) return;
         setError(null);
         const redirectUris = redirects.split(/\s+/).map((s) => s.trim()).filter(Boolean);
-        const requiredAttributes = attributes.split(/[,\s]+/).map((s) => s.trim()).filter(Boolean);
+        const requiredAttributes = catalog
+            ? Array.from(selectedAttrs)
+            : attributes.split(/[,\s]+/).map((s) => s.trim()).filter(Boolean);
         if (!name.trim() || redirectUris.length === 0) {
             setError('Name and at least one redirect URI are required.');
             return;
@@ -55,7 +71,7 @@ export default function RelyingPartiesPage() {
             });
             setCreated(c);
             setShowForm(false);
-            setName(''); setRedirects(''); setAttributes(''); setRpId(''); setBillable(true);
+            setName(''); setRedirects(''); setAttributes(''); setRpId(''); setBillable(true); setSelectedAttrs(new Set());
             load();
         } catch (e) {
             setError(e instanceof Error ? e.message : 'Registration failed');
@@ -133,9 +149,32 @@ export default function RelyingPartiesPage() {
                             className="w-full rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-3 py-2 text-sm font-mono focus:outline-none focus:border-black/30 dark:focus:border-white/30" />
                     </div>
                     <div>
-                        <label className="block text-xs font-medium text-black/60 dark:text-white/60 mb-1">Attribute whitelist (comma-separated; the attributes this client may request)</label>
-                        <input value={attributes} onChange={(e) => setAttributes(e.target.value)} placeholder="age_over_18, given_name"
-                            className="w-full rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-3 py-2 text-sm font-mono focus:outline-none focus:border-black/30 dark:focus:border-white/30" />
+                        <label className="block text-xs font-medium text-black/60 dark:text-white/60 mb-1">Attribute whitelist (the attributes this client may request)</label>
+                        {catalog ? (
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1.5 rounded-lg border border-black/10 dark:border-white/15 p-3">
+                                {catalog.map((a) => (
+                                    <label key={a.key} className="flex items-center gap-2 text-sm cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={selectedAttrs.has(a.key)}
+                                            onChange={(e) => {
+                                                setSelectedAttrs((prev) => {
+                                                    const next = new Set(prev);
+                                                    if (e.target.checked) next.add(a.key); else next.delete(a.key);
+                                                    return next;
+                                                });
+                                            }}
+                                            className="rounded"
+                                        />
+                                        <span>{a.label}</span>
+                                        <code className="text-[10px] text-black/35 dark:text-white/35">{a.key}</code>
+                                    </label>
+                                ))}
+                            </div>
+                        ) : (
+                            <input value={attributes} onChange={(e) => setAttributes(e.target.value)} placeholder="age_over_18, given_name"
+                                className="w-full rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-3 py-2 text-sm font-mono focus:outline-none focus:border-black/30 dark:focus:border-white/30" />
+                        )}
                     </div>
                     <div className="flex items-center gap-6">
                         <label className="flex items-center gap-2 text-sm">
