@@ -92,6 +92,18 @@ export function ApiTestingTab({ connection, fido2, fido2Actions }: { connection:
 
     const [selectedFunc, setSelectedFunc] = useState('');
     const [paramValues, setParamValues] = useState<Record<string, unknown>>({});
+    // Mirror of selectedFunc for loadSchema (which must not re-run on
+    // selection changes but needs the current value to preserve it).
+    const selectedFuncRef = useRef('');
+    useEffect(() => { selectedFuncRef.current = selectedFunc; }, [selectedFunc]);
+
+    // An auth-gated call failed without a valid session — offer sign-in
+    // inline (mounting the shared auth frame) instead of a dead end.
+    const [authNeeded, setAuthNeeded] = useState(false);
+    const inlineAuthRef = useRef<HTMLDivElement>(null);
+    useEffect(() => {
+        if (fido2.status === 'complete' && fido2.token) setAuthNeeded(false);
+    }, [fido2.status, fido2.token]);
 
     const [response, setResponse] = useState<string | null>(null);
     const [responseStatus, setResponseStatus] = useState<'ok' | 'error' | null>(null);
@@ -124,7 +136,12 @@ export function ApiTestingTab({ connection, fido2, fido2Actions }: { connection:
                 if (!resp || resp.status !== 'schema') throw new Error(resp?.message || 'Failed to fetch schema');
                 setSchema(resp.schema);
                 const fns = getAllFunctions(resp.schema);
-                if (fns.length > 0) {
+                // Keep the user's selection across schema reloads (the schema
+                // refetches whenever the auth token changes — sign-in, expiry);
+                // only fall back to the first function when the previous
+                // selection no longer exists in the new schema.
+                const prev = selectedFuncRef.current;
+                if (fns.length > 0 && !fns.some((f) => f.name === prev)) {
                     setSelectedFunc(fns[0].name);
                     initParamValues(fns[0]);
                 }
@@ -174,10 +191,22 @@ export function ApiTestingTab({ connection, fido2, fido2Actions }: { connection:
             ));
             if (deadSession) {
                 fido2Actions.expireLocally();
+                setAuthNeeded(true);
                 setElapsed(ms);
                 setError('Session expired. Please sign in again.');
                 setResponseStatus('error');
                 pushHistory({ func: fn.name, params: { ...paramValues }, response: 'Session expired. Please sign in again.', status: 'error', elapsed: ms, timestamp: new Date() });
+                return;
+            }
+            // Auth-gated (or caller-priced) function called without a valid
+            // session — surface the inline sign-in instead of a dead end.
+            const needsAuth = Boolean(data && data.status === 'error' && typeof data.message === 'string' && data.message.includes('authentication required'));
+            if (needsAuth) {
+                setAuthNeeded(true);
+                setElapsed(ms);
+                setError('This API requires authentication. Sign in below and send again.');
+                setResponseStatus('error');
+                pushHistory({ func: fn.name, params: { ...paramValues }, response: 'Authentication required.', status: 'error', elapsed: ms, timestamp: new Date() });
                 return;
             }
             const json = JSON.stringify(data, null, 2);
@@ -269,6 +298,24 @@ export function ApiTestingTab({ connection, fido2, fido2Actions }: { connection:
 
     return (
         <div className='space-y-4'>
+            {/* Inline sign-in — shown when an auth-gated call failed without a
+                valid session, so the user can authenticate without leaving the
+                tab. Mounts the same shared auth frame as the Authenticate tab. */}
+            {authNeeded && fido2.status !== 'complete' && (
+                <section className='rounded-xl border border-amber-500/30 bg-amber-500/5 dark:bg-amber-400/10 p-5'>
+                    <p className='text-sm text-amber-800 dark:text-amber-300'>This API requires authentication.</p>
+                    <div ref={inlineAuthRef} className='mt-3' />
+                    {!fido2.signingIn && (
+                        <button
+                            type='button'
+                            onClick={() => { if (inlineAuthRef.current) fido2Actions.signInInto(inlineAuthRef.current); }}
+                            className='mt-3 rounded-lg bg-black text-white dark:bg-white dark:text-black px-4 py-2 text-sm font-semibold hover:opacity-90'
+                        >
+                            Sign in
+                        </button>
+                    )}
+                </section>
+            )}
             {/* Request builder */}
             <section className='rounded-xl border border-black/10 dark:border-white/10 overflow-hidden'>
                 <div className='flex items-stretch border-b border-black/10 dark:border-white/10'>
