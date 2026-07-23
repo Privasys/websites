@@ -24,14 +24,17 @@ export default function RelyingPartiesPage() {
 
     // Canonical attribute referential (the IdP's golden list — registration
     // refuses anything outside it), rendered as checkboxes. Falls back to a
-    // free-text input if the referential cannot be fetched.
-    const [catalog, setCatalog] = useState<{ key: string; label: string; verifiable?: boolean }[] | null>(null);
+    // free-text input if the referential cannot be fetched. identityVerifiable
+    // marks attributes that can carry government-document assurance (verified
+    // by the identity-verifier enclave from a passport/ID + biometrics) —
+    // tagged clearly so an RP knows which claims can be gov-backed.
+    const [catalog, setCatalog] = useState<{ key: string; label: string; gov?: boolean }[] | null>(null);
     const [selectedAttrs, setSelectedAttrs] = useState<Set<string>>(new Set());
     useEffect(() => {
         fetch('https://privasys.id/referential/canonical-attributes.json')
             .then((r) => (r.ok ? r.json() : null))
-            .then((d: { attributes?: { key: string; label: string; verifiable?: boolean }[] } | null) => {
-                if (d?.attributes?.length) setCatalog(d.attributes.map((a) => ({ key: a.key, label: a.label, verifiable: a.verifiable })));
+            .then((d: { attributes?: { key: string; label: string; identityVerifiable?: boolean }[] } | null) => {
+                if (d?.attributes?.length) setCatalog(d.attributes.map((a) => ({ key: a.key, label: a.label, gov: a.identityVerifiable })));
             })
             .catch(() => { /* fallback input stays */ });
     }, []);
@@ -168,6 +171,14 @@ export default function RelyingPartiesPage() {
                                         />
                                         <span>{a.label}</span>
                                         <code className="text-[10px] text-black/35 dark:text-white/35">{a.key}</code>
+                                        {a.gov && (
+                                            <span
+                                                title="Can be government-verified: attested against a passport or identity document (with biometrics) by the identity-verifier enclave."
+                                                className="inline-flex items-center rounded-full bg-indigo-100 dark:bg-indigo-900/30 px-1.5 py-px text-[9px] font-semibold uppercase tracking-wide text-indigo-700 dark:text-indigo-300"
+                                            >
+                                                Gov
+                                            </span>
+                                        )}
                                     </label>
                                 ))}
                             </div>
