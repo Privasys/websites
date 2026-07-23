@@ -9,7 +9,7 @@ import { getApp, listBuilds, listVersions, listDeployments, listCompatibleEnclav
 // Public store base — where a published app is browsable.
 const STORE_BASE_URL = 'https://store.privasys.org';
 import type { CreateVersionBody } from '~/lib/api';
-import { isApiStatus } from '~/lib/api';
+import { isApiStatus, effectivePrice } from '~/lib/api';
 import { versionLabel, versionSemverStr, isStrictlyNewer } from '~/lib/version';
 import { displayNameError } from '~/lib/appName';
 import type { AppSchema, ConfigureSection, FunctionSchema, JsonSchemaProp, ActionProgress, WitType, McpManifest, AppTeam, AppCommit, DeployLocation, Instance, PriceRule } from '~/lib/api';
@@ -721,6 +721,9 @@ function ApiTestingTab({ appId, token, deployments, versions }: { appId: string;
     const [elapsed, setElapsed] = useState<number | null>(null);
     const [copied, setCopied] = useState(false);
     const [cliCopied, setCliCopied] = useState(false);
+    // Consent gate for priced calls (x-privasys.price): true = the charge
+    // strip is showing and the next confirm actually sends.
+    const [priceConfirm, setPriceConfirm] = useState(false);
 
     const [history, setHistory] = useState<CallHistoryEntry[]>([]);
     const [historyCounter, setHistoryCounter] = useState(0);
@@ -730,7 +733,7 @@ function ApiTestingTab({ appId, token, deployments, versions }: { appId: string;
         function handleKeydown(e: KeyboardEvent) {
             if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
                 e.preventDefault();
-                sendCall();
+                requestSend();
             }
         }
         window.addEventListener('keydown', handleKeydown);
@@ -789,9 +792,23 @@ function ApiTestingTab({ appId, token, deployments, versions }: { appId: string;
         setResponseStatus(null);
         setError(null);
         setElapsed(null);
+        setPriceConfirm(false);
         if (!schema) return;
         const fn = getAllFunctions(schema).find(f => f.name === name);
         if (fn) initParamValues(fn);
+    }
+
+    // Priced calls require explicit consent per send: the first Send reveals
+    // the charge strip; only "Charge & send" actually dispatches.
+    function requestSend() {
+        const fn = getSelectedFunction();
+        const fee = effectivePrice(fn);
+        if ((fee?.credits ?? 0) > 0 && !priceConfirm) {
+            setPriceConfirm(true);
+            return;
+        }
+        setPriceConfirm(false);
+        void sendCall();
     }
 
     async function sendCall() {
@@ -944,7 +961,7 @@ function ApiTestingTab({ appId, token, deployments, versions }: { appId: string;
                     </div>
                     <div className="w-px bg-black/10 dark:bg-white/10" />
                     <button
-                        onClick={sendCall}
+                        onClick={requestSend}
                         disabled={sending || !selectedFunc}
                         className="px-6 py-3 text-sm font-semibold bg-blue-500 hover:bg-blue-600 text-white disabled:opacity-40 transition-colors"
                     >
@@ -982,9 +999,36 @@ function ApiTestingTab({ appId, token, deployments, versions }: { appId: string;
                                 </>
                             )}
                         </code>
-                        <ToolPrice price={currentFunc.x_privasys?.price} />
+                        <ToolPrice price={effectivePrice(currentFunc)} />
                     </div>
                 )}
+
+                {/* Charge consent — a priced call never fires on the first
+                    click; the caller confirms the attested price explicitly. */}
+                {priceConfirm && (() => {
+                    const fee = effectivePrice(currentFunc);
+                    const credits = fee?.credits ?? 0;
+                    const gbp = (credits / 1_000_000).toLocaleString('en-GB', { style: 'currency', currency: 'GBP', minimumFractionDigits: 2, maximumFractionDigits: 4 });
+                    return (
+                        <div className="flex items-center gap-3 px-4 py-3 bg-amber-50 dark:bg-amber-900/20 border-b border-amber-500/20">
+                            <span className="text-sm text-amber-800 dark:text-amber-300">
+                                This call charges <strong>{credits.toLocaleString()} credits</strong> ({gbp}) to your account on success. The app developer earns 85%.
+                            </span>
+                            <button
+                                onClick={() => { setPriceConfirm(false); void sendCall(); }}
+                                className="ml-auto shrink-0 rounded-lg bg-amber-600 hover:bg-amber-700 text-white px-4 py-1.5 text-xs font-semibold"
+                            >
+                                Charge & send
+                            </button>
+                            <button
+                                onClick={() => setPriceConfirm(false)}
+                                className="shrink-0 rounded-lg border border-black/10 dark:border-white/15 px-3 py-1.5 text-xs hover:bg-black/5 dark:hover:bg-white/5"
+                            >
+                                Cancel
+                            </button>
+                        </div>
+                    );
+                })()}
 
                 {/* Parameters form */}
                 <div className="p-4">

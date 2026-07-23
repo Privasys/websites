@@ -310,6 +310,16 @@ export interface FunctionSchema {
     description?: string;
     input_schema?: JsonSchemaObject;
     x_privasys?: { progress?: ActionProgress; price?: PriceRule };
+    // Attested per-call fee, stamped onto the schema by the enclave itself
+    // from the app's MEASURED configuration (wasm apps, enclave >= v0.43).
+    // Preferred over the manifest-sourced x_privasys.price when present.
+    price?: PriceRule;
+}
+
+// Resolve a function's effective fee: the enclave-attested price wins over
+// the container-manifest one.
+export function effectivePrice(fn?: FunctionSchema): PriceRule | undefined {
+    return fn?.price ?? fn?.x_privasys?.price;
 }
 
 // Developer-set per-call API fee (x-privasys.price). A flat `credits` fee is

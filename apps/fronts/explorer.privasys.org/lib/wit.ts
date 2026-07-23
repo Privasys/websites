@@ -27,6 +27,19 @@ export interface FunctionSchema {
     name: string;
     params: WitParam[];
     results: WitResult[];
+    /** Attested per-call fee (x-privasys.price), stamped onto the schema by
+     *  the enclave from the app's measured configuration (enclave >= v0.43):
+     *  the price shown is exactly the price the runtime will charge. */
+    price?: PriceRule;
+}
+
+/** Developer-set per-call API fee. `credits` are charged to the payer on a
+ *  successful call; the app developer earns 85%. Absent / 0 = free. */
+export interface PriceRule {
+    credits?: number;
+    payer?: 'caller' | 'sponsor';
+    sponsor_from?: string;
+    free_for?: string[];
 }
 
 export interface InterfaceSchema {

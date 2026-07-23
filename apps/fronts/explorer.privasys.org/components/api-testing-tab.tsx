@@ -97,6 +97,10 @@ export function ApiTestingTab({ connection, fido2, fido2Actions }: { connection:
     const selectedFuncRef = useRef('');
     useEffect(() => { selectedFuncRef.current = selectedFunc; }, [selectedFunc]);
 
+    // Consent gate for priced calls: true = the charge strip is showing and
+    // the next confirm actually sends.
+    const [priceConfirm, setPriceConfirm] = useState(false);
+
     // An auth-gated call failed without a valid session — offer sign-in
     // inline (mounting the shared auth frame) instead of a dead end.
     const [authNeeded, setAuthNeeded] = useState(false);
@@ -231,7 +235,7 @@ export function ApiTestingTab({ connection, fido2, fido2Actions }: { connection:
         const onKey = (e: KeyboardEvent) => {
             if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
                 e.preventDefault();
-                if (schema) void sendCall();
+                if (schema) requestSend();
             }
         };
         window.addEventListener('keydown', onKey);
@@ -244,9 +248,23 @@ export function ApiTestingTab({ connection, fido2, fido2Actions }: { connection:
         setResponseStatus(null);
         setError(null);
         setElapsed(null);
+        setPriceConfirm(false);
         if (!schema) return;
         const fn = getAllFunctions(schema).find((f) => f.name === name);
         if (fn) initParamValues(fn);
+    }
+
+    // Priced calls (x-privasys.price, attested on the schema) require explicit
+    // consent per send: the first Send reveals the charge strip; only
+    // "Charge & send" dispatches.
+    function requestSend() {
+        const fn = getSelectedFunction();
+        if ((fn?.price?.credits ?? 0) > 0 && !priceConfirm) {
+            setPriceConfirm(true);
+            return;
+        }
+        setPriceConfirm(false);
+        void sendCall();
     }
 
     function loadFromHistory(entry: HistoryEntry) {
@@ -331,7 +349,7 @@ export function ApiTestingTab({ connection, fido2, fido2Actions }: { connection:
                     </select>
                     <button
                         type='button'
-                        onClick={() => void sendCall()}
+                        onClick={requestSend}
                         disabled={sending || !selectedFunc}
                         className='px-6 py-3 text-sm font-semibold bg-blue-500 hover:bg-blue-600 text-white disabled:opacity-40 transition-colors'
                     >
@@ -366,6 +384,39 @@ export function ApiTestingTab({ connection, fido2, fido2Actions }: { connection:
                                 </>
                             )}
                         </code>
+                        {(currentFunc.price?.credits ?? 0) > 0 && (
+                            <span
+                                title='Developer-set per-call fee, attested in the app measurement: the price shown is exactly what the enclave charges on a successful call.'
+                                className='ml-3 inline-flex items-center rounded-full bg-amber-100 dark:bg-amber-900/25 px-2 py-0.5 text-[10px] font-medium text-amber-800 dark:text-amber-300'
+                            >
+                                {(currentFunc.price?.credits ?? 0).toLocaleString()} credits ({((currentFunc.price?.credits ?? 0) / 1_000_000).toLocaleString('en-GB', { style: 'currency', currency: 'GBP', minimumFractionDigits: 2, maximumFractionDigits: 4 })})
+                                {currentFunc.price?.free_for?.includes('wallet') ? ' · free for wallet users' : ''}
+                            </span>
+                        )}
+                    </div>
+                )}
+
+                {/* Charge consent — a priced call never fires on the first
+                    click; the caller confirms the attested price explicitly. */}
+                {priceConfirm && (currentFunc?.price?.credits ?? 0) > 0 && (
+                    <div className='flex items-center gap-3 px-4 py-3 bg-amber-50 dark:bg-amber-900/20 border-b border-amber-500/20'>
+                        <span className='text-sm text-amber-800 dark:text-amber-300'>
+                            This call charges <strong>{(currentFunc?.price?.credits ?? 0).toLocaleString()} credits</strong> ({((currentFunc?.price?.credits ?? 0) / 1_000_000).toLocaleString('en-GB', { style: 'currency', currency: 'GBP', minimumFractionDigits: 2, maximumFractionDigits: 4 })}) to your account on success. The app developer earns 85%.
+                        </span>
+                        <button
+                            type='button'
+                            onClick={() => { setPriceConfirm(false); void sendCall(); }}
+                            className='ml-auto shrink-0 rounded-lg bg-amber-600 hover:bg-amber-700 text-white px-4 py-1.5 text-xs font-semibold'
+                        >
+                            Charge & send
+                        </button>
+                        <button
+                            type='button'
+                            onClick={() => setPriceConfirm(false)}
+                            className='shrink-0 rounded-lg border border-black/10 dark:border-white/15 px-3 py-1.5 text-xs hover:bg-black/5 dark:hover:bg-white/5'
+                        >
+                            Cancel
+                        </button>
                     </div>
                 )}
 
