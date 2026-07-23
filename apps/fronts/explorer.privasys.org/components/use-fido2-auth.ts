@@ -76,7 +76,14 @@ export function useFido2Auth(connection: ConnectionConfig | null): [Fido2State, 
             brokerUrl: connection.brokerUrl,
             authOrigin: ENV_CONFIG[connection.env].authOrigin,
             timeout: FIDO2_TIMEOUT,
-            container
+            container,
+            // Without a clientId the IdP ceremony returns only its own session
+            // token, which the WASM enclave can never validate (it accepts its
+            // own FIDO2 sessions or a platform at+jwt). With it, signIn() also
+            // returns the IdP access token (aud privasys-platform) — the token
+            // this hook already prefers — which the enclave's OIDC path
+            // verifies. Mirrors chat/drive's auth-provider config.
+            clientId: 'privasys-platform'
         });
         frame.onSessionExpired = () => {
             frameRef.current = null;
