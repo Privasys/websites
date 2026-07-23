@@ -181,11 +181,11 @@ export function ApiTestingTab({ connection, fido2, fido2Actions }: { connection:
             setHistory((prev) => [{ id: historyCounter.current++, ...entry }, ...prev].slice(0, 20));
         };
         try {
-            // Public /call path when authenticated via FIDO2 session, else the
-            // JWT-gated /rpc path (management token flow).
-            const rpcPath = token
-                ? `/api/v1/apps/${encodeURIComponent(appName)}/call/${encodeURIComponent(fn.name)}`
-                : `/api/v1/apps/${encodeURIComponent(appName)}/rpc/${encodeURIComponent(fn.name)}`;
+            // Always the public /call path: it forwards X-App-Auth when present
+            // and allows anonymous calls to public functions (the enclave
+            // enforces each function's policy). The JWT-gated /rpc path is the
+            // developer-portal flow, not the explorer's.
+            const rpcPath = `/api/v1/apps/${encodeURIComponent(appName)}/call/${encodeURIComponent(fn.name)}`;
             // A priced call carries the user's exact-price approval (given via
             // the charge strip) as X-Billing-Approved; the attested runtime
             // refuses priced calls without it and the platform maps refusals
@@ -479,11 +479,13 @@ export function ApiTestingTab({ connection, fido2, fido2Actions }: { connection:
                 {/* The exact headers the last Send put on the wire. */}
                 {reqHeaders && (
                     <div className='px-4 py-2 border-b border-black/5 dark:border-white/5 bg-black/2 dark:bg-white/2'>
-                        <span className='text-[10px] uppercase tracking-wider text-black/30 dark:text-white/30 font-medium mr-3'>Request headers</span>
+                        <div className='text-[10px] uppercase tracking-wider text-black/30 dark:text-white/30 font-medium mb-1'>Request headers</div>
                         {reqHeaders.map(([k, v]) => (
-                            <code key={k} className='mr-3 text-[11px] text-black/60 dark:text-white/60'>
-                                <span className={k === 'X-Billing-Approved' ? 'text-amber-700 dark:text-amber-400 font-semibold' : ''}>{k}</span>: {v}
-                            </code>
+                            <div key={k}>
+                                <code className='text-[11px] text-black/60 dark:text-white/60'>
+                                    <span className={k === 'X-Billing-Approved' ? 'text-amber-700 dark:text-amber-400 font-semibold' : ''}>{k}</span>: {v}
+                                </code>
+                            </div>
                         ))}
                     </div>
                 )}
@@ -547,6 +549,19 @@ export function ApiTestingTab({ connection, fido2, fido2Actions }: { connection:
                             {copied ? 'Copied ✓' : 'Copy'}
                         </button>
                     </div>
+                    {/* Response headers — mirrors the request tile's section. */}
+                    {respMeta && respMeta.headers.length > 0 && (
+                        <div className='px-4 py-2 border-b border-black/5 dark:border-white/5 bg-black/2 dark:bg-white/2'>
+                            <div className='text-[10px] uppercase tracking-wider text-black/30 dark:text-white/30 font-medium mb-1'>Response headers</div>
+                            {respMeta.headers.map(([k, v]) => (
+                                <div key={k}>
+                                    <code className='text-[11px] text-black/60 dark:text-white/60'>
+                                        <span className={k.toLowerCase().startsWith('x-billing') ? 'text-amber-700 dark:text-amber-400 font-semibold' : ''}>{k}</span>: {v}
+                                    </code>
+                                </div>
+                            ))}
+                        </div>
+                    )}
                     {error ? (
                         <div className='p-4 text-sm text-red-700 dark:text-red-300 bg-red-50/50 dark:bg-red-900/10'>{error}</div>
                     ) : (
