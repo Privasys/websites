@@ -28,7 +28,7 @@ export function apiErrorCode(error: unknown): string | undefined {
 // proxy to the container). A 401 from there means the APP rejected the call, not
 // that the developer's portal session lapsed, so it must not fire auth:expired
 // (which logs the developer out). Surface it inline instead.
-async function request<T>(path: string, token: string, init?: RequestInit, opts?: { proxied?: boolean }): Promise<T> {
+async function request<T>(path: string, token: string, init?: RequestInit, opts?: { proxied?: boolean; onResponse?: (_status: number, _headers: Headers) => void }): Promise<T> {
     const res = await fetch(`${API_URL}${path}`, {
         ...init,
         headers: {
@@ -37,6 +37,7 @@ async function request<T>(path: string, token: string, init?: RequestInit, opts?
             ...init?.headers
         }
     });
+    opts?.onResponse?.(res.status, res.headers);
     if (!res.ok) {
         if (res.status === 401 && !opts?.proxied) {
             window.dispatchEvent(new Event('auth:expired'));
@@ -364,7 +365,7 @@ export async function getAppSchema(token: string, appId: string): Promise<AppSch
     return resp.schema;
 }
 
-export async function rpcCall(token: string, appId: string, func: string, params: unknown, billingApproved?: string): Promise<unknown> {
+export async function rpcCall(token: string, appId: string, func: string, params: unknown, billingApproved?: string, onResponse?: (_status: number, _headers: Headers) => void): Promise<unknown> {
     return request<unknown>(`/api/v1/apps/${encodeURIComponent(appId)}/rpc/${encodeURIComponent(func)}`, token, {
         method: 'POST',
         body: JSON.stringify(params),
@@ -372,7 +373,7 @@ export async function rpcCall(token: string, appId: string, func: string, params
         // gave in the charge strip — the attested runtime refuses a priced
         // call unless this matches the measured price exactly.
         ...(billingApproved ? { headers: { 'X-Billing-Approved': billingApproved } } : {})
-    }, { proxied: true });
+    }, { proxied: true, onResponse });
 }
 
 // --- Personal access tokens (account-level, long-lived, revocable) ---

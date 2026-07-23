@@ -725,6 +725,12 @@ function ApiTestingTab({ appId, token, deployments, versions }: { appId: string;
     // strip is showing and the next confirm actually sends.
     const [priceConfirm, setPriceConfirm] = useState(false);
 
+    // The exact headers the last call sent (bearer masked) and the HTTP
+    // status + billing response headers — surfaced in the request/response
+    // tiles so the billing protocol is visible.
+    const [reqHeaders, setReqHeaders] = useState<[string, string][] | null>(null);
+    const [respMeta, setRespMeta] = useState<{ status: number; headers: [string, string][] } | null>(null);
+
     const [history, setHistory] = useState<CallHistoryEntry[]>([]);
     const [historyCounter, setHistoryCounter] = useState(0);
 
@@ -798,12 +804,27 @@ function ApiTestingTab({ appId, token, deployments, versions }: { appId: string;
         if (fn) initParamValues(fn);
     }
 
+    // Whether the signed-in caller is exempt from a price rule: their access
+    // token carries the IdP's wallet-class marker and the rule grants
+    // free_for:["wallet"]. Client-side UX only; the enclave is authoritative.
+    function callerExempt(fn?: FunctionSchema): boolean {
+        const fee = effectivePrice(fn);
+        if (!fee?.free_for?.includes('wallet') || !token) return false;
+        try {
+            const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))) as { wallet?: boolean | string };
+            return payload.wallet === true || payload.wallet === 'true';
+        } catch {
+            return false;
+        }
+    }
+
     // Priced calls require explicit consent per send: the first Send reveals
-    // the charge strip; only "Charge & send" actually dispatches.
+    // the charge strip; only "Charge & send" actually dispatches. Exempt
+    // (wallet-class) callers skip the ceremony — they are not charged.
     function requestSend() {
         const fn = getSelectedFunction();
         const fee = effectivePrice(fn);
-        if ((fee?.credits ?? 0) > 0 && !priceConfirm) {
+        if ((fee?.credits ?? 0) > 0 && !callerExempt(fn) && !priceConfirm) {
             setPriceConfirm(true);
             return;
         }
@@ -823,10 +844,24 @@ function ApiTestingTab({ appId, token, deployments, versions }: { appId: string;
         try {
             // A priced call carries the user's exact-price approval (given via
             // the charge strip) as X-Billing-Approved; the attested runtime
-            // refuses priced calls without it.
+            // refuses priced calls without it. Exempt (wallet-class) callers
+            // send no approval — they are not charged.
             const fee = effectivePrice(fn);
-            const approved = (fee?.credits ?? 0) > 0 ? `${fee?.credits} credits` : undefined;
-            const data = await rpcCall(token, appId, fn.name, paramValues, approved);
+            const approved = (fee?.credits ?? 0) > 0 && !callerExempt(fn) ? `${fee?.credits} credits` : undefined;
+            setReqHeaders([
+                ['Authorization', 'Bearer ●●●●' + token.slice(-6)],
+                ['Content-Type', 'application/json'],
+                ...(approved ? [['X-Billing-Approved', approved] as [string, string]] : [])
+            ]);
+            setRespMeta(null);
+            const data = await rpcCall(token, appId, fn.name, paramValues, approved, (status, h) => {
+                const interesting: [string, string][] = [];
+                for (const name of ['x-billing-charged', 'x-billing-price', 'content-type']) {
+                    const v = h.get(name);
+                    if (v) interesting.push([name.replace(/\b[a-z]/g, (c) => c.toUpperCase()), v]);
+                }
+                setRespMeta({ status, headers: interesting });
+            });
             const ms = Math.round(performance.now() - start);
             const json = JSON.stringify(data, null, 2);
             setElapsed(ms);
@@ -1004,7 +1039,16 @@ function ApiTestingTab({ appId, token, deployments, versions }: { appId: string;
                                 </>
                             )}
                         </code>
-                        <ToolPrice price={effectivePrice(currentFunc)} />
+                        {callerExempt(currentFunc) ? (
+                            <span
+                                title='This function is priced, but your wallet-class session is exempt: you will not be charged.'
+                                className='ml-3 inline-flex items-center rounded-full bg-emerald-100 dark:bg-emerald-900/25 px-2 py-0.5 text-[10px] font-medium text-emerald-800 dark:text-emerald-300'
+                            >
+                                Free for you (wallet user)
+                            </span>
+                        ) : (
+                            <ToolPrice price={effectivePrice(currentFunc)} />
+                        )}
                     </div>
                 )}
 
@@ -1034,6 +1078,18 @@ function ApiTestingTab({ appId, token, deployments, versions }: { appId: string;
                         </div>
                     );
                 })()}
+
+                {/* The exact headers the last Send put on the wire. */}
+                {reqHeaders && (
+                    <div className="px-4 py-2 border-b border-black/5 dark:border-white/5 bg-black/2 dark:bg-white/2">
+                        <span className="text-[10px] uppercase tracking-wider text-black/30 dark:text-white/30 font-medium mr-3">Request headers</span>
+                        {reqHeaders.map(([k, v]) => (
+                            <code key={k} className="mr-3 text-[11px] text-black/60 dark:text-white/60">
+                                <span className={k === 'X-Billing-Approved' ? 'text-amber-700 dark:text-amber-400 font-semibold' : ''}>{k}</span>: {v}
+                            </code>
+                        ))}
+                    </div>
+                )}
 
                 {/* Parameters form */}
                 <div className="p-4">
@@ -1105,18 +1161,21 @@ function ApiTestingTab({ appId, token, deployments, versions }: { appId: string;
                             {responseStatus === 'ok' && (
                                 <span className="flex items-center gap-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
                                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                                    200 OK
+                                    {respMeta ? `${respMeta.status} OK` : '200 OK'}
                                 </span>
                             )}
                             {responseStatus === 'error' && (
                                 <span className="flex items-center gap-1 text-[11px] font-medium text-red-600 dark:text-red-400">
                                     <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
-                                    Error
+                                    {respMeta && respMeta.status >= 400 ? `HTTP ${respMeta.status}` : 'Error'}
                                 </span>
                             )}
                             {elapsed != null && (
                                 <span className="text-[11px] text-black/30 dark:text-white/30">{elapsed}ms</span>
                             )}
+                            {respMeta?.headers.filter(([k]) => k.toLowerCase().startsWith('x-billing')).map(([k, v]) => (
+                                <code key={k} className="text-[11px] text-amber-700 dark:text-amber-400">{k}: {v}</code>
+                            ))}
                         </div>
                         <button
                             onClick={() => handleCopy(response || error || '')}
