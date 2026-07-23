@@ -107,6 +107,49 @@ A client connecting to the app:
    that input — no env var indirection, no out-of-band attestation
    document needed.
 
+## Charging for API calls (`@price`)
+
+A tool can declare a per-call fee next to its auth policy. The rule is a
+JSON object in a `@price` doc annotation on the export (wasm WIT shown;
+container apps declare the same object under `x-privasys.price` per tool
+in their manifest):
+
+```wit
+/// Verify an identity document.
+/// @auth authenticated
+/// @price {"credits":5000,"payer":"caller"}
+export verify-document: func(image: string) -> result<fields, string>;
+```
+
+Fields of the price rule:
+
+| Field | Values | Meaning |
+|---|---|---|
+| `credits` | integer ≥ 0 | Fee charged to the payer per **successful** call. 1,000,000 credits = £1, so `5000` is 0.5p. `0` or absent = free. |
+| `payer` | `"caller"` (default) \| `"sponsor"` | Who pays: the authenticated caller, or a third party named in the request. |
+| `sponsor_from` | request parameter name | Required for `payer:"sponsor"`: the parameter carrying the sponsoring relying party's id, resolved platform-side to a funded account. |
+| `free_for` | `["wallet"]` | Caller classes exempt from the fee. `wallet` = the caller authenticated through a Privasys wallet ceremony (their token carries the IdP's non-identifying wallet marker). Exempt callers pay 0; you still bear the compute. |
+
+The rule is part of the app's **measured configuration**: it is folded into
+the same configuration hash as the auth policy, so the price a caller
+reads off the schema is attested alongside the code. Changing a price is a
+new version.
+
+At call time the runtime enforces informed consent. A caller-priced
+function requires the request header `X-Billing-Approved: <credits> credits`
+matching the attested price exactly; without it (or with any other amount)
+the call is refused with `402 Payment Required` and the response header
+`X-Billing-Price` stating the price to approve, before any of your code
+runs. On success the response carries `X-Billing-Charged`, the fee is
+recorded, and you earn 85% of it (the platform keeps 15%); a failed call
+charges nothing. Because the enforcement and the price are both inside the
+measurement, a successful priced call is attestable proof the caller
+pre-approved exactly the price they were charged.
+
+The developer portal, the App Explorer, and the CLI read the price off the
+schema, show it to the caller, and send the approval header after explicit
+consent, so callers through the standard surfaces never craft it by hand.
+
 ## Next steps
 
 - [Deploy a container](/solutions/platform/developer-platform/deploy-container)

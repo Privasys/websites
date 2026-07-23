@@ -9,6 +9,9 @@ export interface AppFetchOptions {
     body?: string;
     sessionToken?: string;
     headers?: Record<string, string>;
+    /** Called with the HTTP status and response headers before the body is
+     *  parsed — lets the API Testing tab surface X-Billing-* and friends. */
+    onResponse?: (_status: number, _headers: Headers) => void;
 }
 
 export async function appFetch<T = unknown>(baseUrl: string, path: string, opts: AppFetchOptions = {}): Promise<T | null> {
@@ -17,6 +20,7 @@ export async function appFetch<T = unknown>(baseUrl: string, path: string, opts:
     if (opts.sessionToken) headers['X-App-Auth'] = opts.sessionToken;
     if (opts.headers) Object.assign(headers, opts.headers);
     const res = await fetch(url, { method: opts.method, body: opts.body, headers });
+    opts.onResponse?.(res.status, res.headers);
     if (!res.ok) {
         const err = await res.json().catch(() => ({ error: res.statusText })) as { error?: string; message?: string };
         throw new Error(err.error || err.message || `HTTP ${res.status}`);

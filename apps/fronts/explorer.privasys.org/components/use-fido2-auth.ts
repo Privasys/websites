@@ -53,7 +53,14 @@ export function useFido2Auth(connection: ConnectionConfig | null): [Fido2State, 
     // Synchronous concurrency guard for signInInto (state updates are async).
     const signingInRef = useRef(false);
 
-    const rpId = connection ? `${connection.appName}.${connection.gatewayDomain}` : '';
+    // Sign into the PLATFORM RP (privasys.id), not an app-specific one: the
+    // resulting access token then carries the caller's platform-pairwise sub,
+    // the identity their credit account is keyed by, so priced calls can bill
+    // them. An app-specific RP mints an app-pairwise sub that the platform
+    // deliberately cannot link to any account (the pairwise map lives only on
+    // the user's device), which makes the caller unbillable. Mirrors
+    // chat/drive (rpId: 'privasys.id').
+    const rpId = connection ? new URL(ENV_CONFIG[connection.env].authOrigin).hostname : '';
 
     // Reset everything (and tear down any live frame) whenever the connection
     // target changes — a different app is a different RP and session.

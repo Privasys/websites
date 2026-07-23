@@ -11,6 +11,7 @@
 import { useState } from 'react';
 import type { ConnectionConfig } from '~/lib/config';
 import type { Fido2Actions, Fido2State } from '~/components/use-fido2-auth';
+import { useExplorerAuth } from '~/components/explorer-auth-context';
 import { AttestationTab } from '~/components/attestation-tab';
 import { AuthenticateTab } from '~/components/authenticate-tab';
 import { ApiTestingTab } from '~/components/api-testing-tab';
@@ -30,16 +31,14 @@ export function ConnectedView({ connection, fido2, fido2Actions, onDisconnect }:
 }) {
     const [tab, setTab] = useState<TabKey>('attestation');
     const [visited, setVisited] = useState<Set<TabKey>>(() => new Set<TabKey>(['attestation']));
-    // Auth lives in the header (the usual top-right control), expanding into a
-    // panel that hosts the shared auth frame — no dedicated tab.
-    const [authOpen, setAuthOpen] = useState(false);
+    // Auth is controlled from the top navigation (NavAuth in the Navbar's
+    // trailing slot); this view only renders the expanding panel.
+    const { authOpen } = useExplorerAuth();
 
     const select = (t: TabKey) => {
         setTab(t);
         setVisited((v) => new Set(v).add(t));
     };
-
-    const authed = fido2.status === 'complete' && !!fido2.token;
 
     return (
         <div>
@@ -56,36 +55,13 @@ export function ConnectedView({ connection, fido2, fido2Actions, onDisconnect }:
                     </span>
                 </div>
                 <div className='ml-auto flex items-center gap-2'>
-                    {authed ? (
-                        <button
-                            type='button'
-                            onClick={() => setAuthOpen((o) => !o)}
-                            title='Show session details'
-                            className='inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/20'
-                        >
-                            ✓ Authenticated
-                        </button>
-                    ) : (
-                        <button
-                            type='button'
-                            onClick={() => setAuthOpen((o) => !o)}
-                            className='rounded-lg bg-black text-white dark:bg-white dark:text-black px-3 py-1.5 text-xs font-semibold hover:opacity-90'
-                        >
-                            Sign in
-                        </button>
-                    )}
-                    {authed && (
-                        <button type='button' onClick={() => { fido2Actions.signOut(); setAuthOpen(false); }} className='rounded-lg border border-black/10 dark:border-white/15 px-3 py-1.5 text-xs hover:bg-black/5 dark:hover:bg-white/5'>
-                            Sign out
-                        </button>
-                    )}
                     <button type='button' onClick={onDisconnect} className='rounded-lg border border-black/10 dark:border-white/15 px-3 py-1.5 text-xs hover:bg-black/5 dark:hover:bg-white/5'>
                         Disconnect
                     </button>
                 </div>
             </div>
 
-            {/* Auth panel — expands under the header from the Sign in / badge control. */}
+            {/* Auth panel — expands under the header from the top-nav control. */}
             {authOpen && (
                 <div className='mt-4'>
                     <AuthenticateTab connection={connection} fido2={fido2} actions={fido2Actions} />

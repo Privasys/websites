@@ -101,6 +101,12 @@ export function ApiTestingTab({ connection, fido2, fido2Actions }: { connection:
     // the next confirm actually sends.
     const [priceConfirm, setPriceConfirm] = useState(false);
 
+    // The exact headers the last call sent (auth token masked) and the HTTP
+    // status + interesting response headers it got back — surfaced in the
+    // request/response tiles so the billing protocol is visible.
+    const [reqHeaders, setReqHeaders] = useState<[string, string][] | null>(null);
+    const [respMeta, setRespMeta] = useState<{ status: number; headers: [string, string][] } | null>(null);
+
     // An auth-gated call failed without a valid session — offer sign-in
     // inline (mounting the shared auth frame) instead of a dead end.
     const [authNeeded, setAuthNeeded] = useState(false);
@@ -184,12 +190,31 @@ export function ApiTestingTab({ connection, fido2, fido2Actions }: { connection:
             // the charge strip) as X-Billing-Approved; the attested runtime
             // refuses priced calls without it and the platform maps refusals
             // to HTTP 402 (X-Billing-Price carries the price to approve).
-            const approvedCredits = fn.price?.credits ?? 0;
+            // Exempt (wallet-class) callers send no approval — they are not
+            // charged and the enclave skips the requirement for them.
+            const approvedCredits = callerExempt(fn) ? 0 : (fn.price?.credits ?? 0);
+            const extraHeaders = approvedCredits > 0 ? { 'X-Billing-Approved': `${approvedCredits} credits` } : undefined;
+            // Mirror the wire in the UI: exact request headers (token masked)
+            // and, below, the response status + billing headers.
+            setReqHeaders([
+                ['Content-Type', 'application/json'],
+                ...(token ? [['X-App-Auth', '●●●●' + token.slice(-6)] as [string, string]] : []),
+                ...(extraHeaders ? Object.entries(extraHeaders) : [])
+            ]);
+            setRespMeta(null);
             const data = await appFetch<Record<string, unknown>>(base, rpcPath, {
                 method: 'POST',
                 body: JSON.stringify(paramValues),
                 sessionToken: token,
-                headers: approvedCredits > 0 ? { 'X-Billing-Approved': `${approvedCredits} credits` } : undefined
+                headers: extraHeaders,
+                onResponse: (status, h) => {
+                    const interesting: [string, string][] = [];
+                    for (const name of ['x-billing-charged', 'x-billing-price', 'content-type']) {
+                        const v = h.get(name);
+                        if (v) interesting.push([name.replace(/\b[a-z]/g, (c) => c.toUpperCase()), v]);
+                    }
+                    setRespMeta({ status, headers: interesting });
+                }
             });
             const ms = Math.round(performance.now() - start);
             // Detect a dead app session in a 200 response. Three shapes:
@@ -264,12 +289,26 @@ export function ApiTestingTab({ connection, fido2, fido2Actions }: { connection:
         if (fn) initParamValues(fn);
     }
 
+    // Whether the signed-in caller is exempt from a price rule: their access
+    // token carries the IdP's non-identifying wallet-class marker and the rule
+    // grants free_for:["wallet"]. Decoded client-side purely for UX (no strip,
+    // no consent needed); the enclave makes the authoritative check.
+    function callerExempt(fn?: FunctionSchema): boolean {
+        if (!fn?.price?.free_for?.includes('wallet') || !token) return false;
+        try {
+            const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))) as { wallet?: boolean | string };
+            return payload.wallet === true || payload.wallet === 'true';
+        } catch {
+            return false;
+        }
+    }
+
     // Priced calls (x-privasys.price, attested on the schema) require explicit
     // consent per send: the first Send reveals the charge strip; only
-    // "Charge & send" dispatches.
+    // "Charge & send" dispatches. Exempt callers skip the ceremony entirely.
     function requestSend() {
         const fn = getSelectedFunction();
-        if ((fn?.price?.credits ?? 0) > 0 && !priceConfirm) {
+        if ((fn?.price?.credits ?? 0) > 0 && !callerExempt(fn) && !priceConfirm) {
             setPriceConfirm(true);
             return;
         }
@@ -394,7 +433,14 @@ export function ApiTestingTab({ connection, fido2, fido2Actions }: { connection:
                                 </>
                             )}
                         </code>
-                        {(currentFunc.price?.credits ?? 0) > 0 && (
+                        {(currentFunc.price?.credits ?? 0) > 0 && (callerExempt(currentFunc) ? (
+                            <span
+                                title='This function is priced, but your wallet-class session is exempt: you will not be charged.'
+                                className='ml-3 inline-flex items-center rounded-full bg-emerald-100 dark:bg-emerald-900/25 px-2 py-0.5 text-[10px] font-medium text-emerald-800 dark:text-emerald-300'
+                            >
+                                Free for you (wallet user)
+                            </span>
+                        ) : (
                             <span
                                 title='Developer-set per-call fee, attested in the app measurement: the price shown is exactly what the enclave charges on a successful call.'
                                 className='ml-3 inline-flex items-center rounded-full bg-amber-100 dark:bg-amber-900/25 px-2 py-0.5 text-[10px] font-medium text-amber-800 dark:text-amber-300'
@@ -402,7 +448,7 @@ export function ApiTestingTab({ connection, fido2, fido2Actions }: { connection:
                                 {(currentFunc.price?.credits ?? 0).toLocaleString()} credits ({((currentFunc.price?.credits ?? 0) / 1_000_000).toLocaleString('en-GB', { style: 'currency', currency: 'GBP', minimumFractionDigits: 2, maximumFractionDigits: 4 })})
                                 {currentFunc.price?.free_for?.includes('wallet') ? ' · free for wallet users' : ''}
                             </span>
-                        )}
+                        ))}
                     </div>
                 )}
 
@@ -427,6 +473,18 @@ export function ApiTestingTab({ connection, fido2, fido2Actions }: { connection:
                         >
                             Cancel
                         </button>
+                    </div>
+                )}
+
+                {/* The exact headers the last Send put on the wire. */}
+                {reqHeaders && (
+                    <div className='px-4 py-2 border-b border-black/5 dark:border-white/5 bg-black/2 dark:bg-white/2'>
+                        <span className='text-[10px] uppercase tracking-wider text-black/30 dark:text-white/30 font-medium mr-3'>Request headers</span>
+                        {reqHeaders.map(([k, v]) => (
+                            <code key={k} className='mr-3 text-[11px] text-black/60 dark:text-white/60'>
+                                <span className={k === 'X-Billing-Approved' ? 'text-amber-700 dark:text-amber-400 font-semibold' : ''}>{k}</span>: {v}
+                            </code>
+                        ))}
                     </div>
                 )}
 
@@ -471,12 +529,12 @@ export function ApiTestingTab({ connection, fido2, fido2Actions }: { connection:
                             <span className='text-xs font-semibold'>Response</span>
                             {responseStatus === 'ok' && (
                                 <span className='flex items-center gap-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400'>
-                                    <span className='w-1.5 h-1.5 rounded-full bg-emerald-500' />200 OK
+                                    <span className='w-1.5 h-1.5 rounded-full bg-emerald-500' />{respMeta ? `${respMeta.status} OK` : '200 OK'}
                                 </span>
                             )}
                             {responseStatus === 'error' && (
                                 <span className='flex items-center gap-1 text-[11px] font-medium text-red-600 dark:text-red-400'>
-                                    <span className='w-1.5 h-1.5 rounded-full bg-red-500' />Error
+                                    <span className='w-1.5 h-1.5 rounded-full bg-red-500' />{respMeta && respMeta.status >= 400 ? `HTTP ${respMeta.status}` : 'Error'}
                                 </span>
                             )}
                             {elapsed != null && <span className='text-[11px] text-black/30 dark:text-white/30'>{elapsed}ms</span>}
