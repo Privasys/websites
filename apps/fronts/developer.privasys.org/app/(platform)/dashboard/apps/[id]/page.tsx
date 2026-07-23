@@ -821,7 +821,12 @@ function ApiTestingTab({ appId, token, deployments, versions }: { appId: string;
         setElapsed(null);
         const start = performance.now();
         try {
-            const data = await rpcCall(token, appId, fn.name, paramValues);
+            // A priced call carries the user's exact-price approval (given via
+            // the charge strip) as X-Billing-Approved; the attested runtime
+            // refuses priced calls without it.
+            const fee = effectivePrice(fn);
+            const approved = (fee?.credits ?? 0) > 0 ? `${fee?.credits} credits` : undefined;
+            const data = await rpcCall(token, appId, fn.name, paramValues, approved);
             const ms = Math.round(performance.now() - start);
             const json = JSON.stringify(data, null, 2);
             setElapsed(ms);

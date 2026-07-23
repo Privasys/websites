@@ -180,7 +180,17 @@ export function ApiTestingTab({ connection, fido2, fido2Actions }: { connection:
             const rpcPath = token
                 ? `/api/v1/apps/${encodeURIComponent(appName)}/call/${encodeURIComponent(fn.name)}`
                 : `/api/v1/apps/${encodeURIComponent(appName)}/rpc/${encodeURIComponent(fn.name)}`;
-            const data = await appFetch<Record<string, unknown>>(base, rpcPath, { method: 'POST', body: JSON.stringify(paramValues), sessionToken: token });
+            // A priced call carries the user's exact-price approval (given via
+            // the charge strip) as X-Billing-Approved; the attested runtime
+            // refuses priced calls without it and the platform maps refusals
+            // to HTTP 402 (X-Billing-Price carries the price to approve).
+            const approvedCredits = fn.price?.credits ?? 0;
+            const data = await appFetch<Record<string, unknown>>(base, rpcPath, {
+                method: 'POST',
+                body: JSON.stringify(paramValues),
+                sessionToken: token,
+                headers: approvedCredits > 0 ? { 'X-Billing-Approved': `${approvedCredits} credits` } : undefined
+            });
             const ms = Math.round(performance.now() - start);
             // Detect a dead app session in a 200 response. Three shapes:
             // the enclave's original "session token expired", its clearer

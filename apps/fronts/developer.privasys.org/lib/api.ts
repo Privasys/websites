@@ -364,10 +364,14 @@ export async function getAppSchema(token: string, appId: string): Promise<AppSch
     return resp.schema;
 }
 
-export async function rpcCall(token: string, appId: string, func: string, params: unknown): Promise<unknown> {
+export async function rpcCall(token: string, appId: string, func: string, params: unknown, billingApproved?: string): Promise<unknown> {
     return request<unknown>(`/api/v1/apps/${encodeURIComponent(appId)}/rpc/${encodeURIComponent(func)}`, token, {
         method: 'POST',
-        body: JSON.stringify(params)
+        body: JSON.stringify(params),
+        // Billing consent (x-privasys.price): the literal approval the user
+        // gave in the charge strip — the attested runtime refuses a priced
+        // call unless this matches the measured price exactly.
+        ...(billingApproved ? { headers: { 'X-Billing-Approved': billingApproved } } : {})
     }, { proxied: true });
 }
 
