@@ -161,8 +161,18 @@ export function ApiTestingTab({ connection, fido2, fido2Actions }: { connection:
                 : `/api/v1/apps/${encodeURIComponent(appName)}/rpc/${encodeURIComponent(fn.name)}`;
             const data = await appFetch<Record<string, unknown>>(base, rpcPath, { method: 'POST', body: JSON.stringify(paramValues), sessionToken: token });
             const ms = Math.round(performance.now() - start);
-            // Detect an expired app session in a 200 response.
-            if (data && data.status === 'error' && typeof data.message === 'string' && data.message.includes('session token expired')) {
+            // Detect a dead app session in a 200 response. Three shapes:
+            // the enclave's original "session token expired", its clearer
+            // "app session token invalid or expired" (wasm-v0.42+), and the
+            // legacy JSON-parse noise a pre-v0.42 enclave emits when a stale
+            // restored session token falls through to its JWT parser (seen
+            // after an enclave restart/measurement rotation wiped sessions).
+            const deadSession = Boolean(data && data.status === 'error' && typeof data.message === 'string' && (
+                data.message.includes('session token expired') ||
+                data.message.includes('session token invalid or expired') ||
+                (data.message.includes('app auth failed') && data.message.includes('JWT header JSON'))
+            ));
+            if (deadSession) {
                 fido2Actions.expireLocally();
                 setElapsed(ms);
                 setError('Session expired. Please sign in again.');
