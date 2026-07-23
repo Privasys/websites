@@ -15,11 +15,10 @@ import { AttestationTab } from '~/components/attestation-tab';
 import { AuthenticateTab } from '~/components/authenticate-tab';
 import { ApiTestingTab } from '~/components/api-testing-tab';
 
-type TabKey = 'attestation' | 'auth' | 'api';
+type TabKey = 'attestation' | 'api';
 
 const TAB_LABELS: Record<TabKey, string> = {
     attestation: 'Attestation',
-    auth: 'Authenticate',
     api: 'API Testing'
 };
 
@@ -31,6 +30,9 @@ export function ConnectedView({ connection, fido2, fido2Actions, onDisconnect }:
 }) {
     const [tab, setTab] = useState<TabKey>('attestation');
     const [visited, setVisited] = useState<Set<TabKey>>(() => new Set<TabKey>(['attestation']));
+    // Auth lives in the header (the usual top-right control), expanding into a
+    // panel that hosts the shared auth frame — no dedicated tab.
+    const [authOpen, setAuthOpen] = useState(false);
 
     const select = (t: TabKey) => {
         setTab(t);
@@ -54,13 +56,26 @@ export function ConnectedView({ connection, fido2, fido2Actions, onDisconnect }:
                     </span>
                 </div>
                 <div className='ml-auto flex items-center gap-2'>
-                    {authed && (
-                        <span className='inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-400'>
+                    {authed ? (
+                        <button
+                            type='button'
+                            onClick={() => setAuthOpen((o) => !o)}
+                            title='Show session details'
+                            className='inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/20'
+                        >
                             ✓ Authenticated
-                        </span>
+                        </button>
+                    ) : (
+                        <button
+                            type='button'
+                            onClick={() => setAuthOpen((o) => !o)}
+                            className='rounded-lg bg-black text-white dark:bg-white dark:text-black px-3 py-1.5 text-xs font-semibold hover:opacity-90'
+                        >
+                            Sign in
+                        </button>
                     )}
                     {authed && (
-                        <button type='button' onClick={fido2Actions.signOut} className='rounded-lg border border-black/10 dark:border-white/15 px-3 py-1.5 text-xs hover:bg-black/5 dark:hover:bg-white/5'>
+                        <button type='button' onClick={() => { fido2Actions.signOut(); setAuthOpen(false); }} className='rounded-lg border border-black/10 dark:border-white/15 px-3 py-1.5 text-xs hover:bg-black/5 dark:hover:bg-white/5'>
                             Sign out
                         </button>
                     )}
@@ -69,6 +84,13 @@ export function ConnectedView({ connection, fido2, fido2Actions, onDisconnect }:
                     </button>
                 </div>
             </div>
+
+            {/* Auth panel — expands under the header from the Sign in / badge control. */}
+            {authOpen && (
+                <div className='mt-4'>
+                    <AuthenticateTab connection={connection} fido2={fido2} actions={fido2Actions} />
+                </div>
+            )}
 
             {/* Tabs */}
             <div className='mt-6 border-b border-black/10 dark:border-white/10'>
@@ -85,7 +107,6 @@ export function ConnectedView({ connection, fido2, fido2Actions, onDisconnect }:
                             }`}
                         >
                             {TAB_LABELS[key]}
-                            {key === 'auth' && authed && <span className='ml-1.5 text-emerald-600 dark:text-emerald-400'>✓</span>}
                         </button>
                     ))}
                 </nav>
@@ -95,9 +116,6 @@ export function ConnectedView({ connection, fido2, fido2Actions, onDisconnect }:
             <div className='mt-6'>
                 <div hidden={tab !== 'attestation'}>
                     {visited.has('attestation') && <AttestationTab connection={connection} />}
-                </div>
-                <div hidden={tab !== 'auth'}>
-                    {visited.has('auth') && <AuthenticateTab connection={connection} fido2={fido2} actions={fido2Actions} />}
                 </div>
                 <div hidden={tab !== 'api'}>
                     {visited.has('api') && <ApiTestingTab connection={connection} fido2={fido2} fido2Actions={fido2Actions} />}
