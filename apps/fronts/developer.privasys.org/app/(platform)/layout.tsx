@@ -196,6 +196,21 @@ function Sidebar() {
                     Attributes
                 </Link>
 
+                {/* Relying parties (OIDC clients) */}
+                <Link
+                    href="/dashboard/relying-parties"
+                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
+                        pathname === '/dashboard/relying-parties'
+                            ? 'bg-black/5 dark:bg-white/10 font-medium'
+                            : 'hover:bg-black/3 dark:hover:bg-white/5 text-black/60 dark:text-white/60'
+                    }`}
+                >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24">
+                        <path d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.74 5.74L9 19l-3 3H3v-3l6.26-6.26A6 6 0 1121 9z" />
+                    </svg>
+                    Relying parties
+                </Link>
+
                 {/* Settings */}
                 <Link
                     href="/dashboard/settings"
