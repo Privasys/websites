@@ -211,7 +211,11 @@ Retention: whatever your licence dictates (gambling regulators typically require
 
 Your obligation is per-session, so repeat the ceremony: call `frame.signIn()` again on the next visit. The customer's standing consent makes it a single wallet tap; a fresh voucher is reserved, a fresh credential is minted and settled, and you store the new receipt alongside the old. Each stored token is one provable check: your audit trail is a sequence of independently verifiable receipts, one per unlocked session.
 
-Because each disclosure is individually priced, your compliance cost is exactly proportional to verified sessions; see [pricing](https://developer.privasys.org/pricing) for the current per-attribute rates.
+Because each disclosure is individually priced, your compliance cost is exactly proportional to verified sessions; see [pricing](https://developer.privasys.org/pricing) for the current per-attribute rates. Three properties of the platform's fee system are worth knowing as the payer:
+
+- **You pay for answers, not attempts.** Credits are reserved when the ceremony starts and released if the user abandons it, so drop-offs in your funnel cost nothing. A signed answer is charged whether it is `true` or `false`: the enclave did the work, and "we checked and it failed" is part of your audit trail.
+- **Prices are declared, not negotiated per call.** Chargeable APIs on the platform declare their fee in the app's attested manifest, and the portal shows the fee next to each tool before you invoke it. What you see quoted is what the attested meter charges.
+- **Free for your customers is enforced, not promotional.** The verification APIs exempt wallet callers by an IdP-asserted token class, so a customer verifying their own identity can never be the payer. The flywheel that makes your users verifiable at no cost to them is platform policy, not a pricing-page promise.
 
 ## The evidence chain, end to end
 
