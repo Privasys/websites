@@ -87,28 +87,45 @@ function Sidebar() {
                     Overview
                 </Link>
 
-                {/* Applications section (collapsible) */}
-                <div className="pt-4 pb-1 px-3 flex items-center justify-between">
+                {/* Services section: everything the account operates —
+                    applications (a drill-down menu), instances, volumes, and
+                    the account-level surfaces. */}
+                <div className="pt-4 pb-1 px-3">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-black/30 dark:text-white/30">Services</span>
+                </div>
+
+                {/* Applications — a regular menu item that drills down into
+                    the app list (open by default with ≤5 apps). */}
+                <div className={`flex items-center rounded-lg text-sm transition-colors ${
+                    pathname.startsWith('/dashboard/apps/')
+                        ? 'bg-black/5 dark:bg-white/10'
+                        : 'hover:bg-black/3 dark:hover:bg-white/5'
+                }`}>
                     <button
                         type="button"
                         onClick={() => setAppsToggled(!appsExpanded)}
-                        className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-black/30 dark:text-white/30 hover:text-black/60 dark:hover:text-white/60 transition-colors"
-                        title={appsExpanded ? 'Collapse applications' : 'Expand applications'}
+                        className={`flex-1 flex items-center gap-3 px-3 py-2 text-left ${
+                            pathname.startsWith('/dashboard/apps/') ? 'font-medium' : 'text-black/60 dark:text-white/60'
+                        }`}
+                        title={appsExpanded ? 'Collapse applications' : 'Show applications'}
                     >
+                        <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+                            <path d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+                        </svg>
+                        Applications
+                        {apps.length > 0 && (
+                            <span className="text-xs text-black/30 dark:text-white/30">{apps.length}</span>
+                        )}
                         <svg
-                            className={`w-2.5 h-2.5 transition-transform ${appsExpanded ? 'rotate-90' : ''}`}
+                            className={`w-3 h-3 ml-auto shrink-0 text-black/30 dark:text-white/30 transition-transform ${appsExpanded ? 'rotate-90' : ''}`}
                             fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"
                         >
                             <path d="M9 5l7 7-7 7" />
                         </svg>
-                        Applications
-                        {!appsExpanded && apps.length > 0 && (
-                            <span className="normal-case font-normal tracking-normal text-black/25 dark:text-white/25">({apps.length})</span>
-                        )}
                     </button>
                     <Link
                         href="/dashboard/new"
-                        className="p-0.5 rounded hover:bg-black/5 dark:hover:bg-white/10 transition-colors text-black/40 dark:text-white/40 hover:text-black/70 dark:hover:text-white/70"
+                        className="p-0.5 mr-2 rounded hover:bg-black/5 dark:hover:bg-white/10 transition-colors text-black/40 dark:text-white/40 hover:text-black/70 dark:hover:text-white/70"
                         title="New application"
                     >
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
@@ -118,7 +135,7 @@ function Sidebar() {
                 </div>
 
                 {appsExpanded && apps.length === 0 && (
-                    <div className="px-3 py-3 text-xs text-black/30 dark:text-white/30">
+                    <div className="pl-10 pr-3 py-2 text-xs text-black/30 dark:text-white/30">
                         No applications yet
                     </div>
                 )}
@@ -129,7 +146,7 @@ function Sidebar() {
                         <Link
                             key={app.id}
                             href={`/dashboard/apps/${app.id}`}
-                            className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors group ${
+                            className={`flex items-center gap-3 pl-10 pr-3 py-1.5 rounded-lg text-sm transition-colors group ${
                                 active
                                     ? 'bg-black/5 dark:bg-white/10 font-medium'
                                     : 'hover:bg-black/3 dark:hover:bg-white/5 text-black/60 dark:text-white/60'
