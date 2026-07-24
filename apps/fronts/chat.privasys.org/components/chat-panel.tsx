@@ -415,7 +415,7 @@ export function ChatPanel({
         // The chat stream is wrapped in a tiny retry loop so a "Model
         // is loading" 503 (e.g. right after a Spot-VM cold-start) is
         // converted into an inline "loading model…" notice + automatic
-        // resend once the enclave's `/healthz` reports ready. The user
+        // resend once the management-service reports the model ready. The user
         // never sees the raw 503 string and never has to retype the
         // prompt. See lib/chat-stream.ts::ModelLoadingError and
         // lib/instance-api.ts::waitForModelReady.
@@ -610,7 +610,7 @@ export function ChatPanel({
                                     : m
                             )
                         );
-                        const ready = await waitForModelReady(instance.endpoint, model.name, {
+                        const ready = await waitForModelReady(instance.id, model.name, {
                             timeoutMs: Math.max(eta * 2, 60) * 1000,
                             intervalMs: 5_000,
                             signal: ctrl.signal

@@ -72,7 +72,7 @@ export interface PersistedMessage extends ChatMessage {
      * When set, the assistant turn is currently waiting for the model
      * to finish loading on the GPU. The chat UI renders an inline
      * "Loading model… (~Xs)" notice instead of the red error string,
-     * polls the enclave's `/healthz`, and automatically retries the
+     * polls the management-service for model readiness, and automatically retries the
      * prompt as soon as the model becomes ready. Cleared once the
      * retried stream produces its first delta.
      */
