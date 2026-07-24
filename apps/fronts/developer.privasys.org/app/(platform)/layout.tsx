@@ -46,6 +46,11 @@ function Sidebar() {
     const isManager = hasManagerRole(session?.roles);
     const isAdmin = hasAdminRole(session?.roles);
     const [apps, setApps] = useState<App[]>([]);
+    // Collapsible applications list: open by default with up to 5 apps,
+    // collapsed beyond that; a click overrides either way. The active app
+    // stays visible even when collapsed so context is never lost.
+    const [appsToggled, setAppsToggled] = useState<boolean | null>(null);
+    const appsExpanded = appsToggled ?? apps.length <= 5;
 
     const loadApps = useCallback(async () => {
         if (!session?.accessToken) return;
@@ -82,9 +87,25 @@ function Sidebar() {
                     Overview
                 </Link>
 
-                {/* Applications section */}
+                {/* Applications section (collapsible) */}
                 <div className="pt-4 pb-1 px-3 flex items-center justify-between">
-                    <span className="text-[10px] font-semibold uppercase tracking-wider text-black/30 dark:text-white/30">Applications</span>
+                    <button
+                        type="button"
+                        onClick={() => setAppsToggled(!appsExpanded)}
+                        className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-black/30 dark:text-white/30 hover:text-black/60 dark:hover:text-white/60 transition-colors"
+                        title={appsExpanded ? 'Collapse applications' : 'Expand applications'}
+                    >
+                        <svg
+                            className={`w-2.5 h-2.5 transition-transform ${appsExpanded ? 'rotate-90' : ''}`}
+                            fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"
+                        >
+                            <path d="M9 5l7 7-7 7" />
+                        </svg>
+                        Applications
+                        {!appsExpanded && apps.length > 0 && (
+                            <span className="normal-case font-normal tracking-normal text-black/25 dark:text-white/25">({apps.length})</span>
+                        )}
+                    </button>
                     <Link
                         href="/dashboard/new"
                         className="p-0.5 rounded hover:bg-black/5 dark:hover:bg-white/10 transition-colors text-black/40 dark:text-white/40 hover:text-black/70 dark:hover:text-white/70"
@@ -96,13 +117,13 @@ function Sidebar() {
                     </Link>
                 </div>
 
-                {apps.length === 0 && (
+                {appsExpanded && apps.length === 0 && (
                     <div className="px-3 py-3 text-xs text-black/30 dark:text-white/30">
                         No applications yet
                     </div>
                 )}
 
-                {apps.map((app) => {
+                {apps.filter((app) => appsExpanded || pathname.startsWith(`/dashboard/apps/${app.id}`)).map((app) => {
                     const active = pathname.startsWith(`/dashboard/apps/${app.id}`);
                     return (
                         <Link
