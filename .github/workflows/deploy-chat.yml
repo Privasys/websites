@@ -39,11 +39,12 @@ jobs:
             echo "container=chat-prod"                          >> "$GITHUB_OUTPUT"
             echo "host_port=3010"                               >> "$GITHUB_OUTPUT"
             echo "env_file=~/chat.env"                          >> "$GITHUB_OUTPUT"
-            # Production chat currently points at the same dev AI backend
-            # as chat-test (api-test.developer.privasys.org). Switch to
-            # api.developer.privasys.org once a dedicated prod gateway is
-            # provisioned with the inference VM.
-            echo "api_url=https://api-test.developer.privasys.org" >> "$GITHUB_OUTPUT"
+            # Production chat is backed by the prod inference fleet on the
+            # prod management-service (api.developer.privasys.org): fleet
+            # "demo" -> prod confidential-ai enclave on m2-tdx-gpu. This
+            # decouples prod chat from the dev Spot VM (chat-test still uses
+            # api-test).
+            echo "api_url=https://api.developer.privasys.org" >> "$GITHUB_OUTPUT"
             echo "default_instance=demo"                        >> "$GITHUB_OUTPUT"
             # No dedicated chat-service back-end in prod yet: leave the
             # chat-service URL empty so BYO-MCP stays fully dormant there.
