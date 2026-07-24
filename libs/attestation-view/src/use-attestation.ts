@@ -238,15 +238,32 @@ export async function verifyReportData(args: {
     challengeHex: string;
     reportDataHex: string;
     binderB64?: string;
+    /**
+     * Raw NVIDIA GPU-evidence extension value (OID 1.3.6.1.4.1.65230.5.1),
+     * hex. GPU enclaves (e.g. confidential-ai) fold SHA-256(gpu_evidence)
+     * into the binding after the channel binder — the management-service does
+     * the same in gpuFoldBinding. When present the report_data is
+     * SHA-512(SHA-256(pubkey) || nonce || binder || SHA-256(gpu_evidence));
+     * omitting it makes GPU quotes falsely report a mismatch.
+     */
+    gpuEvidenceHex?: string;
 }): Promise<{ status: 'match' | 'mismatch' | 'error'; computed?: string; actual?: string }> {
     try {
         const pub = hexToBytes(args.pubKeySha256Hex);
         const nonce = hexToBytes(args.challengeHex);
         const binder = args.binderB64 ? base64ToBytes(args.binderB64) : new Uint8Array(0);
-        const buf = new Uint8Array(pub.length + nonce.length + binder.length);
+        let gpuFold = new Uint8Array(0);
+        if (args.gpuEvidenceHex) {
+            const gpuBytes = hexToBytes(args.gpuEvidenceHex);
+            const gpuInput = new Uint8Array(gpuBytes.length);
+            gpuInput.set(gpuBytes);
+            gpuFold = new Uint8Array(await crypto.subtle.digest('SHA-256', gpuInput));
+        }
+        const buf = new Uint8Array(pub.length + nonce.length + binder.length + gpuFold.length);
         buf.set(pub);
         buf.set(nonce, pub.length);
         buf.set(binder, pub.length + nonce.length);
+        buf.set(gpuFold, pub.length + nonce.length + binder.length);
         const hash = await crypto.subtle.digest('SHA-512', buf);
         const computed = bytesToHex(new Uint8Array(hash));
         const actual = args.reportDataHex.toLowerCase();

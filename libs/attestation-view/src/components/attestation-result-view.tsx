@@ -298,7 +298,12 @@ function useReportDataCheck(result: AttestationResult): ReportDataCheck {
             pubKeySha256Hex: pubKey,
             challengeHex: challenge,
             reportDataHex: reportData,
-            binderB64: result.quote?.channel_binder
+            binderB64: result.quote?.channel_binder,
+            // GPU enclaves (confidential-ai) fold SHA-256(GPU evidence) into the
+            // binding; without it the check falsely reports a mismatch.
+            gpuEvidenceHex: [...(result.extensions ?? []), ...(result.app_extensions ?? [])].find(
+                (e) => e.oid === PRIVASYS_OID.GPU_EVIDENCE
+            )?.value_hex
         }).then((r) => {
             if (cancelled) return;
             if (r.status === 'match') {
