@@ -10,6 +10,7 @@ import {
     isApiStatus
 } from '~/lib/api';
 import type { Attribute, AttributeProvider, AttributeProviderStatus } from '~/lib/api';
+import { RelyingPartiesSection } from '~/components/relying-parties-section';
 
 const CREDITS_PER_GBP = 1_000_000;
 
@@ -93,6 +94,11 @@ export default function AttributesPage() {
                     share. Identity is never revealed to the platform.
                 </p>
             </header>
+
+            {/* Consume side first: register the OIDC clients (relying parties)
+                this account operates and whitelist the attributes they may
+                request. The provider/catalogue sections follow. */}
+            <RelyingPartiesSection />
 
             {error && (
                 <div className="rounded-lg bg-red-500/10 text-red-700 dark:text-red-400 px-4 py-3 text-sm">
