@@ -1,9 +1,11 @@
-name: Deploy drive.privasys.org to OVH
+name: Deploy Drive front to OVH
 
-# Deploys the static `drive.privasys.org` Next export to the OVH web host under
-# `/var/websites/drive.privasys.org/`, served by nginx. Mirrors
-# deploy-store.yml. DNS / the nginx server block for drive.privasys.org must
-# point at that directory (wired separately).
+# Deploys the static Drive Next export to the OVH web host under
+# `/var/websites/<site_host>/`, served by nginx. Mirrors deploy-store.yml.
+# DNS / the nginx server block for <site_host> must point at that directory
+# (wired separately). One workflow serves both fronts:
+#   - drive.privasys.org       (prod front, the default)
+#   - drive.test.privasys.org  (dev front — pass site_host + dev backend)
 #
 # The UI reaches the confidential Drive backend over a sealed session:
 #   NEXT_PUBLIC_DRIVE_APP_HOST = the Drive enclave hostname (relay app_host).
@@ -14,6 +16,11 @@ name: Deploy drive.privasys.org to OVH
 on:
   workflow_dispatch:
     inputs:
+      site_host:
+        description: 'Public front host to publish (nginx server block must exist for it)'
+        required: false
+        type: string
+        default: 'drive.privasys.org'
       drive_host:
         description: 'Drive enclave hostname the UI seals a session to'
         required: false
@@ -31,12 +38,12 @@ on:
         default: false
 
 concurrency:
-  group: deploy-drive-privasys-org
+  group: deploy-drive-${{ github.event.inputs.site_host || 'drive.privasys.org' }}
   cancel-in-progress: false
 
 jobs:
   deploy:
-    name: Deploy drive.privasys.org
+    name: Deploy ${{ inputs.site_host }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -92,25 +99,26 @@ jobs:
         run: |
           set -euo pipefail
           PORT="${OVH_SSH_PORT:-22}"
+          SITE="${{ inputs.site_host }}"
           DIST=dist/apps/fronts/drive.privasys.org/.next
           TAG="$(date -u +%Y%m%d-%H%M%S)-${GITHUB_SHA::7}"
-          STAGING="drive-privasys-org-builds/${TAG}"
+          STAGING="${SITE}-builds/${TAG}"
           ssh -p "$PORT" -i ~/.ssh/id_ed25519 "${OVH_USER}@${OVH_HOST}" "mkdir -p ${STAGING}"
           rsync -avz --delete \
             -e "ssh -p ${PORT} -i ~/.ssh/id_ed25519" \
             "${DIST}/" "${OVH_USER}@${OVH_HOST}:${STAGING}/"
           ssh -p "$PORT" -i ~/.ssh/id_ed25519 "${OVH_USER}@${OVH_HOST}" "set -euo pipefail; \
             cd \$HOME && \
-            sudo mkdir -p /var/websites/drive.privasys.org && \
+            sudo mkdir -p /var/websites/${SITE} && \
             sudo rsync -av --delete \
-              ${STAGING}/ /var/websites/drive.privasys.org/ && \
+              ${STAGING}/ /var/websites/${SITE}/ && \
             sudo nginx -t && sudo systemctl reload nginx"
 
       - name: Smoke test
         if: ${{ inputs.smoke }}
         run: |
           set -euo pipefail
-          ROOT=$(curl -sS -o /tmp/drive-index.html -w '%{http_code}' https://drive.privasys.org/)
+          ROOT=$(curl -sS -o /tmp/drive-index.html -w '%{http_code}' "https://${{ inputs.site_host }}/")
           echo "root=$ROOT"
           test "$ROOT" = "200"
           grep -q 'Privasys Drive' /tmp/drive-index.html
@@ -124,5 +132,6 @@ jobs:
         run: |
           set -euo pipefail
           PORT="${OVH_SSH_PORT:-22}"
+          SITE="${{ inputs.site_host }}"
           ssh -p "$PORT" -i ~/.ssh/id_ed25519 "${OVH_USER}@${OVH_HOST}" \
-            "ls -1t ~/drive-privasys-org-builds 2>/dev/null | tail -n +6 | xargs -r -I{} rm -rf ~/drive-privasys-org-builds/{}" || true
+            "ls -1t ~/${SITE}-builds 2>/dev/null | tail -n +6 | xargs -r -I{} rm -rf ~/${SITE}-builds/{}" || true
