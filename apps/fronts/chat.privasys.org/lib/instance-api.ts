@@ -44,48 +44,40 @@ export function pickInitialModel(instance: Instance): AvailableModel | null {
 }
 
 /**
- * Best-effort liveness probe for an enclave endpoint.
+ * A fleet counts as "serving" when some enclave in it currently has a
+ * model loaded and its inference proxy is ready — exactly the signal the
+ * management-service folds into `available_models[].loaded` /
+ * `loaded_model` from each enclave's runtime-status push.
+ */
+function instanceIsServing(inst: Instance): boolean {
+    if (inst.loaded_model) return true;
+    return (inst.available_models ?? []).some((m) => m.loaded);
+}
+
+/**
+ * Best-effort liveness probe for a chat fleet.
  *
- * Hits `GET {endpoint}/healthz` (unauthenticated, served by
- * `platform/confidential-ai/internal/handler/handler.go`) with a hard
- * timeout. Returns `true` only when the back-end answers — any
- * non-2xx (e.g. 502 from the gateway when the VM is down), TLS
- * failure, network error, or timeout returns `false`.
+ * Asks the MANAGEMENT-SERVICE (public TLS) whether the fleet is serving —
+ * never the enclave directly. The enclave presents a self-signed RA-TLS
+ * certificate the browser cannot validate: real chat traffic reaches it only
+ * through the sealed session / gateway, so a plain `fetch` from the browser to
+ * the enclave's `/healthz` always fails (TLS authority error). The mgmt
+ * `/api/v1/ai/instances/{idOrAlias}` payload folds in each enclave's
+ * runtime-status, so a loaded model means the fleet is up and answering.
  *
- * The chat page calls this before rendering the composer so users
- * are not invited to type a prompt against an unreachable enclave
- * (and then made to wait several seconds for the gateway's 502).
+ * The chat page calls this before rendering the composer so users are not
+ * invited to type a prompt against an unreachable or still-loading fleet.
  */
 export async function probeInstanceHealth(
-    endpoint: string,
+    idOrAlias: string,
     timeoutMs: number
 ): Promise<boolean> {
-    if (!endpoint) return false;
-    const url = `${endpoint.replace(/\/$/, '')}/healthz`;
+    if (!idOrAlias) return false;
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), timeoutMs);
     try {
-        const res = await fetch(url, {
-            method: 'GET',
-            signal: ctrl.signal,
-            cache: 'no-store',
-            // /healthz is unauthenticated; we don't need cookies.
-            credentials: 'omit',
-            headers: { Accept: 'application/json' }
-        });
-        if (res.ok) return true;
-        // Terminate-marker enforcement (session hardening) can 403
-        // plaintext probes through the gateway with
-        // "sealed-transport-required". That response is emitted by the
-        // enclave itself, so it proves the backend is up — the actual
-        // chat traffic rides the sealed transport and is unaffected.
-        // (Enclave images with the /healthz enforcement exemption
-        // answer 200 here instead; both paths report "up".)
-        if (res.status === 403) {
-            const body = await res.text().catch(() => '');
-            return body.includes('sealed-transport-required');
-        }
-        return false;
+        const inst = await fetchInstance(idOrAlias, ctrl.signal);
+        return instanceIsServing(inst);
     } catch {
         return false;
     } finally {
@@ -94,26 +86,19 @@ export async function probeInstanceHealth(
 }
 
 /**
- * Poll the enclave's `/healthz` until the requested model is fully
- * loaded (or the deadline expires). Used by the chat panel to
- * automatically retry a prompt that was rejected with
- * `503 Model is loading` after a Spot-VM cold start.
+ * Poll until the requested model is loaded on the fleet (or the deadline
+ * expires). Used by the chat panel to automatically retry a prompt that was
+ * rejected with `503 Model is loading` after a Spot-VM cold start.
  *
- * Resolves with `true` once `/healthz` reports `model_state === 'ready'`
- * AND `model === requestedModel` (so we don't accidentally retry while
- * a different model is finishing its load). Resolves with `false` on
- * timeout or persistent network error. Honours `signal` so the caller
- * can cancel when the user aborts the conversation.
- *
- * Implementation note: we deliberately use `/healthz` instead of the
- * mgmt-service `/instances/{alias}` endpoint because (a) it is one
- * round-trip, (b) it goes directly to the enclave so it reflects real
- * model state without the 30s runtime-status push lag, and (c) it
- * stays inside the same trust boundary the chat session is already
- * using for `/v1/chat/completions`.
+ * Like {@link probeInstanceHealth}, this reads model state from the
+ * management-service (public TLS), NOT the enclave's `/healthz` directly —
+ * the browser cannot validate the enclave's self-signed RA-TLS cert. The
+ * trade-off is up to one runtime-status push (~30s) of staleness, which is
+ * acceptable for a cold-start retry. Resolves `true` once the fleet reports
+ * `requestedModel` loaded, `false` on timeout. Honours `signal`.
  */
 export async function waitForModelReady(
-    endpoint: string,
+    idOrAlias: string,
     requestedModel: string,
     opts: {
         timeoutMs: number;
@@ -123,11 +108,8 @@ export async function waitForModelReady(
     }
 ): Promise<boolean> {
     const interval = opts.intervalMs ?? 5_000;
-    const url = `${endpoint.replace(/\/$/, '')}/healthz`;
     const startedAt = Date.now();
 
-    // Tight loop with `await new Promise(setTimeout)` so we cooperate
-    // with React's scheduler and surface elapsed time to the UI.
     while (Date.now() - startedAt < opts.timeoutMs) {
         if (opts.signal?.aborted) return false;
         try {
@@ -137,24 +119,13 @@ export async function waitForModelReady(
             subSignal?.addEventListener('abort', onAbort, { once: true });
             const t = setTimeout(() => ctrl.abort(), Math.min(interval, 8_000));
             try {
-                const res = await fetch(url, {
-                    method: 'GET',
-                    signal: ctrl.signal,
-                    cache: 'no-store',
-                    credentials: 'omit',
-                    headers: { Accept: 'application/json' }
-                });
-                if (res.ok) {
-                    const body = (await res.json().catch(() => null)) as
-                        | { model_state?: string; model?: string }
-                        | null;
-                    if (
-                        body?.model_state === 'ready' &&
-                        (body.model === requestedModel || !body.model)
-                    ) {
-                        return true;
-                    }
+                const inst = await fetchInstance(idOrAlias, ctrl.signal);
+                const loadedNames = new Set<string>();
+                if (inst.loaded_model?.name) loadedNames.add(inst.loaded_model.name);
+                for (const m of inst.available_models ?? []) {
+                    if (m.loaded) loadedNames.add(m.name);
                 }
+                if (loadedNames.has(requestedModel)) return true;
             } finally {
                 clearTimeout(t);
                 subSignal?.removeEventListener('abort', onAbort);

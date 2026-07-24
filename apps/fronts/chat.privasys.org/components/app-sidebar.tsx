@@ -199,7 +199,7 @@ export function AppSidebar({
                 )}
 
                 <div className="mt-2 flex items-center justify-between border-t border-[var(--color-border-dark)] pt-2">
-                    <BuildInfo instance={instance} />
+                    <BuildInfo />
                     <ThemeToggle />
                 </div>
             </div>
@@ -208,40 +208,15 @@ export function AppSidebar({
 }
 
 // Build provenance, bottom-left: the front-end version + commit (baked in
-// at build time by deploy-chat.yml) and, when the enclave advertises it on
-// /healthz, the back-end (confidential-ai) commit — each linking to the
-// exact commit on GitHub.
+// at build time by deploy-chat.yml). The back-end (confidential-ai) commit
+// is intentionally NOT fetched here: the browser cannot read it from the
+// enclave, which presents a self-signed RA-TLS cert reachable only through
+// the sealed session. Re-add an "AI" line if the management-service ever
+// surfaces the serving enclave's commit.
 const COMMIT_SHA = process.env.NEXT_PUBLIC_COMMIT_SHA ?? '';
 const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION ?? '';
 
-function BuildInfo({ instance }: { instance: Instance | null }) {
-    const [ai, setAi] = useState<{ commit?: string; version?: string } | null>(null);
-
-    // Best-effort: /healthz is public (exempt from sealed-transport
-    // enforcement) and already used for liveness probing. Older backend
-    // builds don't carry commit/version — the AI line is simply omitted.
-    useEffect(() => {
-        const endpoint = instance?.endpoint;
-        if (!endpoint) return;
-        const ctrl = new AbortController();
-        fetch(`${endpoint.replace(/\/$/, '')}/healthz`, {
-            signal: ctrl.signal,
-            cache: 'no-store',
-            credentials: 'omit',
-            headers: { Accept: 'application/json' }
-        })
-            .then((r) => (r.ok ? r.json() : null))
-            .then((body: { commit?: string; version?: string } | null) => {
-                if (body?.commit || body?.version) {
-                    setAi({ commit: body.commit, version: body.version });
-                }
-            })
-            .catch(() => {
-                /* liveness/banner flows handle outages; this is cosmetic */
-            });
-        return () => ctrl.abort();
-    }, [instance?.endpoint]);
-
+function BuildInfo() {
     const uiShort = COMMIT_SHA ? COMMIT_SHA.slice(0, 7) : 'dev';
     const uiLabel = APP_VERSION ? `v${APP_VERSION} · ${uiShort}` : uiShort;
 
@@ -252,13 +227,6 @@ function BuildInfo({ instance }: { instance: Instance | null }) {
                 label={uiLabel}
                 href={COMMIT_SHA ? `https://github.com/Privasys/websites/commit/${COMMIT_SHA}` : undefined}
             />
-            {ai?.commit && (
-                <BuildLine
-                    prefix="AI"
-                    label={ai.version ? `v${ai.version} · ${ai.commit.slice(0, 7)}` : ai.commit.slice(0, 7)}
-                    href={`https://github.com/Privasys/confidential-ai/commit/${ai.commit}`}
-                />
-            )}
         </span>
     );
 }

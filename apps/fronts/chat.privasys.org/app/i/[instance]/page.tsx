@@ -8,11 +8,11 @@ import { SignInGate } from '~/components/signin-view';
 import { useAuth } from '~/lib/privasys-auth';
 
 const BOOK_DEMO_URL = 'https://tinyurl.com/bfoing-30';
-// Back-end probe budget. The dev/demo enclave lives on a Spot VM that is
-// frequently stopped between sessions; rather than letting the user type a
-// prompt and wait ~7 s for the gateway's 502, we ping `/healthz` first and
-// surface the friendly "infrastructure currently reserved" view when the
-// upstream is unreachable.
+// Back-end probe budget. The inference enclave can be stopped between demo
+// sessions; rather than letting the user type a prompt against a fleet that
+// is down or still loading, we ask the management-service whether it is
+// serving (see probeInstanceHealth) and surface the friendly "infrastructure
+// currently reserved" view when it is not.
 const HEALTH_PROBE_TIMEOUT_MS = 4_000;
 
 // chat.privasys.org/i/<instance>.
@@ -57,13 +57,15 @@ export default function InstancePage({ params }: { params: Promise<{ instance: s
     // clears automatically once the operator brings the VM back up
     // (and the user doesn't need to know to refresh the tab).
     useEffect(() => {
-        const endpoint = instance?.endpoint;
-        if (!endpoint) return;
+        if (!instance) return;
         let cancelled = false;
         let timer: ReturnType<typeof setTimeout> | null = null;
 
         const probe = () => {
-            probeInstanceHealth(endpoint, HEALTH_PROBE_TIMEOUT_MS)
+            // Ask the management-service (public TLS), never the enclave
+            // directly — the browser cannot validate the enclave's
+            // self-signed RA-TLS cert.
+            probeInstanceHealth(instanceId, HEALTH_PROBE_TIMEOUT_MS)
                 .then((reachable) => {
                     if (cancelled) return;
                     setBackendStatus(reachable ? 'up' : 'down');
@@ -85,7 +87,7 @@ export default function InstancePage({ params }: { params: Promise<{ instance: s
             cancelled = true;
             if (timer) clearTimeout(timer);
         };
-    }, [instance?.endpoint]);
+    }, [instanceId, instance]);
 
     const greeting = useMemo(() => decodeGreeting(session?.accessToken), [session]);
 

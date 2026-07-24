@@ -227,7 +227,7 @@ export function ChatShell({
         let timer: ReturnType<typeof setTimeout>;
         let consecutiveFailures = 0;
         const tick = async () => {
-            const up = await probeInstanceHealth(instance.endpoint, 5_000);
+            const up = await probeInstanceHealth(instance.id, 5_000);
             if (cancelled) return;
             if (up) {
                 consecutiveFailures = 0;
@@ -276,7 +276,7 @@ export function ChatShell({
                 if (cancelled) return;
                 // Wait until the back-end answers /healthz again.
                 while (!cancelled) {
-                    if (await probeInstanceHealth(instance.endpoint, 5_000)) break;
+                    if (await probeInstanceHealth(instance.id, 5_000)) break;
                     await sleep(5_000);
                 }
                 if (cancelled) return;
