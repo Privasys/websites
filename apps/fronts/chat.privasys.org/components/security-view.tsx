@@ -113,6 +113,19 @@ function AIAttestation({
             if (state.verifying || (!state.quoteVerify && !state.quoteVerifyError)) { onStatus('verifying'); return; }
             if (state.quoteVerifyError || (state.quoteVerify && !state.quoteVerify.success)) { onStatus('failed'); return; }
         }
+        // The quote must also be BOUND to this TLS session. Without this the
+        // pill claimed "Verified" while the report-data panel showed a
+        // mismatch ("do not trust this enclave's identity") — a green badge on
+        // an unverifiable binding is worse than no badge. The verdict is the
+        // management-service's own (it computes the full formula, GPU-evidence
+        // fold included); an absent verdict is treated as unproven.
+        const quote = state.result?.quote;
+        if (state.result?.challenge_mode) {
+            if (quote?.challenge_verified !== true) { onStatus('failed'); return; }
+        } else if (quote?.deterministic_verified === false) {
+            onStatus('failed');
+            return;
+        }
         onStatus('verified');
     }, [onStatus, attestUrl, verifyQuoteUrl, state.result, state.error, state.verifying, state.quoteVerify, state.quoteVerifyError]);
 
