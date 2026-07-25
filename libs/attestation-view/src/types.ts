@@ -32,9 +32,17 @@ export interface AttestationQuote {
     // (management-service reads it from the Go fork's
     // ConnectionState.RATLSChannelBinder). In challenge mode the enclave folds
     // it into report_data — SHA-512(SHA-256(pubkey) || nonce || binder) — so a
-    // verifier MUST include it or the report_data check mismatches. Absent on
-    // TLS 1.2 / deterministic-mode certs.
+    // verifier MUST include it or the report_data check mismatches. GPU
+    // enclaves additionally fold SHA-256(GPU evidence) after the binder (see
+    // PRIVASYS_OID.GPU_EVIDENCE). Absent on TLS 1.2 / deterministic-mode certs.
     channel_binder?: string;
+    // The management-service's own verdict on the binding, computed with the
+    // full formula (including the GPU-evidence fold). `challenge_verified` is
+    // set in challenge mode, `deterministic_verified` otherwise. A `false`
+    // here means the quote was NOT freshly bound to this TLS session and the
+    // enclave's identity must not be trusted.
+    challenge_verified?: boolean;
+    deterministic_verified?: boolean;
     mr_enclave?: string;
     mr_signer?: string;
     mr_td?: string;
