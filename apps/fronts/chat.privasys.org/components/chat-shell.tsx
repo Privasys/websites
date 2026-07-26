@@ -323,6 +323,10 @@ export function ChatShell({
     }, [transport, session, instance.endpoint, instance.session_relay, reestablishSealed]);
 
     const [view, setView] = useState<ShellView>('chat');
+    // Below `md` the sidebar is an off-canvas drawer opened from the header's
+    // menu button — without it, conversations and every nav entry are
+    // unreachable on a phone.
+    const [mobileNavOpen, setMobileNavOpen] = useState(false);
     // Aggregate attestation status for the sidebar pill. Driven by the
     // always-mounted SecurityView (hidden when view !== 'security') so
     // the pill color reflects real verification, not just "endpoint
@@ -712,20 +716,33 @@ export function ChatShell({
                 onShowTools={() => setView('tools')}
                 onShowKnowledge={useDrive ? () => setView('knowledge') : undefined}
                 onShowSignIn={() => setView('signin')}
+                mobileOpen={mobileNavOpen}
+                onMobileClose={() => setMobileNavOpen(false)}
             />
             <div className="flex min-w-0 flex-1 flex-col">
-                <header className="flex items-center gap-2 border-b border-[var(--color-border-dark)]/60 px-5 py-3">
+                <header className="flex items-center gap-2 border-b border-[var(--color-border-dark)]/60 px-3 py-3 md:px-5">
+                    <button
+                        type="button"
+                        onClick={() => setMobileNavOpen(true)}
+                        aria-label="Open menu"
+                        aria-expanded={mobileNavOpen}
+                        className="grid h-9 w-9 shrink-0 place-items-center rounded-md text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-2)]/60 hover:text-[var(--color-text-primary)] md:hidden"
+                    >
+                        <MenuIcon />
+                    </button>
                     <h1 className="truncate text-sm font-medium text-[var(--color-text-primary)]">
                         {viewTitle(view, conv.current?.title ?? (instance.alias ?? instance.id))}
                     </h1>
                     {view === 'chat' && instance.endpoint && (
-                        <span className="truncate text-xs text-[var(--color-text-muted)]">
+                        <span className="hidden truncate text-xs text-[var(--color-text-muted)] sm:inline">
                             · {instance.endpoint}
                         </span>
                     )}
-                    {view === 'chat' && useDrive && driveConv.current?.driveConversationId && (
-                        <div className="ml-auto flex items-center gap-2">
-                            {driveConv.current.finalized ? (
+                    {/* Right-hand actions share one auto-margin group so they
+                        never fight over the free space. */}
+                    <div className="ml-auto flex shrink-0 items-center gap-1.5">
+                        {view === 'chat' && useDrive && driveConv.current?.driveConversationId && (
+                            driveConv.current.finalized ? (
                                 <span className="inline-flex items-center gap-1 rounded-md border border-[var(--color-primary-green)]/40 px-2.5 py-1 text-xs text-[var(--color-primary-green)]">
                                     Completed
                                 </span>
@@ -739,18 +756,32 @@ export function ChatShell({
                                 >
                                     {finalizing ? 'Finalising…' : 'Mark complete'}
                                 </button>
-                            )}
-                        </div>
-                    )}
-                    {view !== 'chat' && (
-                        <button
-                            type="button"
-                            onClick={goChat}
-                            className="ml-auto rounded-md border border-[var(--color-border-dark)] bg-[var(--color-surface-2)]/50 px-3 py-1 text-xs text-[var(--color-text-secondary)] hover:border-[var(--color-primary-blue)]/60 hover:text-[var(--color-primary-blue)]"
-                        >
-                            Back to chat
-                        </button>
-                    )}
+                            )
+                        )}
+                        {view === 'chat' && (
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    conv.startNew();
+                                    goChat();
+                                }}
+                                aria-label="New chat"
+                                title="New chat"
+                                className="grid h-9 w-9 place-items-center rounded-md text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-2)]/60 hover:text-[var(--color-text-primary)] md:hidden"
+                            >
+                                <NewChatIcon />
+                            </button>
+                        )}
+                        {view !== 'chat' && (
+                            <button
+                                type="button"
+                                onClick={goChat}
+                                className="rounded-md border border-[var(--color-border-dark)] bg-[var(--color-surface-2)]/50 px-3 py-1 text-xs text-[var(--color-text-secondary)] hover:border-[var(--color-primary-blue)]/60 hover:text-[var(--color-primary-blue)]"
+                            >
+                                Back to chat
+                            </button>
+                        )}
+                    </div>
                 </header>
 
                 {view === 'chat' && driveNotice && (
@@ -880,6 +911,23 @@ export function ChatShell({
                     );
                 })()}
         </div>
+    );
+}
+
+function MenuIcon() {
+    return (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 6h18M3 12h18M3 18h18" />
+        </svg>
+    );
+}
+
+function NewChatIcon() {
+    return (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 20h9" />
+            <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z" />
+        </svg>
     );
 }
 
