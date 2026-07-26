@@ -667,9 +667,25 @@ function IconButton({
 function StatusIcon({ node }: { node: DriveNode }) {
     const s = node.index_status;
     if (s === 'pending' || s === 'processing') {
+        const done = node.index_chunks_done ?? 0;
+        const total = node.index_chunks_total ?? 0;
+        const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+        const label =
+            s === 'pending'
+                ? 'Queued for indexing'
+                : total > 0
+                    ? `Indexing… ${done}/${total} chunks (${pct}%)`
+                    : 'Indexing for search…';
         return (
-            <span title="Indexing for search…" aria-label="Indexing">
+            <span
+                title={label}
+                aria-label={label}
+                className="inline-flex items-center gap-1"
+            >
                 <ProcessingIcon width={16} height={16} style={{ color: 'var(--drv-text-muted)' }} />
+                {s === 'processing' && total > 0 && (
+                    <span style={{ fontSize: 11, color: 'var(--drv-text-muted)' }}>{pct}%</span>
+                )}
             </span>
         );
     }
