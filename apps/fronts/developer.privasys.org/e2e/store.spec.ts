@@ -121,10 +121,18 @@ test.describe('Public App Store', () => {
             expect(d.reproducibility, 'detail carries a reproducibility block').toBeTruthy();
             expect(d.reproducibility.tee).toBe('TDX'); // container => TDX
 
-            // The store front renders the detail page while published.
-            await page.goto(`${STORE_URL}/app/?slug=${encodeURIComponent(name)}`);
+            // The store front renders the detail page while published, at the
+            // pretty URL the portal hands the developer on publish. This is
+            // served by nginx from the exported /app page (the slug comes from
+            // the path), so it covers the routing an app relies on the moment
+            // it is published.
+            await page.goto(`${STORE_URL}/apps/${encodeURIComponent(name)}`);
             await expect(page.getByRole('heading', { name: 'Reproducibility' })).toBeVisible({ timeout: 20_000 });
             await page.screenshot({ path: screenshot('store-detail'), fullPage: true });
+
+            // The older query form stays supported for links already shared.
+            await page.goto(`${STORE_URL}/app/?slug=${encodeURIComponent(name)}`);
+            await expect(page.getByRole('heading', { name: 'Reproducibility' })).toBeVisible({ timeout: 20_000 });
         } finally {
             await request.delete(`${API}/api/v1/apps/${appId}`, { headers, timeout: 60_000 }).catch(() => {});
         }
