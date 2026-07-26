@@ -1,5 +1,5 @@
 /**
- * Diagnostic e2e for chat-test sign-in flow.
+ * Diagnostic e2e for chat.test sign-in flow.
  *
  * Goals:
  *   1. Reproduce the 3x 409s on /connect/ that show up before the QR
@@ -14,7 +14,7 @@
  */
 import { test, expect } from '@playwright/test';
 
-const BASE = process.env.CHAT_BASE_URL || 'https://chat-test.privasys.org';
+const BASE = process.env.CHAT_BASE_URL || 'https://chat.test.privasys.org';
 const INSTANCE_PATH = process.env.CHAT_INSTANCE_PATH || '/i/demo';
 
 test('chat sign-in: trace network + console up to QR render', async ({ page }) => {

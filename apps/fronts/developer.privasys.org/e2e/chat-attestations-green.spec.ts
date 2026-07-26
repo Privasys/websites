@@ -1,7 +1,7 @@
 /**
- * E2E for the "3 attestations all green" path on the chat-test
+ * E2E for the "3 attestations all green" path on the chat.test
  * confidential-ai-demo instance — mirrors what the user sees in the
- * Security view of chat-test.privasys.org/i/demo.
+ * Security view of chat.test.privasys.org/i/demo.
  *
  * For the AI Inference enclave + every tool in `available_tools[]`,
  * asserts BOTH of:

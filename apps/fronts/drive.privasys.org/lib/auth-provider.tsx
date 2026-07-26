@@ -16,7 +16,7 @@ const SDK_CONFIG = {
     // `NEXT_PUBLIC_API_BASE` was never set anywhere, so the SDK config
     // silently fell back to the prod default and the cached session row
     // ended up with `origin: https://api.developer.privasys.org` even
-    // on chat-test. Cosmetic for the FIDO2 path (frame-host overrides
+    // on chat.test. Cosmetic for the FIDO2 path (frame-host overrides
     // apiBase to the iframe origin), but actively misleading when
     // diagnosing wallet trust-store rows.
     apiBase:
