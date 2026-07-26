@@ -10,6 +10,7 @@ import { RequestsView } from './requests-view';
 import { MembersView } from './members-view';
 import { InsightsView } from './insights-view';
 import { GraphView } from './graph-view';
+import { TrustFooter } from './trust-footer';
 import { ChartIcon, FolderIcon, GraphIcon, HomeIcon, InboxIcon, PeopleIcon, PlusIcon, ShieldCheck } from './icons';
 
 type View = 'files' | 'shared' | 'requests' | 'members' | 'insights' | 'graph';
@@ -81,7 +82,7 @@ export function DriveApp() {
                     className="hidden w-56 shrink-0 border-r sm:block"
                     style={{ borderColor: 'var(--drv-border)' }}
                 >
-                    <nav className="sticky top-14 flex max-h-[calc(100vh-3.5rem)] flex-col gap-1 overflow-auto p-3">
+                    <nav className="sticky top-14 flex h-[calc(100vh-3.5rem)] flex-col gap-1 overflow-auto p-3">
                         {personal && (
                             <SidebarItem
                                 active={view === 'files' && tenant.id === personal.id}
@@ -180,6 +181,7 @@ export function DriveApp() {
                                 />
                             </>
                         )}
+                        <TrustFooter session={session} />
                     </nav>
                 </aside>
 

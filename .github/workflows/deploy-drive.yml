@@ -31,6 +31,11 @@ on:
         required: false
         type: string
         default: 'https://api-test.developer.privasys.org'
+      drive_app_id:
+        description: 'Drive app id, so the UI can attest the backend and show its verdict'
+        required: false
+        type: string
+        default: '02104572-ca2f-41e8-ae2d-24c0294e6f5e'
       smoke:
         description: 'Run post-deploy HTTP smoke test'
         required: false
@@ -53,6 +58,8 @@ jobs:
       AWS_SECRET_ACCESS_KEY: ${{ secrets.NX_CACHE_AWS_SECRET_ACCESS_KEY }}
       NEXT_PUBLIC_API_BASE_URL: ${{ inputs.api_base }}
       NEXT_PUBLIC_DRIVE_APP_HOST: ${{ inputs.drive_host }}
+      NEXT_PUBLIC_DRIVE_APP_ID: ${{ inputs.drive_app_id }}
+      NEXT_PUBLIC_COMMIT_SHA: ${{ github.sha }}
 
     steps:
       - uses: actions/checkout@v6

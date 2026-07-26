@@ -33,6 +33,20 @@ export function driveHost(): string {
     return driveHostFromEnv(process.env.NEXT_PUBLIC_DRIVE_APP_HOST);
 }
 
+/** The Drive backend's operating status, including the build it is running. */
+export interface DriveStatus {
+    state: string; // 'ready' | 'awaiting_config' | ...
+    activity?: string;
+    message?: string;
+    mode?: string; // 'sovereign' | 'escrowed'
+    version?: string; // backend commit / build id
+}
+
+/** Read the backend's /status over the sealed session (build id + mode). */
+export function getStatus(session: SealedSession): Promise<DriveStatus> {
+    return json<DriveStatus>(session, 'GET', '/status');
+}
+
 export type NodeKind = 'folder' | 'file';
 
 export interface DriveNode {
