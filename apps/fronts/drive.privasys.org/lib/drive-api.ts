@@ -61,6 +61,10 @@ export interface DriveNode {
     manifest_ref?: string;
     /** Semantic-index state: '' | pending | processing | indexed | skipped | failed | excluded. */
     index_status?: string;
+    /** Embedding progress while `processing`: chunks embedded of the total
+     *  (0/0 until known). Drives the per-file progress indicator. */
+    index_chunks_done?: number;
+    index_chunks_total?: number;
     /** Creator's sub (Owner column). */
     created_by?: string;
     /** RFC3339 (Modified column). */
