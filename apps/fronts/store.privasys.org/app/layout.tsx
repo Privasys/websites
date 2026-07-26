@@ -3,9 +3,18 @@ import Link from 'next/link';
 import { Footer } from '@privasys/ui';
 import '~/styles/globals.css';
 
+const FAVICON = '/favicon';
+
 export const metadata: Metadata = {
     title: 'Privasys App Store',
-    description: 'Browse confidential applications that run inside hardware-protected enclaves. Every listing is independently verifiable by remote attestation.'
+    description: 'Browse confidential applications that run inside hardware-protected enclaves. Every listing is independently verifiable by remote attestation.',
+    icons: [
+        { rel: 'apple-touch-icon', sizes: '180x180', url: `${FAVICON}/apple-touch-icon.png` },
+        { rel: 'icon', type: 'image/png', sizes: '96x96', url: `${FAVICON}/favicon-96x96.png` },
+        { rel: 'icon', type: 'image/svg+xml', url: `${FAVICON}/favicon.svg` },
+        { rel: 'shortcut icon', url: `${FAVICON}/favicon.ico` }
+    ],
+    manifest: `${FAVICON}/site.webmanifest`
 };
 
 const FOOTER_LINKS = [
