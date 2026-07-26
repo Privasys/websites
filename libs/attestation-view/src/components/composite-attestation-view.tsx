@@ -288,8 +288,18 @@ export function computeAttestationSummary(
 
     let digestsOk = true;
     if (expectations && state.result) {
+        // A co-located container app presents its OWN leaf: its identity
+        // lands in `app_extensions`, while `extensions` carries the hosting
+        // enclave's (and is empty for some app types). Look the app's arc up
+        // in app_extensions FIRST, falling back to the enclave's — otherwise
+        // every co-located app reads as "digest mismatch" even when its
+        // digest matches exactly, which is what the expanded view already
+        // shows correctly (it renders app_extensions).
+        const appExts = state.result.app_extensions ?? [];
         const exts = state.result.extensions ?? [];
-        const get = (oid: string) => exts.find((e: { oid: string; value_hex?: string }) => e.oid === oid)?.value_hex?.toLowerCase();
+        const find = (list: Array<{ oid: string; value_hex?: string }>, oid: string) =>
+            list.find((e) => e.oid === oid)?.value_hex?.toLowerCase();
+        const get = (oid: string) => find(appExts, oid) ?? find(exts, oid);
         const norm = (v?: string) => (v || '').toLowerCase().replace(/^0x/, '');
         // Each check may match at more than one OID: the AI model and tools
         // digests moved into the app arc (3.5 -> 3.5.5, 3.7 -> 3.5.7), and

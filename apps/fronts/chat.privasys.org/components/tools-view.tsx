@@ -89,6 +89,18 @@ export function ToolsView({
 
     const absAttest = (u?: string) => (u ? new URL(u, API_BASE_URL).toString() : undefined);
 
+    // App ids already provided as fleet tools, so the directory picker can
+    // hide them (the same app must not appear twice under two names).
+    const fleetAppIds = useMemo(
+        () =>
+            new Set(
+                (instance.available_tools ?? [])
+                    .map((t) => appIdFromAttestUrl(t.attest_url))
+                    .filter((id): id is string => !!id)
+            ),
+        [instance.available_tools]
+    );
+
     return (
         <div className='flex flex-1 flex-col overflow-y-auto'>
             <div className='mx-auto w-full max-w-3xl px-6 py-8'>
@@ -104,6 +116,11 @@ export function ToolsView({
                     </p>
                 </header>
 
+                {/* The fleet tools ARE platform apps, so the directory below
+                    would otherwise offer the very same app again under its
+                    app name (e.g. "Web Page Reader" the fleet tool vs "Web
+                    Browser (Lightpanda)" the app). Collect their app ids and
+                    hide them from the picker. */}
                 {(instance.available_tools?.length ?? 0) > 0 && (
                     <section className='mb-8'>
                         <h2 className='mb-3 text-sm font-semibold uppercase tracking-wide text-[var(--color-text-muted)]'>
@@ -176,6 +193,7 @@ export function ToolsView({
                         instanceId={instance.id}
                         userTools={userTools}
                         token={token}
+                        excludeAppIds={fleetAppIds}
                     />
                 )}
                 {canAdd && allowExternal && (
@@ -361,16 +379,27 @@ function toToolName(appName: string): string {
     return appName.replace(/[^a-zA-Z0-9_]+/g, '_').replace(/^_+|_+$/g, '');
 }
 
+/** Pull the app id out of an attest URL (`/api/v1/apps/<id>/attest`), so a
+ *  fleet tool can be matched to the directory entry for the same app. */
+function appIdFromAttestUrl(u?: string): string | undefined {
+    if (!u) return undefined;
+    return /\/apps\/([^/]+)\/attest/.exec(u)?.[1]?.toLowerCase();
+}
+
 // Search-and-select over the tools directory: the user's own apps first,
 // then the public catalogue — trust anchors visible before the add.
 function PlatformToolPicker({
     instanceId,
     userTools,
-    token
+    token,
+    excludeAppIds
 }: {
     instanceId: string;
     userTools: UserToolsState;
     token?: string;
+    /** Apps already included as fleet tools; hidden so the same app is not
+     *  offered twice under a second name. */
+    excludeAppIds?: Set<string>;
 }) {
     const [entries, setEntries] = useState<ToolDirectoryEntry[] | null>(null);
     const [dirErr, setDirErr] = useState<string | undefined>();
@@ -397,11 +426,16 @@ function PlatformToolPicker({
             e.name.toLowerCase().includes(q) ||
             e.display_name.toLowerCase().includes(q) ||
             (e.tagline ?? '').toLowerCase().includes(q);
-        return {
-            mine: entries.filter((e) => e.mine && match(e)),
-            pub: entries.filter((e) => !e.mine && e.public && match(e))
+        // An app already included as a fleet tool is not offerable again.
+        const notFleet = (e: ToolDirectoryEntry) => {
+            const id = appIdFromAttestUrl(e.attest_url);
+            return !id || !excludeAppIds?.has(id);
         };
-    }, [entries, query]) as { mine: ToolDirectoryEntry[]; pub: ToolDirectoryEntry[] } | never[];
+        return {
+            mine: entries.filter((e) => e.mine && notFleet(e) && match(e)),
+            pub: entries.filter((e) => !e.mine && e.public && notFleet(e) && match(e))
+        };
+    }, [entries, query, excludeAppIds]) as { mine: ToolDirectoryEntry[]; pub: ToolDirectoryEntry[] } | never[];
 
     const groups = Array.isArray(filtered) ? { mine: [], pub: [] } : filtered;
 
