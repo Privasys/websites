@@ -71,7 +71,7 @@ export default function BrowsePage() {
                 {filtered.map(app => (
                     <Link
                         key={app.slug}
-                        href={`/app/?slug=${encodeURIComponent(app.slug)}`}
+                        href={`/apps/${encodeURIComponent(app.slug)}`}
                         className='block p-5 rounded-2xl border border-black/8 dark:border-white/10 hover:border-black/20 dark:hover:border-white/25 transition-colors'
                     >
                         <div className='flex items-start gap-4'>
