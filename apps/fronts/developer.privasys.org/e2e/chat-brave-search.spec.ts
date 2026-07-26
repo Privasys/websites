@@ -1,7 +1,7 @@
 /**
  * E2E for the Brave Search AI Tool wired into the confidential-ai-demo
  * fleet. The user-facing prompt under test is the same one you can
- * paste into chat-test.privasys.org with Brave Search enabled:
+ * paste into chat.test.privasys.org with Brave Search enabled:
  *
  *   "Please read privasys doc on enclave os and give me your opinion."
  *

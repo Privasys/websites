@@ -1,5 +1,5 @@
 /**
- * E2E for chat-test thinking + streaming behaviour.
+ * E2E for chat.test thinking + streaming behaviour.
  *
  * Tests the public confidential-ai-demo endpoint directly (no wallet
  * needed) to assert two things end-to-end on the deployed test fleet:
@@ -32,7 +32,7 @@ const ENDPOINT_OVERRIDE = process.env.CHAT_INFERENCE_ENDPOINT || '';
 // here.
 const SYSTEM_PROMPT = `You are Privasys Chat, a helpful assistant.`;
 
-test('chat-test: instance API publishes a model name vLLM actually serves', async () => {
+test('chat.test: instance API publishes a model name vLLM actually serves', async () => {
     const ctx = await request.newContext();
     const resp = await ctx.get(INSTANCE_API);
     expect(resp.ok(), `instance API ${INSTANCE_API} returned ${resp.status()}`).toBeTruthy();
@@ -56,7 +56,7 @@ test('chat-test: instance API publishes a model name vLLM actually serves', asyn
     }
 });
 
-test('chat-test: gemma emits reasoning_content channel and streams chunk-by-chunk', async () => {
+test('chat.test: gemma emits reasoning_content channel and streams chunk-by-chunk', async () => {
     test.setTimeout(60_000);
     const ctx = await request.newContext();
     const meta = await (await ctx.get(INSTANCE_API)).json();

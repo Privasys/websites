@@ -41,9 +41,9 @@ jobs:
             echo "env_file=~/chat.env"                          >> "$GITHUB_OUTPUT"
             # Production chat is backed by the prod inference fleet on the
             # prod management-service (api.developer.privasys.org): fleet
-            # "demo" -> prod confidential-ai enclave on m2-tdx-gpu. This
-            # decouples prod chat from the dev Spot VM (chat-test still uses
-            # api-test).
+            # "demo" -> prod confidential-ai enclave on m2-tdx-gpu. Staging
+            # (chat.test.privasys.org) now points at the same prod fleet,
+            # since the dev inference VM no longer exists.
             echo "api_url=https://api.developer.privasys.org" >> "$GITHUB_OUTPUT"
             echo "default_instance=demo"                        >> "$GITHUB_OUTPUT"
             # No dedicated chat-service back-end in prod yet: leave the
@@ -55,18 +55,22 @@ jobs:
           else
             echo "container=chat"                                  >> "$GITHUB_OUTPUT"
             echo "host_port=3011"                                  >> "$GITHUB_OUTPUT"
+            # VM-side env file, named after the environment rather than the
+            # host, so the chat.test.privasys.org move does not rename it.
             echo "env_file=~/chat-test.env"                        >> "$GITHUB_OUTPUT"
-            echo "api_url=https://api-test.developer.privasys.org" >> "$GITHUB_OUTPUT"
+            # There is no dev inference fleet any more
+            # (confidential-ai.apps-test no longer resolves), so
+            # chat.test.privasys.org is backed by the PROD confidential-AI
+            # enclave. The instance is therefore resolved on the PROD
+            # management-service, whose "demo" alias is the prod fleet.
+            echo "api_url=https://api.developer.privasys.org"      >> "$GITHUB_OUTPUT"
             echo "default_instance=demo"                           >> "$GITHUB_OUTPUT"
-            # BYO-MCP back-end: the real chat-service enclave app (user tool
-            # store + signed tool-grant + JWKS). The browser reaches it over a
-            # DEDICATED sealed session (bearer inside the envelope) and the
-            # wallet vouchers it alongside the inference enclave in one ceremony
-            # (multi-app attestation).
-            echo "chat_service_url=https://chat-service.apps-test.privasys.org" >> "$GITHUB_OUTPUT"
-            # Drive ↔ Chat (§8.7): conversations, attach-from-Drive and the
-            # agent's Drive RAG memory ride a dedicated sealed session to the
-            # Drive enclave (same drive-demo backend the Drive front uses).
+            # BYO-MCP stays dormant here: the dev chat-service enclave is down,
+            # and a grant it minted would carry an audience the prod instance
+            # rejects, so an empty URL is the honest wiring.
+            echo "chat_service_url="                               >> "$GITHUB_OUTPUT"
+            # Drive ↔ Chat (§8.7) deliberately stays on the DEV Drive enclave
+            # so staging never reads or writes production Drive data.
             echo "drive_app_host=drive-demo.apps-test.privasys.org" >> "$GITHUB_OUTPUT"
           fi
           echo "tag=$(date -u +%Y%m%d-%H%M%S)-${ENV}-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
@@ -172,7 +176,7 @@ jobs:
             test \"\$ROOT\" = '307' -o \"\$ROOT\" = '308' -o \"\$ROOT\" = '200' || { echo 'root failed'; sudo docker logs ${CONTAINER} --tail 50; exit 1; }"
 
       # Post-deploy smoke against the API the chat actually points at:
-      # mirrors the "Security view" rows the user sees in chat-test/i/demo.
+      # mirrors the "Security view" rows the user sees in chat.test/i/demo.
       # Catches the failure modes that hit prod:
       #   - a tool silently dropping out of available_tools[] (Brave Search vanish)
       #   - an enclave /attest returning 502 (stale gateway_host after Spot rotation)
