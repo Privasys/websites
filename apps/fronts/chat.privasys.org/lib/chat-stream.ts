@@ -35,6 +35,29 @@ export class ModelLoadingError extends Error {
     }
 }
 
+/**
+ * The sealed session reached the enclave but carried no identity, so the app
+ * refused the call. The enclave asserts `X-Privasys-Sub` only for a
+ * voucher-backed bootstrap; a session established without one is anonymous
+ * and every app call 401s. This happens on the same-device wallet flow when
+ * the EncAuth voucher had not landed yet at bootstrap time, so it is
+ * recoverable: re-bind the sealed session from a voucher and retry once.
+ * Distinct from a genuine "you are not signed in", which the caller must not
+ * paper over.
+ */
+export class SealedIdentityMissingError extends Error {
+    constructor(public readonly upstreamMessage: string) {
+        super('sealed session has no identity');
+        this.name = 'SealedIdentityMissingError';
+    }
+}
+
+/** Returns true when a sealed 401 means "anonymous session", not "bad login". */
+function looksLikeMissingSealedIdentity(status: number, body: string): boolean {
+    if (status !== 401) return false;
+    return /authentication required/i.test(body);
+}
+
 /** Returns true when a 4xx/5xx body indicates the model is still loading. */
 function looksLikeModelLoading(status: number, body: string): boolean {
     if (status !== 503) return false;
@@ -286,6 +309,11 @@ export async function streamChatCompletion(args: StreamChatArgs): Promise<void> 
                 const text = drained.length ? new TextDecoder().decode(concatU8(drained)) : '';
                 if (looksLikeModelLoading(sealed.status, text)) {
                     const err = new ModelLoadingError(text);
+                    args.onError?.(err);
+                    throw err;
+                }
+                if (looksLikeMissingSealedIdentity(sealed.status, text)) {
+                    const err = new SealedIdentityMissingError(text);
                     args.onError?.(err);
                     throw err;
                 }

@@ -5,6 +5,7 @@ import type { AvailableModel, Instance } from '~/lib/types';
 import {
     streamChatCompletion,
     ModelLoadingError,
+    SealedIdentityMissingError,
     type ChatMessage
 } from '~/lib/chat-stream';
 import type { AttachIntent } from '~/lib/drive-chat-api';
@@ -17,6 +18,7 @@ import type { PersistedMessage, Rating, ToolInvocation } from '~/lib/conversatio
 import type { UserTool } from '~/lib/chat-service-api';
 import type { SealedSession } from '@privasys/auth';
 import type { SealedStaleReason } from '~/lib/privasys-auth';
+import { useAuth } from '~/lib/privasys-auth';
 import { clearFeedback, recordFeedback } from '~/lib/pending-feedback';
 import { waitForModelReady } from '~/lib/instance-api';
 import { fetchToolGrant } from '~/lib/chat-service-api';
@@ -199,6 +201,9 @@ export function ChatPanel({
     knowledgeAllScoped?: boolean;
     onManageKnowledge?: () => void;
 }) {
+    // Used to re-bind a sealed session that came up without an identity
+    // (same-device wallet flow); see SealedIdentityMissingError below.
+    const { reestablishSealed } = useAuth();
     const [messages, setMessages] = useState<DisplayMessage[]>(
         () => initialMessages.map((m) => ({ ...m }))
     );
@@ -584,6 +589,7 @@ export function ChatPanel({
             // current sealed session so a post-reconnect retry uses the fresh
             // transport.
             let transportRetries = 0;
+            let identityRebindTried = false;
             for (;;) {
                 try {
                     await runStream();
@@ -643,6 +649,27 @@ export function ChatPanel({
                             )
                         );
                         continue;
+                    }
+
+                    // The sealed session reached the enclave but carried no
+                    // identity, so the app refused the call. Seen on the
+                    // same-device wallet flow when the EncAuth voucher had
+                    // not landed by the time the session was bootstrapped:
+                    // the transport is fine and the user IS signed in, the
+                    // binding just needs redoing. Re-bind once and resend, so
+                    // the prompt is not lost to a spurious "authentication
+                    // required". A second failure falls through and surfaces.
+                    if (e instanceof SealedIdentityMissingError && !identityRebindTried) {
+                        identityRebindTried = true;
+                        const relayHost = instance.session_relay?.app_host;
+                        if (relayHost && (await reestablishSealed(relayHost)) === 'ok') {
+                            setMessages((prev) =>
+                                prev.map((m) =>
+                                    m.id === assistantId ? { ...m, error: undefined } : m
+                                )
+                            );
+                            continue;
+                        }
                     }
 
                     if (isTransportError((e as Error).message) && transportRetries < MAX_TRANSPORT_RETRIES) {
