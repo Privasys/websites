@@ -32,7 +32,9 @@ export function AppSidebar({
     onShowSecurity,
     onShowTools,
     onShowKnowledge,
-    onShowSignIn
+    onShowSignIn,
+    mobileOpen = false,
+    onMobileClose
 }: {
     instance: Instance | null;
     conversations: Conversation[];
@@ -54,6 +56,11 @@ export function AppSidebar({
      *  Drive is wired (the chat passes it conditionally). */
     onShowKnowledge?: () => void;
     onShowSignIn: () => void;
+    /** Mobile drawer state. Below `md` the sidebar is off-canvas: it slides in
+     *  over the chat and closes on backdrop tap, Escape, or any navigation.
+     *  Ignored from `md` up, where the sidebar is always docked. */
+    mobileOpen?: boolean;
+    onMobileClose?: () => void;
 }) {
     const { session, signOut } = useAuth();
     const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -77,133 +84,180 @@ export function AppSidebar({
     const display = pickDisplay(profile, session?.accessToken);
     const secureEnabled = !!session && !!instance && !!instance.endpoint;
 
-    return (
-        <aside className="hidden w-[260px] shrink-0 flex-col border-r border-[var(--color-border-dark)] bg-[var(--color-surface-1)]/80 md:sticky md:top-0 md:flex md:h-screen md:self-start">
-            <div className="flex items-center gap-2 px-4 pt-4 pb-3">
-                <img
-                    src="/favicon/privasys-logo.mini.svg"
-                    alt="Privasys"
-                    className="h-7 w-7"
-                />
-                <span className="text-sm font-semibold tracking-tight text-[var(--color-text-primary)]">
-                    Privasys Chat
-                </span>
-            </div>
+    // Escape closes the mobile drawer.
+    useEffect(() => {
+        if (!mobileOpen || !onMobileClose) return;
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') onMobileClose();
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [mobileOpen, onMobileClose]);
 
-            <div className="px-3">
+    // Any navigation dismisses the drawer, so a tap on a phone goes straight
+    // to the destination instead of leaving the menu covering it.
+    const nav = (fn?: () => void) => () => {
+        fn?.();
+        onMobileClose?.();
+    };
+
+    return (
+        <>
+            {mobileOpen && (
                 <button
                     type="button"
-                    onClick={onNewChat}
-                    className="flex w-full items-center gap-2 rounded-full border border-[var(--color-border-dark)] bg-[var(--color-surface-2)]/40 px-3 py-2 text-sm text-[var(--color-text-primary)] transition-colors hover:border-[var(--color-primary-blue)]/60 hover:text-[var(--color-primary-blue)]"
-                >
-                    <PlusIcon />
-                    New chat
-                </button>
-            </div>
-
-            <div className="mt-6 flex-1 overflow-y-auto px-3">
-                <p className="px-2 pb-2 text-[11px] font-medium tracking-wider text-[var(--color-text-muted)] uppercase">
-                    Chats
-                </p>
-                {conversations.length === 0 ? (
-                    <p className="px-2 text-xs text-[var(--color-text-muted)]">
-                        No conversations yet. Start a new chat to see it here.
-                        History is stored only on this device.
-                    </p>
-                ) : (
-                    <ul className="flex flex-col gap-0.5">
-                        {conversations.map((c) => (
-                            <ConversationRow
-                                key={c.id}
-                                conversation={c}
-                                active={c.id === activeConversationId}
-                                onSelect={() => onSelectConversation(c.id)}
-                                onDelete={() => onDeleteConversation(c.id)}
-                                onRename={(t) => onRenameConversation(c.id, t)}
-                                onShare={
-                                    onShareConversation && c.driveConversationId
-                                        ? () => onShareConversation(c.id)
-                                        : undefined
-                                }
-                            />
-                        ))}
-                    </ul>
-                )}
-            </div>
-
-            <div className="border-t border-[var(--color-border-dark)] px-3 py-3">
-                {session && onShowTools && (
-                    <button
-                        type="button"
-                        onClick={onShowTools}
-                        disabled={!secureEnabled}
-                        className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-surface-2)]/60 disabled:opacity-50"
-                    >
-                        <WrenchIcon />
-                        <span className="flex-1">AI Tools</span>
-                    </button>
-                )}
-                {session && onShowKnowledge && (
-                    <button
-                        type="button"
-                        onClick={onShowKnowledge}
-                        className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-surface-2)]/60"
-                    >
-                        <BookIcon />
-                        <span className="flex-1">Knowledge</span>
-                    </button>
-                )}
-                {session && (
-                    <button
-                        type="button"
-                        onClick={onShowSecurity}
-                        disabled={!secureEnabled}
-                        className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-surface-2)]/60 disabled:opacity-50"
-                    >
-                        <ShieldIcon />
-                        <span className="flex-1">Secure enclave</span>
-                        <SecureEnclaveTag status={attestationStatus} enabled={secureEnabled} />
-                    </button>
-                )}
-
-                {session ? (
-                    <div className="mt-2 flex items-center gap-2 rounded-md px-2 py-2">
-                        <UserBadge label={display.initial} />
-                        <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm text-[var(--color-text-primary)]">
-                                {display.primary}
-                            </p>
-                            {display.secondary && (
-                                <p className="truncate text-[11px] text-[var(--color-text-muted)]">
-                                    {display.secondary}
-                                </p>
-                            )}
-                            <button
-                                type="button"
-                                onClick={() => void signOut()}
-                                className="mt-0.5 text-[11px] text-[var(--color-text-muted)] hover:text-[var(--color-primary-blue)]"
-                            >
-                                Sign out
-                            </button>
-                        </div>
-                    </div>
-                ) : (
-                    <button
-                        type="button"
-                        onClick={onShowSignIn}
-                        className="mt-1 flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-[var(--color-text-primary)] transition-colors hover:bg-[var(--color-surface-2)]/60"
-                    >
-                        <SignInIcon />
-                        <span>Sign in</span>
-                    </button>
-                )}
-
-                <div className="mt-2 flex items-center justify-between border-t border-[var(--color-border-dark)] pt-2">
-                    <BuildInfo />
-                    <ThemeToggle />
+                    aria-label="Close menu"
+                    onClick={onMobileClose}
+                    className="fixed inset-0 z-40 cursor-default bg-black/40 backdrop-blur-[1px] md:hidden"
+                />
+            )}
+            <aside
+                className={`fixed inset-y-0 left-0 z-50 flex w-[min(20rem,85vw)] shrink-0 flex-col border-r border-[var(--color-border-dark)] bg-[var(--color-surface-1)] transition-transform duration-200 md:sticky md:top-0 md:z-auto md:h-screen md:w-[260px] md:translate-x-0 md:self-start md:bg-[var(--color-surface-1)]/80 md:transition-none ${mobileOpen ? 'visible translate-x-0 shadow-2xl' : 'invisible -translate-x-full'} md:visible md:shadow-none`}
+            >
+                <div className="flex items-center gap-2 px-4 pt-4 pb-3">
+                    <img
+                        src="/favicon/privasys-logo.mini.svg"
+                        alt="Privasys"
+                        className="h-7 w-7"
+                    />
+                    <span className="text-sm font-semibold tracking-tight text-[var(--color-text-primary)]">
+                        Privasys Chat
+                    </span>
+                    {onMobileClose && (
+                        <button
+                            type="button"
+                            onClick={onMobileClose}
+                            aria-label="Close menu"
+                            className="ml-auto grid h-8 w-8 place-items-center rounded-md text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-2)]/60 hover:text-[var(--color-text-primary)] md:hidden"
+                        >
+                            <CloseIcon />
+                        </button>
+                    )}
                 </div>
-            </div>
-        </aside>
+
+                <div className="px-3">
+                    <button
+                        type="button"
+                        onClick={nav(onNewChat)}
+                        className="flex w-full items-center gap-2 rounded-full border border-[var(--color-border-dark)] bg-[var(--color-surface-2)]/40 px-3 py-2 text-sm text-[var(--color-text-primary)] transition-colors hover:border-[var(--color-primary-blue)]/60 hover:text-[var(--color-primary-blue)]"
+                    >
+                        <PlusIcon />
+                        New chat
+                    </button>
+                </div>
+
+                <div className="mt-6 flex-1 overflow-y-auto px-3">
+                    <p className="px-2 pb-2 text-[11px] font-medium tracking-wider text-[var(--color-text-muted)] uppercase">
+                        Chats
+                    </p>
+                    {conversations.length === 0 ? (
+                        <p className="px-2 text-xs text-[var(--color-text-muted)]">
+                            No conversations yet. Start a new chat to see it here.
+                            History is stored only on this device.
+                        </p>
+                    ) : (
+                        <ul className="flex flex-col gap-0.5">
+                            {conversations.map((c) => (
+                                <ConversationRow
+                                    key={c.id}
+                                    conversation={c}
+                                    active={c.id === activeConversationId}
+                                    onSelect={nav(() => onSelectConversation(c.id))}
+                                    onDelete={() => onDeleteConversation(c.id)}
+                                    onRename={(t) => onRenameConversation(c.id, t)}
+                                    onShare={
+                                        onShareConversation && c.driveConversationId
+                                            ? () => onShareConversation(c.id)
+                                            : undefined
+                                    }
+                                />
+                            ))}
+                        </ul>
+                    )}
+                </div>
+
+                <div className="border-t border-[var(--color-border-dark)] px-3 py-3">
+                    {session && onShowTools && (
+                        <button
+                            type="button"
+                            onClick={nav(onShowTools)}
+                            disabled={!secureEnabled}
+                            className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-surface-2)]/60 disabled:opacity-50"
+                        >
+                            <WrenchIcon />
+                            <span className="flex-1">AI Tools</span>
+                        </button>
+                    )}
+                    {session && onShowKnowledge && (
+                        <button
+                            type="button"
+                            onClick={nav(onShowKnowledge)}
+                            className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-surface-2)]/60"
+                        >
+                            <BookIcon />
+                            <span className="flex-1">Knowledge</span>
+                        </button>
+                    )}
+                    {session && (
+                        <button
+                            type="button"
+                            onClick={nav(onShowSecurity)}
+                            disabled={!secureEnabled}
+                            className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-surface-2)]/60 disabled:opacity-50"
+                        >
+                            <ShieldIcon />
+                            <span className="flex-1">Secure enclave</span>
+                            <SecureEnclaveTag status={attestationStatus} enabled={secureEnabled} />
+                        </button>
+                    )}
+
+                    {session ? (
+                        <div className="mt-2 flex items-center gap-2 rounded-md px-2 py-2">
+                            <UserBadge label={display.initial} />
+                            <div className="min-w-0 flex-1">
+                                <p className="truncate text-sm text-[var(--color-text-primary)]">
+                                    {display.primary}
+                                </p>
+                                {display.secondary && (
+                                    <p className="truncate text-[11px] text-[var(--color-text-muted)]">
+                                        {display.secondary}
+                                    </p>
+                                )}
+                                <button
+                                    type="button"
+                                    onClick={() => void signOut()}
+                                    className="mt-0.5 text-[11px] text-[var(--color-text-muted)] hover:text-[var(--color-primary-blue)]"
+                                >
+                                    Sign out
+                                </button>
+                            </div>
+                        </div>
+                    ) : (
+                        <button
+                            type="button"
+                            onClick={nav(onShowSignIn)}
+                            className="mt-1 flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-[var(--color-text-primary)] transition-colors hover:bg-[var(--color-surface-2)]/60"
+                        >
+                            <SignInIcon />
+                            <span>Sign in</span>
+                        </button>
+                    )}
+
+                    <div className="mt-2 flex items-center justify-between border-t border-[var(--color-border-dark)] pt-2">
+                        <BuildInfo />
+                        <ThemeToggle />
+                    </div>
+                </div>
+            </aside>
+        </>
+    );
+}
+
+function CloseIcon() {
+    return (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M18 6 6 18M6 6l12 12" />
+        </svg>
     );
 }
 
