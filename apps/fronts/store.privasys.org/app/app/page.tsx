@@ -71,8 +71,20 @@ function LiveAttestation({ app }: { app: StoreAppDetail }) {
     );
 }
 
+// The canonical public URL is /apps/<slug> (what the portal hands the developer
+// on publish, and what people paste). This is a static export, so nginx serves
+// this same page for any /apps/* path and we take the slug from the path.
+// ?slug= is the older form and still works.
+function slugFromLocation(search: URLSearchParams): string {
+    const q = search.get('slug');
+    if (q) return q;
+    if (typeof window === 'undefined') return '';
+    const m = /\/apps\/([^/?#]+)/.exec(window.location.pathname);
+    return m ? decodeURIComponent(m[1]) : '';
+}
+
 function AppDetail() {
-    const slug = useSearchParams().get('slug') ?? '';
+    const slug = slugFromLocation(useSearchParams());
     const [app, setApp] = useState<StoreAppDetail | null>(null);
     const [error, setError] = useState<string | null>(null);
 

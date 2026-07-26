@@ -97,6 +97,34 @@ jobs:
               ${STAGING}/ /var/websites/store.privasys.org/ && \
             sudo nginx -t && sudo systemctl reload nginx"
 
+      # Pretty per-app URLs (/apps/<slug>) are what the portal hands a developer
+      # on publish. The store is a static export, so nginx has to serve the
+      # exported /app page for any /apps/* path — otherwise an app published
+      # after the last deploy 404s. Idempotent; `nginx -t` gates the reload and
+      # the original block is restored if the edit does not validate, so this
+      # can never take the host down.
+      - name: Ensure nginx serves /apps/<slug>
+        env:
+          OVH_HOST: ${{ secrets.OVH_HOST }}
+          OVH_USER: ${{ secrets.OVH_USER }}
+          OVH_SSH_PORT: ${{ secrets.OVH_SSH_PORT }}
+        run: |
+          set -euo pipefail
+          PORT="${OVH_SSH_PORT:-22}"
+          # Single-quoted: nothing expands locally. \$uri reaches the remote
+          # shell as $uri inside the double-quoted sed script.
+          ssh -p "$PORT" -i ~/.ssh/id_ed25519 "${OVH_USER}@${OVH_HOST}" 'set -eu; \
+            CONF=/etc/nginx/sites-available/store.privasys.org; \
+            if sudo grep -q "location \^~ /apps/" "$CONF"; then echo "already present"; exit 0; fi; \
+            sudo cp "$CONF" "$CONF.bak"; \
+            sudo sed -i "/^    index index.html;$/a\\    location ^~ /apps/ { try_files \$uri \$uri/ /app/index.html; }" "$CONF"; \
+            if sudo nginx -t; then \
+              sudo systemctl reload nginx; sudo rm -f "$CONF.bak"; echo "installed /apps/ fallback"; \
+            else \
+              sudo mv "$CONF.bak" "$CONF"; sudo nginx -t; \
+              echo "edit rejected by nginx -t; original restored" >&2; exit 1; \
+            fi'
+
       - name: Smoke test
         if: ${{ inputs.smoke }}
         run: |
@@ -105,6 +133,14 @@ jobs:
           echo "root=$ROOT"
           test "$ROOT" = "200"
           grep -q 'App Store' /tmp/store-index.html
+          # A published app must be reachable at its pretty URL.
+          SLUG=$(curl -sS "${NEXT_PUBLIC_API_BASE_URL:-https://api.developer.privasys.org}/api/v1/store/apps" \
+            | sed -n 's/.*"slug":"\([^"]*\)".*/\1/p' | head -1)
+          if [ -n "$SLUG" ]; then
+            APP=$(curl -sS -o /dev/null -w '%{http_code}' "https://store.privasys.org/apps/${SLUG}")
+            echo "apps/${SLUG}=$APP"
+            test "$APP" = "200"
+          fi
 
       - name: Prune old staged builds on OVH (keep last 5)
         if: always()
