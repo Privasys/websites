@@ -21,6 +21,8 @@ const FOOTER_LINKS = [{ label: 'Legal', href: 'https://privasys.org/legal/', ext
 export function DriveApp() {
     const { me, name, tenant, tenants, switchTenant, newWorkspace, session, signOut } = useDrive();
     const [view, setView] = useState<View>('files');
+    // Where the Security view returns to (the view it was opened from).
+    const [prevView, setPrevView] = useState<View>('files');
     const [creating, setCreating] = useState(false);
     const [wsName, setWsName] = useState('');
     const [wsError, setWsError] = useState<string | null>(null);
@@ -183,7 +185,13 @@ export function DriveApp() {
                             </>
                         )}
                     </nav>
-                    <TrustFooter session={session} onOpenSecurity={() => setView('security')} />
+                    <TrustFooter
+                        session={session}
+                        onOpenSecurity={() => {
+                            setPrevView(view === 'security' ? 'files' : view);
+                            setView('security');
+                        }}
+                    />
                 </aside>
 
                 {/* Main */}
@@ -199,7 +207,7 @@ export function DriveApp() {
                     ) : view === 'graph' ? (
                         <GraphView key={tenant.id} session={session} tenant={tenant} />
                     ) : view === 'security' ? (
-                        <SecurityView />
+                        <SecurityView onBack={() => setView(prevView)} />
                     ) : (
                         <MembersView session={session} tenant={tenant} mySub={me?.sub ?? ''} />
                     )}

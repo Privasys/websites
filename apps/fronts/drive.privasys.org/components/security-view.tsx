@@ -14,7 +14,7 @@ const API_BASE =
 const APP_ID = process.env.NEXT_PUBLIC_DRIVE_APP_ID ?? '';
 const AS_VERIFY = 'https://as.privasys.org/verify-quote';
 
-export function SecurityView() {
+export function SecurityView({ onBack }: { onBack?: () => void }) {
     const { getTokenForAudience } = useAuth();
     const attestUrl = APP_ID ? `${API_BASE}/api/v1/apps/${APP_ID}/attest` : '';
     const [state, actions] = useAttestation({
@@ -30,6 +30,29 @@ export function SecurityView() {
         <div className="flex flex-1 flex-col overflow-y-auto">
             <div className="mx-auto w-full max-w-3xl px-6 py-8">
                 <header className="mb-6">
+                    {onBack && (
+                        <button
+                            type="button"
+                            onClick={onBack}
+                            className="mb-3 inline-flex items-center gap-1 rounded-md text-sm transition-colors hover:opacity-80"
+                            style={{ color: 'var(--drv-text-secondary)' }}
+                        >
+                            <svg
+                                width="16"
+                                height="16"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                aria-hidden="true"
+                            >
+                                <path d="m15 18-6-6 6-6" />
+                            </svg>
+                            Back
+                        </button>
+                    )}
                     <h1 className="text-2xl font-semibold" style={{ color: 'var(--drv-text)' }}>
                         Security
                     </h1>
