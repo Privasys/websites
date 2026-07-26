@@ -1,6 +1,11 @@
 @import 'tailwindcss';
 @import '@privasys/ui/styles.css';
 
+/* Scan the shared attestation-view lib so its badge/pill utility classes
+ * (bg-emerald-100, rounded-full, …) survive Tailwind's content purge — the
+ * trust footer renders them. Mirrors chat.privasys.org's globals. */
+@source '../../../../libs/attestation-view/src';
+
 :root {
     color-scheme: light dark;
 

@@ -10,10 +10,11 @@ import { RequestsView } from './requests-view';
 import { MembersView } from './members-view';
 import { InsightsView } from './insights-view';
 import { GraphView } from './graph-view';
+import { SecurityView } from './security-view';
 import { TrustFooter } from './trust-footer';
 import { ChartIcon, FolderIcon, GraphIcon, HomeIcon, InboxIcon, PeopleIcon, PlusIcon, ShieldCheck } from './icons';
 
-type View = 'files' | 'shared' | 'requests' | 'members' | 'insights' | 'graph';
+type View = 'files' | 'shared' | 'requests' | 'members' | 'insights' | 'graph' | 'security';
 
 const FOOTER_LINKS = [{ label: 'Legal', href: 'https://privasys.org/legal/', external: true }];
 
@@ -79,10 +80,10 @@ export function DriveApp() {
                 {/* Sidebar: stretches with the row; the nav sticks under the
                     header. */}
                 <aside
-                    className="hidden w-56 shrink-0 border-r sm:block"
+                    className="hidden w-56 shrink-0 flex-col border-r sm:flex"
                     style={{ borderColor: 'var(--drv-border)' }}
                 >
-                    <nav className="sticky top-14 flex h-[calc(100vh-3.5rem)] flex-col gap-1 overflow-auto p-3">
+                    <nav className="flex flex-1 flex-col gap-1 overflow-auto p-3">
                         {personal && (
                             <SidebarItem
                                 active={view === 'files' && tenant.id === personal.id}
@@ -181,8 +182,8 @@ export function DriveApp() {
                                 />
                             </>
                         )}
-                        <TrustFooter session={session} />
                     </nav>
+                    <TrustFooter session={session} onOpenSecurity={() => setView('security')} />
                 </aside>
 
                 {/* Main */}
@@ -197,6 +198,8 @@ export function DriveApp() {
                         <InsightsView key={tenant.id} session={session} tenant={tenant} />
                     ) : view === 'graph' ? (
                         <GraphView key={tenant.id} session={session} tenant={tenant} />
+                    ) : view === 'security' ? (
+                        <SecurityView />
                     ) : (
                         <MembersView session={session} tenant={tenant} mySub={me?.sub ?? ''} />
                     )}

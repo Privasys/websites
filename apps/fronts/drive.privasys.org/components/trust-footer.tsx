@@ -26,7 +26,14 @@ const APP_ID = process.env.NEXT_PUBLIC_DRIVE_APP_ID ?? '';
 const UI_COMMIT = process.env.NEXT_PUBLIC_COMMIT_SHA ?? '';
 const AS_VERIFY = 'https://as.privasys.org/verify-quote';
 
-export function TrustFooter({ session }: { session: SealedSession }) {
+export function TrustFooter({
+    session,
+    onOpenSecurity
+}: {
+    session: SealedSession;
+    /** Open the full-pane Security view (the whole pill is the trigger). */
+    onOpenSecurity?: () => void;
+}) {
     const { getTokenForAudience } = useAuth();
 
     const attestUrl = APP_ID ? `${API_BASE}/api/v1/apps/${APP_ID}/attest` : '';
@@ -61,17 +68,42 @@ export function TrustFooter({ session }: { session: SealedSession }) {
 
     return (
         <div
-            className="mt-auto border-t px-4 py-3 text-xs"
+            className="border-t px-4 py-3 text-xs"
             style={{ borderColor: 'var(--drv-border)', color: 'var(--drv-text-muted)' }}
         >
-            <div className="flex items-center gap-2">
+            <button
+                type="button"
+                onClick={onOpenSecurity}
+                title="Open the enclave attestation report"
+                className="-mx-2 flex w-[calc(100%+1rem)] items-center gap-2 rounded-md px-2 py-1 text-left transition-colors hover:bg-[var(--drv-surface-2)]"
+            >
                 <span style={{ color: 'var(--drv-text-secondary)' }}>Secure enclave</span>
                 <AttestationStatusBadge status={status} reason={reason} className="shrink-0" />
-            </div>
-            <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5">
+                <ChevronRight />
+            </button>
+            <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 px-0.5">
                 {UI_COMMIT && <span>UI {short(UI_COMMIT)}</span>}
                 {backend && <span>Drive {short(backend)}</span>}
             </div>
         </div>
+    );
+}
+
+function ChevronRight() {
+    return (
+        <svg
+            width="13"
+            height="13"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="ml-auto shrink-0 opacity-60"
+            aria-hidden="true"
+        >
+            <path d="m9 18 6-6-6-6" />
+        </svg>
     );
 }
