@@ -121,6 +121,36 @@ jobs:
               ${STAGING}/ /var/websites/${SITE}/ && \
             sudo nginx -t && sudo systemctl reload nginx"
 
+      # Self-provision the nginx server block + TLS for a NON-prod site the
+      # first time it is deployed. Never touches drive.privasys.org (its block
+      # is managed separately), and skips if any block already claims the host.
+      # `nginx -t` gates every reload, so a bad config can never take the host
+      # down — worst case the new site just doesn't come up.
+      - name: Provision nginx site (non-prod)
+        if: ${{ inputs.site_host != 'drive.privasys.org' }}
+        env:
+          OVH_HOST: ${{ secrets.OVH_HOST }}
+          OVH_USER: ${{ secrets.OVH_USER }}
+          OVH_SSH_PORT: ${{ secrets.OVH_SSH_PORT }}
+        run: |
+          set -euo pipefail
+          PORT="${OVH_SSH_PORT:-22}"
+          SITE="${{ inputs.site_host }}"
+          # Build the block locally so $uri is never shell-expanded.
+          printf 'server {\n    listen 80;\n    server_name %s;\n    root /var/websites/%s;\n    index index.html;\n    location / { try_files $uri $uri.html $uri/ /index.html; }\n}\n' \
+            "$SITE" "$SITE" > /tmp/site.conf
+          scp -P "$PORT" -i ~/.ssh/id_ed25519 /tmp/site.conf "${OVH_USER}@${OVH_HOST}:/tmp/${SITE}.conf"
+          ssh -p "$PORT" -i ~/.ssh/id_ed25519 "${OVH_USER}@${OVH_HOST}" "set -euo pipefail; \
+            if sudo grep -rql \"server_name ${SITE}\" /etc/nginx/ 2>/dev/null; then \
+              echo 'nginx block already present for ${SITE}'; rm -f /tmp/${SITE}.conf; \
+            else \
+              sudo mv /tmp/${SITE}.conf /etc/nginx/conf.d/${SITE}.conf && \
+              sudo nginx -t && sudo systemctl reload nginx && echo 'installed http block'; \
+            fi; \
+            sudo certbot --nginx -d ${SITE} --non-interactive --agree-tos --register-unsafely-without-email --redirect \
+              || echo 'certbot unavailable/failed — ${SITE} is HTTP-only until a cert is installed'; \
+            sudo nginx -t && sudo systemctl reload nginx"
+
       - name: Smoke test
         if: ${{ inputs.smoke }}
         run: |
