@@ -40,7 +40,7 @@ The refusal happens inside the measured runtime, before any application code run
 
 ## The limits
 
-In the order a vendor would hit them. Pricing today is a flat fee per successful call; metered quantities (per token, per megabyte) are not yet expressible, so a tool with highly variable cost either prices at the average or splits into differently priced tools. Fees settle in platform credits: they accrue to the developer's account, offset their own compute bill, and cash out by invoice, since self-serve payouts are deliberately switched off until there is enough volume to justify the payout infrastructure. The enforcement described here runs in our WebAssembly runtime; container-based tools surface their prices already, and gain the same in-enclave enforcement next. And the response tells you what you were charged, not yet what you have left: a remaining-balance header is planned, but the enclave itself does not know balances by design, so that figure will come from the control plane and carry weaker guarantees than the charge itself.
+In the order a vendor would hit them. Pricing today is a flat fee per successful call; metered quantities (per token, per megabyte) are not yet expressible, so a tool with highly variable cost either prices at the average or splits into differently priced tools. Fees settle in platform credits: they accrue to the developer's account, offset their own compute bill, and cash out by invoice, since self-serve payouts are deliberately switched off until there is enough volume to justify the payout infrastructure. The enforcement described here runs in our WebAssembly runtime; container-based tools surface their prices already, and gain the same in-enclave enforcement next.
 
 ## Why this matters for AI tools in particular
 
