@@ -43,7 +43,14 @@ async function request<T>(path: string, token: string, init?: RequestInit, opts?
             window.dispatchEvent(new Event('auth:expired'));
         }
         const body = await res.json().catch(() => ({ error: res.statusText }));
-        throw new ApiError(body.error || `API error ${res.status}`, res.status, body.code);
+        // Vault fan-out endpoints (stage/promote/revoke/rotate) answer with
+        // {promoted, quorum, vaults:[{ok,error}]} and no top-level error, so the
+        // real reason — a policy condition the caller did not meet, say — was
+        // being flattened to "API error 502". Surface the first refusal.
+        const vaultErr = Array.isArray(body?.vaults)
+            ? (body.vaults as Array<{ ok?: boolean; error?: string }>).find(v => v && v.ok === false && v.error)?.error
+            : undefined;
+        throw new ApiError(body.error || vaultErr || `API error ${res.status}`, res.status, body.code);
     }
     if (res.status === 204) return undefined as T;
     return res.json();
@@ -788,13 +795,124 @@ export function listPending(token: string, appId: string, versionId: string): Pr
 }
 
 // promoteProfile authorises the staged measurement so the vault releases the data
-// key to the new version. Owner/team-approver only.
+// key to the new version. Owner/team-approver only. `token` is normally the
+// session bearer, but on a key with require_step_up it MUST be the
+// operation-bound approval token from requestVaultApproval — mgmt forwards this
+// bearer to the vault, which recomputes the binding before releasing the key.
 export function promoteProfile(token: string, appId: string, versionId: string, pendingId = 0): Promise<VaultFanoutResult> {
     return request<VaultFanoutResult>(
         `/api/v1/apps/${encodeURIComponent(appId)}/versions/${encodeURIComponent(versionId)}/promote`,
         token,
         { method: 'POST', body: JSON.stringify({ pending_id: pendingId }) }
     );
+}
+
+// ── Vault step-up approval (promote) ───────────────────────────────────────
+// Production mints app data keys with an operation-bound WebAuthn condition on
+// promote (VAULT_REQUIRE_STEPUP), so an ordinary session bearer is refused:
+// "OidcStepUp: token amr [] does not satisfy required [webauthn]". The approval
+// is a separate ceremony against the IdP, and its challenge IS the operation
+// binding (handle + measurement digest + policy version + nonce + exp), so a
+// verified assertion approves that exact promote and nothing else.
+
+export interface VaultExportTarget {
+    handle: string;
+    endpoints: string[];
+    threshold: number;
+    mrenclave: string;
+    attestation_server: string;
+    require_step_up: boolean;
+}
+
+// vaultExportTarget reports the app's data-key handle and whether promoting on
+// it needs a step-up approval.
+export function vaultExportTarget(token: string, appId: string): Promise<VaultExportTarget> {
+    return request<VaultExportTarget>(`/api/v1/apps/${encodeURIComponent(appId)}/vault-export-target`, token);
+}
+
+// pendingBinding pulls the operation-binding inputs for one staged profile out
+// of a listPending response: the vault recomputes the binding from these, so
+// they must come from the vault's own view, never from the client.
+export function pendingBinding(pending: VaultFanoutResult, pendingId: number): { digest: string; policyVersion: number } | null {
+    for (const v of pending.vaults ?? []) {
+        for (const p of (v.pending ?? []) as Array<Record<string, unknown>>) {
+            if (typeof p?.id === 'number' && p.id === pendingId && typeof p.profile_binding_digest === 'string') {
+                return {
+                    digest: p.profile_binding_digest,
+                    policyVersion: typeof p.policy_version === 'number' ? p.policy_version : 0
+                };
+            }
+        }
+    }
+    return null;
+}
+
+export interface VaultApprovalStart {
+    // The operation binding, base64url — the WebAuthn challenge, the poll key,
+    // and what the wallet displays.
+    challenge: string;
+    // Ceremony page for a SYSTEM passkey. The portal cannot run WebAuthn itself:
+    // the credential's RP is privasys.id, which is not a registrable suffix of
+    // developer.privasys.org, so the browser would reject the assertion. The IdP
+    // serves the ceremony same-origin instead, options handed over the URL
+    // fragment so they never reach a server.
+    ceremonyUrl: string;
+}
+
+// beginVaultApproval opens the ceremony: the IdP binds the operation, pushes the
+// owner's wallet (where the credential usually lives), and returns the options.
+export async function beginVaultApproval(
+    idpOrigin: string,
+    token: string,
+    body: {
+        operation: 'promote';
+        handle: string;
+        measurement_digest: string;
+        policy_version: number;
+        ttl_seconds?: number;
+        context?: Record<string, string>;
+    }
+): Promise<VaultApprovalStart> {
+    const res = await fetch(`${idpOrigin.replace(/\/$/, '')}/fido2/vault-approval/begin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ ttl_seconds: 240, ...body })
+    });
+    if (!res.ok) throw new Error(`approval could not be started (${res.status})`);
+    const options = await res.json() as { publicKey?: { challenge?: string } };
+    const challenge = options?.publicKey?.challenge;
+    if (!challenge) throw new Error('approval could not be started: no challenge');
+    const summary: Record<string, string> = {
+        operation: body.operation,
+        handle: body.handle,
+        measurement: body.measurement_digest,
+        ...(body.context ?? {})
+    };
+    const frag = b64url(JSON.stringify({ options, summary }));
+    return { challenge, ceremonyUrl: `${idpOrigin.replace(/\/$/, '')}/fido2/vault-approval#${frag}` };
+}
+
+// pollVaultApproval returns the operation-bound token once the approver has
+// confirmed, or null while still pending. Owner-scoped and single-use server
+// side, so a poll that returns a token consumes it.
+export async function pollVaultApproval(idpOrigin: string, token: string, challenge: string): Promise<string | null> {
+    const res = await fetch(
+        `${idpOrigin.replace(/\/$/, '')}/fido2/vault-approval/token?challenge=${encodeURIComponent(challenge)}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (res.status === 202) return null;
+    if (!res.ok) throw new Error(`approval poll failed (${res.status})`);
+    const data = await res.json() as { access_token?: string };
+    return data.access_token ?? null;
+}
+
+// b64url encodes UTF-8 text the way the ceremony page decodes it (base64url, no
+// padding), matching the CLI's fragment format.
+function b64url(s: string): string {
+    const bytes = new TextEncoder().encode(s);
+    let bin = '';
+    bytes.forEach(b => { bin += String.fromCharCode(b); });
+    return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
 // revokeProfile drops a staged-but-unpromoted profile.
