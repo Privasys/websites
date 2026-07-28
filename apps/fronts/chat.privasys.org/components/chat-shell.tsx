@@ -27,7 +27,6 @@ import {
     retrieveContext
 } from '~/lib/drive-rag';
 import { useAIScope } from '~/lib/use-ai-scope';
-import type { ChatContextPrefs } from '~/lib/conversations';
 import type { ChatMessage } from '~/lib/chat-stream';
 import type { AttachmentChip } from './composer';
 import { useEnabledTools } from '~/lib/use-enabled-tools';
@@ -41,11 +40,10 @@ import { AppSidebar } from './app-sidebar';
 import { ShareConversationDialog } from './share-conversation-dialog';
 import { ChatPanel, type PendingReplay } from './chat-panel';
 import { SecurityView } from './security-view';
-import { KnowledgeView } from './knowledge-view';
-import { ContextIntroModal } from './context-intro-modal';
+import { MemoryView } from './memory-view';
 import { SignInGate } from './signin-view';
 
-type ShellView = 'chat' | 'security' | 'tools' | 'knowledge' | 'signin';
+type ShellView = 'chat' | 'security' | 'tools' | 'memory' | 'signin';
 
 type TransportState = 'ok' | 'reconnecting' | 'stale';
 
@@ -361,61 +359,12 @@ export function ChatShell({
     });
     const conv = useDrive ? driveConv : localConv;
 
-    // The user's global AI-scope (the ceiling of what the assistant may draw
-    // on). Drives the per-conversation context defaults + the Context chip's
-    // Knowledge folder list.
+    // The AI-scope grant is the SINGLE source of truth for what the assistant
+    // may recall (plan D2). There is deliberately no second per-conversation
+    // override: the same choice must mean the same thing whether retrieval runs
+    // in the enclave (which only ever reads the grant) or in the client
+    // fallback, on every device.
     const aiScope = useAIScope(drive.session, drive.tenantId);
-    const globalContextDefaults: ChatContextPrefs = useMemo(
-        () => ({
-            memory: true, // Memory is always in scope (sovereign notes)
-            pastConversations: aiScope.conversationsScoped || aiScope.allScoped,
-            knowledge: aiScope.allScoped || aiScope.folders.some((f) => f.scoped)
-        }),
-        [aiScope.conversationsScoped, aiScope.allScoped, aiScope.folders]
-    );
-
-    // Per-conversation context overrides (keyed by LOCAL conversation id).
-    // Undefined for a conversation means "inherit the global defaults" — the
-    // choice is per-chat and in-chat, never a buried global switch (§8.7).
-    const [contextByConv, setContextByConv] = useState<Record<string, ChatContextPrefs>>({});
-    const resolveContext = useCallback(
-        (key: string): ChatContextPrefs => contextByConv[key] ?? globalContextDefaults,
-        [contextByConv, globalContextDefaults]
-    );
-    const setContextPref = useCallback(
-        (key: string, field: keyof ChatContextPrefs, value: boolean) => {
-            setContextByConv((prev) => {
-                const cur = prev[key] ?? globalContextDefaults;
-                return { ...prev, [key]: { ...cur, [field]: value } };
-            });
-        },
-        [globalContextDefaults]
-    );
-
-    // First-run Context prompt: offered once, when the user starts their
-    // SECOND conversation — the point cross-chat recall first helps. Sets the
-    // global "past conversations" default and teaches the per-chat Context
-    // chip. Seen-state is a per-user localStorage flag.
-    const contextPromptSeenKey = sub ? `privasys:chat:ctx-intro:${sub}` : '';
-    const [showContextIntro, setShowContextIntro] = useState(false);
-    useEffect(() => {
-        if (!useDrive || !drive.session || !contextPromptSeenKey) return;
-        if (conv.currentId !== null || conv.conversations.length < 1) return;
-        try {
-            if (localStorage.getItem(contextPromptSeenKey)) return;
-        } catch {
-            return;
-        }
-        setShowContextIntro(true);
-    }, [useDrive, drive.session, contextPromptSeenKey, conv.currentId, conv.conversations.length]);
-    const dismissContextIntro = useCallback(() => {
-        try {
-            if (contextPromptSeenKey) localStorage.setItem(contextPromptSeenKey, '1');
-        } catch {
-            /* private mode: it'll just re-offer next session */
-        }
-        setShowContextIntro(false);
-    }, [contextPromptSeenKey]);
 
     // Node ids under Chat conversations/, so retrieval can tell a past-chat
     // hit from a knowledge-base one. Fetched once per Drive session.
@@ -465,9 +414,8 @@ export function ChatShell({
             const messages: ChatMessage[] = [];
             if (!useDrive || !drive.session || !drive.tenantId) return { messages };
             const key = conversationId ?? '__pending__';
-            // What the user allows this chat to draw on (per-conversation).
-            const prefs = resolveContext(key);
-            if (prefs.memory && isFirstTurn && !memoryInjectedRef.current.has(key)) {
+            // Memory/ is always in scope — it is the spine, not a toggle.
+            if (isFirstTurn && !memoryInjectedRef.current.has(key)) {
                 memoryInjectedRef.current.add(key);
                 const mem = await fetchMemoryContext(drive.session, drive.tenantId);
                 messages.push(...mem.messages);
@@ -479,16 +427,26 @@ export function ChatShell({
                     content: `Attached file "${f.name}" provided by the user for this chat:\n\n${f.text}`
                 });
             }
+            // Everything else comes from the GRANT, so this fallback path
+            // recalls exactly what the enclave path would (plan §5).
             const ret = await retrieveContext(drive.session, drive.tenantId, userText, {
-                pastConversations: prefs.pastConversations,
-                knowledge: prefs.knowledge,
+                pastConversations: aiScope.conversationsScoped || aiScope.allScoped,
+                knowledge: aiScope.allScoped || aiScope.folders.some((f) => f.scoped),
                 conversationNodeIds: conversationNodeIdsRef.current
             });
             messages.push(...ret.messages);
             addProvenance(key, ret.provenance);
             return { messages };
         },
-        [useDrive, drive.session, drive.tenantId, addProvenance, resolveContext]
+        [
+            useDrive,
+            drive.session,
+            drive.tenantId,
+            addProvenance,
+            aiScope.conversationsScoped,
+            aiScope.allScoped,
+            aiScope.folders
+        ]
     );
 
     // Attach a picked file to the current conversation with an intent.
@@ -714,7 +672,7 @@ export function ChatShell({
                 onShareConversation={useDrive ? setShareTargetId : undefined}
                 onShowSecurity={() => setView('security')}
                 onShowTools={() => setView('tools')}
-                onShowKnowledge={useDrive ? () => setView('knowledge') : undefined}
+                onShowMemory={useDrive ? () => setView('memory') : undefined}
                 onShowSignIn={() => setView('signin')}
                 mobileOpen={mobileNavOpen}
                 onMobileClose={() => setMobileNavOpen(false)}
@@ -801,8 +759,8 @@ export function ChatShell({
                 {view === 'security' && instance.endpoint && session && (
                     <SecurityView instance={instance} onStatus={setAttestationStatus} />
                 )}
-                {view === 'knowledge' && session && (
-                    <KnowledgeView
+                {view === 'memory' && session && (
+                    <MemoryView
                         session={drive.session}
                         tenantId={drive.tenantId}
                         onConnect={async () => {
@@ -872,27 +830,15 @@ export function ChatShell({
                         attachEnabled={useDrive && !!session}
                         attachments={attachmentsByConv[conv.currentId ?? '__pending__'] ?? []}
                         onAttachFile={useDrive ? onAttachFile : undefined}
-                        contextEnabled={useDrive && !enclaveHasDriveRAG && !!drive.session}
-                        contextPrefs={resolveContext(conv.currentId ?? '__pending__')}
-                        onToggleContext={(field, value) =>
-                            setContextPref(conv.currentId ?? '__pending__', field, value)
-                        }
-                        knowledgeFolders={aiScope.folders}
-                        knowledgeAllScoped={aiScope.allScoped}
-                        onManageKnowledge={() => setView('knowledge')}
+                        memoryEnabled={useDrive && !!drive.session}
+                        memoryMode={aiScope.memoryMode}
+                        memorySummary={aiScope.memorySummary}
+                        onSetMemoryMode={aiScope.setMemoryMode}
+                        memoryFolders={aiScope.folders}
+                        onManageMemory={() => setView('memory')}
                     />
                 )}
             </div>
-            {view === 'chat' && showContextIntro && (
-                <ContextIntroModal
-                    onUsePastChats={async () => {
-                        await drive.ensureSession();
-                        await aiScope.setConversations(true);
-                        dismissContextIntro();
-                    }}
-                    onKeepSeparate={dismissContextIntro}
-                />
-            )}
             {shareTargetId &&
                 drive.session &&
                 drive.tenantId &&
@@ -937,8 +883,8 @@ function viewTitle(view: ShellView, fallback: string): string {
             return 'Security';
         case 'tools':
             return 'AI Tools';
-        case 'knowledge':
-            return 'Knowledge';
+        case 'memory':
+            return 'Memory';
         case 'signin':
             return 'Sign in';
         default:

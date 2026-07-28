@@ -26,6 +26,18 @@ export interface ScopeFolder {
     scoped: boolean;
 }
 
+/**
+ * What the assistant may recall beyond the always-on `Memory/` folder. This is
+ * a READ-OUT of the grant, not a second source of truth: the grant is the only
+ * state, and both retrieval paths (enclave and client fallback) read it.
+ *
+ *   off          — nothing but Memory/
+ *   past-chats   — previous conversations
+ *   folders      — one or more cherry-picked Drive folders
+ *   entire-drive — the whole Drive (supersedes the rest)
+ */
+export type MemoryMode = 'off' | 'past-chats' | 'folders' | 'entire-drive';
+
 export interface AIScopeState {
     loading: boolean;
     busyNodeId: string | null;
@@ -42,6 +54,13 @@ export interface AIScopeState {
     setFolder: (_nodeId: string, _on: boolean) => Promise<void>;
     setConversations: (_on: boolean) => Promise<void>;
     setEntireDrive: (_on: boolean) => Promise<void>;
+    /** Derived read-out of the grant for the composer's Memory control. */
+    memoryMode: MemoryMode;
+    /** One-line state for the Memory pill, e.g. "past chats", "3 folders". */
+    memorySummary: string;
+    /** Set the grant so it matches `mode`. 'folders' is managed in the Memory
+     *  view (there is no single folder to pick here), so it is a no-op. */
+    setMemoryMode: (_mode: MemoryMode) => Promise<void>;
 }
 
 const MEMORY_NAME = 'Memory';
@@ -140,7 +159,58 @@ export function useAIScope(session: SealedSession | null, tenantId: string | nul
         [mutate, session, tenantId]
     );
 
+    // Broadest wins: whole-Drive supersedes folders, which supersede past chats.
+    const scopedFolders = folders.filter((f) => f.scoped);
+    const conversationsScoped = conversationsNode ? scopedIds.has(conversationsNode.id) : false;
+    const memoryMode: MemoryMode = allScoped
+        ? 'entire-drive'
+        : scopedFolders.length > 0
+            ? 'folders'
+            : conversationsScoped
+                ? 'past-chats'
+                : 'off';
+    const memorySummary =
+        memoryMode === 'entire-drive'
+            ? 'entire Drive'
+            : memoryMode === 'folders'
+                ? scopedFolders.length === 1
+                    ? scopedFolders[0].name
+                    : `${scopedFolders.length} folders`
+                : memoryMode === 'past-chats'
+                    ? 'past chats'
+                    : 'off';
+
+    // Make the grant match the requested mode. Turning memory OFF withdraws
+    // everything the assistant could recall beyond Memory/ — that is what the
+    // user is asking for, so it clears folders too rather than leaving silent
+    // grants behind.
+    const setMemoryMode = useCallback(
+        async (mode: MemoryMode) => {
+            switch (mode) {
+                case 'entire-drive':
+                    await setEntireDrive(true);
+                    return;
+                case 'past-chats':
+                    if (allScoped) await setEntireDrive(false);
+                    await setConversations(true);
+                    return;
+                case 'off':
+                    if (allScoped) await setEntireDrive(false);
+                    if (conversationsScoped) await setConversations(false);
+                    for (const f of scopedFolders) await setFolder(f.id, false);
+                    return;
+                default:
+                    // 'folders' is picked per-folder in the Memory view.
+                    return;
+            }
+        },
+        [allScoped, conversationsScoped, scopedFolders, setEntireDrive, setConversations, setFolder]
+    );
+
     return {
+        memoryMode,
+        memorySummary,
+        setMemoryMode,
         loading,
         busyNodeId,
         error,

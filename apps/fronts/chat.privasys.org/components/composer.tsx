@@ -5,8 +5,7 @@ import type { AvailableModel, Instance } from '~/lib/types';
 import type { SamplingParams } from '~/lib/sampling';
 import type { UserTool } from '~/lib/chat-service-api';
 import type { AttachIntent } from '~/lib/drive-chat-api';
-import type { ChatContextPrefs } from '~/lib/conversations';
-import type { ScopeFolder } from '~/lib/use-ai-scope';
+import type { MemoryMode, ScopeFolder } from '~/lib/use-ai-scope';
 import { ModelPicker } from './model-picker';
 import { SamplingEditor } from './sampling-editor';
 
@@ -55,12 +54,12 @@ export function Composer({
     attachEnabled,
     attachments,
     onAttachFile,
-    contextEnabled,
-    contextPrefs,
-    onToggleContext,
-    knowledgeFolders,
-    knowledgeAllScoped,
-    onManageKnowledge,
+    memoryEnabled,
+    memoryMode,
+    memorySummary,
+    onSetMemoryMode,
+    memoryFolders,
+    onManageMemory,
     placeholder,
     autoFocus,
     disabledReason
@@ -102,17 +101,18 @@ export function Composer({
     attachments?: AttachmentChip[];
     /** Upload a picked file into the current conversation with an intent. */
     onAttachFile?: (file: File, intent: AttachIntent) => void;
-    /** Drive §8.7: per-conversation Context control. When contextEnabled, the
-     *  composer shows a Context chip letting the user choose, for THIS chat,
-     *  whether the assistant may use their Memory, past conversations and
-     *  knowledge folders — defaulting to their global Knowledge settings. */
-    contextEnabled?: boolean;
-    contextPrefs?: ChatContextPrefs;
-    onToggleContext?: (field: keyof ChatContextPrefs, value: boolean) => void;
-    knowledgeFolders?: ScopeFolder[];
-    knowledgeAllScoped?: boolean;
-    onManageKnowledge?: () => void;
-    /** Fleet governance: 'locked' | 'enclave_only' | 'open'. Gates adding. */
+    /** Drive as the assistant's memory. When memoryEnabled, the composer shows
+     *  a Memory pill: `Memory/` is always on, and the user chooses what else
+     *  the assistant may recall. Writes go straight to the AI-scope grant, so
+     *  the choice is durable, cross-device, and honoured by BOTH retrieval
+     *  paths (enclave and client fallback) — there is no second toggle. */
+    memoryEnabled?: boolean;
+    memoryMode?: MemoryMode;
+    memorySummary?: string;
+    onSetMemoryMode?: (mode: MemoryMode) => void | Promise<void>;
+    /** The user's AI-enabled Drive folders, listed read-only in the popover. */
+    memoryFolders?: ScopeFolder[];
+    onManageMemory?: () => void;
     placeholder?: string;
     autoFocus?: boolean;
     /**
@@ -127,7 +127,7 @@ export function Composer({
     const [showAdvanced, setShowAdvanced] = useState(false);
     const [showTools, setShowTools] = useState(false);
     const [showAttach, setShowAttach] = useState(false);
-    const [showContext, setShowContext] = useState(false);
+    const [showMemory, setShowMemory] = useState(false);
     const disabled = !!disabledReason;
     const canAttach = !!attachEnabled && !!onAttachFile;
     const chips = attachments ?? [];
@@ -353,15 +353,15 @@ export function Composer({
                         </div>
                     )}
 
-                    {contextEnabled && contextPrefs && onToggleContext && (
-                        <ContextControl
-                            open={showContext}
-                            onOpenChange={setShowContext}
-                            prefs={contextPrefs}
-                            onToggle={onToggleContext}
-                            folders={knowledgeFolders ?? []}
-                            allScoped={!!knowledgeAllScoped}
-                            onManage={onManageKnowledge}
+                    {memoryEnabled && onSetMemoryMode && (
+                        <MemoryControl
+                            open={showMemory}
+                            onOpenChange={setShowMemory}
+                            mode={memoryMode ?? 'off'}
+                            summary={memorySummary ?? 'off'}
+                            onSetMode={onSetMemoryMode}
+                            folders={memoryFolders ?? []}
+                            onManage={onManageMemory}
                         />
                     )}
 
@@ -612,45 +612,44 @@ function ToolRow({
 // assistant may draw on Memory, past conversations and knowledge folders.
 // Defaults come from the user's global Knowledge settings; toggles here
 // override them for the current conversation only.
-function ContextControl({
+// Memory control: your Drive as the assistant's memory.
+//
+// `Memory/` is ALWAYS on — it is the spine the assistant writes back to, not a
+// toggle. Everything else the assistant may recall (past chats, chosen folders,
+// the whole Drive) is opt-in and off by default. Every change here writes the
+// AI-scope GRANT, which is the single source of truth both retrieval paths
+// read, so a change applies immediately, on every device, on any instance.
+function MemoryControl({
     open,
     onOpenChange,
-    prefs,
-    onToggle,
+    mode,
+    summary,
+    onSetMode,
     folders,
-    allScoped,
     onManage
 }: {
     open: boolean;
     onOpenChange: (_v: boolean) => void;
-    prefs: ChatContextPrefs;
-    onToggle: (_field: keyof ChatContextPrefs, _value: boolean) => void;
+    mode: MemoryMode;
+    summary: string;
+    onSetMode: (_mode: MemoryMode) => void | Promise<void>;
     folders: ScopeFolder[];
-    allScoped: boolean;
     onManage?: () => void;
 }) {
-    const activeCount =
-        (prefs.memory ? 1 : 0) +
-        (prefs.pastConversations ? 1 : 0) +
-        (prefs.knowledge ? 1 : 0);
-    const enabledFolders = folders.filter((f) => f.scoped);
-    const noKnowledge = !allScoped && enabledFolders.length === 0;
+    const on = mode !== 'off';
+    const scoped = folders.filter((f) => f.scoped);
     return (
         <div className="relative ml-1">
             <button
                 type="button"
                 onClick={() => onOpenChange(!open)}
                 aria-expanded={open}
-                title="What I can draw on for this chat"
-                className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ${open || activeCount > 0 ? 'text-[var(--color-text-primary)]' : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]'}`}
+                title="What I can remember. Retrieval runs inside the attested enclave over your sealed session — the operator never sees it."
+                className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ${open || on ? 'text-[var(--color-text-primary)]' : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]'}`}
             >
-                <ContextIcon />
-                <span className="hidden sm:inline">Context</span>
-                {activeCount > 0 && (
-                    <span className="grid h-4 min-w-4 place-items-center rounded-full bg-[var(--color-primary-blue)] px-1 text-[10px] font-semibold text-white">
-                        {activeCount}
-                    </span>
-                )}
+                <MemoryIcon />
+                <span className="hidden sm:inline">Memory</span>
+                <span className="hidden text-[var(--color-text-muted)] sm:inline">· {summary}</span>
             </button>
             {open && (
                 <>
@@ -664,39 +663,68 @@ function ContextControl({
                     <div className="absolute bottom-full left-0 z-20 mb-2 w-80 overflow-hidden rounded-xl border border-[var(--color-border-dark)] bg-[var(--color-surface-1)] shadow-xl shadow-black/30">
                         <div className="px-3 pt-3 pb-1">
                             <p className="text-xs font-semibold text-[var(--color-text-primary)]">
-                                Context for this chat
+                                Memory
                             </p>
-                            <p className="mt-0.5 text-[11px] text-[var(--color-text-muted)]">
-                                What I can draw on. Applies to this conversation only.
+                            <p className="mt-0.5 text-[11px] leading-4 text-[var(--color-text-muted)]">
+                                Your Drive is my memory. I can search only what you turn on here —
+                                and only inside the enclave, over your sealed session.
                             </p>
                         </div>
-                        <ul className="py-1">
-                            <ContextRow
-                                title="Memory"
-                                description="Notes I keep about you and your work."
-                                on={prefs.memory}
-                                onToggle={() => onToggle('memory', !prefs.memory)}
-                            />
-                            <ContextRow
-                                title="Past conversations"
-                                description="Recall from your previous chats."
-                                on={prefs.pastConversations}
-                                onToggle={() => onToggle('pastConversations', !prefs.pastConversations)}
-                            />
-                            <ContextRow
-                                title="Knowledge"
-                                description={
-                                    allScoped
-                                        ? 'Your entire Drive.'
-                                        : enabledFolders.length
-                                            ? enabledFolders.map((f) => f.name).join(', ')
-                                            : 'No folders enabled yet — add some below.'
-                                }
-                                on={prefs.knowledge && !noKnowledge}
-                                disabled={noKnowledge}
-                                onToggle={() => onToggle('knowledge', !prefs.knowledge)}
-                            />
-                        </ul>
+
+                        <div className="flex items-start gap-2 px-3 py-2">
+                            <span className="min-w-0 flex-1">
+                                <span className="block text-sm text-[var(--color-text-primary)]">
+                                    What I remember about you
+                                </span>
+                                <span className="block text-[11px] text-[var(--color-text-muted)]">
+                                    Notes I keep and write back as we talk.
+                                </span>
+                            </span>
+                            <span className="mt-0.5 shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
+                                Always on
+                            </span>
+                        </div>
+
+                        <div className="border-t border-[var(--color-border-dark)]">
+                            <button
+                                type="button"
+                                onClick={() => void onSetMode(on ? 'off' : 'past-chats')}
+                                className="flex w-full items-start gap-2 px-3 py-2 text-left hover:bg-[var(--color-surface-2)]/60"
+                            >
+                                <span className="min-w-0 flex-1">
+                                    <span className="block text-sm text-[var(--color-text-primary)]">
+                                        Use my Drive as memory
+                                    </span>
+                                    <span className="block text-[11px] text-[var(--color-text-muted)]">
+                                        {on ? `Recalling: ${summary}.` : 'Off — I only use what I remember about you.'}
+                                    </span>
+                                </span>
+                                <Switch on={on} />
+                            </button>
+                        </div>
+
+                        {on && (
+                            <div className="flex gap-1 px-3 pb-2">
+                                <ModeChip
+                                    label="Past chats"
+                                    active={mode === 'past-chats'}
+                                    onClick={() => void onSetMode('past-chats')}
+                                />
+                                <ModeChip
+                                    label="Entire Drive"
+                                    active={mode === 'entire-drive'}
+                                    onClick={() => void onSetMode('entire-drive')}
+                                />
+                                {mode === 'folders' && (
+                                    <ModeChip
+                                        label={scoped.length === 1 ? scoped[0].name : `${scoped.length} folders`}
+                                        active
+                                        onClick={() => onManage?.()}
+                                    />
+                                )}
+                            </div>
+                        )}
+
                         {onManage && (
                             <button
                                 type="button"
@@ -706,7 +734,7 @@ function ContextControl({
                                 }}
                                 className="flex w-full items-center gap-2 border-t border-[var(--color-border-dark)] px-3 py-2.5 text-left text-sm text-[var(--color-primary-blue)] hover:bg-[var(--color-surface-2)]/60"
                             >
-                                Manage folders &amp; defaults…
+                                Manage in Memory settings…
                             </button>
                         )}
                     </div>
@@ -716,45 +744,33 @@ function ContextControl({
     );
 }
 
-function ContextRow({
-    title,
-    description,
-    on,
-    disabled,
-    onToggle
+function ModeChip({
+    label,
+    active,
+    onClick
 }: {
-    title: string;
-    description: string;
-    on: boolean;
-    disabled?: boolean;
-    onToggle: () => void;
+    label: string;
+    active: boolean;
+    onClick: () => void;
 }) {
     return (
-        <li className="hover:bg-[var(--color-surface-2)]/60">
-            <button
-                type="button"
-                disabled={disabled}
-                onClick={onToggle}
-                className="flex w-full items-start gap-2 px-3 py-2 text-left disabled:cursor-default disabled:opacity-50"
-            >
-                <span className="min-w-0 flex-1">
-                    <span className="block text-sm text-[var(--color-text-primary)]">{title}</span>
-                    <span className="block truncate text-[11px] text-[var(--color-text-muted)]">
-                        {description}
-                    </span>
-                </span>
-                <Switch on={on} />
-            </button>
-        </li>
+        <button
+            type="button"
+            onClick={onClick}
+            className={`rounded-full border px-2.5 py-1 text-[11px] ${active
+                ? 'border-[var(--color-primary-blue)] text-[var(--color-primary-blue)]'
+                : 'border-[var(--color-border-dark)] text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]'}`}
+        >
+            {label}
+        </button>
     );
 }
 
-function ContextIcon() {
+function MemoryIcon() {
     return (
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="m12 2 9 5-9 5-9-5 9-5z" />
-            <path d="m3 12 9 5 9-5" />
-            <path d="m3 17 9 5 9-5" />
+            <path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z" />
+            <path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z" />
         </svg>
     );
 }
