@@ -143,6 +143,26 @@ Both editions issue per-workload certificates so that each client only sees the 
 
 The platform-level certificate carries the **combined workloads hash** (OID `2.5`) for clients that want a single check covering all loaded workloads without SNI routing.
 
+```mermaid
+graph LR
+  C1["Client of app A"] -->|"SNI: app-a.…"| T
+  C2["Client of app B"] -->|"SNI: app-b.…"| T
+  C3["Platform client"] -->|"no workload SNI"| T
+
+  subgraph TEE["One enclave, one TLS endpoint"]
+    T["SNI-based<br/>certificate selection"]
+    T --> LA["Leaf for app A<br/>3.1, 3.2, 3.4, 3.6 of A only"]
+    T --> LB["Leaf for app B<br/>3.1, 3.2, 3.4, 3.6 of B only"]
+    T --> LP["Platform cert<br/>combined workloads hash (2.5)"]
+  end
+
+  LA -.-> C1
+  LB -.-> C2
+  LP -.-> C3
+```
+
+A client connecting to app A receives a certificate carrying only A's identity and configuration; nothing about B leaks into the handshake.
+
 ### Why per-workload certificates?
 
 1. **Tenant isolation.** Each client only sees the code hash and configuration of the workload it connects to. A client connecting to `app-A` learns nothing about `app-B`.

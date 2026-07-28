@@ -23,6 +23,16 @@ A provider's attributes only become consumable once the provider has been review
 2. At that point the identity provider reserves the relying party's credits and mints a short-lived **disclosure voucher** for each provider. The voucher names the relying party and the attributes it authorises. It carries no user identity.
 3. The wallet presents the voucher to the issuing enclave alongside the user's proof. The enclave verifies the voucher, produces the disclosure, and reports back so the reservation is **settled**. If the disclosure is not produced, the reservation is **released** and nothing is charged.
 
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> Reserved: sign-in with attribute request<br/>credits reserved, voucher minted
+    Reserved --> Settled: enclave produces the disclosure<br/>relying party is charged
+    Reserved --> Released: user declines, abandons,<br/>or the voucher expires
+    Settled --> [*]: provider earns 85%
+    Released --> [*]: nothing charged, no trace
+```
+
 Because the charge is keyed to the voucher, a relying party pays only for a disclosure it actually receives. A user proving their own attributes to themselves, with no paying relying party, is free.
 
 ## Revenue split

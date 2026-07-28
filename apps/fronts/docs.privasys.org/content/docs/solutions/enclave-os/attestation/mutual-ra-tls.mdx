@@ -23,24 +23,18 @@ Mutual RA-TLS reuses the same certificate format and [OID scheme](/solutions/enc
 
 ### Handshake Flow
 
-```
-Client (TEE A)                              Server (TEE B)
-     |                                           |
-     |--- ClientHello [+ nonce 0xFFBB] --------->|
-     |                                           |
-     |<-- ServerHello + Server Certificate ------|
-     |    (server RA-TLS cert with TEE quote)    |
-     |                                           |
-     |<-- CertificateRequest [+ nonce 0xFFBB] ---|
-     |    (server challenge for client)          |
-     |                                           |
-     |--- Client Certificate ------------------->|
-     |    (client RA-TLS cert with TEE quote)    |
-     |                                           |
-     |--- Finished ----------------------------->|
-     |<-- Finished ------------------------------|
-     |                                           |
-     |  Both sides verified. Encrypted channel.  |
+```mermaid
+sequenceDiagram
+  participant A as Client (TEE A)
+  participant B as Server (TEE B)
+
+  A->>B: ClientHello [+ nonce, extension 0xFFBB]
+  B-->>A: ServerHello + Server Certificate<br/>(server RA-TLS cert with TEE quote,<br/>client nonce bound into ReportData)
+  B-->>A: CertificateRequest [+ nonce, extension 0xFFBB]<br/>(server challenge for the client)
+  A->>B: Client Certificate<br/>(client RA-TLS cert with TEE quote,<br/>server nonce bound into ReportData)
+  A->>B: Finished
+  B-->>A: Finished
+  Note over A,B: both sides verified; encrypted channel
 ```
 
 1. The **client** optionally sends a challenge nonce in `ClientHello` extension `0xFFBB`. The server binds this nonce into its certificate's `ReportData`.

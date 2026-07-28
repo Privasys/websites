@@ -31,6 +31,22 @@ When the measurement no longer matches the policy, the vault **refuses to releas
 
 > New code cannot read old data until the data's owner has explicitly consented to that new code.
 
+```mermaid
+sequenceDiagram
+  participant N as New version (enclave)
+  participant V as Vault constellation
+  participant O as Owner
+
+  N->>V: reconstruct DEK, live quote over RA-TLS
+  V->>V: measurement vs owner's policy: mismatch
+  V-->>N: denied, volume stays sealed (the gate)
+  O->>V: promote the staged measurement<br/>(owner token + step-up approval)
+  N->>V: retry, same quote
+  V-->>N: shares released, DEK reconstructed in-enclave
+  N->>N: volume unlocks, data readable
+  Note over O,V: the owner, not the platform,<br/>decides which code reads the data
+```
+
 <Callout type="warn">
 **The platform cannot approve an upgrade for you.** The owner principal on the key is *your* identity (`Oidc{ issuer: https://privasys.id, sub }`), and it is immutable. management-service is only a proxy: it relays your authenticated request to the vaults and injects none of its own authority. A fully compromised platform can deploy new code and *stage* a candidate measurement, but it can never make the vault release your data key to a measurement you did not promote. The vault, not the platform, is the enforcement boundary.
 </Callout>
