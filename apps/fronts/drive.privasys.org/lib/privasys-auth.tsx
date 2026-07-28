@@ -214,6 +214,21 @@ interface PrivasysAuthProviderProps {
     config: AuthFrameConfig;
 }
 
+// Drive's transport constraint, applied to EVERY sign-in path here.
+//
+// The Drive API is reachable only over the wallet-attested sealed channel:
+// the enclave serves a self-signed RA-TLS certificate, and only the wallet
+// can verify it and relay a session. A social or passkey sign-in therefore
+// authenticates the visitor and then has nowhere to go, so offering those
+// options is a promise the product cannot keep — a share-link recipient who
+// picked "Continue with Google" would sign in and still be unable to open
+// the file.
+//
+// It lives here rather than at each call site because it was previously
+// passed only by connectInto, so the share-link flow (signInInto) silently
+// offered every provider. Lift it once a wallet-less transport exists.
+const DRIVE_METHODS = ['wallet'] as const;
+
 export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderProps) {
     const [session, setSession] = useState<AuthSession | null>(null);
     const [loading, setLoading] = useState(true);
@@ -300,6 +315,7 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
             if (opts?.sessionRelayHost) {
                 const oneShot = new AuthFrame({
                     ...config,
+                    methods: DRIVE_METHODS,
                     sessionRelay: {
                         appHost: opts.sessionRelayHost,
                         ...(opts.extraAppHosts?.length ? { extraAppHosts: opts.extraAppHosts } : {})
@@ -334,6 +350,7 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
             const inline = new AuthFrame({
                 ...config,
                 container,
+                methods: DRIVE_METHODS,
                 ...(opts?.sessionRelayHost
                     ? {
                         sessionRelay: {
@@ -382,7 +399,7 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
                 presentation: 'page',
                 ...(opts.pitch ? { pitch: opts.pitch } : {}),
                 ...(opts.app ? { app: opts.app } : {}),
-                ...(opts.methods ? { methods: opts.methods } : {}),
+                methods: opts.methods ?? DRIVE_METHODS,
                 sessionRelay: { appHost: opts.appHost }
             });
             inlineFrameRef.current = frame;
