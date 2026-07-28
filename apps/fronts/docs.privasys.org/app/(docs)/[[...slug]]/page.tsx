@@ -12,6 +12,7 @@ import {
 } from 'fumadocs-ui/page';
 import defaultMdxComponents from 'fumadocs-ui/mdx';
 import type { MDXContent } from 'mdx/types';
+import { Mermaid } from '@/app/components/mermaid';
 
 interface MdxPageData {
     title: string;
@@ -114,7 +115,7 @@ export default async function Page(props: {
             <DocsTitle>{page.data.title}</DocsTitle>
             <DocsDescription>{page.data.description}</DocsDescription>
             <DocsBody>
-                <MDX components={{ ...defaultMdxComponents }} />
+                <MDX components={{ ...defaultMdxComponents, Mermaid }} />
             </DocsBody>
             <a
                 href={githubUrl}

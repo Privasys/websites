@@ -53,6 +53,30 @@ A normal sign-in is a QR or push-to-wallet ceremony: the SDK shows a QR, the wal
 
 The issued JWT then carries `att_verified`, `att_quote_hash`, `att_oids`, and `session.{id, enc_pub, expires_at, sdk_pub_bind}`. The SDK pins `att_quote_hash` and `att_oids` against an app-supplied [attestation policy](/solutions/privasys-id/auth-sdk), derives `K`, and starts sealing.
 
+The whole ceremony in one picture:
+
+```mermaid
+sequenceDiagram
+  participant P as App page + SDK iframe
+  participant W as Wallet (verifier)
+  participant E as Enclave app
+  participant I as IdP (privasys.id)
+
+  P->>P: generate ephemeral (sdk_priv, sdk_pub)
+  P->>W: QR: sdk_pub, nonce, mode=session-relay
+  W->>E: RA-TLS handshake, verify attestation
+  W->>E: POST /__privasys/session-bootstrap { sdk_pub }
+  E-->>W: { session_id, enc_pub, expires_at }
+  W->>W: FIDO2 assertion over the binding challenge<br/>(nonce, sdk_pub, quote_hash, enc_pub, session_id)
+  W->>I: assertion (via the broker, opaque frames)
+  I->>I: recompute challenge, constant-time compare
+  I-->>P: JWT: att_verified, att_quote_hash, att_oids, session.*
+  P->>P: pin policy, derive K = HKDF(ECDH(sdk_priv, enc_pub))
+  P->>E: sealed frames, AES-256-GCM under K
+  E-->>P: sealed responses
+  Note over W,E: the wallet brokered the exchange yet cannot derive K:<br/>it never held sdk_priv
+```
+
 ## Why the Binding Challenge Carries the Whole Protocol
 
 Without the binding, the JWT means "a wallet talked to the IdP". With it, the JWT means "the wallet holding the FIDO2 private key for this account verified attestation measurements `X` for an enclave whose identity key is `enc_pub`, and bound the session derived from `sdk_pub` to that result". Every property the client gets to assume flows from that one constant-time comparison:
