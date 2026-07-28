@@ -4,7 +4,10 @@ import Link from 'next/link';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { useAuth } from '~/lib/privasys-auth';
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { getApp, listBuilds, listVersions, listDeployments, listCompatibleEnclaves, deleteApp, deployDirect, stopDeployment, getAppSchema, rpcCall, updateStoreListing, publishApp, identiconUrl, getAppMcp, updateContainerMcp, detectContainerMcp, retryBuild, listAppOwners, addAppOwner, removeAppOwner, createVersion, stageProfile, promoteProfile, listRegistryTags, uploadAsset, listAppCommits, uploadVersionCwasm, getVersion, listCachedImages, listDeployLocations, listInstances, apiErrorCode } from '~/lib/api';
+import { getApp, listBuilds, listVersions, listDeployments, listCompatibleEnclaves, deleteApp, deployDirect, stopDeployment, getAppSchema, rpcCall, updateStoreListing, publishApp, identiconUrl, getAppMcp, updateContainerMcp, detectContainerMcp, retryBuild, listAppOwners, addAppOwner, removeAppOwner, createVersion, stageProfile, promoteProfile, listPending, vaultExportTarget, pendingBinding, beginVaultApproval, pollVaultApproval, listRegistryTags, uploadAsset, listAppCommits, uploadVersionCwasm, getVersion, listCachedImages, listDeployLocations, listInstances, apiErrorCode } from '~/lib/api';
+
+// The IdP that runs the vault step-up approval ceremony.
+const IDP_ORIGIN = process.env.NEXT_PUBLIC_IDP_ORIGIN || 'https://privasys.id';
 
 // Public store base — where a published app is browsable.
 const STORE_BASE_URL = 'https://store.privasys.org';
@@ -2021,6 +2024,10 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
     const [cwasmFile, setCwasmFile] = useState<File | null>(null);
     const [working, setWorking] = useState(false);
     const [workMsg, setWorkMsg] = useState<string | null>(null);
+    // In-flight vault step-up approval (see promoteWithStepUp). Non-null while
+    // the owner is being asked to approve the new measurement on their wallet.
+    const [approval, setApproval] = useState<{ challenge: string; ceremonyUrl: string; measurement: string; deadline: number } | null>(null);
+    const approvalCancelled = useRef(false);
     // Live build info while a github commit builds during an upgrade (status + the
     // GitHub Actions run link), so the user can watch the reproducible build.
     const [buildLink, setBuildLink] = useState<{ status: string; url?: string; error?: string } | null>(null);
@@ -2255,6 +2262,62 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
     // pin to the current host server-side).
     const tenancyChoice = app.app_type === 'container' && !currentDeployment ? pickTenancy : 'shared';
 
+    // promoteWithStepUp authorises a staged measurement on the app's data key.
+    // Production mints those keys with an operation-bound WebAuthn condition on
+    // promote (VAULT_REQUIRE_STEPUP), so the session bearer alone is refused by
+    // every vault. The approval is its own ceremony: the IdP binds the operation
+    // (key handle + measurement digest + policy version + nonce + exp) into the
+    // WebAuthn challenge and pushes the owner's wallet; the assertion comes back
+    // as a token that authorises this promote and nothing else, and mgmt
+    // forwards it to the vaults, which recompute the binding before releasing
+    // the key. Keys without the condition promote on the ordinary bearer.
+    async function promoteWithStepUp(versionId: string, pendingId: number) {
+        const target = await vaultExportTarget(token, app.id);
+        if (!target.require_step_up) {
+            return promoteProfile(token, app.id, versionId, pendingId);
+        }
+        // Binding inputs must come from the vault's own view of the pending
+        // profile — a client-computed digest would not match what it enforces.
+        const binding = pendingBinding(await listPending(token, app.id, versionId), pendingId);
+        if (!binding) throw new Error('could not read the staged measurement to approve');
+
+        const version = versions.find(v => v.id === versionId);
+        const start = await beginVaultApproval(IDP_ORIGIN, token, {
+            operation: 'promote',
+            handle: target.handle,
+            measurement_digest: binding.digest,
+            policy_version: binding.policyVersion,
+            // Advisory only (never part of the binding): it lets the approver's
+            // wallet show which app and version they are releasing the key to.
+            context: {
+                app_name: app.display_name || app.name,
+                app_id: app.id,
+                version_id: versionId,
+                key_type: 'storage',
+                ...(version ? { version: versionLabel(version) } : {})
+            }
+        });
+
+        approvalCancelled.current = false;
+        const deadline = Date.now() + 4 * 60_000;
+        setApproval({ challenge: start.challenge, ceremonyUrl: start.ceremonyUrl, measurement: binding.digest, deadline });
+        setWorkMsg('Waiting for your approval…');
+        try {
+            for (;;) {
+                if (approvalCancelled.current) throw new Error('approval cancelled');
+                if (Date.now() > deadline) throw new Error('approval timed out — the request expired before it was approved');
+                const stepToken = await pollVaultApproval(IDP_ORIGIN, token, start.challenge);
+                if (stepToken) {
+                    setWorkMsg('Promoting (releasing data key)…');
+                    return await promoteProfile(stepToken, app.id, versionId, pendingId);
+                }
+                await new Promise(r => setTimeout(r, 2000));
+            }
+        } finally {
+            setApproval(null);
+        }
+    }
+
     async function handleConfirm() {
         if (tenancyChoice === 'shared' && !pickLocation) return;
         if (tenancyChoice === 'instance' && !pickInstance) return;
@@ -2324,7 +2387,7 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                 // (4/4 denied → 502). Use the id the stage returned.
                 const pendingId = staged.vaults?.find(v => v.ok && v.pending_id != null)?.pending_id;
                 setWorkMsg('Promoting (releasing data key)…');
-                await promoteProfile(token, app.id, versionId, pendingId);
+                await promoteWithStepUp(versionId, pendingId ?? 0);
                 setWorkMsg('Deploying…');
                 await deployDirect(token, app.id, versionId, pickLocation, sizeArg, deployOpts);
             }
@@ -2755,6 +2818,30 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                                             </button>
                                         </div>
                                         {app.app_type === 'container' && renderUpgradeCost(dep)}
+                                        {approval && (
+                                            <div className="mt-3 p-4 rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20">
+                                                <div className="text-sm font-medium text-amber-900 dark:text-amber-200">Approve this upgrade on your wallet</div>
+                                                <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">
+                                                    Releasing the data key to a new version needs a hardware-backed approval, so
+                                                    nobody — including us — can move your encrypted volume to code you did not
+                                                    approve. A request is waiting in your Privasys Wallet. Check the measurement
+                                                    there matches the one below before you approve.
+                                                </p>
+                                                <div className="mt-2 text-[11px] font-mono break-all text-amber-900/80 dark:text-amber-200/80">{approval.measurement}</div>
+                                                <div className="mt-3 flex items-center gap-4">
+                                                    <span className="text-xs text-amber-800 dark:text-amber-300">Waiting for approval…</span>
+                                                    <a href={approval.ceremonyUrl} target="_blank" rel="noopener noreferrer" className="text-xs underline font-medium text-amber-900 dark:text-amber-200">
+                                                        Use a passkey in this browser instead
+                                                    </a>
+                                                    <button
+                                                        onClick={() => { approvalCancelled.current = true; }}
+                                                        className="text-xs underline text-amber-900/70 dark:text-amber-200/70"
+                                                    >
+                                                        Cancel
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
                                         {disabledReason(true) && (
                                             <div className="mt-2 text-xs text-black/45 dark:text-white/45">{disabledReason(true)}</div>
                                         )}
