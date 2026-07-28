@@ -2262,6 +2262,21 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
     // pin to the current host server-side).
     const tenancyChoice = app.app_type === 'container' && !currentDeployment ? pickTenancy : 'shared';
 
+    // Staging a measurement addresses a CONCRETE enclave — it measures that
+    // host's MRTD against the image — so unlike a deploy it cannot be given a
+    // location. With no live deployment there is no current enclave, yet the
+    // app's vault key still exists from its previous life, so the deploy trips
+    // the measurement gate and stages anyway; that stage went out with an empty
+    // id and failed with "enclave_id required", leaving the app impossible to
+    // redeploy from the portal (live on prod: web-browser-lightpanda, once its
+    // instance was stopped). Resolve the target the deploy itself is about to
+    // use: the owned instance, else the compatible enclave in the chosen
+    // location, else the only compatible one.
+    const stageEnclaveId = currentEnclaveId
+        || (tenancyChoice === 'instance' ? pickInstance : '')
+        || (pickLocation ? (enclaves.find(e => (e.cloud_region_code || e.region) === pickLocation)?.id ?? '') : '')
+        || (enclaves.length === 1 ? enclaves[0].id : '');
+
     // promoteWithStepUp authorises a staged measurement on the app's data key.
     // Production mints those keys with an operation-bound WebAuthn condition on
     // promote (VAULT_REQUIRE_STEPUP), so the session bearer alone is refused by
@@ -2380,7 +2395,8 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                 const msg = e instanceof Error ? e.message : String(e);
                 if (!needsApproval || !/not promoted|approve this version/i.test(msg)) throw e;
                 setWorkMsg('Staging measurement…');
-                const staged = await stageProfile(token, app.id, versionId, currentEnclaveId);
+                if (!stageEnclaveId) throw new Error('cannot work out which host to stage this version on — pick a location and retry');
+                const staged = await stageProfile(token, app.id, versionId, stageEnclaveId);
                 // Promote the pending profile the stage just created. The vault
                 // assigns its id; a key with prior pending profiles gets a
                 // non-zero id, so hardcoding 0 promotes the wrong/absent profile
