@@ -34,7 +34,7 @@ sequenceDiagram
   A->>B: Client Certificate<br/>(client RA-TLS cert with TEE quote,<br/>server nonce bound into ReportData)
   A->>B: Finished
   B-->>A: Finished
-  Note over A,B: both sides verified; encrypted channel
+  Note over A,B: both sides verified, encrypted channel
 ```
 
 1. The **client** optionally sends a challenge nonce in `ClientHello` extension `0xFFBB`. The server binds this nonce into its certificate's `ReportData`.
