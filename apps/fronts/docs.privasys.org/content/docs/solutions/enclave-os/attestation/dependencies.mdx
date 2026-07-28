@@ -43,6 +43,26 @@ identity(X) = SHA-256(
 
 Because `dependencies(X)` lists each direct dependency by an identity that already folds in its own `6.1`, `identity(X)` transitively commits to the entire subtree — while every hop still verifies only its direct edge. If something changes deep in the tree, the identity a dependent is pinned to changes, so the dependent fails closed and re-approval is forced. No chain-walking, no trusted-measurement allow-list.
 
+```mermaid
+graph LR
+  subgraph A["Document service (app A)"]
+    A61["cert OID 6.1: pinned set<br/>stamped by the measured runtime"]
+  end
+  subgraph B["Confidential inference (app B)"]
+    B61["its own 6.1 set,<br/>folded into identity(B)"]
+  end
+  C["Confidential vector store (app C)"]
+  X["Any undeclared enclave,<br/>even a genuine one"]
+
+  A -->|"mutual RA-TLS: peer must match<br/>measurement + code hash + app id"| B
+  B -->|"direct edge, verified by B"| C
+  A -.->|"refused, fail closed"| X
+
+  style X stroke-dasharray: 5 5
+```
+
+A change in C changes `identity(B)`, which changes the entry A is pinned to: A fails closed until its owner re-approves, even though A never verifies C directly.
+
 ## Encoding
 
 The `6.1` value is a deterministic, length-prefixed encoding (big-endian `u32` lengths; entries sorted by app-id, measurements and required OIDs sorted). The same logical set always encodes to the same bytes, and the encoding is byte-identical across the [verification libraries](/solutions/platform/verification-libraries), the enclave runtime, and the wallet.

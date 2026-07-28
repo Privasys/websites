@@ -15,19 +15,24 @@ The identity verification itself (passport chip + selfie, in the user's Privasys
 
 ## How the flow works
 
-```
-Customer clicks "Verify my age"
-  └─ Auth SDK opens the Privasys ID gate (iframe on privasys.id)
-  └─ IdP sees the identity scope for a billable client
-       → reserves Harbour Bets' credits, mints a disclosure voucher
-         (the voucher names the client and the claim, never the user)
-  └─ Customer approves in their wallet (per-attribute consent screen)
-       → first-time users are guided through free passport verification
-  └─ Wallet asks the identity-verifier ENCLAVE to prove age_over_18:
-       it re-opens the passport birthdate commitment, checks the holder's
-       hardware-key signature, verifies the voucher, and signs an SD-JWT VC
-  └─ The credential lands in the sign-in result; the voucher settles
-  └─ Harbour Bets verifies the credential server-side, stores it, unlocks
+```mermaid
+sequenceDiagram
+  participant C as Customer
+  participant S as Harbour Bets (Auth SDK)
+  participant I as IdP (privasys.id)
+  participant W as Wallet
+  participant V as Identity-verifier enclave
+
+  C->>S: clicks "Verify my age"
+  S->>I: opens the Privasys ID gate (identity scope)
+  I->>I: reserve Harbour Bets' credits, mint a disclosure voucher<br/>(names the client and the claim, never the user)
+  I->>W: QR / push rendezvous
+  W->>C: per-attribute consent screen<br/>(first visit: free passport verification)
+  C->>W: biometric approval
+  W->>V: proof + voucher, over RA-TLS
+  V->>V: re-open the birthdate commitment, check the holder's<br/>hardware-key signature, verify the voucher
+  V-->>S: signed SD-JWT VC (age_over_18); the voucher settles
+  S->>S: verify server-side, store the receipt, unlock
 ```
 
 Three properties make this different from a checkbox or an uploaded document:

@@ -36,6 +36,31 @@ The interesting part is the choreography:
 6. The IdP signs a JWT that carries the attestation result (`att_verified`, `att_quote_hash`, `att_oids`) and the session binding (`session.{id, enc_pub, expires_at, sdk_pub_bind}`). The wallet hands this back through the relay.
 7. The SDK iframe receives the JWT, computes the same `K` (it has `sdk_priv` and the JWT carries `enc_pub`), and verifies that `sdk_pub_bind` matches the SHA-256 of *its own* `sdk_pub`. From here on, every request body the parent page wants to send is sealed in the iframe with `K` (AES-256-GCM, sealed-CBOR envelope, monotonic counters), forwarded through the public TLS the gateway terminates, and unsealed inside the enclave.
 
+The same choreography as a picture:
+
+```mermaid
+sequenceDiagram
+  participant P as Parent page + SDK iframe
+  participant W as Wallet (verifier)
+  participant E as Enclave
+  participant I as IdP (privasys.id)
+
+  P->>P: generate ephemeral (sdk_priv, sdk_pub)
+  P->>W: QR: sdk_pub, nonce, mode=session-relay
+  W->>E: RA-TLS handshake, verify leaf + attestation OIDs
+  W->>E: POST /__privasys/session-bootstrap { sdk_pub }
+  E->>E: K = HKDF(ECDH(enc_priv, sdk_pub), salt=session_id)
+  E-->>W: { session_id, enc_pub }
+  W->>W: WebAuthn challenge = SHA-256(nonce ‖ sdk_pub ‖<br/>quote_hash ‖ enc_pub ‖ session_id), biometric
+  W->>I: assertion (through the untrusted relay)
+  I->>I: recompute challenge, constant-time compare<br/>mismatch → 400, no JWT
+  I-->>P: JWT: att_verified, att_quote_hash, att_oids, session.*
+  P->>P: derive the same K from sdk_priv + enc_pub
+  P->>E: sealed-CBOR frames, AES-256-GCM under K
+  E-->>P: sealed responses
+  Note over W,E: the wallet brokered everything yet cannot derive K:<br/>it never held sdk_priv
+```
+
 The gateway terminates a perfectly ordinary Let's Encrypt wildcard certificate, so the user's browser shows the green padlock it expects. The gateway does not see plaintext; it sees AEAD ciphertext in `application/privasys-sealed+cbor`. The enclave receives ciphertext, looks `K` up in its session table, and unwraps it before the application code ever sees the request.
 
 ## The single sentence that holds the protocol up

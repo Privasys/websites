@@ -3,6 +3,7 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { PageShell } from '~/app/components/page-shell';
+import { MermaidDiagrams } from '~/app/components/mermaid-diagrams';
 import 'katex/dist/katex.min.css';
 
 interface BlogPostPageProps {
@@ -63,6 +64,7 @@ export default async function BlogPostPage({ params }: BlogPostPageProps) {
                         className='mt-10 prose prose-lg max-w-none'
                         dangerouslySetInnerHTML={{ __html: htmlContent }}
                     />
+                    {htmlContent.includes('class="mermaid') && <MermaidDiagrams />}
                 </section>
         </PageShell>
     );
