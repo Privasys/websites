@@ -2277,6 +2277,14 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
         || (pickLocation ? (enclaves.find(e => (e.cloud_region_code || e.region) === pickLocation)?.id ?? '') : '')
         || (enclaves.length === 1 ? enclaves[0].id : '');
 
+    // readyVersionFor finds the version already shipped for a semver tag, so a
+    // redeploy of that tag reuses it instead of trying to mint a duplicate.
+    function readyVersionFor(tag: string): AppVersion | undefined {
+        const norm = (s: string) => s.trim().toLowerCase().replace(/^v/, '');
+        if (!/^v?\d+\.\d+\.\d+$/i.test(tag.trim())) return undefined; // moving tag: always ship fresh
+        return versions.find(v => v.status === 'ready' && v.semver && norm(v.semver) === norm(tag));
+    }
+
     // promoteWithStepUp authorises a staged measurement on the app's data key.
     // Production mints those keys with an operation-bound WebAuthn condition on
     // promote (VAULT_REQUIRE_STEPUP), so the session bearer alone is refused by
@@ -2354,16 +2362,32 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                 versionId = (await uploadVersionCwasm(token, app.id, cwasmFile as File)).id;
             } else if (source === 'package') {
                 setWorkMsg(`Shipping ${pickVersion}…`);
-                const body: CreateVersionBody = { image: `${imageRepoBase}:${pickVersion}` };
-                if (/^v?\d+\.\d+\.\d+$/i.test(pickVersion)) body.version = pickVersion;
-                versionId = (await createVersion(token, app.id, body)).id;
+                // A version already shipped for this tag is REUSED. Semvers are
+                // strictly increasing server-side, so minting a second row for
+                // the same tag is rejected ("must be greater than the current
+                // version") — which made redeploying the version you are already
+                // on impossible, exactly what recovering a stopped app needs
+                // (live on prod: privasys-identity-verifier at v0.6.1). The
+                // existing row also pins the digest that tag resolved to when it
+                // shipped, so a redeploy is the same image, not whatever the tag
+                // points at today.
+                versionId = readyVersionFor(pickVersion)?.id ?? '';
+                if (!versionId) {
+                    const body: CreateVersionBody = { image: `${imageRepoBase}:${pickVersion}` };
+                    if (/^v?\d+\.\d+\.\d+$/i.test(pickVersion)) body.version = pickVersion;
+                    versionId = (await createVersion(token, app.id, body)).id;
+                }
             } else if (source === 'github') {
                 setWorkMsg('Shipping commit…');
                 const v = await createVersion(token, app.id, { commit_url: `https://github.com/${ownerRepo}/commit/${pickVersion}` });
                 versionId = await waitForReady(v.id);
             } else if (source === 'cloud_image') {
                 setWorkMsg(`Shipping ${pickVersion}…`);
-                versionId = (await createVersion(token, app.id, { channel: pickVersion, version: cloudVersionForChannel(pickVersion) })).id;
+                const ver = cloudVersionForChannel(pickVersion);
+                versionId = (ver ? readyVersionFor(ver)?.id : undefined) ?? '';
+                if (!versionId) {
+                    versionId = (await createVersion(token, app.id, { channel: pickVersion, version: ver })).id;
+                }
             } else {
                 versionId = pickVersion; // fallback: an existing version id
             }
