@@ -31,7 +31,7 @@ sequenceDiagram
   C->>W: biometric approval
   W->>V: proof + voucher, over RA-TLS
   V->>V: re-open the birthdate commitment, check the holder's<br/>hardware-key signature, verify the voucher
-  V-->>S: signed SD-JWT VC (age_over_18); the voucher settles
+  V-->>S: signed SD-JWT VC (age_over_18), the voucher settles
   S->>S: verify server-side, store the receipt, unlock
 ```
 
