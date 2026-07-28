@@ -31,7 +31,7 @@ export function AppSidebar({
     onShareConversation,
     onShowSecurity,
     onShowTools,
-    onShowKnowledge,
+    onShowMemory,
     onShowSignIn,
     mobileOpen = false,
     onMobileClose
@@ -52,9 +52,9 @@ export function AppSidebar({
     onShareConversation?: (id: string) => void;
     onShowSecurity: () => void;
     onShowTools?: () => void;
-    /** Open the assistant Knowledge (Drive AI-scope) view. Only shown when
+    /** Open the Memory view (the Drive AI-scope grant). Only shown when
      *  Drive is wired (the chat passes it conditionally). */
-    onShowKnowledge?: () => void;
+    onShowMemory?: () => void;
     onShowSignIn: () => void;
     /** Mobile drawer state. Below `md` the sidebar is off-canvas: it slides in
      *  over the chat and closes on backdrop tap, Escape, or any navigation.
@@ -188,14 +188,14 @@ export function AppSidebar({
                             <span className="flex-1">AI Tools</span>
                         </button>
                     )}
-                    {session && onShowKnowledge && (
+                    {session && onShowMemory && (
                         <button
                             type="button"
-                            onClick={nav(onShowKnowledge)}
+                            onClick={nav(onShowMemory)}
                             className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-surface-2)]/60"
                         >
                             <BookIcon />
-                            <span className="flex-1">Knowledge</span>
+                            <span className="flex-1">Memory</span>
                         </button>
                     )}
                     {session && (

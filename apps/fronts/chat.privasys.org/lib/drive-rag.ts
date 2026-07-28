@@ -161,11 +161,11 @@ export async function retrieveContext(
         return `[[${i + 1}]] ${citation(h)}\n${snippet}`;
     });
     const body =
-        'Relevant excerpts retrieved from the user\'s private Drive ' +
+        'From your memory — excerpts recalled from the user\'s private Drive ' +
         '(end-to-end encrypted, retrieved inside a confidential enclave). ' +
         'Ground your answer in these when they apply and cite the bracketed ' +
-        'reference number when you use one. If they are not relevant, ignore ' +
-        'them.\n\n' +
+        'reference number when you use one, saying it came from their memory. ' +
+        'If they are not relevant, ignore them.\n\n' +
         blocks.join('\n\n');
 
     return {

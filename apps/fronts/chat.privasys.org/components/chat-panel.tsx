@@ -9,8 +9,7 @@ import {
     type ChatMessage
 } from '~/lib/chat-stream';
 import type { AttachIntent } from '~/lib/drive-chat-api';
-import type { ChatContextPrefs } from '~/lib/conversations';
-import type { ScopeFolder } from '~/lib/use-ai-scope';
+import type { MemoryMode, ScopeFolder } from '~/lib/use-ai-scope';
 import type { AttachmentChip } from './composer';
 import { DEFAULT_SAMPLING, type SamplingParams } from '~/lib/sampling';
 import { modelLabel } from '~/lib/model-label';
@@ -107,12 +106,12 @@ export function ChatPanel({
     attachments,
     onAttachFile,
     attachEnabled,
-    contextEnabled,
-    contextPrefs,
-    onToggleContext,
-    knowledgeFolders,
-    knowledgeAllScoped,
-    onManageKnowledge
+    memoryEnabled,
+    memoryMode,
+    memorySummary,
+    onSetMemoryMode,
+    memoryFolders,
+    onManageMemory
 }: {
     instance: Instance;
     model: AvailableModel | null;
@@ -191,15 +190,15 @@ export function ChatPanel({
     onAttachFile?: (file: File, intent: AttachIntent) => void;
     /** Whether the Attach affordance is available (Drive enabled). */
     attachEnabled?: boolean;
-    /** Per-conversation context sources (§8.7): what the assistant draws on
-     *  for THIS chat. When contextEnabled, the composer shows a Context chip. */
-    contextEnabled?: boolean;
-    contextPrefs?: ChatContextPrefs;
-    onToggleContext?: (field: keyof ChatContextPrefs, value: boolean) => void;
-    /** The user's AI-enabled Drive folders, listed under Knowledge. */
-    knowledgeFolders?: ScopeFolder[];
-    knowledgeAllScoped?: boolean;
-    onManageKnowledge?: () => void;
+    /** Drive as memory (§8.7). The composer shows a Memory pill; every change
+     *  writes the AI-scope grant, the single source of truth both retrieval
+     *  paths read. */
+    memoryEnabled?: boolean;
+    memoryMode?: MemoryMode;
+    memorySummary?: string;
+    onSetMemoryMode?: (mode: MemoryMode) => void | Promise<void>;
+    memoryFolders?: ScopeFolder[];
+    onManageMemory?: () => void;
 }) {
     // Used to re-bind a sealed session that came up without an identity
     // (same-device wallet flow); see SealedIdentityMissingError below.
@@ -862,12 +861,12 @@ export function ChatPanel({
             attachEnabled={attachEnabled}
             attachments={attachments}
             onAttachFile={onAttachFile}
-            contextEnabled={contextEnabled}
-            contextPrefs={contextPrefs}
-            onToggleContext={onToggleContext}
-            knowledgeFolders={knowledgeFolders}
-            knowledgeAllScoped={knowledgeAllScoped}
-            onManageKnowledge={onManageKnowledge}
+            memoryEnabled={memoryEnabled}
+            memoryMode={memoryMode}
+            memorySummary={memorySummary}
+            onSetMemoryMode={onSetMemoryMode}
+            memoryFolders={memoryFolders}
+            onManageMemory={onManageMemory}
             placeholder={
                 model
                     ? `Message ${modelLabel(model)}\u2026`
