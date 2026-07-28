@@ -24,9 +24,27 @@ Exit codes are stable so scripts and agents can branch on the failure class:
 | `4` | not authorized |
 | `5` | not found |
 
+## Choosing an environment
+
+The CLI talks to **production** by default (`https://api.developer.privasys.org`). Two flags switch that per command:
+
+| Flag | Environment |
+| --- | --- |
+| _(none)_ | Production (default) |
+| `--test` | The Privasys test / dev environment |
+| `--endpoint <url>` | A custom environment (self-hosted or staging) |
+
+```sh
+privasys apps list                 # production
+privasys apps list --test          # test/dev environment
+privasys apps list --endpoint https://api.example.com   # custom
+```
+
+`--endpoint` overrides `--test`. Authentication always uses the production issuer (`privasys.id`), so only the platform endpoint changes.
+
 ## Configuration
 
-Configuration lives at `~/.privasys/config.yaml` (named configurations). Global flags: `--endpoint`, `--issuer`, `--account`, `--format`, `--no-input`, `--quiet`.
+Configuration lives at `~/.privasys/config.yaml` (named configurations). Global flags: `--endpoint`, `--test`, `--issuer`, `--account`, `--format`, `--no-input`, `--quiet`. To make an environment sticky (instead of passing a flag each time), set it in the config:
 
 ```sh
 privasys config set endpoint https://api.developer.privasys.org
