@@ -2133,17 +2133,23 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
     // location to the running instance (an upgrade does not move the app).
     const upgradeTarget = choices[0]?.value ?? '';
     // An inline upgrade stays where the app already runs, so pin the location to
-    // the current deployment's cloud region (derived from its enclave).
-    const currentLocationCode = currentDeployment
-        ? (enclaveMap[`${currentDeployment.enclave_host}:${currentDeployment.enclave_port}`]?.cloud_region_code ?? '')
+    // the current deployment's cloud region (derived from its enclave). Mirror
+    // the server's deployLocationCode: enclaves registered before the
+    // cloud-region metadata landed have no cloud_region_code and are addressed
+    // by their region. Reading only cloud_region_code left the location empty on
+    // those hosts, which disabled Upgrade for good with nothing on screen to say
+    // why (live on prod, m1-tdx-france).
+    const currentEnclave = currentDeployment
+        ? enclaveMap[`${currentDeployment.enclave_host}:${currentDeployment.enclave_port}`]
+        : undefined;
+    const currentLocationCode = currentEnclave
+        ? (currentEnclave.cloud_region_code || currentEnclave.region || '')
         : '';
     // The specific enclave the app already runs on. Not an adopter deploy target
     // (they pick a location), but the vault stage/promote control plane still
     // addresses a concrete enclave, so derive it for that path only.
     const currentEnclaveId = currentDeployment
-        ? (currentDeployment.enclave_id
-            ?? enclaveMap[`${currentDeployment.enclave_host}:${currentDeployment.enclave_port}`]?.id
-            ?? '')
+        ? (currentDeployment.enclave_id ?? currentEnclave?.id ?? '')
         : '';
     useEffect(() => {
         if (currentDeployment) {
@@ -2508,6 +2514,29 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
     const nothingToDeploy = !isUpload && !optLoading && choices.length === 0;
     const confirmDisabled = working || deployBlockedByCredits || storeMissing.length > 0 || (isUpload ? !cwasmFile : (!pickVersion || nothingToDeploy));
 
+    // Why the Deploy/Upgrade button is greyed out. Credits and the store listing
+    // already print their own amber line, so they return null here; everything
+    // else used to disable the button silently, which reads as the platform
+    // being broken rather than as something the developer can act on.
+    function disabledReason(inUpgrade: boolean): string | null {
+        if (working || deployBlockedByCredits || storeMissing.length > 0) return null;
+        if (isUpload) return cwasmFile ? null : 'Choose a .cwasm module to deploy.';
+        if (optLoading) return 'Loading versions…';
+        if (optError) return `Could not list versions: ${optError}`;
+        if (nothingToDeploy) {
+            return inUpgrade
+                ? 'No newer version available. Push a new tag, then refresh.'
+                : 'No version available to deploy yet.';
+        }
+        if (!pickVersion) return 'Choose a version.';
+        if (inUpgrade && !pickLocation) {
+            return 'This app runs on a host with no location on record, so the upgrade cannot be pinned to it. Ask support to complete the host metadata.';
+        }
+        if (!inUpgrade && tenancyChoice === 'shared' && !pickLocation) return 'Choose a location.';
+        if (!inUpgrade && tenancyChoice === 'instance' && !pickInstance) return 'Choose an instance.';
+        return null;
+    }
+
     async function handleStop(depId: string, force = false) {
         setStopping(depId);
         setError(null);
@@ -2726,6 +2755,9 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                                             </button>
                                         </div>
                                         {app.app_type === 'container' && renderUpgradeCost(dep)}
+                                        {disabledReason(true) && (
+                                            <div className="mt-2 text-xs text-black/45 dark:text-white/45">{disabledReason(true)}</div>
+                                        )}
                                         {storeMissing.length > 0 && (
                                             <div className="mt-2 text-xs text-amber-700 dark:text-amber-400">
                                                 Complete your App Store listing ({storeMissing.join(', ')}) before upgrading. <Link href={`/dashboard/apps/${app.id}?tab=store`} className="underline font-medium">Open App Store</Link>
@@ -2833,6 +2865,9 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                             <div className="text-xs text-amber-700 dark:text-amber-400">Your credit balance is empty. <Link href="/dashboard/billing" className="underline font-medium">Top up or redeem a code</Link>.</div>
                         )}
                         {buildStatusLine}
+                        {disabledReason(false) && (
+                            <div className="text-xs text-black/45 dark:text-white/45">{disabledReason(false)}</div>
+                        )}
                         <button
                             onClick={handleConfirm}
                             disabled={confirmDisabled
