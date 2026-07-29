@@ -2341,6 +2341,52 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
         }
     }
 
+    // approveRuntime drives the one-click owner re-approval after a PLATFORM
+    // roll of the shared WASM enclave (server-computed app.runtime_reapproval):
+    // the running version is unchanged, only the runtime MRENCLAVE moved.
+    // Deploy first — the measurement gate refusing confirms this really is an
+    // un-promoted upgrade — then stage + promote (wallet step-up) and redeploy.
+    // If the artefact was compiled for a superseded engine the deploy answers
+    // cwasm_version_mismatch instead: the recompile tile takes over, and the
+    // rebuilt version's own deploy runs the normal approve flow.
+    async function approveRuntime() {
+        const rr = app.runtime_reapproval;
+        if (!rr || working) return;
+        const location = currentLocationCode || pickLocation;
+        if (!location) {
+            setError('This app runs on a host with no location on record, so it cannot be redeployed from here. Ask support to complete the host metadata.');
+            return;
+        }
+        setWorking(true);
+        setError(null);
+        setRecompiling(false);
+        try {
+            setWorkMsg('Redeploying on the new runtime…');
+            try {
+                await deployDirect(token, app.id, rr.version_id, location);
+            } catch (e) {
+                const msg = e instanceof Error ? e.message : String(e);
+                if (!/not promoted|approve this version/i.test(msg)) throw e;
+                setWorkMsg('Staging the new runtime measurement…');
+                const staged = await stageProfile(token, app.id, rr.version_id, rr.enclave_id);
+                const pendingId = staged.vaults?.find(v => v.ok && v.pending_id != null)?.pending_id;
+                await promoteWithStepUp(rr.version_id, pendingId ?? 0);
+                setWorkMsg('Redeploying on the new runtime…');
+                await deployDirect(token, app.id, rr.version_id, location);
+            }
+        } catch (e) {
+            if (apiErrorCode(e) === 'cwasm_version_mismatch') {
+                setRecompiling(true);
+            } else {
+                setError(e instanceof Error ? e.message : 'Runtime approval failed');
+            }
+        } finally {
+            setWorking(false);
+            setWorkMsg(null);
+            onRefresh();
+        }
+    }
+
     async function handleConfirm() {
         if (tenancyChoice === 'shared' && !pickLocation) return;
         if (tenancyChoice === 'instance' && !pickInstance) return;
@@ -2674,6 +2720,40 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                 <div className="flex items-start gap-2 p-3 rounded-lg text-xs border bg-blue-50 dark:bg-blue-900/15 border-blue-200 dark:border-blue-800/30 text-blue-700 dark:text-blue-300">
                     <span className="w-1.5 h-1.5 mt-1 rounded-full bg-blue-500 animate-pulse shrink-0" />
                     <span>The confidential WASM runtime was upgraded, so this app is being recompiled to match it. It will be deployable again once the build below finishes.</span>
+                </div>
+            )}
+
+            {/* Platform runtime roll: the shared WASM enclave this app runs on
+                moved to a new measurement that the app's data key has not
+                approved yet. Surface it proactively (with a one-click approve)
+                instead of letting the owner find out when a deploy bounces off
+                the measurement gate (enclave-upgrade parity, item 3). */}
+            {app.runtime_reapproval && !recompiling && (
+                <div className="flex items-start justify-between gap-3 p-3 rounded-lg text-xs border bg-amber-50 dark:bg-amber-900/15 border-amber-200 dark:border-amber-800/30 text-amber-800 dark:text-amber-300">
+                    <div className="min-w-0">
+                        <div className="text-sm font-medium">Enclave runtime updated: your approval is needed</div>
+                        <p className="mt-1">
+                            The platform updated the confidential runtime this app runs on, so the enclave has a new
+                            measurement (<code className="font-mono">{app.runtime_reapproval.mrenclave.slice(0, 16)}…</code>).
+                            Your data key only releases to measurements you have approved. Approve the new runtime now to
+                            keep the app and its data available after the next restart; you will confirm the exact
+                            measurement on your wallet.
+                        </p>
+                        {working && workMsg && (
+                            <div className="mt-2 inline-flex items-center gap-1.5 text-[11px]">
+                                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                                {workMsg}
+                            </div>
+                        )}
+                    </div>
+                    <button
+                        type="button"
+                        onClick={approveRuntime}
+                        disabled={working}
+                        className="shrink-0 px-3 py-1.5 text-xs font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-85 transition-opacity disabled:opacity-50"
+                    >
+                        Approve &amp; redeploy
+                    </button>
                 </div>
             )}
 
