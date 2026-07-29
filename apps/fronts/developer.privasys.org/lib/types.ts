@@ -36,6 +36,10 @@ export interface App {
     // key has been reserved (i.e. the app has been deployed with storage).
     key_provider?: string;
     vault_key_handle?: string;
+    // Owner's auto-rolling opt-in: the data key follows platform runtime
+    // updates (new enclave measurement, app code unchanged) without a fresh
+    // owner approval. Mirrors the vault key's lifecycle flag.
+    vault_auto_migrate?: boolean;
     // Computed by the server on GET /apps/{id}: present when the platform
     // rolled the shared WASM enclave (new MRENCLAVE) and the owner must
     // approve the new runtime measurement on the app's data key. Carries the

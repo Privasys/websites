@@ -924,6 +924,18 @@ export function revokeProfile(token: string, appId: string, versionId: string, p
     );
 }
 
+// setAutoMigrate flips the owner's auto-rolling opt-in: with it on, the app's
+// data key follows platform runtime updates (new enclave measurement, app
+// code unchanged) without a fresh owner approval. Owner-only; applied to the
+// live vault policy before the flag is recorded.
+export function setAutoMigrate(token: string, appId: string, enabled: boolean): Promise<App> {
+    return request<App>(
+        `/api/v1/apps/${encodeURIComponent(appId)}/auto-migrate`,
+        token,
+        { method: 'PATCH', body: JSON.stringify({ auto_migrate: enabled }) }
+    );
+}
+
 // rotateKey rotates the vault-backed volume KEK online (no data re-encryption).
 export function rotateKey(token: string, appId: string, versionId: string, enclaveId: string): Promise<Record<string, unknown>> {
     return request<Record<string, unknown>>(
