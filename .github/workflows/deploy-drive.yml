@@ -21,21 +21,28 @@ on:
         required: false
         type: string
         default: 'drive.privasys.org'
+      # The three backend inputs below default to EMPTY on purpose: leave them
+      # blank and the Resolve step derives the matching backend from
+      # site_host. They previously defaulted to the DEV backend while
+      # site_host defaulted to the PROD domain, so the workflow's own default
+      # configuration published drive.privasys.org against dev — which is
+      # exactly what happened on 2026-07-29 when only site_host was supplied.
+      # Override all three together, or none.
       drive_host:
-        description: 'Drive enclave hostname the UI seals a session to'
+        description: 'Drive enclave hostname the UI seals a session to (blank = derive from site_host)'
         required: false
         type: string
-        default: 'drive-demo.apps-test.privasys.org'
+        default: ''
       api_base:
-        description: 'management-service base URL for the wallet SDK'
+        description: 'management-service base URL for the wallet SDK (blank = derive from site_host)'
         required: false
         type: string
-        default: 'https://api-test.developer.privasys.org'
+        default: ''
       drive_app_id:
-        description: 'Drive app id, so the UI can attest the backend and show its verdict'
+        description: 'Drive app id, so the UI can attest the backend (blank = derive from site_host)'
         required: false
         type: string
-        default: '02104572-ca2f-41e8-ae2d-24c0294e6f5e'
+        default: ''
       smoke:
         description: 'Run post-deploy HTTP smoke test'
         required: false
@@ -56,13 +63,74 @@ jobs:
       NEXT_TELEMETRY_DISABLED: 1
       AWS_ACCESS_KEY_ID: ${{ secrets.NX_CACHE_AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.NX_CACHE_AWS_SECRET_ACCESS_KEY }}
-      NEXT_PUBLIC_API_BASE_URL: ${{ inputs.api_base }}
-      NEXT_PUBLIC_DRIVE_APP_HOST: ${{ inputs.drive_host }}
-      NEXT_PUBLIC_DRIVE_APP_ID: ${{ inputs.drive_app_id }}
+      # NEXT_PUBLIC_API_BASE_URL / _DRIVE_APP_HOST / _DRIVE_APP_ID are set by
+      # the "Resolve backend" step below, not here: they are derived from
+      # site_host when not supplied, which job-level env cannot express.
       NEXT_PUBLIC_COMMIT_SHA: ${{ github.sha }}
 
     steps:
       - uses: actions/checkout@v6
+
+      # Bind the backend to the site being published, so a partially-specified
+      # dispatch cannot point a production domain at dev. Supplying only
+      # site_host used to inherit the dev backend from the input defaults and
+      # silently republish drive.privasys.org against drive-demo/api-test.
+      #
+      # Pass all three backend inputs to deploy an unlisted host; pass none to
+      # take the mapping. Anything in between is refused rather than guessed,
+      # and a known-prod site is never allowed to reference a test backend.
+      - name: Resolve backend
+        run: |
+          set -euo pipefail
+          SITE='${{ inputs.site_host }}'
+          H='${{ inputs.drive_host }}'
+          A='${{ inputs.api_base }}'
+          I='${{ inputs.drive_app_id }}'
+
+          supplied=0
+          for v in "$H" "$A" "$I"; do [ -n "$v" ] && supplied=$((supplied+1)); done
+          if [ "$supplied" -gt 0 ] && [ "$supplied" -lt 3 ]; then
+            echo "::error::Specify drive_host, api_base and drive_app_id together (got $supplied of 3), or leave all blank to derive them from site_host='$SITE'."
+            exit 1
+          fi
+
+          if [ "$supplied" -eq 0 ]; then
+            case "$SITE" in
+              drive.privasys.org)
+                H='privasys-drive.apps.privasys.org'
+                A='https://api.developer.privasys.org'
+                I='cf7a0d58-5468-4168-84c3-41ebe0ce4025' ;;
+              drive.test.privasys.org)
+                H='drive-demo.apps-test.privasys.org'
+                A='https://api-test.developer.privasys.org'
+                I='02104572-ca2f-41e8-ae2d-24c0294e6f5e' ;;
+              *)
+                echo "::error::No backend mapping for site_host='$SITE'. Pass drive_host, api_base and drive_app_id explicitly."
+                exit 1 ;;
+            esac
+            echo "Derived the backend for $SITE."
+          else
+            echo "Using the explicitly supplied backend."
+          fi
+
+          # Last line of defence: never publish a production domain against a
+          # test backend, however the values arrived.
+          case "$SITE" in
+            *.test.privasys.org) ;;
+            *)
+              case "$H$A$I" in
+                *apps-test*|*api-test*|*02104572*)
+                  echo "::error::Refusing to publish production site '$SITE' against a TEST backend (drive_host=$H api_base=$A app_id=$I)."
+                  exit 1 ;;
+              esac ;;
+          esac
+
+          {
+            echo "NEXT_PUBLIC_DRIVE_APP_HOST=$H"
+            echo "NEXT_PUBLIC_API_BASE_URL=$A"
+            echo "NEXT_PUBLIC_DRIVE_APP_ID=$I"
+          } >> "$GITHUB_ENV"
+          echo "site=$SITE  drive_host=$H  api_base=$A  app_id=$I"
 
       - name: Use Node.js 24
         uses: actions/setup-node@v6
