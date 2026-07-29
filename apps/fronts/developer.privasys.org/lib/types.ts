@@ -36,6 +36,15 @@ export interface App {
     // key has been reserved (i.e. the app has been deployed with storage).
     key_provider?: string;
     vault_key_handle?: string;
+    // Computed by the server on GET /apps/{id}: present when the platform
+    // rolled the shared WASM enclave (new MRENCLAVE) and the owner must
+    // approve the new runtime measurement on the app's data key. Carries the
+    // stage/promote inputs so the portal can drive the approval in one click.
+    runtime_reapproval?: {
+        enclave_id: string;
+        version_id: string;
+        mrenclave: string;
+    };
     status: string;
     review_note?: string;
     reviewer_sub?: string;
