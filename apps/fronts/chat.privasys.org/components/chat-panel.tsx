@@ -202,7 +202,7 @@ export function ChatPanel({
 }) {
     // Used to re-bind a sealed session that came up without an identity
     // (same-device wallet flow); see SealedIdentityMissingError below.
-    const { reestablishSealed } = useAuth();
+    const { reestablishSealed, sealedApprovalPending } = useAuth();
     const [messages, setMessages] = useState<DisplayMessage[]>(
         () => initialMessages.map((m) => ({ ...m }))
     );
@@ -835,7 +835,7 @@ export function ChatPanel({
 
     const transportBanner =
         transport === 'ok' ? null : (
-            <TransportBanner transport={transport} staleReason={staleReason} onReconnect={onReconnect} />
+            <TransportBanner transport={transport} staleReason={staleReason} approvalPending={sealedApprovalPending} onReconnect={onReconnect} />
         );
 
     const composer = (
@@ -1414,10 +1414,13 @@ function ReconnectingNotice() {
 function TransportBanner({
     transport,
     staleReason = null,
+    approvalPending = false,
     onReconnect
 }: {
     transport: 'reconnecting' | 'stale';
     staleReason?: SealedStaleReason;
+    /** Recovery is waiting on a wallet push approval (e.g. platform upgraded). */
+    approvalPending?: boolean;
     onReconnect?: () => void;
 }) {
     if (transport === 'reconnecting') {
@@ -1430,7 +1433,11 @@ function TransportBanner({
                     <circle className='opacity-25' cx='12' cy='12' r='10' stroke='currentColor' strokeWidth='4' fill='none' />
                     <path className='opacity-75' fill='currentColor' d='M4 12a8 8 0 0 1 8-8v4a4 4 0 0 0-4 4H4Z' />
                 </svg>
-                <span>Connecting to the secure enclave… if it was just restarted, the model can take a few minutes to load.</span>
+                <span>
+                    {approvalPending
+                        ? 'The secure enclave was upgraded. Approve it in your Privasys Wallet to continue — check your phone.'
+                        : 'Connecting to the secure enclave… if it was just restarted, the model can take a few minutes to load.'}
+                </span>
             </div>
         );
     }
