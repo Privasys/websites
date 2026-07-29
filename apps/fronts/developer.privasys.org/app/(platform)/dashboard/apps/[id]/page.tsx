@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { useAuth } from '~/lib/privasys-auth';
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { getApp, listBuilds, listVersions, listDeployments, listCompatibleEnclaves, deleteApp, deployDirect, stopDeployment, getAppSchema, rpcCall, updateStoreListing, publishApp, identiconUrl, getAppMcp, updateContainerMcp, detectContainerMcp, retryBuild, listAppOwners, addAppOwner, removeAppOwner, createVersion, stageProfile, promoteProfile, listPending, vaultExportTarget, pendingBinding, beginVaultApproval, pollVaultApproval, listRegistryTags, uploadAsset, listAppCommits, uploadVersionCwasm, getVersion, listCachedImages, listDeployLocations, listInstances, apiErrorCode } from '~/lib/api';
+import { getApp, listBuilds, listVersions, listDeployments, listCompatibleEnclaves, deleteApp, deployDirect, stopDeployment, getAppSchema, rpcCall, updateStoreListing, publishApp, identiconUrl, getAppMcp, updateContainerMcp, detectContainerMcp, retryBuild, listAppOwners, addAppOwner, removeAppOwner, createVersion, stageProfile, promoteProfile, listPending, vaultExportTarget, pendingBinding, beginVaultApproval, pollVaultApproval, listRegistryTags, uploadAsset, listAppCommits, uploadVersionCwasm, getVersion, listCachedImages, listDeployLocations, listInstances, apiErrorCode, setAutoMigrate } from '~/lib/api';
 
 // The IdP that runs the vault step-up approval ceremony.
 const IDP_ORIGIN = process.env.NEXT_PUBLIC_IDP_ORIGIN || 'https://privasys.id';
@@ -1989,6 +1989,26 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
     // an older WASM engine than the enclave now runs. The server auto-triggers a
     // recompile, so this drives a calm blue notice instead of a red error.
     const [recompiling, setRecompiling] = useState(false);
+    // Auto-rolling opt-in (platform runtime updates without per-roll approval).
+    // Enabling is a standing trust grant, so it goes through an explicit
+    // inline confirmation instead of flipping on first click.
+    const [autoMigrateBusy, setAutoMigrateBusy] = useState(false);
+    const [autoMigrateConfirm, setAutoMigrateConfirm] = useState(false);
+    const [autoMigrateErr, setAutoMigrateErr] = useState<string | null>(null);
+
+    async function applyAutoMigrate(enabled: boolean) {
+        setAutoMigrateBusy(true);
+        setAutoMigrateErr(null);
+        try {
+            await setAutoMigrate(token, app.id, enabled);
+            setAutoMigrateConfirm(false);
+            onRefresh();
+        } catch (e) {
+            setAutoMigrateErr(e instanceof Error ? e.message : 'Failed to update the setting');
+        } finally {
+            setAutoMigrateBusy(false);
+        }
+    }
     const { enabled: billingEnabled, frozen: balanceEmpty } = useBalance();
     // Only block when we know the balance is empty; "unknown" never gates a deploy.
     const deployBlockedByCredits = billingEnabled && balanceEmpty;
@@ -3155,6 +3175,82 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                                 </div>
                             );
                         })}
+                    </div>
+                </section>
+            )}
+
+            {/* Platform runtime updates governance: manual approval (default)
+                vs the auto-rolling opt-in. Enabling is a standing trust grant
+                to the platform's own enclave-upgrade approval, so it goes
+                through an explicit confirmation. Only meaningful for
+                vault-backed apps (the data key is what follows or waits). */}
+            {needsApproval && (
+                <section>
+                    <h2 className="text-sm font-semibold mb-3">Platform runtime updates</h2>
+                    <div className="rounded-xl border border-black/10 dark:border-white/10 p-4 space-y-3">
+                        <p className="text-xs text-black/50 dark:text-white/50">
+                            When Privasys updates the confidential runtime this app runs on, the enclave gets a new
+                            measurement and your data key only releases to measurements you have approved. Choose how
+                            those runtime updates are approved. Updates that change your app&apos;s own code always
+                            need your approval, whichever mode you pick.
+                        </p>
+                        <div className="flex flex-wrap items-center gap-2">
+                            <button
+                                type="button"
+                                onClick={() => { setAutoMigrateConfirm(false); if (app.vault_auto_migrate) applyAutoMigrate(false); }}
+                                disabled={autoMigrateBusy}
+                                className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${!app.vault_auto_migrate
+                                    ? 'border-black dark:border-white bg-black text-white dark:bg-white dark:text-black'
+                                    : 'border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5'}`}
+                            >
+                                I approve each update
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => { if (!app.vault_auto_migrate) setAutoMigrateConfirm(true); }}
+                                disabled={autoMigrateBusy}
+                                className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${app.vault_auto_migrate
+                                    ? 'border-black dark:border-white bg-black text-white dark:bg-white dark:text-black'
+                                    : 'border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5'}`}
+                            >
+                                Follow platform updates automatically
+                            </button>
+                            {autoMigrateBusy && <span className="text-[11px] text-black/40 dark:text-white/40">Updating…</span>}
+                        </div>
+                        {autoMigrateConfirm && !app.vault_auto_migrate && (
+                            <div className="rounded-lg border border-amber-200 dark:border-amber-800/30 bg-amber-50 dark:bg-amber-900/15 p-3 text-xs text-amber-800 dark:text-amber-300 space-y-2">
+                                <p className="font-medium">You are granting a standing approval.</p>
+                                <p>
+                                    With automatic updates on, your data key will follow a platform runtime update
+                                    (a new enclave measurement published by Privasys) without asking you each time.
+                                    The scope is strictly limited: your app&apos;s code identity and app id must be
+                                    unchanged, so only the runtime component may move. Every accepted measurement is
+                                    reproducible and publicly auditable, and each acceptance is recorded in your
+                                    key&apos;s audit log. You can switch back to manual approval at any time.
+                                </p>
+                                <div className="flex gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => applyAutoMigrate(true)}
+                                        disabled={autoMigrateBusy}
+                                        className="px-3 py-1.5 font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-85 disabled:opacity-50"
+                                    >
+                                        Enable automatic updates
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setAutoMigrateConfirm(false)}
+                                        disabled={autoMigrateBusy}
+                                        className="px-3 py-1.5 font-medium rounded-lg border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5"
+                                    >
+                                        Keep manual approval
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                        {autoMigrateErr && (
+                            <div className="text-xs text-red-600 dark:text-red-400">{autoMigrateErr}</div>
+                        )}
                     </div>
                 </section>
             )}
