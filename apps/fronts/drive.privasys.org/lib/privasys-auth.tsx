@@ -152,6 +152,12 @@ interface AuthContextValue {
      */
     staleReason: SealedStaleReason;
     /**
+     * True while a sealed-session recovery is waiting on a wallet push
+     * approval — most often because the enclave's platform was upgraded and
+     * the user must approve the new measurement on their phone.
+     */
+    sealedApprovalPending: boolean;
+    /**
      * Return a sealed session for an arbitrary enclave `appHost` (e.g. the
      * chat-service back-end), independent of the primary `sealedSession`
      * (which is the inference instance). Per-host cached; resumes silently
@@ -184,6 +190,7 @@ const AuthContext = createContext<AuthContextValue>({
     resumeSealed: async () => {},
     reestablishSealed: async () => 'unavailable',
     staleReason: null,
+    sealedApprovalPending: false,
     getSealedSession: async () => null,
     requestAppVoucher: async () => {},
     signOut: async () => {}
@@ -235,6 +242,10 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
     const [expired, setExpired] = useState(false);
     const [sealedSession, setSealedSession] = useState<SealedSession | null>(null);
     const [staleReason, setStaleReason] = useState<SealedStaleReason>(null);
+    // True while a sealed-session recovery is waiting on a wallet push
+    // approval (most often the enclave's platform was upgraded and the user
+    // must approve the new measurement on their phone).
+    const [sealedApprovalPending, setSealedApprovalPending] = useState(false);
     const frameRef = useRef<AuthFrame | null>(null);
     // In-flight one-shot inline/connect frame; lets cancelSignIn abort the
     // ceremony when the user navigates away.
@@ -495,18 +506,54 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
                 return 'ok';
             } catch (err) {
                 const msg = (err as Error).message ?? '';
+
+                // A `no-voucher` or `rejected:<reason>` resume is recoverable
+                // WITHOUT a sign-out: the enclave has no usable voucher (none
+                // yet, or it refused the current one because the PLATFORM was
+                // upgraded — `enc-changed`, the session-relay enc_pub is pinned
+                // to the platform measurement — or the app changed,
+                // `workload-changed`). A voucher-only push re-attests through
+                // the wallet: the user reviews what changed and, on one
+                // approval, a fresh voucher is minted against the CURRENT
+                // enc_pub. This turns a platform roll from a dead-end into a
+                // one-tap re-approval — never a wallet forget/re-add. A hung
+                // silent resume (timeout) is NOT recoverable this way.
+                const recoverable =
+                    !msg.includes('sealed-resume-timeout') &&
+                    (msg.includes('no-voucher') || msg.includes('rejected'));
+                if (recoverable) {
+                    try {
+                        console.warn(`[drive-auth] sealed ${appHost} ${msg} — requesting wallet re-approval`);
+                        setSealedApprovalPending(true);
+                        // requestAppVoucher resolves only once a NEW voucher
+                        // lands (human-scale deadline inside the SDK), so it is
+                        // NOT wrapped in the short silent-resume timeout.
+                        await frame.getSession();
+                        await frame.requestAppVoucher(appHost);
+                        const s = await withTimeout(frame.resumeSession(), 15_000, 'sealed-resume-timeout');
+                        setSealedSession(s);
+                        setStaleReason(null);
+                        return 'ok';
+                    } catch (e2) {
+                        console.warn(`[drive-auth] wallet re-approval for ${appHost} did not complete:`, (e2 as Error).message);
+                    } finally {
+                        setSealedApprovalPending(false);
+                    }
+                }
+
                 try { frame.destroy(); } catch { /* frame already torn down */ }
-                // The SDK rejects with one of these literal reasons; match
-                // defensively in case the message is wrapped. A rejection may
-                // carry the enclave's reason (`rejected:workload-changed` /
-                // `rejected:enc-changed`) — keep it so the stale banner can
-                // say WHAT changed instead of a generic reconnect prompt.
+                // Recovery exhausted — keep the enclave's reason so the stale
+                // banner says WHAT changed instead of a generic prompt.
                 if (msg.includes('rejected')) {
+                    console.warn(`[drive-auth] sealed session for ${appHost} rejected:`, msg);
                     setStaleReason(parseStaleReason(msg));
                     return 'rejected';
                 }
-                if (msg.includes('no-voucher')) return 'no-voucher';
-                console.log('[chat-auth] sealed reestablish failed:', msg);
+                if (msg.includes('no-voucher')) {
+                    console.warn(`[drive-auth] no voucher for ${appHost} — interactive sign-in needed`);
+                    return 'no-voucher';
+                }
+                console.log('[drive-auth] sealed reestablish failed:', msg);
                 return 'unavailable';
             }
         },
@@ -608,7 +655,7 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
 
     return (
         <AuthContext.Provider
-            value={{ session, loading, expired, sealedSession, getTokenForAudience, signIn, signInInto, connectInto, cancelSignIn, resumeSealed, reestablishSealed, staleReason, getSealedSession, requestAppVoucher, signOut }}
+            value={{ session, loading, expired, sealedSession, getTokenForAudience, signIn, signInInto, connectInto, cancelSignIn, resumeSealed, reestablishSealed, staleReason, sealedApprovalPending, getSealedSession, requestAppVoucher, signOut }}
         >
             {children}
         </AuthContext.Provider>

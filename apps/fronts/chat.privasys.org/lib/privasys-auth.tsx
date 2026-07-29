@@ -153,6 +153,13 @@ interface AuthContextValue {
      */
     staleReason: SealedStaleReason;
     /**
+     * True while a sealed-session recovery is waiting on a wallet push
+     * approval — most often because the enclave's platform was upgraded and
+     * the user must approve the new measurement on their phone. Lets the
+     * reconnect UI show "approve on your phone" instead of a bare spinner.
+     */
+    sealedApprovalPending: boolean;
+    /**
      * Return a sealed session for an arbitrary enclave `appHost` (e.g. the
      * chat-service back-end), independent of the primary `sealedSession`
      * (which is the inference instance). Per-host cached; resumes silently
@@ -185,6 +192,7 @@ const AuthContext = createContext<AuthContextValue>({
     resumeSealed: async () => {},
     reestablishSealed: async () => 'unavailable',
     staleReason: null,
+    sealedApprovalPending: false,
     getSealedSession: async () => null,
     requestAppVoucher: async () => {},
     signOut: async () => {}
@@ -221,6 +229,11 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
     const [expired, setExpired] = useState(false);
     const [sealedSession, setSealedSession] = useState<SealedSession | null>(null);
     const [staleReason, setStaleReason] = useState<SealedStaleReason>(null);
+    // True while a sealed-session recovery is waiting on a wallet push
+    // approval (e.g. the enclave's platform was upgraded and the user must
+    // re-approve the new measurement on their phone). Drives the
+    // "approve on your phone" hint on the reconnect banner.
+    const [sealedApprovalPending, setSealedApprovalPending] = useState(false);
     const frameRef = useRef<AuthFrame | null>(null);
     // In-flight one-shot inline sign-in frame (signInInto); lets
     // cancelSignIn abort the ceremony when the user navigates away.
@@ -487,18 +500,50 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
                 return 'ok';
             } catch (err) {
                 const msg = (err as Error).message ?? '';
+
+                // A `no-voucher` or `rejected:<reason>` resume is NOT a
+                // dead-end: the enclave has no usable voucher (none yet, or it
+                // refused the current one because the PLATFORM was upgraded —
+                // `enc-changed`, the session-relay enc_pub is pinned to the
+                // platform measurement — or the app changed, `workload-changed`).
+                // A voucher-only push re-attests through the wallet: the user
+                // reviews exactly what changed and, on one approval, the wallet
+                // mints a fresh voucher bound to the CURRENT enc_pub. This turns
+                // a platform roll from a stranded "Reconnect" into a one-tap
+                // re-approval — no sign-out, no wallet forget/re-add. A hung
+                // silent resume (timeout) is NOT recoverable this way.
+                const recoverable =
+                    !msg.includes('sealed-resume-timeout') &&
+                    (msg.includes('no-voucher') || msg.includes('rejected'));
+                if (recoverable) {
+                    try {
+                        console.warn(`[chat-auth] sealed ${appHost} ${msg} — requesting wallet re-approval`);
+                        setSealedApprovalPending(true);
+                        // Mount this frame's session iframe so the voucher RPC
+                        // has a live channel, then push + resume. requestAppVoucher
+                        // resolves only once a NEW voucher lands (human-scale
+                        // deadline inside the SDK), so it is NOT wrapped in the
+                        // short silent-resume timeout.
+                        await frame.getSession();
+                        await frame.requestAppVoucher(appHost);
+                        const s = await withTimeout(frame.resumeSession(), 15_000, 'sealed-resume-timeout');
+                        setSealedSession(s);
+                        setStaleReason(null);
+                        return 'ok';
+                    } catch (e2) {
+                        // Push declined, timed out, wallet too old, or the enclave
+                        // still refuses → fall through to the stale prompt below.
+                        console.warn(`[chat-auth] wallet re-approval for ${appHost} did not complete:`, (e2 as Error).message);
+                    } finally {
+                        setSealedApprovalPending(false);
+                    }
+                }
+
                 try { frame.destroy(); } catch { /* frame already torn down */ }
-                // The SDK rejects with one of these literal reasons; match
-                // defensively in case the message is wrapped. A rejection may
-                // carry the enclave's reason (`rejected:workload-changed` /
-                // `rejected:enc-changed`) — keep it so the stale banner can
-                // say WHAT changed instead of a generic reconnect prompt.
+                // Recovery exhausted. Keep the enclave's reason
+                // (`rejected:workload-changed` / `rejected:enc-changed`) so the
+                // stale banner says WHAT changed instead of a generic prompt.
                 if (msg.includes('rejected')) {
-                    // Log the enclave's reason: without this the console shows
-                    // NOTHING for the primary appHost's reject (only the
-                    // best-effort chat-service/drive frames log), which made
-                    // the 2026-07-19 sealed-401 spiral undiagnosable from the
-                    // browser.
                     console.warn(`[chat-auth] sealed session for ${appHost} rejected:`, msg);
                     setStaleReason(parseStaleReason(msg));
                     return 'rejected';
@@ -609,7 +654,7 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
 
     return (
         <AuthContext.Provider
-            value={{ session, loading, expired, sealedSession, getTokenForAudience, signIn, signInInto, cancelSignIn, connectInto, resumeSealed, reestablishSealed, staleReason, getSealedSession, requestAppVoucher, signOut }}
+            value={{ session, loading, expired, sealedSession, getTokenForAudience, signIn, signInInto, cancelSignIn, connectInto, resumeSealed, reestablishSealed, staleReason, sealedApprovalPending, getSealedSession, requestAppVoucher, signOut }}
         >
             {children}
         </AuthContext.Provider>
