@@ -16,6 +16,7 @@ import { test, expect } from '@playwright/test';
 import path from 'path';
 import { setupAuth, getToken as getE2eToken } from './e2e-auth';
 import { deleteApp, cleanupApps } from './e2e-cleanup';
+import { appCall } from './e2e-app-call';
 
 const screenshot = (name: string) => path.join(__dirname, 'test-results', `${name}.png`);
 const API = process.env.NEXT_PUBLIC_API_URL || 'https://api-test.developer.privasys.org';
@@ -512,15 +513,9 @@ test.describe('Fast Verification Suite', () => {
 
         // Write a known value to the per-app sealed KV (DEK wrapped by the vault
         // KEK). This is the value we assert survives rotation and upgrade.
-        const store = await page.request.post(
-            `${API}/api/v1/apps/${wasmRotateAppId}/rpc/kv-store`,
-            {
-                headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-                data: { key: WASM_KV_KEY, value: wasmKvValue },
-                timeout: 20_000,
-            },
-        );
-        expect(store.ok(), `kv-store (${store.status()})`).toBeTruthy();
+        const store = await appCall(token, wasmRotateAppId, 'kv-store',
+            { key: WASM_KV_KEY, value: wasmKvValue }, { timeout: 20_000 });
+        expect(store.status === 200 && store.body.status === 'ok', `kv-store (${store.status} ${JSON.stringify(store.body)})`).toBeTruthy();
         wasmRotateDeployed = true;
         console.log(`Vault-backed WASM deployed: ${WASM_ROTATE_APP_NAME} handle=${wasmRotateHandleV1}, stored ${WASM_KV_KEY}=${wasmKvValue}`);
     });
@@ -557,16 +552,9 @@ test.describe('Fast Verification Suite', () => {
         expect((await redeploy.json()).status).toBe('active');
 
         // The upgraded instance serves traffic: the public hello RPC works.
-        const hello = await page.request.post(
-            `${API}/api/v1/apps/${wasmAppId}/rpc/hello`,
-            {
-                headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-                data: {},
-                timeout: 20_000,
-            },
-        );
-        expect(hello.ok()).toBeTruthy();
-        const body = await hello.json();
+        const hello = await appCall(token, wasmAppId, 'hello', {}, { timeout: 20_000 });
+        expect(hello.status, JSON.stringify(hello.body)).toBe(200);
+        const body = hello.body as Record<string, any>;
         expect(body.status).toBe('ok');
         expect(body.returns?.[0]?.value).toMatch(/Hello/i);
         console.log('WASM app upgrade: redeploy active + hello works after upgrade');
@@ -681,16 +669,9 @@ test.describe('Fast Verification Suite', () => {
 
         // The running instance still reads the pre-rotation value (the DEK is
         // unchanged; only its wrap advanced).
-        const readNow = await page.request.post(
-            `${API}/api/v1/apps/${wasmRotateAppId}/rpc/kv-read`,
-            {
-                headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-                data: { key: WASM_KV_KEY },
-                timeout: 20_000,
-            },
-        );
-        expect(readNow.ok()).toBeTruthy();
-        expect((await readNow.json()).returns?.[0]?.value).toBe(wasmKvValue);
+        const readNow = await appCall(token, wasmRotateAppId, 'kv-read', { key: WASM_KV_KEY }, { timeout: 20_000 });
+        expect(readNow.status, JSON.stringify(readNow.body)).toBe(200);
+        expect((readNow.body as Record<string, any>).returns?.[0]?.value).toBe(wasmKvValue);
 
         // Redeploy (upgrade) on the rotated generation: mgmt ships the advanced
         // handle on wasm_load, the enclave reconstructs the new KEK and unwraps the
@@ -706,16 +687,9 @@ test.describe('Fast Verification Suite', () => {
         expect(redeploy.ok(), 'redeploy after rotation').toBeTruthy();
         expect((await redeploy.json()).status).toBe('active');
 
-        const readAfter = await page.request.post(
-            `${API}/api/v1/apps/${wasmRotateAppId}/rpc/kv-read`,
-            {
-                headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-                data: { key: WASM_KV_KEY },
-                timeout: 20_000,
-            },
-        );
-        expect(readAfter.ok()).toBeTruthy();
-        expect((await readAfter.json()).returns?.[0]?.value, 'sealed KV survives rotation + redeploy').toBe(wasmKvValue);
+        const readAfter = await appCall(token, wasmRotateAppId, 'kv-read', { key: WASM_KV_KEY }, { timeout: 20_000 });
+        expect(readAfter.status, JSON.stringify(readAfter.body)).toBe(200);
+        expect((readAfter.body as Record<string, any>).returns?.[0]?.value, 'sealed KV survives rotation + redeploy').toBe(wasmKvValue);
         console.log('WASM key rotation: sealed KV survived re-wrap + redeploy on the new generation');
     });
 
@@ -739,16 +713,9 @@ test.describe('Fast Verification Suite', () => {
         expect(redeploy.ok(), 'redeploy (upgrade)').toBeTruthy();
         expect((await redeploy.json()).status).toBe('active');
 
-        const read = await page.request.post(
-            `${API}/api/v1/apps/${wasmRotateAppId}/rpc/kv-read`,
-            {
-                headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-                data: { key: WASM_KV_KEY },
-                timeout: 20_000,
-            },
-        );
-        expect(read.ok()).toBeTruthy();
-        expect((await read.json()).returns?.[0]?.value, 'sealed KV survives upgrade').toBe(wasmKvValue);
+        const read = await appCall(token, wasmRotateAppId, 'kv-read', { key: WASM_KV_KEY }, { timeout: 20_000 });
+        expect(read.status, JSON.stringify(read.body)).toBe(200);
+        expect((read.body as Record<string, any>).returns?.[0]?.value, 'sealed KV survives upgrade').toBe(wasmKvValue);
         console.log('WASM upgrade: vault-backed sealed KV survived redeploy');
     });
 
@@ -813,22 +780,12 @@ test.describe('Fast Verification Suite', () => {
         test.setTimeout(30_000);
         token = await getToken(page);
 
-        // Goes through management-service → enclave via RA-TLS.
+        // Direct to the enclave's typed shim via the gateway host.
         // `hello` is declared `auth:hello = "public"` in the WIT, so no
         // `app_auth` is required. This is the canary for the RPC path.
-        const resp = await page.request.post(
-            `${API}/api/v1/apps/${wasmAppId}/rpc/hello`,
-            {
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                    'Content-Type': 'application/json',
-                },
-                data: {},
-                timeout: 20_000,
-            },
-        );
-        expect(resp.ok()).toBeTruthy();
-        const body = await resp.json();
+        const resp = await appCall(token, wasmAppId, 'hello', {}, { timeout: 20_000 });
+        expect(resp.status, JSON.stringify(resp.body)).toBe(200);
+        const body = resp.body as Record<string, any>;
         expect(body.status).toBe('ok');
         expect(body.returns?.[0]?.value).toMatch(/Hello/i);
         console.log(`WASM hello: ${body.returns[0].value}`);
@@ -841,22 +798,11 @@ test.describe('Fast Verification Suite', () => {
 
         // With a valid JWT the enclave validates against the app's OIDC
         // config (injected via AppPermissions.oidc at wasm_load time) and
-        // returns the caller's claims.
-        const resp = await page.request.post(
-            `${API}/api/v1/apps/${wasmAppId}/rpc/auth-hello`,
-            {
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                    'Content-Type': 'application/json',
-                },
-                // The portal's RpcProxy forwards the bearer JWT as
-                // `app_auth` when the caller is the app developer.
-                data: {},
-                timeout: 20_000,
-            },
-        );
-        expect(resp.ok()).toBeTruthy();
-        const body = await resp.json();
+        // returns the caller's claims. appCall carries the bearer as
+        // `app_auth` in the body — the shim's contract.
+        const resp = await appCall(token, wasmAppId, 'auth-hello', {}, { timeout: 20_000 });
+        expect(resp.status, JSON.stringify(resp.body)).toBe(200);
+        const body = resp.body as Record<string, any>;
         expect(body.status).toBe('ok');
         const payload = body.returns?.[0]?.value;
         expect(payload).toBeTruthy();

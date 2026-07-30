@@ -14,8 +14,8 @@
  *      a dynamic enum (datasets) and a progress channel (process_status) until
  *      it reaches a terminal "done" state.
  *
- * All calls go through the unary /rpc/{name} relay — the same surface the API
- * Test tab and MCP use.
+ * All tool calls go DIRECT to the enclave (e2e-app-call), the surface real
+ * clients use — the mgmt /rpc relay is retired.
  *
  * Run:
  *   npx playwright test --config apps/fronts/developer.privasys.org/e2e/playwright.config.ts \
@@ -24,6 +24,7 @@
 import { test, expect } from '@playwright/test';
 import { setupAuth, getToken as getE2eToken } from './e2e-auth';
 import { cleanupApps } from './e2e-cleanup';
+import { appCall } from './e2e-app-call';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'https://api-test.developer.privasys.org';
 
@@ -48,19 +49,11 @@ async function getToken(page: import('@playwright/test').Page): Promise<string> 
     return token;
 }
 
-// rpc invokes a tool by name through the owner-authed unary relay and returns
+// rpc invokes a tool by name DIRECTLY on the app's enclave (endpoint resolved
+// from the manifest, owner bearer as the inner authority) and returns
 // { status, body } so callers can assert on both the HTTP status and the JSON.
-async function rpc(page: import('@playwright/test').Page, tok: string, fn: string, params: unknown) {
-    const resp = await page.request.post(
-        `${API}/api/v1/apps/${appId}/rpc/${fn}`,
-        {
-            headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' },
-            data: params ?? {},
-            timeout: 30_000,
-        },
-    );
-    const body = await resp.json().catch(() => ({}));
-    return { status: resp.status(), body };
+async function rpc(_page: import('@playwright/test').Page, tok: string, fn: string, params: unknown) {
+    return appCall(tok, appId, fn, params);
 }
 
 async function deleteApp(page: import('@playwright/test').Page, tok: string, name: string) {
