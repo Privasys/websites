@@ -1,5 +1,7 @@
 import type { App, CreateAppRequest, ReviewRequest, DeploymentLog, BuildJob, Enclave, CreateEnclaveRequest, EnclaveMeasurements, AppVersion, AppDeployment, AttestationResult, TeeType, CachedImage, CloudProvider, CloudRegion, CloudRegionsMeta } from './types';
 import { getApiBaseUrl } from './api-base-url';
+import { callApp, AppCallError, type AppManifest } from '@privasys/app-call';
+import { getEnclaveSealedSession, dropEnclaveAuthFrame } from './enclave-session';
 
 const API_URL = getApiBaseUrl();
 
@@ -372,7 +374,55 @@ export async function getAppSchema(token: string, appId: string): Promise<AppSch
     return resp.schema;
 }
 
+// rpcCall invokes an app tool. SEALED-FIRST: the call goes over a
+// wallet-attested sealed session direct to the enclave (@privasys/app-call),
+// so the caller gets real attestation and no control-plane body cap — the mgmt
+// rpc relay is being retired. The relay remains ONLY as a fallback when the
+// sealed channel itself cannot be established (ceremony declined, relay down);
+// enclave-level errors surface as-is, and every fallback shows up in the
+// proxy-retirement instrumentation, which is exactly the signal wanted.
 export async function rpcCall(token: string, appId: string, func: string, params: unknown, billingApproved?: string, onResponse?: (_status: number, _headers: Headers) => void): Promise<unknown> {
+    const meta = await appCallTarget(token, appId);
+    if (meta?.host) {
+        try {
+            const session = await getEnclaveSealedSession({ appHost: meta.host });
+            let hdrRec: Record<string, string> = {};
+            const data = await callApp({
+                session,
+                appType: meta.type,
+                appName: meta.name,
+                tool: func,
+                params,
+                manifest: meta.manifest,
+                bearer: token,
+                billingApproved,
+                onResponse: (_s, h) => { hdrRec = h; }
+            });
+            // Preserve the page contract: billing facts arrive as response
+            // headers. The wasm runtime reports the charge in its envelope, so
+            // synthesize the header from it when the transport carried none.
+            const hdrs = new Headers(hdrRec);
+            const charged = (data as { billing_charged?: unknown } | null)?.billing_charged;
+            if (typeof charged === 'number' && !hdrs.has('X-Billing-Charged')) {
+                hdrs.set('X-Billing-Charged', `${charged} credits`);
+            }
+            onResponse?.(200, hdrs);
+            return data;
+        } catch (e) {
+            if (e instanceof AppCallError && e.status !== 0) {
+                // The ENCLAVE answered: this is the app's verdict, not a
+                // transport problem — surface it, never fall back.
+                const hdrs = new Headers();
+                if (e.priceCredits !== undefined) hdrs.set('X-Billing-Price', `${e.priceCredits} credits`);
+                onResponse?.(e.status, hdrs);
+                throw new ApiError(e.message, e.status);
+            }
+            // Sealed channel unavailable (sign-in declined, relay down,
+            // timeout): drop the dead frame and fall back to the relay.
+            dropEnclaveAuthFrame(meta.host);
+            console.warn('[rpcCall] sealed path unavailable, falling back to the control-plane relay:', e);
+        }
+    }
     return request<unknown>(`/api/v1/apps/${encodeURIComponent(appId)}/rpc/${encodeURIComponent(func)}`, token, {
         method: 'POST',
         body: JSON.stringify(params),
@@ -381,6 +431,28 @@ export async function rpcCall(token: string, appId: string, func: string, params
         // call unless this matches the measured price exactly.
         ...(billingApproved ? { headers: { 'X-Billing-Approved': billingApproved } } : {})
     }, { proxied: true, onResponse });
+}
+
+// appCallTarget resolves what a direct call needs to know about an app — name,
+// runtime, live hostname, manifest — once per page life. A null host (not
+// deployed, or the lookup failed) sends the call down the relay path.
+const appCallTargets = new Map<string, { name: string; type: string; host: string; manifest: AppManifest | null }>();
+async function appCallTarget(token: string, appId: string): Promise<{ name: string; type: string; host: string; manifest: AppManifest | null } | null> {
+    const hit = appCallTargets.get(appId);
+    if (hit) return hit;
+    try {
+        const app = await getApp(token, appId);
+        const meta = {
+            name: app.name,
+            type: app.app_type,
+            host: app.hostname ?? '',
+            manifest: (app.container_mcp as AppManifest | undefined) ?? null
+        };
+        appCallTargets.set(appId, meta);
+        return meta;
+    } catch {
+        return null;
+    }
 }
 
 // --- Relying parties (self-serve OIDC clients; api-fees plan §8) ---
