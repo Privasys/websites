@@ -26,6 +26,7 @@ import { test, expect } from '@playwright/test';
 import path from 'path';
 import { setupAuth, getToken as getE2eToken } from './e2e-auth';
 import { cleanupApps } from './e2e-cleanup';
+import { appCall } from './e2e-app-call';
 
 const screenshot = (name: string) => path.join(__dirname, 'test-results', `${name}.png`);
 const API = process.env.NEXT_PUBLIC_API_URL || 'https://api-test.developer.privasys.org';
@@ -244,22 +245,11 @@ test.describe('Owners Team + @config-api Freeze Gate', () => {
         test.setTimeout(30_000);
         token = await getToken(page);
 
-        const resp = await page.request.post(
-            `${API}/api/v1/apps/${appId}/rpc/protected-call`,
-            {
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                    'Content-Type': 'application/json',
-                },
-                data: {},
-                timeout: 20_000,
-            },
-        );
+        const resp = await appCall(token, appId, 'protected-call', {}, { timeout: 20_000 });
         // The freeze gate returns the WIT call wrapped in an Error
         // result. We accept either a non-2xx OR a 2xx whose body
         // contains the expected message — both are valid for the test.
-        const body = await resp.json().catch(() => ({}));
-        const text = JSON.stringify(body);
+        const text = JSON.stringify(resp.body);
         expect(text.toLowerCase()).toContain('awaiting initial configuration');
         console.log(`Pre-configure frozen response: ${text.substring(0, 120)}…`);
     });
@@ -269,19 +259,10 @@ test.describe('Owners Team + @config-api Freeze Gate', () => {
         test.setTimeout(30_000);
         token = await getToken(page);
 
-        const resp = await page.request.post(
-            `${API}/api/v1/apps/${appId}/rpc/configure`,
-            {
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                    'Content-Type': 'application/json',
-                },
-                data: { 'api-key': 'super-secret-test-key-1234567890' },
-                timeout: 20_000,
-            },
-        );
-        expect(resp.ok()).toBeTruthy();
-        const body = await resp.json();
+        const resp = await appCall(token, appId, 'configure',
+            { 'api-key': 'super-secret-test-key-1234567890' }, { timeout: 20_000 });
+        expect(resp.status, JSON.stringify(resp.body)).toBe(200);
+        const body = resp.body as Record<string, any>;
         expect(body.status).toBe('ok');
         // A 200 from the RPC layer only means transport succeeded — the WIT
         // function itself can still return Err. `configure` is
@@ -302,19 +283,9 @@ test.describe('Owners Team + @config-api Freeze Gate', () => {
         test.setTimeout(30_000);
         token = await getToken(page);
 
-        const resp = await page.request.post(
-            `${API}/api/v1/apps/${appId}/rpc/protected-call`,
-            {
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                    'Content-Type': 'application/json',
-                },
-                data: {},
-                timeout: 20_000,
-            },
-        );
-        expect(resp.ok()).toBeTruthy();
-        const body = await resp.json();
+        const resp = await appCall(token, appId, 'protected-call', {}, { timeout: 20_000 });
+        expect(resp.status, JSON.stringify(resp.body)).toBe(200);
+        const body = resp.body as Record<string, any>;
         expect(body.status).toBe('ok');
         // protected-call is `result<string, string>`, so the RPC layer wraps
         // the success value as a record `{ ok: "..." }` (cf. configure's
