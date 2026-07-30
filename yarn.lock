@@ -4307,6 +4307,14 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@privasys/app-call@workspace:libs/app-call":
+  version: 0.0.0-use.local
+  resolution: "@privasys/app-call@workspace:libs/app-call"
+  peerDependencies:
+    "@privasys/auth": "*"
+  languageName: unknown
+  linkType: soft
+
 "@privasys/attestation-view@workspace:libs/attestation-view":
   version: 0.0.0-use.local
   resolution: "@privasys/attestation-view@workspace:libs/attestation-view"
