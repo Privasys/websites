@@ -217,7 +217,13 @@ export function ApiTestingTab({ connection, fido2, fido2Actions }: { connection:
             let sealed = false;
             if (appType) {
                 try {
-                    const session = await getAppSealedSession(connection);
+                    const { session, accessToken } = await getAppSealedSession(connection);
+                    // One ceremony, one identity: the sealed sign-in already
+                    // proved who the caller is and minted a platform token, so
+                    // an @auth function must not demand a SECOND ceremony when
+                    // the explorer has no separate app sign-in. The explorer's
+                    // own session (token) still wins when present.
+                    const appAuth = token || accessToken;
                     const innerPath = appType === 'wasm'
                         ? `/rpc/${encodeURIComponent(appName)}/${encodeURIComponent(fn.name)}`
                         : ((fn as { endpoint?: string }).endpoint || `/${fn.name}`);
@@ -227,12 +233,12 @@ export function ApiTestingTab({ connection, fido2, fido2Actions }: { connection:
                     const body = appType === 'wasm'
                         ? {
                             ...paramValues,
-                            ...(token ? { app_auth: token } : {}),
+                            ...(appAuth ? { app_auth: appAuth } : {}),
                             ...(approvedCredits > 0 ? { billing_approved: `${approvedCredits} credits` } : {})
                         }
                         : paramValues;
                     const hdrs: Record<string, string> = {};
-                    if (token) hdrs['X-App-Auth'] = token;
+                    if (appAuth) hdrs['X-App-Auth'] = appAuth;
                     if (approvedCredits > 0) hdrs['X-Billing-Approved'] = `${approvedCredits} credits`;
                     const res = await session.request('POST', innerPath, body, { headers: hdrs });
                     if (typeof res.status !== 'number') throw new Error('sealed channel not ready');
