@@ -13,7 +13,17 @@ export interface AppManifestTool {
 
 export interface AppManifest {
     configure?: AppManifestTool & { description?: string };
-    tools?: Record<string, AppManifestTool>;
+    /** Both shapes exist in the wild: keyed by tool name, or an array of
+     *  named tools (what container manifests actually store). */
+    tools?: Record<string, AppManifestTool> | Array<AppManifestTool & { name: string }>;
+}
+
+/** Find a tool in either manifest shape. */
+function toolIn(manifest: AppManifest | null | undefined, tool: string): AppManifestTool | undefined {
+    const t = manifest?.tools;
+    if (!t) return undefined;
+    if (Array.isArray(t)) return t.find(x => x?.name === tool);
+    return t[tool];
 }
 
 export interface JsonSchema {
@@ -63,7 +73,7 @@ export function acceptFor(prop: JsonSchemaProp | undefined): string {
 export function endpointFor(manifest: AppManifest | null | undefined, tool: string): string {
     if (manifest) {
         if (tool === 'configure' && manifest.configure?.endpoint) return manifest.configure.endpoint;
-        const t = manifest.tools?.[tool];
+        const t = toolIn(manifest, tool);
         if (t?.endpoint) return t.endpoint;
     }
     return `/${tool}`;
@@ -73,7 +83,7 @@ export function endpointFor(manifest: AppManifest | null | undefined, tool: stri
 export function schemaFor(manifest: AppManifest | null | undefined, tool: string): JsonSchema | undefined {
     if (!manifest) return undefined;
     if (tool === 'configure') return manifest.configure?.inputSchema;
-    return manifest.tools?.[tool]?.inputSchema;
+    return toolIn(manifest, tool)?.inputSchema;
 }
 
 /**
