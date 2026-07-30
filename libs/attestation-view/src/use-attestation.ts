@@ -148,7 +148,13 @@ export function useAttestation(target: AttestationTarget): [AttestationState, At
                 body: JSON.stringify({ quote: raw })
             });
             if (res.status === 401 || res.status === 403) {
-                throw new Error('The attestation server rejected the request: token missing or invalid.');
+                // Distinguish "you are not signed in" from "your token broke":
+                // the attestation viewer is public, and an anonymous visitor
+                // never had a token to lose — telling them theirs is invalid
+                // reads as an error they caused.
+                throw new Error(tokenValue
+                    ? 'The attestation server rejected the request: token missing or invalid.'
+                    : 'The attestation server requires a signed-in session. Everything above — certificate, measurements, freshness — is verified locally in your browser; sign in to have the server check the quote signature too.');
             }
             if (!res.ok) {
                 throw new Error(`Verify request failed: ${res.status} ${res.statusText}`);

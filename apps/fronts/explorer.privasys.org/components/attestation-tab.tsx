@@ -83,9 +83,10 @@ export function AttestationTab({ connection }: { connection: ConnectionConfig })
                 <div className='mb-6 rounded-xl border border-amber-300/60 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200'>
                     <div className='flex flex-wrap items-start justify-between gap-3'>
                         <p>
-                            <strong className='font-semibold'>Quote not verified.</strong>{' '}
-                            We couldn&rsquo;t verify this quote with the attestation service: your token is missing or invalid.
-                            A quote is only trustworthy once the attestation server has checked its signature and certificate chain.
+                            <strong className='font-semibold'>Server verification pending.</strong>{' '}
+                            The certificate, measurements and challenge freshness above are verified locally in your
+                            browser. Checking the quote&rsquo;s signature and certificate chain against the Privasys
+                            attestation server needs a signed-in session &mdash; sign in and we&rsquo;ll run it.
                         </p>
                         <button
                             type='button'
