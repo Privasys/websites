@@ -374,63 +374,56 @@ export async function getAppSchema(token: string, appId: string): Promise<AppSch
     return resp.schema;
 }
 
-// rpcCall invokes an app tool. SEALED-FIRST: the call goes over a
-// wallet-attested sealed session direct to the enclave (@privasys/app-call),
-// so the caller gets real attestation and no control-plane body cap — the mgmt
-// rpc relay is being retired. The relay remains ONLY as a fallback when the
-// sealed channel itself cannot be established (ceremony declined, relay down);
-// enclave-level errors surface as-is, and every fallback shows up in the
-// proxy-retirement instrumentation, which is exactly the signal wanted.
+// rpcCall invokes an app tool over a wallet-attested sealed session DIRECT to
+// the enclave (@privasys/app-call): real attestation, no control-plane body
+// cap. The mgmt relay is DELETED — there is no fallback path; a sealed-channel
+// failure (ceremony declined, relay down) surfaces to the caller, and an
+// enclave answer surfaces as the app's verdict.
 export async function rpcCall(token: string, appId: string, func: string, params: unknown, billingApproved?: string, onResponse?: (_status: number, _headers: Headers) => void): Promise<unknown> {
     const meta = await appCallTarget(token, appId);
-    if (meta?.host) {
-        try {
-            const session = await getEnclaveSealedSession({ appHost: meta.host });
-            let hdrRec: Record<string, string> = {};
-            const data = await callApp({
-                session,
-                appType: meta.type,
-                appName: meta.name,
-                tool: func,
-                params,
-                manifest: meta.manifest,
-                bearer: token,
-                billingApproved,
-                onResponse: (_s, h) => { hdrRec = h; }
-            });
-            // Preserve the page contract: billing facts arrive as response
-            // headers. The wasm runtime reports the charge in its envelope, so
-            // synthesize the header from it when the transport carried none.
-            const hdrs = new Headers(hdrRec);
-            const charged = (data as { billing_charged?: unknown } | null)?.billing_charged;
-            if (typeof charged === 'number' && !hdrs.has('X-Billing-Charged')) {
-                hdrs.set('X-Billing-Charged', `${charged} credits`);
-            }
-            onResponse?.(200, hdrs);
-            return data;
-        } catch (e) {
-            if (e instanceof AppCallError && e.status !== 0) {
-                // The ENCLAVE answered: this is the app's verdict, not a
-                // transport problem — surface it, never fall back.
-                const hdrs = new Headers();
-                if (e.priceCredits !== undefined) hdrs.set('X-Billing-Price', `${e.priceCredits} credits`);
-                onResponse?.(e.status, hdrs);
-                throw new ApiError(e.message, e.status);
-            }
-            // Sealed channel unavailable (sign-in declined, relay down,
-            // timeout): drop the dead frame and fall back to the relay.
-            dropEnclaveAuthFrame(meta.host);
-            console.warn('[rpcCall] sealed path unavailable, falling back to the control-plane relay:', e);
-        }
+    if (!meta?.host) {
+        throw new ApiError('app is not deployed (no live hostname to call)', 409);
     }
-    return request<unknown>(`/api/v1/apps/${encodeURIComponent(appId)}/rpc/${encodeURIComponent(func)}`, token, {
-        method: 'POST',
-        body: JSON.stringify(params),
-        // Billing consent (x-privasys.price): the literal approval the user
-        // gave in the charge strip — the attested runtime refuses a priced
-        // call unless this matches the measured price exactly.
-        ...(billingApproved ? { headers: { 'X-Billing-Approved': billingApproved } } : {})
-    }, { proxied: true, onResponse });
+    try {
+        const session = await getEnclaveSealedSession({ appHost: meta.host });
+        let hdrRec: Record<string, string> = {};
+        const data = await callApp({
+            session,
+            appType: meta.type,
+            appName: meta.name,
+            tool: func,
+            params,
+            manifest: meta.manifest,
+            bearer: token,
+            billingApproved,
+            onResponse: (_s, h) => { hdrRec = h; }
+        });
+        // Preserve the page contract: billing facts arrive as response
+        // headers. The wasm runtime reports the charge in its envelope, so
+        // synthesize the header from it when the transport carried none.
+        const hdrs = new Headers(hdrRec);
+        const charged = (data as { billing_charged?: unknown } | null)?.billing_charged;
+        if (typeof charged === 'number' && !hdrs.has('X-Billing-Charged')) {
+            hdrs.set('X-Billing-Charged', `${charged} credits`);
+        }
+        onResponse?.(200, hdrs);
+        return data;
+    } catch (e) {
+        if (e instanceof AppCallError && e.status !== 0) {
+            // The ENCLAVE answered: this is the app's verdict, not a
+            // transport problem.
+            const hdrs = new Headers();
+            if (e.priceCredits !== undefined) hdrs.set('X-Billing-Price', `${e.priceCredits} credits`);
+            onResponse?.(e.status, hdrs);
+            throw new ApiError(e.message, e.status);
+        }
+        // Sealed channel unavailable (sign-in declined, relay down, timeout):
+        // drop the dead frame so the next attempt rebuilds it, and tell the
+        // caller what happened.
+        dropEnclaveAuthFrame(meta.host);
+        const msg = e instanceof Error ? e.message : String(e);
+        throw new ApiError(`sealed session to the app could not be established: ${msg}`, 0);
+    }
 }
 
 // appCallTarget resolves what a direct call needs to know about an app — name,

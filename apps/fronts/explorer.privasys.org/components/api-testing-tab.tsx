@@ -1,11 +1,9 @@
 // API Testing tab — discovers the app's WIT schema, renders a type-aware
-// parameter form per exported function, invokes it over the RA-TLS gateway and
-// shows the response plus a call history. Ported from the legacy explorer.js
-// API tab (loadSchema / sendRpc / renderApiTesting / createParamInput).
-//
-// Endpoint selection mirrors the legacy behavior: with a FIDO2 app session the
-// public `/call/<fn>` path is used (X-App-Auth); otherwise the JWT-gated
-// `/rpc/<fn>` path.
+// parameter form per exported function, invokes it over a wallet-attested
+// sealed session DIRECT to the enclave, and shows the response plus a call
+// history. The mgmt call relays are gone: the schema's app_type picks the
+// wire shape (wasm = the mini's /rpc/<app>/<fn> shim, containers = their own
+// manifest endpoint) and the enclave enforces each function's policy.
 
 'use client';
 
@@ -182,11 +180,6 @@ export function ApiTestingTab({ connection, fido2, fido2Actions }: { connection:
             setHistory((prev) => [{ id: historyCounter.current++, ...entry }, ...prev].slice(0, 20));
         };
         try {
-            // Always the public /call path: it forwards X-App-Auth when present
-            // and allows anonymous calls to public functions (the enclave
-            // enforces each function's policy). The JWT-gated /rpc path is the
-            // developer-portal flow, not the explorer's.
-            const rpcPath = `/api/v1/apps/${encodeURIComponent(appName)}/call/${encodeURIComponent(fn.name)}`;
             // A priced call carries the user's exact-price approval (given via
             // the charge strip) as X-Billing-Approved; the attested runtime
             // refuses priced calls without it and the platform maps refusals
@@ -203,73 +196,55 @@ export function ApiTestingTab({ connection, fido2, fido2Actions }: { connection:
                 ...(extraHeaders ? Object.entries(extraHeaders) : [])
             ]);
             setRespMeta(null);
-            // SEALED-FIRST: the call goes over a wallet-attested sealed session
-            // direct to the enclave (first call per app triggers the wallet
-            // ceremony — calling an API is the part of the explorer that
-            // requires the wallet; viewing attestation stays public). The /call
-            // relay remains only as a fallback when the sealed channel cannot
-            // be established, and every fallback registers in the
-            // proxy-retirement instrumentation. The runtime is known only once
-            // the schema declares app_type (mgmt ≥ the schema-fields release);
-            // without it the relay path still resolves the shape server-side.
+            // The call goes over a wallet-attested sealed session DIRECT to
+            // the enclave (first call per app triggers the wallet ceremony —
+            // calling an API is the part of the explorer that requires the
+            // wallet; viewing attestation stays public). The mgmt /call relay
+            // is DELETED, so the schema must declare the runtime (app_type,
+            // served by every current platform).
             let data: Record<string, unknown> | null = null;
             const appType = (schema as { app_type?: string } | null)?.app_type;
-            let sealed = false;
-            if (appType) {
-                try {
-                    const { session, accessToken } = await getAppSealedSession(connection);
-                    // One ceremony, one identity: the sealed sign-in already
-                    // proved who the caller is and minted a platform token, so
-                    // an @auth function must not demand a SECOND ceremony when
-                    // the explorer has no separate app sign-in. The explorer's
-                    // own session (token) still wins when present.
-                    const appAuth = token || accessToken;
-                    const innerPath = appType === 'wasm'
-                        ? `/rpc/${encodeURIComponent(appName)}/${encodeURIComponent(fn.name)}`
-                        : ((fn as { endpoint?: string }).endpoint || `/${fn.name}`);
-                    // wasm rides the /rpc shim: app_auth and the price consent
-                    // travel in the body (lifted out server-side); containers
-                    // read the headers themselves.
-                    const body = appType === 'wasm'
-                        ? {
-                            ...paramValues,
-                            ...(appAuth ? { app_auth: appAuth } : {}),
-                            ...(approvedCredits > 0 ? { billing_approved: `${approvedCredits} credits` } : {})
-                        }
-                        : paramValues;
-                    const hdrs: Record<string, string> = {};
-                    if (appAuth) hdrs['X-App-Auth'] = appAuth;
-                    if (approvedCredits > 0) hdrs['X-Billing-Approved'] = `${approvedCredits} credits`;
-                    const res = await session.request('POST', innerPath, body, { headers: hdrs });
-                    if (typeof res.status !== 'number') throw new Error('sealed channel not ready');
-                    const text = res.body && res.body.byteLength ? new TextDecoder().decode(res.body) : '';
-                    try {
-                        data = text ? JSON.parse(text) as Record<string, unknown> : {};
-                    } catch {
-                        data = { status: res.status < 300 ? 'ok' : 'error', message: text };
-                    }
-                    setRespMeta({ status: res.status, headers: [['Transport', 'sealed · attested RA-TLS']] });
-                    sealed = true;
-                } catch (err) {
-                    dropAppSealedSession(appHostFor(connection));
-                    console.warn('[explorer] sealed call unavailable, falling back to the /call relay:', err);
-                }
+            if (!appType) {
+                throw new Error('schema does not declare the app runtime (app_type) — the platform is too old for direct calls');
             }
-            if (!sealed) {
-                data = await appFetch<Record<string, unknown>>(base, rpcPath, {
-                    method: 'POST',
-                    body: JSON.stringify(paramValues),
-                    sessionToken: token,
-                    headers: extraHeaders,
-                    onResponse: (status, h) => {
-                        const interesting: [string, string][] = [];
-                        for (const name of ['x-billing-charged', 'x-billing-price', 'content-type']) {
-                            const v = h.get(name);
-                            if (v) interesting.push([name.replace(/\b[a-z]/g, (c) => c.toUpperCase()), v]);
-                        }
-                        setRespMeta({ status, headers: interesting });
+            try {
+                const { session, accessToken } = await getAppSealedSession(connection);
+                // One ceremony, one identity: the sealed sign-in already
+                // proved who the caller is and minted a platform token, so
+                // an @auth function must not demand a SECOND ceremony when
+                // the explorer has no separate app sign-in. The explorer's
+                // own session (token) still wins when present.
+                const appAuth = token || accessToken;
+                const innerPath = appType === 'wasm'
+                    ? `/rpc/${encodeURIComponent(appName)}/${encodeURIComponent(fn.name)}`
+                    : ((fn as { endpoint?: string }).endpoint || `/${fn.name}`);
+                // wasm rides the /rpc shim: app_auth and the price consent
+                // travel in the body (lifted out server-side); containers
+                // read the headers themselves.
+                const body = appType === 'wasm'
+                    ? {
+                        ...paramValues,
+                        ...(appAuth ? { app_auth: appAuth } : {}),
+                        ...(approvedCredits > 0 ? { billing_approved: `${approvedCredits} credits` } : {})
                     }
-                });
+                    : paramValues;
+                const hdrs: Record<string, string> = {};
+                if (appAuth) hdrs['X-App-Auth'] = appAuth;
+                if (approvedCredits > 0) hdrs['X-Billing-Approved'] = `${approvedCredits} credits`;
+                const res = await session.request('POST', innerPath, body, { headers: hdrs });
+                if (typeof res.status !== 'number') throw new Error('sealed channel not ready');
+                const text = res.body && res.body.byteLength ? new TextDecoder().decode(res.body) : '';
+                try {
+                    data = text ? JSON.parse(text) as Record<string, unknown> : {};
+                } catch {
+                    data = { status: res.status < 300 ? 'ok' : 'error', message: text };
+                }
+                setRespMeta({ status: res.status, headers: [['Transport', 'sealed · attested RA-TLS']] });
+            } catch (err) {
+                // Tear the dead frame down so the next attempt rebuilds it;
+                // there is no relay to fall back to.
+                dropAppSealedSession(appHostFor(connection));
+                throw err instanceof Error ? err : new Error('sealed session to the app could not be established');
             }
             const ms = Math.round(performance.now() - start);
             // Detect a dead app session in a 200 response. Three shapes:
