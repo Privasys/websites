@@ -17,11 +17,10 @@
  * Output:
  *   - Access token JSON (header/claims/raw)
  *   - DevTools one-liner to paste in the portal's Console tab
- *   - curl snippet to hit the RPC directly via api-test.developer.privasys.org
+ *   - curl snippet to hit an app's RPC directly on its enclave host
  */
 import { getToken } from './e2e-auth';
 
-const API = process.env.NEXT_PUBLIC_API_URL || 'https://api-test.developer.privasys.org';
 const PORTAL = process.env.E2E_BASE_URL || 'https://developer-test.privasys.org';
 
 function decodeJwtPart(part: string): unknown {
@@ -60,11 +59,10 @@ async function main(): Promise<void> {
     ].join('\n');
     console.log(snippet);
 
-    console.log('\n━━━ curl smoke test (public hello) ━━━');
+    console.log('\n━━━ curl smoke test (public hello, direct to the enclave) ━━━');
     console.log(
-        `curl -sk -H 'Authorization: Bearer ${token}' \\\n` +
-        '  -H \'Content-Type: application/json\' \\\n' +
-        `  -X POST '${API}/api/v1/apps/<APP_ID>/rpc/hello' -d '{}'`
+        'curl -sk -H \'Content-Type: application/json\' \\\n' +
+        '  -X POST \'https://<APP_HOST>/rpc/<APP_NAME>/hello\' -d \'{}\''
     );
 
     console.log(`\nPortal: ${PORTAL}`);

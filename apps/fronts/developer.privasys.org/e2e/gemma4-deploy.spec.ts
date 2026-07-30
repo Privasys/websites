@@ -16,6 +16,7 @@
 import { test, expect } from '@playwright/test';
 import { setupAuth, getToken as getE2eToken } from './e2e-auth';
 import { cleanupApps } from './e2e-cleanup';
+import { appCall } from './e2e-app-call';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'https://api-test.developer.privasys.org';
 const APP_NAME = 'e2e-gemma4-pkg';
@@ -249,29 +250,18 @@ test.describe('Gemma 4 Package Deploy', () => {
         test.setTimeout(60_000);
         token = await getToken(page);
 
-        // POST /v1/models/load via the gateway RPC route. This is
-        // idempotent: returns 202 if loading starts or already in progress,
+        // load_model direct to the enclave (endpoint from the manifest). This
+        // is idempotent: returns 202 if loading starts or already in progress,
         // returns 200 if already loaded.
-        const resp = await page.request.post(
-            `${API}/api/v1/apps/${appId}/rpc/load_model`,
-            {
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                    'Content-Type': 'application/json',
-                },
-                data: {
-                    model: MODEL_NAME,
-                    dtype: 'bfloat16',
-                    max_model_len: 8192,
-                    gpu_memory_utilization: 0.90,
-                },
-                timeout: 30_000,
-            },
-        );
-        const body = await resp.text();
-        console.log(`load_model HTTP ${resp.status()}: ${body.substring(0, 300)}`);
+        const { status, body } = await appCall(token, appId, 'load_model', {
+            model: MODEL_NAME,
+            dtype: 'bfloat16',
+            max_model_len: 8192,
+            gpu_memory_utilization: 0.90,
+        });
+        console.log(`load_model HTTP ${status}: ${JSON.stringify(body).substring(0, 300)}`);
         // 200 (already loaded) or 202 (loading started) are both acceptable.
-        expect([200, 202]).toContain(resp.status());
+        expect([200, 202]).toContain(status);
     });
 
     test('wait for model ready', async ({ page }) => {
@@ -281,19 +271,9 @@ test.describe('Gemma 4 Package Deploy', () => {
         // Poll model_status until state == 'ready'.
         for (let i = 0; i < 120; i++) {
             try {
-                const resp = await page.request.post(
-                    `${API}/api/v1/apps/${appId}/rpc/model_status`,
-                    {
-                        headers: {
-                            Authorization: `Bearer ${token}`,
-                            'Content-Type': 'application/json',
-                        },
-                        data: {},
-                        timeout: 10_000,
-                    },
-                );
-                if (resp.ok()) {
-                    const status = await resp.json();
+                const call = await appCall(token, appId, 'model_status', {}, { timeout: 10_000 });
+                if (call.status >= 200 && call.status < 300) {
+                    const status = call.body as Record<string, any>;
                     const state = status?.state ?? status?.status;
                     const progress = status?.progress ?? 0;
                     const elapsed = status?.elapsed_s ?? 0;
@@ -306,7 +286,7 @@ test.describe('Gemma 4 Package Deploy', () => {
                         expect(false, `model load failed: ${status?.error ?? 'unknown error'}`).toBeTruthy();
                     }
                 } else {
-                    console.log(`Model status poll ${i + 1}/120: HTTP ${resp.status()}`);
+                    console.log(`Model status poll ${i + 1}/120: HTTP ${call.status}`);
                 }
             } catch {
                 console.log(`Model status poll ${i + 1}/120: request failed`);
@@ -322,28 +302,18 @@ test.describe('Gemma 4 Package Deploy', () => {
 
         const PROMPT = 'From the perspective of Jean-Jacques Rousseau, is it legitimate for elected officials to maintain high public deficits, even if it risks burdening future generations? Please reply in 3-5 paragraphs, use UK English.';
 
-        const resp = await page.request.post(
-            `${API}/api/v1/apps/${appId}/rpc/chat`,
-            {
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                    'Content-Type': 'application/json',
-                },
-                data: {
-                    messages: [{ role: 'user', content: PROMPT }],
-                    max_tokens: 1024,
-                    temperature: 0.7,
-                    seed: 123456,
-                },
-                timeout: 90_000,
-            },
-        );
+        const call = await appCall(token, appId, 'chat', {
+            messages: [{ role: 'user', content: PROMPT }],
+            max_tokens: 1024,
+            temperature: 0.7,
+            seed: 123456,
+        }, { timeout: 90_000 });
 
-        const rawText = await resp.text();
-        console.log(`Chat HTTP ${resp.status()}, body length: ${rawText.length}, first 500: ${rawText.substring(0, 500)}`);
-        expect(resp.ok(), `RPC chat failed: HTTP ${resp.status()}, body: ${rawText.substring(0, 300)}`).toBeTruthy();
+        const rawText = JSON.stringify(call.body);
+        console.log(`Chat HTTP ${call.status}, body length: ${rawText.length}, first 500: ${rawText.substring(0, 500)}`);
+        expect(call.status >= 200 && call.status < 300, `chat failed: HTTP ${call.status}, body: ${rawText.substring(0, 300)}`).toBeTruthy();
 
-        const body = JSON.parse(rawText);
+        const body = call.body as Record<string, any>;
         console.log('Chat response:', JSON.stringify(body).substring(0, 500));
 
         // Verify the response contains meaningful content about Rousseau
