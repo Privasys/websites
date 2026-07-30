@@ -101,7 +101,7 @@ interface AuthContextValue {
      * persistent renewal frame picks up the session via cross-origin
      * SSO and starts the silent-renewal timer.
      */
-    signInInto: (container: HTMLElement, opts?: { sessionRelayHost?: string; extraAppHosts?: string[] }) => Promise<void>;
+    signInInto: (container: HTMLElement, opts?: { sessionRelayHost?: string; extraAppHosts?: string[]; requestedAttributes?: readonly string[] }) => Promise<void>;
     /**
      * One-call gate (SDK `connect()`): silent restore → one-tap wallet
      * re-approval (enclave measurement changed) → full ceremony, all
@@ -353,15 +353,24 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
     );
 
     const signInInto = useCallback(
-        async (container: HTMLElement, opts?: { sessionRelayHost?: string; extraAppHosts?: string[] }) => {
+        async (container: HTMLElement, opts?: { sessionRelayHost?: string; extraAppHosts?: string[]; requestedAttributes?: readonly string[] }) => {
             // One-shot inline frame. We don't reuse `frameRef` because
             // `container` is a constructor-only option in @privasys/auth
             // and the persistent frame must keep its renewal iframe
             // attached to <body>.
-            const inline = new AuthFrame({
+            // Share-link redeem is a MINIMAL identity flow: prove a wallet sub
+            // to open a sealed session, nothing more. The account sign-in
+            // (connectInto) still asks for name+email for display, but a visitor
+            // opening a shared file should not be prompted for PII. A restricted
+            // link that genuinely needs attributes passes exactly those here
+            // (and only then). Built as a variable so the requestedAttributes
+            // override rides the config (AuthFrameConfig does not type it, but
+            // the frame honours it at runtime, same as the spread from config).
+            const inlineConfig = {
                 ...config,
                 container,
                 methods: DRIVE_METHODS,
+                requestedAttributes: opts?.requestedAttributes ?? [],
                 ...(opts?.sessionRelayHost
                     ? {
                         sessionRelay: {
@@ -370,7 +379,8 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
                         }
                     }
                     : {})
-            });
+            };
+            const inline = new AuthFrame(inlineConfig);
             inlineFrameRef.current = inline;
             try {
                 const result = await inline.signIn();

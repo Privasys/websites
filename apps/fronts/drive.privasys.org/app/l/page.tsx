@@ -53,16 +53,36 @@ function LinkLanding() {
     const [state, setState] = useState<'resolving' | 'granted' | 'pending' | 'denied' | 'missing-attrs'>('resolving');
     const [missingAttrs, setMissingAttrs] = useState<string[]>([]);
     const [viewing, setViewing] = useState(false);
+    // A restricted link asked for attributes the minimal sign-in did not
+    // request; `stepUp` re-shows the ceremony to request exactly those.
+    const [stepUp, setStepUp] = useState(false);
     const ceremonyRef = useRef<HTMLDivElement>(null);
     const started = useRef(false);
+    const stepUpStarted = useRef(false);
     const redeemed = useRef(false);
 
-    // Mount the sign-in ceremony when signed out.
+    // Mount the sign-in ceremony when signed out. Redeeming a link is a
+    // minimal identity flow (a wallet sub, no PII): we request NO attributes,
+    // so an open link never prompts the visitor for their name or email.
     useEffect(() => {
         if (status !== 'signed-out' || started.current || !ceremonyRef.current) return;
         started.current = true;
         void signInInto(ceremonyRef.current);
     }, [status, signInInto]);
+
+    // Restricted-link step-up: re-run the ceremony requesting exactly the
+    // attributes the link requires, then resolve + redeem again.
+    useEffect(() => {
+        if (!stepUp || stepUpStarted.current || !ceremonyRef.current) return;
+        stepUpStarted.current = true;
+        void (async () => {
+            await signInInto(ceremonyRef.current!, missingAttrs);
+            redeemed.current = false;
+            setStepUp(false);
+            stepUpStarted.current = false;
+            setState('resolving');
+        })();
+    }, [stepUp, missingAttrs, signInInto]);
 
     // The attributes the visitor already consented to share at sign-in,
     // matched against what the link requires.
@@ -183,12 +203,16 @@ function LinkLanding() {
                                 This link is incomplete. Ask the sender for the full link.
                             </p>
                         </Card>
-                    ) : status === 'signed-out' ? (
+                    ) : status === 'signed-out' || stepUp ? (
                         <Card>
                             <div className="mb-3 text-center">
-                                <div className="text-lg font-semibold">Something was shared with you</div>
+                                <div className="text-lg font-semibold">
+                                    {stepUp ? 'Share to request access' : 'Something was shared with you'}
+                                </div>
                                 <div className="mt-1 text-xs" style={{ color: 'var(--drv-text-muted)' }}>
-                                    Sign in with the Privasys Wallet, or install it, to open it securely.
+                                    {stepUp
+                                        ? `This private link asks you to share ${missingAttrs.map(attrLabel).join(', ')}.`
+                                        : 'Sign in with the Privasys Wallet, or install it, to open it securely.'}
                                 </div>
                             </div>
                             <div ref={ceremonyRef} className="h-[560px] w-full overflow-hidden rounded-xl" />
@@ -257,12 +281,21 @@ function LinkLanding() {
                                 </div>
                             ) : state === 'missing-attrs' ? (
                                 <div className="mt-5 rounded-lg border px-3 py-3 text-sm" style={{ borderColor: 'var(--drv-border)', color: 'var(--drv-text-muted)' }}>
-                                    The owner asks visitors to share{' '}
-                                    <span style={{ color: 'var(--drv-text)' }}>
-                                        {missingAttrs.map(attrLabel).join(', ')}
-                                    </span>{' '}
-                                    to request access. Share {missingAttrs.length === 1 ? 'it' : 'them'} from
-                                    your Privasys Wallet when signing in, then open this link again.
+                                    <p>
+                                        The owner asks visitors to share{' '}
+                                        <span style={{ color: 'var(--drv-text)' }}>
+                                            {missingAttrs.map(attrLabel).join(', ')}
+                                        </span>{' '}
+                                        to request access.
+                                    </p>
+                                    <button
+                                        type="button"
+                                        onClick={() => setStepUp(true)}
+                                        className="mt-3 w-full rounded-lg px-3 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+                                        style={{ background: 'var(--drv-accent)' }}
+                                    >
+                                        Share {missingAttrs.length === 1 ? 'it' : 'them'} and continue
+                                    </button>
                                 </div>
                             ) : (
                                 <div className="mt-5 rounded-lg border px-3 py-3 text-sm" style={{ borderColor: 'var(--drv-border)', color: 'var(--drv-text-muted)' }}>
