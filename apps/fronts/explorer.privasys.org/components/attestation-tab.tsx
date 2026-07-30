@@ -75,7 +75,7 @@ export function AttestationTab({ connection }: { connection: ConnectionConfig })
         && !state.verifying
         && !state.quoteVerify
         && !!state.quoteVerifyError
-        && /token|unauthor|401|403/i.test(state.quoteVerifyError);
+        && /token|unauthor|signed-in|401|403/i.test(state.quoteVerifyError);
 
     return (
         <div>
