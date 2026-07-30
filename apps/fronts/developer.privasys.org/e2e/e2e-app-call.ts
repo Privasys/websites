@@ -1,108 +1,64 @@
 /**
  * Direct app calls for e2e suites — the mgmt `/apps/{id}/rpc/{fn}` relay is
  * being retired (direct-sealed-app-calls plan §4b), so tests call the enclave
- * the way real clients do:
+ * the way real clients do.
  *
- *   container → POST https://<hostname><endpoint>   (endpoint from the app's
- *               manifest, `/{fn}` when it declares none), platform bearer in
- *               Authorization — the inner bearer is the sole authority.
- *   wasm      → POST https://<hostname>/rpc/<name>/<fn> (the mini's typed
- *               shim), `app_auth` carried in the body per the shim contract.
- *
- * The enclave serves its RA-TLS chain (not publicly trusted), so calls run in
- * a dedicated request context with ignoreHTTPSErrors. Tests are not attested
- * clients — the CLI and SDK are; this only moves the bytes off the relay.
+ * Transport: `privasys apps call` (CLI ≥ v0.35.0) — RA-TLS direct to the
+ * enclave with local attestation verification, the suite's platform token
+ * presented to the app (`--token`), container endpoints resolved from the
+ * manifest, wasm dispatched through the mini's typed `/rpc/<app>/<fn>` shim.
+ * A plain HTTPS POST to the app's public hostname does NOT work: the gateway
+ * terminates that leg and the enclave refuses plaintext app traffic on it
+ * (`sealed-transport-required`) — only sealed sessions and RA-TLS clients
+ * reach the app, and the CLI is the RA-TLS client.
  */
-import { request, type APIRequestContext } from '@playwright/test';
+import { execFile } from 'node:child_process';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'https://api-test.developer.privasys.org';
 
-interface AppTarget {
-    name: string;
-    appType: string;
-    hostname: string;
-    /** tool name -> endpoint path (containers; from the manifest). */
-    endpoints: Map<string, string>;
-}
-
-const targets = new Map<string, AppTarget>();
-let raCtx: APIRequestContext | null = null;
-
-async function ctx(): Promise<APIRequestContext> {
-    if (!raCtx) raCtx = await request.newContext({ ignoreHTTPSErrors: true });
-    return raCtx;
-}
-
-interface ManifestTool { name?: string; endpoint?: string }
-interface Manifest { configure?: ManifestTool; tools?: Record<string, ManifestTool> | ManifestTool[] }
-
-function endpointsFrom(manifest: Manifest | null | undefined): Map<string, string> {
-    const out = new Map<string, string>();
-    if (!manifest) return out;
-    if (manifest.configure?.endpoint) out.set('configure', manifest.configure.endpoint);
-    const t = manifest.tools;
-    if (Array.isArray(t)) {
-        for (const tool of t) if (tool?.name && tool.endpoint) out.set(tool.name, tool.endpoint);
-    } else if (t) {
-        for (const [name, tool] of Object.entries(t)) if (tool?.endpoint) out.set(name, tool.endpoint);
-    }
-    return out;
-}
-
-async function target(token: string, appId: string): Promise<AppTarget> {
-    const hit = targets.get(appId);
-    if (hit) return hit;
-    const c = await ctx();
-    const resp = await c.get(`${API}/api/v1/apps/${appId}`, {
-        headers: { Authorization: `Bearer ${token}` }
-    });
-    if (!resp.ok()) throw new Error(`resolve app ${appId}: HTTP ${resp.status()}`);
-    const app = await resp.json();
-    if (!app.hostname) throw new Error(`app ${app.name ?? appId} has no live hostname (not deployed?)`);
-    const t: AppTarget = {
-        name: app.name,
-        appType: app.app_type,
-        hostname: app.hostname,
-        endpoints: endpointsFrom(app.container_mcp as Manifest | undefined)
-    };
-    targets.set(appId, t);
-    return t;
-}
-
-/** Drop a cached target (call after redeploys that may move the app). */
-export function forgetAppTarget(appId: string): void {
-    targets.delete(appId);
-}
-
 /**
  * Invoke a tool on the app's enclave directly. Returns { status, body } like
- * the old relay helper so call sites keep their assertions.
+ * the old relay helper so call sites keep their assertions: `status` is the
+ * app's HTTP status (200 on success, the refused status on 4xx/5xx), `body`
+ * the parsed JSON response (or { raw } when not JSON).
  */
-export async function appCall(
+export function appCall(
     token: string,
     appId: string,
     fn: string,
     params: unknown,
     opts?: { timeout?: number }
 ): Promise<{ status: number; body: Record<string, unknown> }> {
-    const t = await target(token, appId);
-    const c = await ctx();
-    const timeout = opts?.timeout ?? 30_000;
-    let resp;
-    if (t.appType === 'wasm') {
-        resp = await c.post(`https://${t.hostname}/rpc/${t.name}/${fn}`, {
-            headers: { 'Content-Type': 'application/json' },
-            data: { ...(params as Record<string, unknown> ?? {}), app_auth: token },
-            timeout
-        });
-    } else {
-        const endpoint = t.endpoints.get(fn) ?? `/${fn}`;
-        resp = await c.post(`https://${t.hostname}${endpoint}`, {
-            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-            data: params ?? {},
-            timeout
-        });
-    }
-    const body = await resp.json().catch(async () => ({ raw: await resp.text().catch(() => '') }));
-    return { status: resp.status(), body };
+    const args = [
+        'apps', 'call', appId, fn,
+        '--data', JSON.stringify(params ?? {}),
+        '--token', token
+    ];
+    return new Promise((resolve, reject) => {
+        execFile(
+            process.platform === 'win32' ? 'privasys.exe' : 'privasys',
+            args,
+            {
+                timeout: opts?.timeout ?? 30_000,
+                maxBuffer: 32 * 1024 * 1024,
+                env: { ...process.env, PRIVASYS_ENDPOINT: API }
+            },
+            (err, stdout, stderr) => {
+                let body: Record<string, unknown>;
+                try {
+                    body = JSON.parse(stdout);
+                } catch {
+                    body = { raw: stdout };
+                }
+                if (!err) return resolve({ status: 200, body });
+                // Non-2xx surfaces as "app returned status NNN" with the body
+                // already streamed to stdout; anything else (enclave
+                // unreachable, attestation failure) is a transport error the
+                // test should see as a rejection.
+                const m = /app returned status (\d+)/.exec(`${stderr}\n${err.message}`);
+                if (m) return resolve({ status: Number(m[1]), body });
+                reject(new Error(`apps call ${fn} failed: ${stderr || err.message}`));
+            }
+        );
+    });
 }
