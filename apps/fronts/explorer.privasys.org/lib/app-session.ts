@@ -13,10 +13,19 @@
 import { AuthFrame, type AuthFrameConfig, type SealedSession } from '@privasys/auth';
 import type { ConnectionConfig } from '~/lib/config';
 
+export interface AppSession {
+    session: SealedSession;
+    /** Platform access token minted by the SAME ceremony that attested the
+     *  sealed channel. Used as app_auth when the explorer has no separate app
+     *  sign-in — the user just proved who they are to their wallet; asking
+     *  again to satisfy an @auth function is the same identity twice. */
+    accessToken: string;
+}
+
 interface CacheEntry {
     frame: AuthFrame;
-    pending: Promise<void> | null;
-    signedIn: boolean;
+    pending: Promise<AppSession> | null;
+    ready: AppSession | null;
 }
 
 const frameCache = new Map<string, CacheEntry>();
@@ -39,24 +48,29 @@ function buildAuthFrame(connection: ConnectionConfig, appHost: string): AuthFram
     return new AuthFrame(cfg);
 }
 
-/** Wallet-attested sealed session for the app, cached per host. */
-export async function getAppSealedSession(connection: ConnectionConfig): Promise<SealedSession> {
+/** Wallet-attested sealed session + the ceremony's own access token, cached
+ *  per host. connect() restores silently when it can, so a reload does not
+ *  re-run the ceremony. */
+export async function getAppSealedSession(connection: ConnectionConfig): Promise<AppSession> {
     const appHost = appHostFor(connection);
     let entry = frameCache.get(appHost);
     if (!entry) {
-        entry = { frame: buildAuthFrame(connection, appHost), pending: null, signedIn: false };
+        entry = { frame: buildAuthFrame(connection, appHost), pending: null, ready: null };
         frameCache.set(appHost, entry);
     }
-    if (!entry.signedIn) {
-        if (!entry.pending) {
-            entry.pending = entry.frame.signIn().then(
-                () => { if (entry) entry.signedIn = true; },
-                (err) => { dropAppSealedSession(appHost); throw err; }
-            ).finally(() => { if (entry) entry.pending = null; });
-        }
-        await entry.pending;
+    if (entry.ready) return entry.ready;
+    if (!entry.pending) {
+        entry.pending = entry.frame.connect().then(
+            (r) => {
+                if (!r.session) throw new Error('no sealed session');
+                const ready = { session: r.session, accessToken: r.accessToken };
+                if (entry) entry.ready = ready;
+                return ready;
+            },
+            (err) => { dropAppSealedSession(appHost); throw err; }
+        ).finally(() => { if (entry) entry.pending = null; });
     }
-    return entry.frame.session();
+    return entry.pending;
 }
 
 /** Tear down a dead sealed frame so the next call rebuilds it. */
