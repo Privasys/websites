@@ -7,6 +7,8 @@
 // The client secret is shown exactly once, at creation.
 
 import { useCallback, useEffect, useState } from 'react';
+import { fetchAttributeReferential, type CanonicalAttribute } from '@privasys/auth';
+import { PrivasysAttributePicker } from '@privasys/auth/react';
 import { useAuth } from '~/lib/privasys-auth';
 import { listOAuthClients, createOAuthClient, updateOAuthClientBilling, type OAuthClient, type CreatedOAuthClient } from '~/lib/api';
 
@@ -19,44 +21,24 @@ export function RelyingPartiesSection() {
     const [showForm, setShowForm] = useState(false);
     const [name, setName] = useState('');
     const [redirects, setRedirects] = useState('');
-    const [attributes, setAttributes] = useState('');
     const [billable, setBillable] = useState(true);
 
-    // Canonical attribute referential (the IdP's golden list — registration
-    // refuses anything outside it), rendered as checkboxes. Falls back to a
-    // free-text input if the referential cannot be fetched. identityVerifiable
-    // marks attributes that can carry government-document assurance (verified
-    // by the identity-verifier enclave from a passport/ID + biometrics) —
-    // tagged clearly so an RP knows which claims can be gov-backed.
+    // The attribute whitelist, drawn by the SDK's own picker so a developer sees
+    // the same government-ID and Paid markers here as their users will meet in
+    // the wallet's consent screen. The SDK bundles the canonical list, so the
+    // picker renders without a network round trip; `catalog` overrides it with
+    // whatever the IdP is serving right now, because this page is where somebody
+    // registers for an attribute that shipped after this build.
     //
-    // Assurance belongs to the request, so an attribute may appear at more than
-    // one tier: `paid` is set when SOME tier is billable (the gov one), and
-    // `requestOnly` when that tier is only reachable by naming the attribute
-    // here. The second flag is the one that makes this list load-bearing rather
-    // than advisory: leave the whitelist empty and a request-only tier can never
-    // be requested at all, however the scope is spelled.
-    const [catalog, setCatalog] = useState<
-        { key: string; label: string; gov?: boolean; paid?: boolean; requestOnly?: boolean }[] | null
-    >(null);
-    const [selectedAttrs, setSelectedAttrs] = useState<Set<string>>(new Set());
+    // The whitelist is load-bearing, not advisory. Every government-backed `_id`
+    // key is request-only: no spelling of the scope reaches one, so a client that
+    // does not name it here can never ask for it.
+    const [catalog, setCatalog] = useState<CanonicalAttribute[] | undefined>(undefined);
+    const [selectedAttrs, setSelectedAttrs] = useState<string[]>([]);
     useEffect(() => {
-        type Tier = { assurance: string; requestOnly?: boolean; marketplace?: { key: string; billable: boolean } };
-        fetch('https://privasys.id/referential/canonical-attributes.json')
-            .then((r) => (r.ok ? r.json() : null))
-            .then((d: { attributes?: { key: string; label: string; identityVerifiable?: boolean; assuranceTiers?: Tier[]; marketplace?: { key: string; billable: boolean } }[] } | null) => {
-                if (!d?.attributes?.length) return;
-                setCatalog(d.attributes.map((a) => ({
-                    key: a.key,
-                    label: a.label,
-                    gov: a.identityVerifiable,
-                    // Pre-tier documents put the binding on the attribute; this
-                    // page fetches the referential at runtime and so routinely
-                    // meets a document one release away from itself.
-                    paid: a.assuranceTiers?.some((t) => t.marketplace?.billable) || !!a.marketplace?.billable,
-                    requestOnly: a.assuranceTiers?.some((t) => t.requestOnly) || undefined
-                })));
-            })
-            .catch(() => { /* fallback input stays */ });
+        fetchAttributeReferential()
+            .then(setCatalog)
+            .catch(() => { /* the SDK's bundled list stands in */ });
     }, []);
     const [rpId, setRpId] = useState('');
     const [creating, setCreating] = useState(false);
@@ -76,9 +58,6 @@ export function RelyingPartiesSection() {
         if (!token || creating) return;
         setError(null);
         const redirectUris = redirects.split(/\s+/).map((s) => s.trim()).filter(Boolean);
-        const requiredAttributes = catalog
-            ? Array.from(selectedAttrs)
-            : attributes.split(/[,\s]+/).map((s) => s.trim()).filter(Boolean);
         if (!name.trim() || redirectUris.length === 0) {
             setError('Name and at least one redirect URI are required.');
             return;
@@ -88,13 +67,13 @@ export function RelyingPartiesSection() {
             const c = await createOAuthClient(token, {
                 client_name: name.trim(),
                 redirect_uris: redirectUris,
-                required_attributes: requiredAttributes,
+                required_attributes: selectedAttrs,
                 billable_rp: billable,
                 rp_id: rpId.trim() || undefined
             });
             setCreated(c);
             setShowForm(false);
-            setName(''); setRedirects(''); setAttributes(''); setRpId(''); setBillable(true); setSelectedAttrs(new Set());
+            setName(''); setRedirects(''); setRpId(''); setBillable(true); setSelectedAttrs([]);
             load();
         } catch (e) {
             setError(e instanceof Error ? e.message : 'Registration failed');
@@ -173,51 +152,14 @@ export function RelyingPartiesSection() {
                     </div>
                     <div>
                         <label className="block text-xs font-medium text-black/60 dark:text-white/60 mb-1">Attribute whitelist (the attributes this client may request)</label>
-                        {catalog ? (
-                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1.5 rounded-lg border border-black/10 dark:border-white/15 p-3">
-                                {catalog.map((a) => (
-                                    <label key={a.key} className="flex items-center gap-2 text-sm cursor-pointer">
-                                        <input
-                                            type="checkbox"
-                                            checked={selectedAttrs.has(a.key)}
-                                            onChange={(e) => {
-                                                setSelectedAttrs((prev) => {
-                                                    const next = new Set(prev);
-                                                    if (e.target.checked) next.add(a.key); else next.delete(a.key);
-                                                    return next;
-                                                });
-                                            }}
-                                            className="rounded"
-                                        />
-                                        <span>{a.label}</span>
-                                        <code className="text-[10px] text-black/35 dark:text-white/35">{a.key}</code>
-                                        {a.gov && (
-                                            <span
-                                                title="Can be government-verified: attested against a passport or identity document (with biometrics) by the identity-verifier enclave. Request it under the `identity` scope to get that tier; under `profile` the same attribute comes back self-asserted."
-                                                className="inline-flex items-center rounded-full bg-indigo-100 dark:bg-indigo-900/30 px-1.5 py-px text-[9px] font-semibold uppercase tracking-wide text-indigo-700 dark:text-indigo-300"
-                                            >
-                                                Gov
-                                            </span>
-                                        )}
-                                        {a.paid && (
-                                            <span
-                                                title={
-                                                    a.requestOnly
-                                                        ? 'Charged per disclosure at its government-verified tier, and only reachable when this client names it here — a scope alone will never pull it.'
-                                                        : 'Charged per disclosure at its government-verified tier.'
-                                                }
-                                                className="inline-flex items-center rounded-full bg-amber-100 dark:bg-amber-900/30 px-1.5 py-px text-[9px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300"
-                                            >
-                                                Paid
-                                            </span>
-                                        )}
-                                    </label>
-                                ))}
-                            </div>
-                        ) : (
-                            <input value={attributes} onChange={(e) => setAttributes(e.target.value)} placeholder="age_over_18, given_name"
-                                className="w-full rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-3 py-2 text-sm font-mono focus:outline-none focus:border-black/30 dark:focus:border-white/30" />
-                        )}
+                        <div className="rounded-lg border border-black/10 dark:border-white/15 p-3">
+                            <PrivasysAttributePicker
+                                attributes={catalog}
+                                selected={selectedAttrs}
+                                onChange={setSelectedAttrs}
+                                showKeys
+                            />
+                        </div>
                     </div>
                     <div className="flex items-center gap-6">
                         <label className="flex items-center gap-2 text-sm">
