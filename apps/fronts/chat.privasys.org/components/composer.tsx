@@ -6,7 +6,7 @@ import type { SamplingParams } from '~/lib/sampling';
 import type { UserTool } from '~/lib/chat-service-api';
 import type { AttachIntent } from '~/lib/drive-chat-api';
 import type { MemoryMode, ScopeFolder } from '~/lib/use-ai-scope';
-import { ModelPicker } from './model-picker';
+import { ModelModePicker } from './model-mode-picker';
 import { SamplingEditor } from './sampling-editor';
 
 /** Response mode: 'fast' answers directly, 'thinking' reasons first. */
@@ -249,16 +249,14 @@ export function Composer({
                     )}
 
                     <div className="ml-1">
-                        <ModelPicker
+                        <ModelModePicker
                             instance={instance}
                             selected={model}
                             onSelect={onModelChange}
+                            mode={mode}
+                            onModeChange={onModeChange}
                         />
                     </div>
-
-                    {mode && onModeChange && (
-                        <ModeDropdown mode={mode} onChange={onModeChange} />
-                    )}
 
                     {toolsAvailable && (
                         <div className="relative ml-1">
@@ -374,7 +372,6 @@ export function Composer({
                             className={`ml-1 inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ${showAdvanced ? 'text-[var(--color-text-primary)]' : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]'}`}
                         >
                             <SlidersIcon />
-                            <span className="hidden sm:inline">Advanced</span>
                         </button>
                     )}
 
@@ -420,130 +417,6 @@ export function Composer({
 // Fast/Thinking dropdown. Fast is the default: the model answers
 // directly (chat_template_kwargs.enable_thinking=false). Thinking lets
 // it reason step by step first — slower, better on hard problems.
-function ModeDropdown({
-    mode,
-    onChange
-}: {
-    mode: ChatMode;
-    onChange: (next: ChatMode) => void;
-}) {
-    const [open, setOpen] = useState(false);
-    return (
-        <div className="relative ml-1">
-            <button
-                type="button"
-                onClick={() => setOpen((s) => !s)}
-                aria-expanded={open}
-                title="Response mode"
-                className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
-            >
-                {mode === 'fast' ? <BoltIcon /> : <BrainIcon />}
-                <span className="hidden sm:inline">{mode === 'fast' ? 'Fast' : 'Thinking'}</span>
-                <ChevronDownIcon />
-            </button>
-
-            {open && (
-                <>
-                    <button
-                        type="button"
-                        aria-hidden="true"
-                        tabIndex={-1}
-                        onClick={() => setOpen(false)}
-                        className="fixed inset-0 z-10 cursor-default"
-                    />
-                    <div className="absolute bottom-full left-0 z-20 mb-2 w-64 overflow-hidden rounded-xl border border-[var(--color-border-dark)] bg-[var(--color-surface-1)] py-1 shadow-xl shadow-black/30">
-                        <ModeOption
-                            active={mode === 'fast'}
-                            icon={<BoltIcon />}
-                            label="Fast"
-                            description="Answers directly. Best for everyday questions."
-                            onSelect={() => {
-                                onChange('fast');
-                                setOpen(false);
-                            }}
-                        />
-                        <ModeOption
-                            active={mode === 'thinking'}
-                            icon={<BrainIcon />}
-                            label="Thinking"
-                            description="Reasons step by step before answering. Slower, better on hard problems."
-                            onSelect={() => {
-                                onChange('thinking');
-                                setOpen(false);
-                            }}
-                        />
-                    </div>
-                </>
-            )}
-        </div>
-    );
-}
-
-function ModeOption({
-    active,
-    icon,
-    label,
-    description,
-    onSelect
-}: {
-    active: boolean;
-    icon: ReactNode;
-    label: string;
-    description: string;
-    onSelect: () => void;
-}) {
-    return (
-        <button
-            type="button"
-            onClick={onSelect}
-            className="flex w-full items-start gap-2.5 px-3 py-2 text-left hover:bg-[var(--color-surface-2)]/60"
-        >
-            <span className={`mt-0.5 ${active ? 'text-[var(--color-primary-blue)]' : 'text-[var(--color-text-muted)]'}`}>
-                {icon}
-            </span>
-            <span className="min-w-0 flex-1">
-                <span className={`block text-sm ${active ? 'font-medium text-[var(--color-text-primary)]' : 'text-[var(--color-text-primary)]'}`}>
-                    {label}
-                </span>
-                <span className="block text-[11px] text-[var(--color-text-muted)]">
-                    {description}
-                </span>
-            </span>
-            {active && (
-                <svg className="mt-1 h-3.5 w-3.5 shrink-0 text-[var(--color-primary-blue)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                    <path d="M20 6 9 17l-5-5" />
-                </svg>
-            )}
-        </button>
-    );
-}
-
-function BoltIcon() {
-    return (
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-            <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z" />
-        </svg>
-    );
-}
-
-function BrainIcon() {
-    return (
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-            <path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z" />
-            <path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z" />
-            <path d="M12 5v13" />
-        </svg>
-    );
-}
-
-function ChevronDownIcon() {
-    return (
-        <svg width="10" height="10" viewBox="0 0 12 12" fill="none" aria-hidden>
-            <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-    );
-}
-
 
 function ToolSectionLabel({ children }: { children: ReactNode }) {
     return (
@@ -766,11 +639,15 @@ function ModeChip({
     );
 }
 
+// A brain, read as one at 15px: the two hemispheres plus the central fissure
+// that makes the silhouette legible. Without the middle stroke the two lobes
+// close into a blob at this size.
 function MemoryIcon() {
     return (
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
             <path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z" />
             <path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z" />
+            <path d="M12 5v13" />
         </svg>
     );
 }
