@@ -131,7 +131,12 @@ const MARKETPLACE_ROWS: { attribute: string; assurance: string; price: string }[
     { attribute: 'Age over a threshold (18, 21, …)', assurance: 'Gov-verified', price: '10,000 credits ≈ £0.01' },
     { attribute: 'Nationality', assurance: 'Gov-verified', price: '10,000 credits ≈ £0.01' },
     { attribute: 'Given / family name', assurance: 'Gov-verified', price: '10,000 credits ≈ £0.01' },
-    { attribute: 'Document valid (a genuine ID was verified)', assurance: 'Gov-verified', price: '10,000 credits ≈ £0.01' }
+    { attribute: 'Document valid (a genuine ID was verified)', assurance: 'Gov-verified', price: '10,000 credits ≈ £0.01' },
+    {
+        attribute: 'Document fields (birth date, expiry, place of birth, personal number, ID photo)',
+        assurance: 'Gov-verified',
+        price: '10,000 credits ≈ £0.01'
+    }
 ];
 
 export default function PricingPage() {
