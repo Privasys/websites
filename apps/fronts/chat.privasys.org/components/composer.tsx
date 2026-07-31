@@ -7,6 +7,7 @@ import type { UserTool } from '~/lib/chat-service-api';
 import type { AttachIntent } from '~/lib/drive-chat-api';
 import type { MemoryMode, ScopeFolder } from '~/lib/use-ai-scope';
 import { ModelModePicker } from './model-mode-picker';
+import { MemoryIcon } from './memory-icon';
 import { SamplingEditor } from './sampling-editor';
 
 /** Response mode: 'fast' answers directly, 'thinking' reasons first. */
@@ -518,11 +519,21 @@ function MemoryControl({
                 onClick={() => onOpenChange(!open)}
                 aria-expanded={open}
                 title="What I can remember. Retrieval runs inside the attested enclave over your sealed session — the operator never sees it."
-                className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ${open || on ? 'text-[var(--color-text-primary)]' : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]'}`}
+                // On, Memory takes the brand green AND a soft tint, and names what
+                // it is recalling. Colour alone would not be a state signal for
+                // anyone who cannot separate the hues, so the fill and the label
+                // carry it too. Off, it is as quiet as its neighbours.
+                className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ${
+                    on
+                        ? 'bg-[var(--color-primary-green)]/10 text-[var(--color-primary-green)]'
+                        : open
+                            ? 'text-[var(--color-text-primary)]'
+                            : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]'
+                }`}
             >
                 <MemoryIcon />
                 <span className="hidden sm:inline">Memory</span>
-                <span className="hidden text-[var(--color-text-muted)] sm:inline">· {summary}</span>
+                {on && <span className="hidden opacity-80 sm:inline">· {summary}</span>}
             </button>
             {open && (
                 <>
@@ -639,18 +650,6 @@ function ModeChip({
     );
 }
 
-// A brain, read as one at 15px: the two hemispheres plus the central fissure
-// that makes the silhouette legible. Without the middle stroke the two lobes
-// close into a blob at this size.
-function MemoryIcon() {
-    return (
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-            <path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z" />
-            <path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z" />
-            <path d="M12 5v13" />
-        </svg>
-    );
-}
 
 function PlusGlyph() {
     return (
