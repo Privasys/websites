@@ -24,7 +24,7 @@ import {
 } from '~/lib/drive-api';
 import { FileViewer, canPreview } from '~/components/file-viewer';
 import { SharedBrowser } from '~/components/shared-browser';
-import { SHARE_ATTRIBUTES } from '~/lib/share-attributes';
+import { attributeLabel, loadShareAttributes, type ShareAttribute } from '~/lib/share-attributes';
 import { formatBytes } from '~/lib/format';
 import { FileIcon, FolderIcon, DownloadIcon, LockIcon, ShieldCheck } from '~/components/icons';
 
@@ -52,6 +52,10 @@ function LinkLanding() {
     const [error, setError] = useState<string | null>(null);
     const [state, setState] = useState<'resolving' | 'granted' | 'pending' | 'denied' | 'missing-attrs'>('resolving');
     const [missingAttrs, setMissingAttrs] = useState<string[]>([]);
+    // Labels for the keys the link demands, from the canonical referential.
+    // Until it arrives the raw key is shown, which is worse prose but never
+    // wrong; a hardcoded table here would go stale against the wallet's.
+    const [shareAttrs, setShareAttrs] = useState<ShareAttribute[]>([]);
     const [viewing, setViewing] = useState(false);
     // A restricted link asked for attributes the minimal sign-in did not
     // request; `stepUp` re-shows the ceremony to request exactly those.
@@ -60,6 +64,16 @@ function LinkLanding() {
     const started = useRef(false);
     const stepUpStarted = useRef(false);
     const redeemed = useRef(false);
+
+    useEffect(() => {
+        let live = true;
+        loadShareAttributes()
+            .then((a) => live && setShareAttrs(a))
+            .catch(() => undefined);
+        return () => {
+            live = false;
+        };
+    }, []);
 
     // Mount the sign-in ceremony when signed out. Redeeming a link is a
     // minimal identity flow (a wallet sub, no PII): we request NO attributes,
@@ -211,7 +225,7 @@ function LinkLanding() {
                                 </div>
                                 <div className="mt-1 text-xs" style={{ color: 'var(--drv-text-muted)' }}>
                                     {stepUp
-                                        ? `This private link asks you to share ${missingAttrs.map(attrLabel).join(', ')}.`
+                                        ? `This private link asks you to share ${missingAttrs.map((k) => attributeLabel(shareAttrs, k)).join(', ')}.`
                                         : 'Sign in with the Privasys Wallet, or install it, to open it securely.'}
                                 </div>
                             </div>
@@ -284,7 +298,7 @@ function LinkLanding() {
                                     <p>
                                         The owner asks visitors to share{' '}
                                         <span style={{ color: 'var(--drv-text)' }}>
-                                            {missingAttrs.map(attrLabel).join(', ')}
+                                            {missingAttrs.map((k) => attributeLabel(shareAttrs, k)).join(', ')}
                                         </span>{' '}
                                         to request access.
                                     </p>
@@ -335,10 +349,6 @@ function LinkLanding() {
             />
         </div>
     );
-}
-
-function attrLabel(key: string): string {
-    return SHARE_ATTRIBUTES.find((a) => a.key === key)?.label ?? key;
 }
 
 function asNode(r: ResolvedLink): DriveNode {

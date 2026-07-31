@@ -16,7 +16,7 @@ import {
     type TenantKind
 } from '~/lib/drive-api';
 import { avatarColor, granteeLabel, initials } from '~/lib/format';
-import { SHARE_ATTRIBUTES, assuranceLabel } from '~/lib/share-attributes';
+import { assuranceLabel, loadShareAttributes, type ShareAttribute } from '~/lib/share-attributes';
 import { CloseIcon, FolderIcon, FileIcon, LinkIcon, LockIcon, TrashIcon } from './icons';
 
 // Tenant member roles an enterprise folder ACL can narrow to.
@@ -53,6 +53,22 @@ export function ShareDialog({
     const [reqAttrs, setReqAttrs] = useState<string[]>(['name']);
     const [generated, setGenerated] = useState<CreatedLink | null>(null);
     const [copied, setCopied] = useState<string | null>(null); // link id last copied
+
+    // What a visitor can be asked to present, read from the canonical
+    // referential rather than listed here. Null while it loads: the create
+    // button already refuses an empty selection, so a referential the browser
+    // cannot reach blocks a restricted link instead of offering keys the wallet
+    // might no longer honour.
+    const [shareAttrs, setShareAttrs] = useState<ShareAttribute[] | null>(null);
+    useEffect(() => {
+        let live = true;
+        loadShareAttributes()
+            .then((a) => live && setShareAttrs(a))
+            .catch(() => live && setShareAttrs([]));
+        return () => {
+            live = false;
+        };
+    }, []);
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -207,8 +223,13 @@ export function ShareDialog({
                                 <div className="mb-1.5 text-xs font-medium" style={{ color: 'var(--drv-text-muted)' }}>
                                     Require the visitor to present
                                 </div>
+                                {shareAttrs !== null && shareAttrs.length === 0 && (
+                                    <div className="text-xs" style={{ color: 'var(--drv-text-muted)' }}>
+                                        Could not reach the attribute referential. Reopen this dialog to retry.
+                                    </div>
+                                )}
                                 <div className="flex flex-wrap gap-2">
-                                    {SHARE_ATTRIBUTES.map((a) => (
+                                    {(shareAttrs ?? []).map((a) => (
                                         <button
                                             key={a.key}
                                             onClick={() => toggleAttr(a.key)}
