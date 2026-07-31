@@ -5,9 +5,7 @@ import type { AvailableModel, Instance } from '~/lib/types';
 import type { SamplingParams } from '~/lib/sampling';
 import type { UserTool } from '~/lib/chat-service-api';
 import type { AttachIntent } from '~/lib/drive-chat-api';
-import type { MemoryMode, ScopeFolder } from '~/lib/use-ai-scope';
 import { ModelModePicker } from './model-mode-picker';
-import { MemoryIcon } from './memory-icon';
 import { SamplingEditor } from './sampling-editor';
 
 /** Response mode: 'fast' answers directly, 'thinking' reasons first. */
@@ -55,14 +53,7 @@ export function Composer({
     attachEnabled,
     attachments,
     onAttachFile,
-    memoryEnabled,
-    memoryMode,
-    memorySummary,
-    onSetMemoryMode,
-    memoryOn,
-    onSetMemoryOn,
-    memoryFolders,
-    onManageMemory,
+    toolPills,
     placeholder,
     autoFocus,
     disabledReason
@@ -104,21 +95,11 @@ export function Composer({
     attachments?: AttachmentChip[];
     /** Upload a picked file into the current conversation with an intent. */
     onAttachFile?: (file: File, intent: AttachIntent) => void;
-    /** Drive as the assistant's memory. When memoryEnabled, the composer shows
-     *  a Memory pill: `Memory/` is always on, and the user chooses what else
-     *  the assistant may recall. Writes go straight to the AI-scope grant, so
-     *  the choice is durable, cross-device, and honoured by BOTH retrieval
-     *  paths (enclave and client fallback) — there is no second toggle. */
-    memoryEnabled?: boolean;
-    memoryMode?: MemoryMode;
-    memorySummary?: string;
-    onSetMemoryMode?: (mode: MemoryMode) => void | Promise<void>;
-    /** Memory itself (the assistant's notes). On by default, switchable off. */
-    memoryOn?: boolean;
-    onSetMemoryOn?: (on: boolean) => void;
-    /** The user's AI-enabled Drive folders, listed read-only in the popover. */
-    memoryFolders?: ScopeFolder[];
-    onManageMemory?: () => void;
+    /** Pills for MCP servers advertising a settings surface (the generic
+     *  tool-settings contract) — e.g. the fleet Drive server's "Memory"
+     *  pill. Composed by the shell (FeaturedToolPill); the composer just
+     *  places them in the bar. */
+    toolPills?: ReactNode;
     placeholder?: string;
     autoFocus?: boolean;
     /**
@@ -133,7 +114,6 @@ export function Composer({
     const [showAdvanced, setShowAdvanced] = useState(false);
     const [showTools, setShowTools] = useState(false);
     const [showAttach, setShowAttach] = useState(false);
-    const [showMemory, setShowMemory] = useState(false);
     const disabled = !!disabledReason;
     const canAttach = !!attachEnabled && !!onAttachFile;
     const chips = attachments ?? [];
@@ -357,19 +337,7 @@ export function Composer({
                         </div>
                     )}
 
-                    {memoryEnabled && onSetMemoryMode && (
-                        <MemoryControl
-                            open={showMemory}
-                            onOpenChange={setShowMemory}
-                            mode={memoryMode ?? 'off'}
-                            summary={memorySummary ?? 'off'}
-                            onSetMode={onSetMemoryMode}
-                            memoryOn={memoryOn !== false}
-                            onSetMemoryOn={onSetMemoryOn ?? (() => undefined)}
-                            folders={memoryFolders ?? []}
-                            onManage={onManageMemory}
-                        />
-                    )}
+                    {toolPills}
 
                     {advancedAvailable && (
                         <button
@@ -487,185 +455,6 @@ function ToolRow({
     );
 }
 
-
-
-// Per-conversation Context control (§8.7): choose, for THIS chat, whether the
-// assistant may draw on Memory, past conversations and knowledge folders.
-// Defaults come from the user's global Knowledge settings; toggles here
-// override them for the current conversation only.
-// Memory control: your Drive as the assistant's memory.
-//
-// `Memory/` is ON BY DEFAULT and can be switched off. Everything else the assistant may recall (past chats, chosen folders,
-// the whole Drive) is opt-in and off by default. Every change here writes the
-// AI-scope GRANT, which is the single source of truth both retrieval paths
-// read, so a change applies immediately, on every device, on any instance.
-function MemoryControl({
-    open,
-    onOpenChange,
-    mode,
-    summary,
-    onSetMode,
-    memoryOn,
-    onSetMemoryOn,
-    folders,
-    onManage
-}: {
-    open: boolean;
-    onOpenChange: (_v: boolean) => void;
-    mode: MemoryMode;
-    summary: string;
-    onSetMode: (_mode: MemoryMode) => void | Promise<void>;
-    memoryOn: boolean;
-    onSetMemoryOn: (_on: boolean) => void;
-    folders: ScopeFolder[];
-    onManage?: () => void;
-}) {
-    const on = mode !== 'off';
-    // The pill is live whenever Memory itself is on, whether or not extra
-    // recall is enabled — that is the honest read of "is memory working".
-    const live = memoryOn || on;
-    const scoped = folders.filter((f) => f.scoped);
-    return (
-        <div className="relative ml-1">
-            <button
-                type="button"
-                onClick={() => onOpenChange(!open)}
-                aria-expanded={open}
-                title="What I can remember. Retrieval runs inside the attested enclave over your sealed session — the operator never sees it."
-                // On, Memory takes the brand green AND a soft tint, and names what
-                // it is recalling. Colour alone would not be a state signal for
-                // anyone who cannot separate the hues, so the fill and the label
-                // carry it too. Off, it is as quiet as its neighbours.
-                className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ${
-                    live
-                        ? 'bg-[var(--color-primary-blue)]/10 text-[var(--color-primary-blue)]'
-                        : open
-                            ? 'text-[var(--color-text-primary)]'
-                            : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]'
-                }`}
-            >
-                <MemoryIcon />
-                <span className="hidden sm:inline">Memory</span>
-                {on && <span className="hidden opacity-80 sm:inline">· {summary}</span>}
-            </button>
-            {open && (
-                <>
-                    <button
-                        type="button"
-                        aria-hidden="true"
-                        tabIndex={-1}
-                        onClick={() => onOpenChange(false)}
-                        className="fixed inset-0 z-10 cursor-default"
-                    />
-                    <div className="absolute bottom-full left-0 z-20 mb-2 w-80 overflow-hidden rounded-xl border border-[var(--color-border-dark)] bg-[var(--color-surface-1)] shadow-xl shadow-black/30">
-                        <div className="px-3 pt-3 pb-1">
-                            <p className="text-xs font-semibold text-[var(--color-text-primary)]">
-                                Memory
-                            </p>
-                            <p className="mt-0.5 text-[11px] leading-4 text-[var(--color-text-muted)]">
-                                Your Drive is my memory. I can search only what you turn on here —
-                                and only inside the enclave, over your sealed session.
-                            </p>
-                        </div>
-
-                        <button
-                            type="button"
-                            onClick={() => onSetMemoryOn(!memoryOn)}
-                            className="flex w-full items-start gap-2 px-3 py-2 text-left hover:bg-[var(--color-surface-2)]/60"
-                        >
-                            <span className="min-w-0 flex-1">
-                                <span className="block text-sm text-[var(--color-text-primary)]">
-                                    What I remember about you
-                                </span>
-                                <span className="block text-[11px] text-[var(--color-text-muted)]">
-                                    {memoryOn
-                                        ? 'Notes I keep and write back as we talk.'
-                                        : 'Off — I will not read or add to my notes.'}
-                                </span>
-                            </span>
-                            <Switch on={memoryOn} />
-                        </button>
-
-                        <div className="border-t border-[var(--color-border-dark)]">
-                            <button
-                                type="button"
-                                onClick={() => void onSetMode(on ? 'off' : 'past-chats')}
-                                className="flex w-full items-start gap-2 px-3 py-2 text-left hover:bg-[var(--color-surface-2)]/60"
-                            >
-                                <span className="min-w-0 flex-1">
-                                    <span className="block text-sm text-[var(--color-text-primary)]">
-                                        Use my Drive as memory
-                                    </span>
-                                    <span className="block text-[11px] text-[var(--color-text-muted)]">
-                                        {on ? `Recalling: ${summary}.` : 'Off — I only use what I remember about you.'}
-                                    </span>
-                                </span>
-                                <Switch on={on} />
-                            </button>
-                        </div>
-
-                        {on && (
-                            <div className="flex gap-1 px-3 pb-2">
-                                <ModeChip
-                                    label="Past chats"
-                                    active={mode === 'past-chats'}
-                                    onClick={() => void onSetMode('past-chats')}
-                                />
-                                <ModeChip
-                                    label="Entire Drive"
-                                    active={mode === 'entire-drive'}
-                                    onClick={() => void onSetMode('entire-drive')}
-                                />
-                                {mode === 'folders' && (
-                                    <ModeChip
-                                        label={scoped.length === 1 ? scoped[0].name : `${scoped.length} folders`}
-                                        active
-                                        onClick={() => onManage?.()}
-                                    />
-                                )}
-                            </div>
-                        )}
-
-                        {onManage && (
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    onOpenChange(false);
-                                    onManage();
-                                }}
-                                className="flex w-full items-center gap-2 border-t border-[var(--color-border-dark)] px-3 py-2.5 text-left text-sm text-[var(--color-primary-blue)] hover:bg-[var(--color-surface-2)]/60"
-                            >
-                                Manage in Memory settings…
-                            </button>
-                        )}
-                    </div>
-                </>
-            )}
-        </div>
-    );
-}
-
-function ModeChip({
-    label,
-    active,
-    onClick
-}: {
-    label: string;
-    active: boolean;
-    onClick: () => void;
-}) {
-    return (
-        <button
-            type="button"
-            onClick={onClick}
-            className={`rounded-full border px-2.5 py-1 text-[11px] ${active
-                ? 'border-[var(--color-primary-blue)] text-[var(--color-primary-blue)]'
-                : 'border-[var(--color-border-dark)] text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]'}`}
-        >
-            {label}
-        </button>
-    );
-}
 
 
 function PlusGlyph() {

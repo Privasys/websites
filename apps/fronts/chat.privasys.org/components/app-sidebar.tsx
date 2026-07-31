@@ -7,7 +7,7 @@ import type { Instance } from '~/lib/types';
 import type { Conversation } from '~/lib/conversations';
 import { AttestationStatusBadge, type AggregateAttestationStatus } from '@privasys/attestation-view';
 import { ThemeToggle } from './theme-toggle';
-import { MemoryIcon } from './memory-icon';
+import { ToolIcon } from './featured-tool-pill';
 
 // Gemini-style left sidebar.
 //
@@ -32,7 +32,8 @@ export function AppSidebar({
     onShareConversation,
     onShowSecurity,
     onShowTools,
-    onShowMemory,
+    settingsPages,
+    onShowToolSettings,
     onShowSignIn,
     mobileOpen = false,
     onMobileClose
@@ -53,9 +54,11 @@ export function AppSidebar({
     onShareConversation?: (id: string) => void;
     onShowSecurity: () => void;
     onShowTools?: () => void;
-    /** Open the Memory view (the Drive AI-scope grant). Only shown when
-     *  Drive is wired (the chat passes it conditionally). */
-    onShowMemory?: () => void;
+    /** One nav entry per MCP server advertising a settings surface (the
+     *  generic tool-settings contract) — e.g. Drive's "Memory". Title and
+     *  icon come from the server's own descriptor. */
+    settingsPages?: { name: string; title: string; icon?: string }[];
+    onShowToolSettings?: (server: string) => void;
     onShowSignIn: () => void;
     /** Mobile drawer state. Below `md` the sidebar is off-canvas: it slides in
      *  over the chat and closes on backdrop tap, Escape, or any navigation.
@@ -189,16 +192,19 @@ export function AppSidebar({
                             <span className="flex-1">AI Tools</span>
                         </button>
                     )}
-                    {session && onShowMemory && (
-                        <button
-                            type="button"
-                            onClick={nav(onShowMemory)}
-                            className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-surface-2)]/60"
-                        >
-                            <MemoryIcon size={16} />
-                            <span className="flex-1">Memory</span>
-                        </button>
-                    )}
+                    {session &&
+                        onShowToolSettings &&
+                        (settingsPages ?? []).map((p) => (
+                            <button
+                                key={p.name}
+                                type="button"
+                                onClick={nav(() => onShowToolSettings(p.name))}
+                                className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-surface-2)]/60"
+                            >
+                                <ToolIcon name={p.icon} size={16} />
+                                <span className="flex-1">{p.title}</span>
+                            </button>
+                        ))}
                     {session && (
                         <button
                             type="button"

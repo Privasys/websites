@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { AvailableModel, Instance } from '~/lib/types';
 import {
     streamChatCompletion,
@@ -9,7 +9,6 @@ import {
     type ChatMessage
 } from '~/lib/chat-stream';
 import type { AttachIntent } from '~/lib/drive-chat-api';
-import type { MemoryMode, ScopeFolder } from '~/lib/use-ai-scope';
 import type { AttachmentChip } from './composer';
 import { DEFAULT_SAMPLING, type SamplingParams } from '~/lib/sampling';
 import { modelLabel } from '~/lib/model-label';
@@ -106,14 +105,7 @@ export function ChatPanel({
     attachments,
     onAttachFile,
     attachEnabled,
-    memoryEnabled,
-    memoryMode,
-    memorySummary,
-    onSetMemoryMode,
-    memoryOn,
-    onSetMemoryOn,
-    memoryFolders,
-    onManageMemory
+    toolPills
 }: {
     instance: Instance;
     model: AvailableModel | null;
@@ -192,17 +184,9 @@ export function ChatPanel({
     onAttachFile?: (file: File, intent: AttachIntent) => void;
     /** Whether the Attach affordance is available (Drive enabled). */
     attachEnabled?: boolean;
-    /** Drive as memory (§8.7). The composer shows a Memory pill; every change
-     *  writes the AI-scope grant, the single source of truth both retrieval
-     *  paths read. */
-    memoryEnabled?: boolean;
-    memoryMode?: MemoryMode;
-    memorySummary?: string;
-    onSetMemoryMode?: (mode: MemoryMode) => void | Promise<void>;
-    memoryOn?: boolean;
-    onSetMemoryOn?: (on: boolean) => void;
-    memoryFolders?: ScopeFolder[];
-    onManageMemory?: () => void;
+    /** Settings-surface pills (generic tool-settings contract), composed by
+     *  the shell and placed in the composer bar. */
+    toolPills?: ReactNode;
 }) {
     // Used to re-bind a sealed session that came up without an identity
     // (same-device wallet flow); see SealedIdentityMissingError below.
@@ -865,14 +849,7 @@ export function ChatPanel({
             attachEnabled={attachEnabled}
             attachments={attachments}
             onAttachFile={onAttachFile}
-            memoryEnabled={memoryEnabled}
-            memoryMode={memoryMode}
-            memorySummary={memorySummary}
-            onSetMemoryMode={onSetMemoryMode}
-            memoryOn={memoryOn}
-            onSetMemoryOn={onSetMemoryOn}
-            memoryFolders={memoryFolders}
-            onManageMemory={onManageMemory}
+            toolPills={toolPills}
             placeholder={
                 model
                     ? `Message ${modelLabel(model)}\u2026`
