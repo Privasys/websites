@@ -46,6 +46,8 @@ export interface ShareAttribute {
      * will want to pick it.
      */
     selfKey?: string;
+    /** The government-backed twin of a self-asserted key, where one exists. */
+    govKey?: string;
 }
 
 function toShareAttribute(a: CanonicalAttribute, govToSelf: Map<string, string>): ShareAttribute {
@@ -57,7 +59,8 @@ function toShareAttribute(a: CanonicalAttribute, govToSelf: Map<string, string>)
         label: a.label,
         assurance,
         marketplaceKey: marketplaceKeyOf(a),
-        selfKey: govToSelf.get(a.key)
+        selfKey: govToSelf.get(a.key),
+        govKey: a.govKey
     };
 }
 
@@ -105,13 +108,21 @@ export function assuranceLabel(a: Assurance): string {
  * while one created before billing names `birthdate`. Both must read back as
  * "Date of Birth"; an unknown key falls back to itself.
  *
+ * The registry spelling is matched BEFORE the bare name, because the two
+ * disagree about assurance and the bare one comes first in the referential:
+ * `privasys:birthdate` is the passport reading and reading it back as the
+ * self-asserted "Date of Birth" tells the sharer their link asks for less than
+ * it does.
+ *
  * `attrs` is the loaded list rather than the SDK's bundled map because a link
  * can be older than this build and still name an attribute the running IdP
  * knows, which is exactly the case the bundled copy cannot answer.
  */
 export function attributeLabel(attrs: ShareAttribute[], key: string): string {
+    const exact = attrs.find((a) => a.key === key || a.marketplaceKey === key);
+    if (exact) return exact.label;
     const bare = key.includes(':') ? key.slice(key.indexOf(':') + 1) : key;
-    return attrs.find((a) => a.key === key || a.marketplaceKey === key || a.key === bare)?.label ?? key;
+    return attrs.find((a) => a.key === bare)?.label ?? key;
 }
 
 /**
@@ -127,10 +138,22 @@ export function attributeLabel(attrs: ShareAttribute[], key: string): string {
  * reason it reads the referential instead of stripping the namespace. Assurance
  * is a property of the key: `privasys:birthdate` is sold as `birthdate_id`, while
  * a bare `birthdate` is whatever the holder typed. Asking for the bare one would
- * satisfy a link the sharer paid a passport ceremony for with a self-asserted
- * value, so it is exactly the mistake this lookup exists to avoid.
+ * request a disclosure the enclave then refuses to accept, since the link is
+ * checked against the claim it recorded, so the visitor would be sent round the
+ * consent screen for nothing.
+ *
+ * A link created since the service began recording it carries the answer
+ * (`attribute_claims` on resolve); this is the fallback for the ones that do
+ * not, and for a namespace the referential does not cover.
  */
 export function requestKeyFor(attrs: ShareAttribute[], key: string): string {
     if (!key.includes(':')) return key;
-    return attrs.find((a) => a.marketplaceKey === key)?.key ?? key.slice(key.indexOf(':') + 1);
+    const sold = attrs.find((a) => a.marketplaceKey === key);
+    if (sold) return sold.key;
+    // Outside the privasys namespace the referential has no row to map back
+    // from. Prefer the bare name's government-backed twin where it has one:
+    // a namespaced key is a priced disclosure, and no priced disclosure is
+    // answered by the reading its holder typed.
+    const bare = key.slice(key.indexOf(':') + 1);
+    return attrs.find((a) => a.key === bare)?.govKey ?? bare;
 }

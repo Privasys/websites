@@ -28,6 +28,15 @@
                 "cwd": "apps/fronts/drive.privasys.org"
             }
         },
+        "test": {
+            "executor": "@nx/jest:jest",
+            "outputs": [
+                "{workspaceRoot}/coverage/{projectRoot}"
+            ],
+            "options": {
+                "jestConfig": "apps/fronts/drive.privasys.org/jest.config.ts"
+            }
+        },
         "lint": {
             "executor": "@nx/eslint:lint",
             "outputs": [

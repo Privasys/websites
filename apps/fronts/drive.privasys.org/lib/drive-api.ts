@@ -397,6 +397,22 @@ export interface ResolvedLink {
     mode: LinkMode;
     scope: string[];
     required_attributes?: string[];
+    /**
+     * The required attributes that must be PROVEN, in the same spelling as
+     * `required_attributes`. They come off the visitor's verified token, so
+     * nothing typed into this page can satisfy one and the enclave, not the
+     * browser, decides whether they are present.
+     */
+    paid_attributes?: string[];
+    /**
+     * Per required attribute, the canonical claim the link is checked against,
+     * which is what a step-up has to ask the wallet to disclose. A link stores
+     * the registry spelling (`privasys:birthdate`), which the IdP does not
+     * accept and which is not the key it mints under (`birthdate_id`). Absent
+     * on links created before the service recorded it; `requestKeyFor` covers
+     * those.
+     */
+    attribute_claims?: Record<string, string>;
     tenant_id: string;
     owner_name: string;
     already_granted: boolean;
