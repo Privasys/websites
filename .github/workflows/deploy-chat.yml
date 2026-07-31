@@ -49,9 +49,16 @@ jobs:
             # No dedicated chat-service back-end in prod yet: leave the
             # chat-service URL empty so BYO-MCP stays fully dormant there.
             echo "chat_service_url="                            >> "$GITHUB_OUTPUT"
-            # Drive ↔ Chat (§8.7) stays dormant in prod until a prod Drive
-            # instance is provisioned: an empty host disables the feature.
-            echo "drive_app_host="                              >> "$GITHUB_OUTPUT"
+            # Drive ↔ Chat (§8.7) / Memory. The prod Drive instance now
+            # exists (privasys-drive on m1-tdx-france) and is reachable from
+            # the inference enclave as an ATTESTED ai_tool — mutual RA-TLS,
+            # no shared secret, with the acting user carried as
+            # X-Privasys-On-Behalf-Of. So the host is filled in and the
+            # feature is live; an empty value here is what kept Memory
+            # dormant in prod after the front already shipped it.
+            # Staging keeps pointing at the DEV Drive below, so prod data is
+            # never read or written from chat.test.privasys.org.
+            echo "drive_app_host=privasys-drive.apps.privasys.org" >> "$GITHUB_OUTPUT"
           else
             echo "container=chat"                                  >> "$GITHUB_OUTPUT"
             echo "host_port=3011"                                  >> "$GITHUB_OUTPUT"
