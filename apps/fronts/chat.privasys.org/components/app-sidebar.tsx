@@ -7,6 +7,7 @@ import type { Instance } from '~/lib/types';
 import type { Conversation } from '~/lib/conversations';
 import { AttestationStatusBadge, type AggregateAttestationStatus } from '@privasys/attestation-view';
 import { ThemeToggle } from './theme-toggle';
+import { MemoryIcon } from './memory-icon';
 
 // Gemini-style left sidebar.
 //
@@ -194,7 +195,7 @@ export function AppSidebar({
                             onClick={nav(onShowMemory)}
                             className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-surface-2)]/60"
                         >
-                            <BookIcon />
+                            <MemoryIcon size={16} />
                             <span className="flex-1">Memory</span>
                         </button>
                     )}
@@ -528,15 +529,6 @@ function ShieldIcon() {
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
             <path d="m9 12 2 2 4-4" />
-        </svg>
-    );
-}
-
-function BookIcon() {
-    return (
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
         </svg>
     );
 }
