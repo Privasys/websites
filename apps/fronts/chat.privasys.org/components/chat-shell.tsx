@@ -414,8 +414,8 @@ export function ChatShell({
             const messages: ChatMessage[] = [];
             if (!useDrive || !drive.session || !drive.tenantId) return { messages };
             const key = conversationId ?? '__pending__';
-            // Memory/ is always in scope — it is the spine, not a toggle.
-            if (isFirstTurn && !memoryInjectedRef.current.has(key)) {
+            // Memory is on by default but the user can switch it off.
+            if (aiScope.memoryOn && isFirstTurn && !memoryInjectedRef.current.has(key)) {
                 memoryInjectedRef.current.add(key);
                 const mem = await fetchMemoryContext(drive.session, drive.tenantId);
                 messages.push(...mem.messages);
@@ -445,7 +445,8 @@ export function ChatShell({
             addProvenance,
             aiScope.conversationsScoped,
             aiScope.allScoped,
-            aiScope.folders
+            aiScope.folders,
+            aiScope.memoryOn
         ]
     );
 
@@ -834,6 +835,8 @@ export function ChatShell({
                         memoryMode={aiScope.memoryMode}
                         memorySummary={aiScope.memorySummary}
                         onSetMemoryMode={aiScope.setMemoryMode}
+                        memoryOn={aiScope.memoryOn}
+                        onSetMemoryOn={aiScope.setMemoryOn}
                         memoryFolders={aiScope.folders}
                         onManageMemory={() => setView('memory')}
                     />

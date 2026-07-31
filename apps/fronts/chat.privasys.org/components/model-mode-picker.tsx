@@ -99,14 +99,17 @@ export function ModelModePicker({
                                 </ul>
                             </>
                         ) : (
-                            <div className="px-3 pt-2 pb-1">
-                                <p className="truncate text-sm text-[var(--color-text-primary)]">
-                                    {selected ? modelLabel(selected) : 'No model loaded'}
-                                </p>
-                                <p className="text-[11px] text-[var(--color-text-muted)]">
-                                    The only model this instance serves.
-                                </p>
-                            </div>
+                            <>
+                                <SectionLabel>Model</SectionLabel>
+                                <div className="px-3 pt-0.5 pb-1">
+                                    <p className="truncate text-sm text-[var(--color-text-primary)]">
+                                        {selected ? modelLabel(selected) : 'No model loaded'}
+                                    </p>
+                                    <p className="text-[11px] text-[var(--color-text-muted)]">
+                                        The only model this instance serves.
+                                    </p>
+                                </div>
+                            </>
                         )}
 
                         {showMode && (
