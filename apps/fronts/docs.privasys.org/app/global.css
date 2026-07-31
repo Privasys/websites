@@ -4,9 +4,9 @@
 :root {
     --fd-nav-height: 56px !important;
     /* Let the content column grow on large (or zoomed-out) viewports instead
-       of staying locked to the fumadocs 1200px default. 1500px gives the
-       widest mermaid diagram (~1147px once scaled to 80% text size) room to
+       of staying locked to the fumadocs 1200px default. 1580px gives the
+       widest mermaid diagram (~1230px at the 13px diagram text size) room to
        display without scrolling once the TOC and paddings are taken out. */
-    --fd-page-width: min(100vw, 1500px) !important;
+    --fd-page-width: min(100vw, 1580px) !important;
 }
 
