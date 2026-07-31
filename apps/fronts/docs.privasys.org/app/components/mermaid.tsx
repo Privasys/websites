@@ -4,6 +4,24 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { useTheme } from 'next-themes';
 
 /**
+ * Mermaid 11 ignores its font-size configuration for several diagram types
+ * (sequence diagrams hard-apply 16px inline), so diagrams are rendered at
+ * the default 16px and the finished SVG is scaled down to the equivalent of
+ * 13px text, ~80% of the body text size. Scaling the SVG keeps the layout
+ * proportionate, since boxes were measured for the text they contain.
+ */
+const TEXT_SCALE = 13 / 16;
+
+function scaleSvg(svg: string, factor: number): string {
+    const root = new DOMParser().parseFromString(svg, 'image/svg+xml').documentElement;
+    const width = Number.parseFloat(root.getAttribute('width') ?? '');
+    if (Number.isFinite(width)) root.setAttribute('width', String(Math.round(width * factor)));
+    const height = Number.parseFloat(root.getAttribute('height') ?? '');
+    if (Number.isFinite(height)) root.setAttribute('height', String(Math.round(height * factor)));
+    return new XMLSerializer().serializeToString(root);
+}
+
+/**
  * Renders a Mermaid diagram on the client. The `mermaid` library is imported
  * dynamically so it is only downloaded on pages that actually contain a
  * diagram (the site is statically exported and the library is large).
@@ -45,7 +63,7 @@ export function Mermaid({ chart }: { chart: string }) {
                     `mermaid-${id.replace(/[^a-zA-Z0-9_-]/g, '')}`,
                     chart
                 );
-                if (!cancelled) setSvg(rendered.svg);
+                if (!cancelled) setSvg(scaleSvg(rendered.svg, TEXT_SCALE));
             } catch (error) {
                 // A syntax error in a diagram should not blank the page;
                 // leave the container empty and report in the console.
