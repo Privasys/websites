@@ -113,3 +113,24 @@ export function attributeLabel(attrs: ShareAttribute[], key: string): string {
     const bare = key.includes(':') ? key.slice(key.indexOf(':') + 1) : key;
     return attrs.find((a) => a.key === key || a.marketplaceKey === key || a.key === bare)?.label ?? key;
 }
+
+/**
+ * The canonical key to ASK the wallet for, given the key a stored link names.
+ *
+ * A link records the marketplace's namespaced spelling (`privasys:birthdate`),
+ * which is the string the reservation is priced against. The IdP does not know
+ * that spelling: it takes canonical keys, drops the ones it does not recognise,
+ * and mints each disclosure under the key it was asked for. Asking with the
+ * stored spelling therefore requests nothing at all.
+ *
+ * The translation must land on the GOVERNMENT-BACKED key, and that is the whole
+ * reason it reads the referential instead of stripping the namespace. Assurance
+ * is a property of the key: `privasys:birthdate` is sold as `birthdate_id`, while
+ * a bare `birthdate` is whatever the holder typed. Asking for the bare one would
+ * satisfy a link the sharer paid a passport ceremony for with a self-asserted
+ * value, so it is exactly the mistake this lookup exists to avoid.
+ */
+export function requestKeyFor(attrs: ShareAttribute[], key: string): string {
+    if (!key.includes(':')) return key;
+    return attrs.find((a) => a.marketplaceKey === key)?.key ?? key.slice(key.indexOf(':') + 1);
+}

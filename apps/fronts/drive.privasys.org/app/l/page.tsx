@@ -24,7 +24,12 @@ import {
 } from '~/lib/drive-api';
 import { FileViewer, canPreview } from '~/components/file-viewer';
 import { SharedBrowser } from '~/components/shared-browser';
-import { attributeLabel, loadShareAttributes, type ShareAttribute } from '~/lib/share-attributes';
+import {
+    attributeLabel,
+    loadShareAttributes,
+    requestKeyFor,
+    type ShareAttribute
+} from '~/lib/share-attributes';
 import { formatBytes } from '~/lib/format';
 import { FileIcon, FolderIcon, DownloadIcon, LockIcon, ShieldCheck } from '~/components/icons';
 
@@ -90,13 +95,16 @@ function LinkLanding() {
         if (!stepUp || stepUpStarted.current || !ceremonyRef.current) return;
         stepUpStarted.current = true;
         void (async () => {
-            await signInInto(ceremonyRef.current!, missingAttrs);
+            // Ask by canonical key, not by the spelling the link stores: the
+            // IdP drops a namespaced key, and for a paid attribute the
+            // government-backed key is a different one from the bare name.
+            await signInInto(ceremonyRef.current!, missingAttrs.map((k) => requestKeyFor(shareAttrs, k)));
             redeemed.current = false;
             setStepUp(false);
             stepUpStarted.current = false;
             setState('resolving');
         })();
-    }, [stepUp, missingAttrs, signInInto]);
+    }, [stepUp, missingAttrs, shareAttrs, signInInto]);
 
     // The attributes the visitor already consented to share at sign-in,
     // matched against what the link requires.
