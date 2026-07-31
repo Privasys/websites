@@ -62,6 +62,14 @@ export function RelyingPartiesSection() {
             setError('Name and at least one redirect URI are required.');
             return;
         }
+        // The whitelist is the only statement of what this client consumes, so a
+        // client that names nothing receives nothing rather than everything its
+        // scope reaches. Refuse it here instead of registering a client that can
+        // never sign anyone in.
+        if (selectedAttrs.length === 0) {
+            setError('Pick at least one attribute: a client with an empty whitelist receives none.');
+            return;
+        }
         setCreating(true);
         try {
             const c = await createOAuthClient(token, {
