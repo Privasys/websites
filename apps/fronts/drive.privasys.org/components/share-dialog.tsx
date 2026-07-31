@@ -16,7 +16,8 @@ import {
     type TenantKind
 } from '~/lib/drive-api';
 import { avatarColor, granteeLabel, initials } from '~/lib/format';
-import { assuranceLabel, loadShareAttributes, type ShareAttribute } from '~/lib/share-attributes';
+import { PrivasysAttributeBadge } from '@privasys/auth/react';
+import { assuranceLabel, attributeLabel, loadShareAttributes, type ShareAttribute } from '~/lib/share-attributes';
 import { CloseIcon, FolderIcon, FileIcon, LinkIcon, LockIcon, TrashIcon } from './icons';
 
 // Tenant member roles an enterprise folder ACL can narrow to.
@@ -233,8 +234,12 @@ export function ShareDialog({
                                         <button
                                             key={a.key}
                                             onClick={() => toggleAttr(a.key)}
-                                            title={`${assuranceLabel(a.assurance)} attribute`}
-                                            className="rounded-full border px-3 py-1.5 text-xs"
+                                            title={
+                                                a.selfKey
+                                                    ? `${assuranceLabel(a.assurance)} attribute — "${attributeLabel(shareAttrs ?? [], a.selfKey)}" asks the same question without a document`
+                                                    : `${assuranceLabel(a.assurance)} attribute`
+                                            }
+                                            className="flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs"
                                             style={{
                                                 borderColor: reqAttrs.includes(a.key) ? 'var(--drv-accent)' : 'var(--drv-border)',
                                                 background: reqAttrs.includes(a.key) ? 'var(--drv-accent-weak)' : 'transparent',
@@ -242,11 +247,10 @@ export function ShareDialog({
                                             }}
                                         >
                                             {a.label}
-                                            {a.assurance !== 'basic' && (
-                                                <span className="ml-1 opacity-60">
-                                                    {a.assurance === 'gov' ? '· ID' : '· verified'}
-                                                </span>
-                                            )}
+                                            {/* The SDK's own badge, so a sharer sees the same
+                                                government-ID marker here as in the wallet
+                                                consent screen the visitor will meet. */}
+                                            <PrivasysAttributeBadge attribute={a.key} showPaid />
                                         </button>
                                     ))}
                                 </div>

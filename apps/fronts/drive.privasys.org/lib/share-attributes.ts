@@ -1,18 +1,30 @@
 // Attributes a "restricted" share link can require a visitor to present.
 //
-// Derived from the canonical referential the IdP serves, never listed here: a
-// hardcoded copy drifts silently, and a key the wallet and auth SDK do not
-// recognise is a share link nobody can open. The same document is what the
-// developer portal builds its relying-party attribute picker from.
+// Sourced from the auth SDK, which ships the canonical list and the accessors
+// that read it. This module used to fetch the referential and fold it by hand,
+// as did the developer portal, as would any integrator: three interpretations of
+// what "gov" means and three places for a new attribute to be forgotten. What is
+// left here is the Drive-shaped view of the SDK's answer, and nothing that
+// re-decides it.
 //
 // `assurance` is a display concern only, folded from the canonical flags:
 //   basic    self-asserted profile attribute
 //   verified provider-verified (canonical `verifiable`, e.g. email_verified)
 //   gov      government-ID verified via the identity-verifier enclave
-//            (canonical `identityVerifiable`; the `identity` scope is
-//            request-gated, so these are only pulled when explicitly asked)
+//
+// Assurance is a property of the KEY: `given_name` is what the holder typed and
+// `given_name_id` is what their passport says, two attributes with two prices.
+// The picker offers both and says which is which, so a sharer can see that
+// requiring "First Name" is not an ID check and that requiring the ID version
+// costs them credits.
 
-const REFERENTIAL_URL = 'https://privasys.id/referential/canonical-attributes.json';
+import {
+    fetchAttributeReferential,
+    isGovVerified,
+    marketplaceKeyOf,
+    requestableAttributes,
+    type CanonicalAttribute
+} from '@privasys/auth';
 
 export type Assurance = 'basic' | 'verified' | 'gov';
 
@@ -27,25 +39,26 @@ export interface ShareAttribute {
      * catalogue, so this is for labelling the choice, not for pricing it.
      */
     marketplaceKey?: string;
+    /**
+     * The self-asserted key that answers the same question without a document,
+     * for a gov attribute that has one. Display only, and the reason it is a key
+     * rather than a boolean: a sharer told "there is a cheaper version of this"
+     * will want to pick it.
+     */
+    selfKey?: string;
 }
 
-// The referential's own shape. Only the fields this app folds are named; the
-// document carries more (scopes, profile field mappings, provider claim maps)
-// that belong to the IdP and the wallet.
-interface CanonicalAttribute {
-    key: string;
-    label: string;
-    verifiable?: boolean;
-    identityVerifiable?: boolean;
-    marketplace?: { key: string; assurance: string; billable: boolean };
-}
-
-function toShareAttribute(a: CanonicalAttribute): ShareAttribute {
+function toShareAttribute(a: CanonicalAttribute, govToSelf: Map<string, string>): ShareAttribute {
     // gov wins over verified: an attribute can be both (email is provider-
-    // verifiable, a name is both self-asserted and ID-certifiable) and the
-    // stronger claim is the one worth showing.
-    const assurance: Assurance = a.identityVerifiable ? 'gov' : a.verifiable ? 'verified' : 'basic';
-    return { key: a.key, label: a.label, assurance, marketplaceKey: a.marketplace?.key };
+    // verifiable) and the stronger claim is the one worth showing.
+    const assurance: Assurance = isGovVerified(a) ? 'gov' : a.verifiable ? 'verified' : 'basic';
+    return {
+        key: a.key,
+        label: a.label,
+        assurance,
+        marketplaceKey: marketplaceKeyOf(a),
+        selfKey: govToSelf.get(a.key)
+    };
 }
 
 // One fetch per page load, shared by every caller. The endpoint is CORS-open
@@ -54,11 +67,22 @@ function toShareAttribute(a: CanonicalAttribute): ShareAttribute {
 // would only reintroduce the staleness this module exists to avoid.
 let pending: Promise<ShareAttribute[]> | null = null;
 
+/**
+ * The attributes a link can require, from the referential the IdP is serving
+ * right now rather than the copy bundled with whichever SDK version this build
+ * pinned. A share link outlives a deploy, and offering an attribute the IdP has
+ * since renamed is a link nobody can open.
+ */
 export function loadShareAttributes(): Promise<ShareAttribute[]> {
     if (!pending) {
-        pending = fetch(REFERENTIAL_URL)
-            .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`referential ${r.status}`))))
-            .then((d: { attributes?: CanonicalAttribute[] }) => (d.attributes ?? []).map(toShareAttribute))
+        pending = fetchAttributeReferential()
+            .then((attrs) => {
+                // The referential points from a self-asserted key to its
+                // government-backed twin; the picker needs the other direction.
+                const govToSelf = new Map<string, string>();
+                for (const a of attrs) if (a.govKey) govToSelf.set(a.govKey, a.key);
+                return requestableAttributes(attrs).map((a) => toShareAttribute(a, govToSelf));
+            })
             .catch((e: unknown) => {
                 // Let the next caller retry rather than caching the failure for
                 // the life of the tab.
@@ -80,6 +104,10 @@ export function assuranceLabel(a: Assurance): string {
  * spelling before storing it, so a link created today names `privasys:birthdate`
  * while one created before billing names `birthdate`. Both must read back as
  * "Date of Birth"; an unknown key falls back to itself.
+ *
+ * `attrs` is the loaded list rather than the SDK's bundled map because a link
+ * can be older than this build and still name an attribute the running IdP
+ * knows, which is exactly the case the bundled copy cannot answer.
  */
 export function attributeLabel(attrs: ShareAttribute[], key: string): string {
     const bare = key.includes(':') ? key.slice(key.indexOf(':') + 1) : key;
