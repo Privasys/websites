@@ -28,13 +28,33 @@ export function RelyingPartiesSection() {
     // marks attributes that can carry government-document assurance (verified
     // by the identity-verifier enclave from a passport/ID + biometrics) —
     // tagged clearly so an RP knows which claims can be gov-backed.
-    const [catalog, setCatalog] = useState<{ key: string; label: string; gov?: boolean }[] | null>(null);
+    //
+    // Assurance belongs to the request, so an attribute may appear at more than
+    // one tier: `paid` is set when SOME tier is billable (the gov one), and
+    // `requestOnly` when that tier is only reachable by naming the attribute
+    // here. The second flag is the one that makes this list load-bearing rather
+    // than advisory: leave the whitelist empty and a request-only tier can never
+    // be requested at all, however the scope is spelled.
+    const [catalog, setCatalog] = useState<
+        { key: string; label: string; gov?: boolean; paid?: boolean; requestOnly?: boolean }[] | null
+    >(null);
     const [selectedAttrs, setSelectedAttrs] = useState<Set<string>>(new Set());
     useEffect(() => {
+        type Tier = { assurance: string; requestOnly?: boolean; marketplace?: { key: string; billable: boolean } };
         fetch('https://privasys.id/referential/canonical-attributes.json')
             .then((r) => (r.ok ? r.json() : null))
-            .then((d: { attributes?: { key: string; label: string; identityVerifiable?: boolean }[] } | null) => {
-                if (d?.attributes?.length) setCatalog(d.attributes.map((a) => ({ key: a.key, label: a.label, gov: a.identityVerifiable })));
+            .then((d: { attributes?: { key: string; label: string; identityVerifiable?: boolean; assuranceTiers?: Tier[]; marketplace?: { key: string; billable: boolean } }[] } | null) => {
+                if (!d?.attributes?.length) return;
+                setCatalog(d.attributes.map((a) => ({
+                    key: a.key,
+                    label: a.label,
+                    gov: a.identityVerifiable,
+                    // Pre-tier documents put the binding on the attribute; this
+                    // page fetches the referential at runtime and so routinely
+                    // meets a document one release away from itself.
+                    paid: a.assuranceTiers?.some((t) => t.marketplace?.billable) || !!a.marketplace?.billable,
+                    requestOnly: a.assuranceTiers?.some((t) => t.requestOnly) || undefined
+                })));
             })
             .catch(() => { /* fallback input stays */ });
     }, []);
@@ -173,10 +193,22 @@ export function RelyingPartiesSection() {
                                         <code className="text-[10px] text-black/35 dark:text-white/35">{a.key}</code>
                                         {a.gov && (
                                             <span
-                                                title="Can be government-verified: attested against a passport or identity document (with biometrics) by the identity-verifier enclave."
+                                                title="Can be government-verified: attested against a passport or identity document (with biometrics) by the identity-verifier enclave. Request it under the `identity` scope to get that tier; under `profile` the same attribute comes back self-asserted."
                                                 className="inline-flex items-center rounded-full bg-indigo-100 dark:bg-indigo-900/30 px-1.5 py-px text-[9px] font-semibold uppercase tracking-wide text-indigo-700 dark:text-indigo-300"
                                             >
                                                 Gov
+                                            </span>
+                                        )}
+                                        {a.paid && (
+                                            <span
+                                                title={
+                                                    a.requestOnly
+                                                        ? 'Charged per disclosure at its government-verified tier, and only reachable when this client names it here — a scope alone will never pull it.'
+                                                        : 'Charged per disclosure at its government-verified tier.'
+                                                }
+                                                className="inline-flex items-center rounded-full bg-amber-100 dark:bg-amber-900/30 px-1.5 py-px text-[9px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300"
+                                            >
+                                                Paid
                                             </span>
                                         )}
                                     </label>
