@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useTheme } from 'next-themes';
 
 /**
@@ -16,6 +16,7 @@ export function Mermaid({ chart }: { chart: string }) {
     const id = useId();
     const [svg, setSvg] = useState('');
     const { resolvedTheme } = useTheme();
+    const figureRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         let cancelled = false;
@@ -30,8 +31,12 @@ export function Mermaid({ chart }: { chart: string }) {
                 // useMaxWidth shrinks the whole SVG to the viewport width on
                 // phones, making labels unreadable; at natural size the
                 // container scrolls horizontally instead.
-                flowchart: { useMaxWidth: false },
-                sequence: { useMaxWidth: false }
+                // htmlLabels keeps flowchart labels as plain SVG text so the
+                // PNG export below works in every browser (foreignObject HTML
+                // is dropped by some engines when an SVG is rasterised).
+                flowchart: { useMaxWidth: false, htmlLabels: false },
+                sequence: { useMaxWidth: false },
+                state: { useMaxWidth: false }
             });
             try {
                 const rendered = await mermaid.render(
@@ -53,12 +58,74 @@ export function Mermaid({ chart }: { chart: string }) {
         };
     }, [chart, id, resolvedTheme]);
 
+    async function downloadPng() {
+        const svgEl = figureRef.current?.querySelector('svg');
+        if (!svgEl) return;
+
+        const rect = svgEl.getBoundingClientRect();
+        const width = Number(svgEl.getAttribute('width')) || rect.width;
+        const height = Number(svgEl.getAttribute('height')) || rect.height;
+
+        const clone = svgEl.cloneNode(true) as SVGSVGElement;
+        clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+        // The diagram is rendered with font-family: inherit, which resolves
+        // to the browser default once the SVG leaves the page.
+        clone.style.setProperty('font-family', getComputedStyle(svgEl).fontFamily, 'important');
+
+        const svgUrl = URL.createObjectURL(
+            new Blob([new XMLSerializer().serializeToString(clone)], { type: 'image/svg+xml;charset=utf-8' })
+        );
+        try {
+            const image = new Image();
+            await new Promise((resolve, reject) => {
+                image.onload = resolve;
+                image.onerror = reject;
+                image.src = svgUrl;
+            });
+
+            const scale = 2;
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.round(width * scale);
+            canvas.height = Math.round(height * scale);
+            const context = canvas.getContext('2d');
+            if (!context) return;
+            context.fillStyle = getComputedStyle(document.body).backgroundColor;
+            context.fillRect(0, 0, canvas.width, canvas.height);
+            context.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+            const png = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
+            if (!png) return;
+            const page = location.pathname.split('/').filter(Boolean).pop() ?? 'diagram';
+            const index = Array.from(document.querySelectorAll('svg[id^="mermaid-"]')).indexOf(svgEl) + 1;
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(png);
+            link.download = `${page}-diagram-${index}.png`;
+            link.click();
+            URL.revokeObjectURL(link.href);
+        } catch (error) {
+            console.error('Mermaid PNG export failed:', error);
+        } finally {
+            URL.revokeObjectURL(svgUrl);
+        }
+    }
+
     return (
-        <div
-            // mx-auto centres a narrow diagram; a wide one overflows and
-            // scrolls (flex justify-center would clip its left edge).
-            className='my-6 overflow-x-auto [&_svg]:block [&_svg]:mx-auto'
-            dangerouslySetInnerHTML={{ __html: svg }}
-        />
+        <div ref={figureRef} className='my-6'>
+            <div
+                className='overflow-x-auto [&_svg]:block [&_svg]:mx-auto'
+                dangerouslySetInnerHTML={{ __html: svg }}
+            />
+            {svg !== '' && (
+                <div className='mt-1 flex justify-end'>
+                    <button
+                        type='button'
+                        onClick={() => void downloadPng()}
+                        className='text-xs text-fd-muted-foreground transition-colors hover:text-fd-foreground'
+                    >
+                        Download PNG
+                    </button>
+                </div>
+            )}
+        </div>
     );
 }
