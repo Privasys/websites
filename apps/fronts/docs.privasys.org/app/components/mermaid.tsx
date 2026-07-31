@@ -120,7 +120,7 @@ export function Mermaid({ chart }: { chart: string }) {
                     <button
                         type='button'
                         onClick={() => void downloadPng()}
-                        className='text-xs text-fd-muted-foreground transition-colors hover:text-fd-foreground'
+                        className='cursor-pointer text-xs text-fd-muted-foreground transition-colors hover:text-fd-foreground'
                     >
                         Download PNG
                     </button>
