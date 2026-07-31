@@ -16,6 +16,7 @@ import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { Navbar, Footer } from '@privasys/ui';
 import { useDrive } from '~/lib/use-drive';
 import {
+    DriveError,
     downloadFile,
     redeemLink,
     resolveLink,
@@ -95,16 +96,22 @@ function LinkLanding() {
         if (!stepUp || stepUpStarted.current || !ceremonyRef.current) return;
         stepUpStarted.current = true;
         void (async () => {
-            // Ask by canonical key, not by the spelling the link stores: the
-            // IdP drops a namespaced key, and for a paid attribute the
-            // government-backed key is a different one from the bare name.
-            await signInInto(ceremonyRef.current!, missingAttrs.map((k) => requestKeyFor(shareAttrs, k)));
+            // Ask for the claim the link is checked against, not the spelling
+            // it stores: the IdP drops a namespaced key, and the certified
+            // reading of a field is a different key from the bare name. The
+            // link states that mapping; the referential answers for links
+            // created before it did.
+            const claims = resolved?.attribute_claims ?? {};
+            await signInInto(
+                ceremonyRef.current!,
+                missingAttrs.map((k) => claims[k] ?? requestKeyFor(shareAttrs, k))
+            );
             redeemed.current = false;
             setStepUp(false);
             stepUpStarted.current = false;
             setState('resolving');
         })();
-    }, [stepUp, missingAttrs, shareAttrs, signInInto]);
+    }, [stepUp, missingAttrs, shareAttrs, resolved, signInInto]);
 
     // The attributes the visitor already consented to share at sign-in,
     // matched against what the link requires.
@@ -146,9 +153,16 @@ function LinkLanding() {
             // Restricted links need every required attribute: without them
             // no request is filed (the server enforces this too) and the
             // visitor is told what to share instead.
+            //
+            // Only the attributes this page can actually supply are checked
+            // here. A PROVEN one lives in the sealed token and is invisible
+            // to the browser, so treating it as absent would send a visitor
+            // who has already disclosed it back round the consent screen for
+            // ever; the enclave answers for those.
             const attrs = presentedAttributes(r);
+            const proven = new Set(r.paid_attributes ?? []);
             if (r.mode === 'restricted') {
-                const missing = (r.required_attributes ?? []).filter((k) => !attrs?.[k]);
+                const missing = (r.required_attributes ?? []).filter((k) => !proven.has(k) && !attrs?.[k]);
                 if (missing.length > 0) {
                     setMissingAttrs(missing);
                     setState('missing-attrs');
@@ -156,7 +170,21 @@ function LinkLanding() {
                 }
             }
             redeemed.current = true;
-            const res = await redeemLink(session, params.id, params.secret, attrs);
+            let res;
+            try {
+                res = await redeemLink(session, params.id, params.secret, attrs);
+            } catch (e) {
+                // The enclave refuses a redeem that proves less than the link
+                // requires, and it is the only party that can tell: ask for
+                // the proven set again rather than reporting a dead end.
+                if (e instanceof DriveError && e.status === 403 && proven.size > 0) {
+                    redeemed.current = false;
+                    setMissingAttrs([...proven]);
+                    setState('missing-attrs');
+                    return;
+                }
+                throw e;
+            }
             if (res.status === 'granted') {
                 setState('granted');
                 if (r.node.kind === 'file' && canPreview(asNode(r))) setViewing(true);
