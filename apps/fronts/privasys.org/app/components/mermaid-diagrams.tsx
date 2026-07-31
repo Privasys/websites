@@ -33,23 +33,16 @@ export function MermaidDiagrams() {
                 block.textContent = sources[i];
                 block.removeAttribute('data-processed');
             });
-            // Diagram text at the code-block size. Each pre.mermaid is
-            // itself styled by the .prose pre rule (0.9rem), so reading its
-            // computed font-size yields exactly the size a fenced code block
-            // has, in px as mermaid requires, at every breakpoint. Both
-            // settings are needed in mermaid 11: sequence diagrams only
-            // honour the top-level fontSize, flowcharts only
+            // Both font settings are needed in mermaid 11: sequence diagrams
+            // only honour the top-level fontSize, flowcharts only
             // themeVariables.fontSize.
-            const fontSize = blocks[0]
-                ? Number.parseFloat(getComputedStyle(blocks[0]).fontSize)
-                : 14;
             mermaid.initialize({
                 startOnLoad: false,
                 securityLevel: 'strict',
                 theme: media.matches ? 'dark' : 'neutral',
                 fontFamily: 'inherit',
-                fontSize,
-                themeVariables: { fontSize: `${fontSize}px` },
+                fontSize: 13,
+                themeVariables: { fontSize: '13px' },
                 flowchart: { useMaxWidth: false },
                 sequence: { useMaxWidth: false }
             });
