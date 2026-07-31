@@ -26,7 +26,7 @@ import {
     mergeProvenance,
     retrieveContext
 } from '~/lib/drive-rag';
-import { useAIScope } from '~/lib/use-ai-scope';
+import { useToolServers, useToolSettings } from '~/lib/use-tool-settings';
 import type { ChatMessage } from '~/lib/chat-stream';
 import type { AttachmentChip } from './composer';
 import { useEnabledTools } from '~/lib/use-enabled-tools';
@@ -40,10 +40,11 @@ import { AppSidebar } from './app-sidebar';
 import { ShareConversationDialog } from './share-conversation-dialog';
 import { ChatPanel, type PendingReplay } from './chat-panel';
 import { SecurityView } from './security-view';
-import { MemoryView } from './memory-view';
+import { FeaturedToolPill } from './featured-tool-pill';
+import { ToolSettingsView } from './tool-settings-view';
 import { SignInGate } from './signin-view';
 
-type ShellView = 'chat' | 'security' | 'tools' | 'memory' | 'signin';
+type ShellView = 'chat' | 'security' | 'tools' | 'tool-settings' | 'signin';
 
 type TransportState = 'ok' | 'reconnecting' | 'stale';
 
@@ -53,6 +54,12 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 // 32k tokens of text at ~4 chars/token; larger files are indexed and looked
 // up on demand rather than inlined into the chat context (§8.7).
 const INLINE_THRESHOLD_BYTES = 128 * 1024;
+
+// The fleet MCP server backed by Privasys Drive. Only the CLIENT-side
+// fallback plumbing needs this name (its retrieval code is inherently
+// Drive-specific); everything user-facing renders generically from the
+// server's own settings descriptor.
+const DRIVE_TOOL_SERVER = process.env.NEXT_PUBLIC_DRIVE_TOOL_SERVER || 'drive';
 
 // Whether a file's bytes can be inlined as text (used for the small-file
 // "read in full" path). Conservative: only obvious text-ish types.
@@ -339,13 +346,14 @@ export function ChatShell({
     // flag is a stable build-time value, so both conversation hooks are always
     // called (hooks-order safe) and we simply select which one drives the UI.
     const useDrive = driveEnabled();
-    // When the inference enclave advertises the built-in Drive tools (§8.7
-    // RAG-in-enclave), the model retrieves from Drive itself over the sealed
-    // tool-grant. In that case the CLIENT-side retrieval (drive-rag) stands
-    // down to a fallback so we don't retrieve twice; memory + search happen
-    // inside the enclave with provenance in the tool_result stream.
-    const enclaveHasDriveRAG = (instance.available_tools ?? []).some((t) =>
-        t.name?.startsWith('drive__')
+    // When the fleet advertises the Drive MCP server (§8.7 RAG-in-enclave),
+    // the model retrieves from Drive itself over the attested channel. The
+    // CLIENT-side retrieval (drive-rag) then stands down so we don't
+    // retrieve twice; memory + search happen inside the enclave with
+    // provenance in the tool_result stream. The fleet advertises SERVER
+    // names ('drive'), not qualified tool names.
+    const enclaveHasDriveRAG = (instance.available_tools ?? []).some(
+        (t) => t.name === DRIVE_TOOL_SERVER
     );
     const drive = useChatDrive();
     const convModelLabel = model ? modelLabel(model) : undefined;
@@ -359,12 +367,22 @@ export function ChatShell({
     });
     const conv = useDrive ? driveConv : localConv;
 
-    // The AI-scope grant is the SINGLE source of truth for what the assistant
-    // may recall (plan D2). There is deliberately no second per-conversation
-    // override: the same choice must mean the same thing whether retrieval runs
-    // in the enclave (which only ever reads the grant) or in the client
-    // fallback, on every device.
-    const aiScope = useAIScope(drive.session, drive.tenantId);
+    // Per-conversation enabled set for the fleet's MCP servers (the
+    // X-Privasys-Tools master switches). Declared before buildAugmentation,
+    // which reads it to stand the client fallback down.
+    const tools = useEnabledTools(instance.id, instance.available_tools);
+
+    // Drive's per-user settings document (generic tool-settings contract),
+    // served and ENFORCED by Drive itself through the enclave proxy. This is
+    // the single source of truth for what the assistant may recall (plan
+    // D2): the UI renders it generically (pill + settings view) and the
+    // client fallback below reads the same values, so both retrieval paths
+    // always agree, on every device. This one hook instance is shared with
+    // the pill/view so an edit there is immediately visible here.
+    const driveToolSettings = useToolSettings(
+        sealedSession,
+        useDrive ? DRIVE_TOOL_SERVER : null
+    );
 
     // Node ids under Chat conversations/, so retrieval can tell a past-chat
     // hit from a knowledge-base one. Fetched once per Drive session.
@@ -414,24 +432,34 @@ export function ChatShell({
             const messages: ChatMessage[] = [];
             if (!useDrive || !drive.session || !drive.tenantId) return { messages };
             const key = conversationId ?? '__pending__';
-            // Memory is on by default but the user can switch it off.
-            if (aiScope.memoryOn && isFirstTurn && !memoryInjectedRef.current.has(key)) {
-                memoryInjectedRef.current.add(key);
-                const mem = await fetchMemoryContext(drive.session, drive.tenantId);
-                messages.push(...mem.messages);
-                addProvenance(key, mem.provenance);
-            }
+            // Session-attached files are explicit user input for THIS chat:
+            // inlined regardless of the memory tool's state.
             for (const f of sessionCtxRef.current.get(key) ?? []) {
                 messages.push({
                     role: 'system',
                     content: `Attached file "${f.name}" provided by the user for this chat:\n\n${f.text}`
                 });
             }
-            // Everything else comes from the GRANT, so this fallback path
-            // recalls exactly what the enclave path would (plan §5).
+            // Everything below is the CLIENT fallback for Drive retrieval.
+            // It stands down when the enclave path is live (the fleet
+            // advertises the Drive server, so retrieval happens inside the
+            // enclave), and it is off entirely while the user has the memory
+            // tool switched off — off means ALL Drive MCP is off.
+            const driveToolOn = tools.enabled.has(DRIVE_TOOL_SERVER);
+            if (enclaveHasDriveRAG || !driveToolOn) return { messages };
+            // The values Drive enforces server-side; the fallback recalls
+            // exactly what the enclave path would.
+            const values = driveToolSettings.doc?.values ?? {};
+            const folders = Array.isArray(values.folders) ? (values.folders as string[]) : [];
+            if (values.memory !== false && isFirstTurn && !memoryInjectedRef.current.has(key)) {
+                memoryInjectedRef.current.add(key);
+                const mem = await fetchMemoryContext(drive.session, drive.tenantId);
+                messages.push(...mem.messages);
+                addProvenance(key, mem.provenance);
+            }
             const ret = await retrieveContext(drive.session, drive.tenantId, userText, {
-                pastConversations: aiScope.conversationsScoped || aiScope.allScoped,
-                knowledge: aiScope.allScoped || aiScope.folders.some((f) => f.scoped),
+                pastConversations: values.past_conversations === true || values.entire_drive === true,
+                knowledge: values.entire_drive === true || folders.length > 0,
                 conversationNodeIds: conversationNodeIdsRef.current
             });
             messages.push(...ret.messages);
@@ -443,10 +471,9 @@ export function ChatShell({
             drive.session,
             drive.tenantId,
             addProvenance,
-            aiScope.conversationsScoped,
-            aiScope.allScoped,
-            aiScope.folders,
-            aiScope.memoryOn
+            enclaveHasDriveRAG,
+            tools.enabled,
+            driveToolSettings.doc
         ]
     );
 
@@ -582,7 +609,6 @@ export function ChatShell({
         }
     }, [useDrive, drive.session, drive.tenantId, driveConv]);
 
-    const tools = useEnabledTools(instance.id, instance.available_tools);
     const userTools = useUserTools(chatSession, session?.accessToken, ensureChatSession);
     const policyAllowsAdd = !!instance.tool_policy && instance.tool_policy !== 'locked';
     const hasAdminTools = (instance.available_tools?.length ?? 0) > 0;
@@ -590,12 +616,42 @@ export function ChatShell({
     // user has saved tools, or the fleet policy lets them add one.
     const showTools = hasAdminTools || userTools.tools.length > 0 || policyAllowsAdd;
     // The X-Privasys-Tools header scopes the union catalogue to enabled
-    // admin + user tool names.
+    // admin + user tool names. Everything off must send the 'none'
+    // sentinel: an EMPTY header means default-on, so switching the last
+    // tool off would otherwise silently re-enable them all.
     const enabledToolsArray = useMemo(() => {
         const set = new Set<string>(tools.enabled);
         for (const t of userTools.tools) if (t.enabled) set.add(t.name);
-        return [...set];
+        return set.size ? [...set] : ['none'];
     }, [tools.enabled, userTools.tools]);
+
+    // MCP servers advertising a settings surface (the generic tool-settings
+    // contract): each gets a composer pill and a sidebar settings page,
+    // rendered entirely from the server's own descriptor.
+    const toolServers = useToolServers(sealedSession);
+    const settingsServers = toolServers.servers.filter((s) => s.has_settings);
+    const [settingsServer, setSettingsServer] = useState<string | null>(null);
+    const openToolSettings = useCallback((name: string) => {
+        setSettingsServer(name);
+        setView('tool-settings');
+    }, []);
+    const toolPills =
+        sealedSession && settingsServers.length > 0 ? (
+            <>
+                {settingsServers.map((s) => (
+                    <FeaturedToolPill
+                        key={s.name}
+                        session={sealedSession}
+                        server={s.name}
+                        display={s.settings ?? {}}
+                        enabled={tools.enabled.has(s.name)}
+                        onToggle={(on) => tools.toggle(s.name, on)}
+                        onManage={() => openToolSettings(s.name)}
+                        settings={s.name === DRIVE_TOOL_SERVER ? driveToolSettings : undefined}
+                    />
+                ))}
+            </>
+        ) : undefined;
 
     // ChatPanel is intentionally NOT remounted via a `key` when the
     // conversation changes. Re-keying was aborting in-flight chat
@@ -673,7 +729,12 @@ export function ChatShell({
                 onShareConversation={useDrive ? setShareTargetId : undefined}
                 onShowSecurity={() => setView('security')}
                 onShowTools={() => setView('tools')}
-                onShowMemory={useDrive ? () => setView('memory') : undefined}
+                settingsPages={settingsServers.map((s) => ({
+                    name: s.name,
+                    title: s.settings?.title ?? s.name,
+                    icon: s.settings?.icon
+                }))}
+                onShowToolSettings={openToolSettings}
                 onShowSignIn={() => setView('signin')}
                 mobileOpen={mobileNavOpen}
                 onMobileClose={() => setMobileNavOpen(false)}
@@ -690,7 +751,11 @@ export function ChatShell({
                         <MenuIcon />
                     </button>
                     <h1 className="truncate text-sm font-medium text-[var(--color-text-primary)]">
-                        {viewTitle(view, conv.current?.title ?? (instance.alias ?? instance.id))}
+                        {viewTitle(
+                            view,
+                            conv.current?.title ?? (instance.alias ?? instance.id),
+                            settingsServers.find((s) => s.name === settingsServer)?.settings?.title
+                        )}
                     </h1>
                     {view === 'chat' && instance.endpoint && (
                         <span className="hidden truncate text-xs text-[var(--color-text-muted)] sm:inline">
@@ -760,16 +825,18 @@ export function ChatShell({
                 {view === 'security' && instance.endpoint && session && (
                     <SecurityView instance={instance} onStatus={setAttestationStatus} />
                 )}
-                {view === 'memory' && session && (
-                    <MemoryView
-                        session={drive.session}
-                        tenantId={drive.tenantId}
-                        onConnect={async () => {
-                            await drive.ensureSession(() =>
-                                setDriveNotice('Approve Drive access on your phone to connect.')
-                            );
-                            setDriveNotice(null);
-                        }}
+                {view === 'tool-settings' && session && settingsServer && (
+                    <ToolSettingsView
+                        session={sealedSession}
+                        server={settingsServer}
+                        display={
+                            settingsServers.find((s) => s.name === settingsServer)?.settings ?? {}
+                        }
+                        enabled={tools.enabled.has(settingsServer)}
+                        onToggle={(on) => tools.toggle(settingsServer, on)}
+                        settings={
+                            settingsServer === DRIVE_TOOL_SERVER ? driveToolSettings : undefined
+                        }
                     />
                 )}
                 {view === 'tools' && session && (
@@ -827,18 +894,11 @@ export function ChatShell({
                         staleReason={staleReason}
                         onStreamError={onTransportError}
                         onReconnect={() => setView('signin')}
-                        buildAugmentation={useDrive && !enclaveHasDriveRAG ? buildAugmentation : undefined}
+                        buildAugmentation={useDrive ? buildAugmentation : undefined}
                         attachEnabled={useDrive && !!session}
                         attachments={attachmentsByConv[conv.currentId ?? '__pending__'] ?? []}
                         onAttachFile={useDrive ? onAttachFile : undefined}
-                        memoryEnabled={useDrive && !!drive.session}
-                        memoryMode={aiScope.memoryMode}
-                        memorySummary={aiScope.memorySummary}
-                        onSetMemoryMode={aiScope.setMemoryMode}
-                        memoryOn={aiScope.memoryOn}
-                        onSetMemoryOn={aiScope.setMemoryOn}
-                        memoryFolders={aiScope.folders}
-                        onManageMemory={() => setView('memory')}
+                        toolPills={toolPills}
                     />
                 )}
             </div>
@@ -880,14 +940,14 @@ function NewChatIcon() {
     );
 }
 
-function viewTitle(view: ShellView, fallback: string): string {
+function viewTitle(view: ShellView, fallback: string, toolTitle?: string): string {
     switch (view) {
         case 'security':
             return 'Security';
         case 'tools':
             return 'AI Tools';
-        case 'memory':
-            return 'Memory';
+        case 'tool-settings':
+            return toolTitle ?? 'Tool settings';
         case 'signin':
             return 'Sign in';
         default:
