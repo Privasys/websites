@@ -26,7 +26,12 @@ export function Mermaid({ chart }: { chart: string }) {
                 startOnLoad: false,
                 securityLevel: 'strict',
                 theme: resolvedTheme === 'dark' ? 'dark' : 'neutral',
-                fontFamily: 'inherit'
+                fontFamily: 'inherit',
+                // useMaxWidth shrinks the whole SVG to the viewport width on
+                // phones, making labels unreadable; at natural size the
+                // container scrolls horizontally instead.
+                flowchart: { useMaxWidth: false },
+                sequence: { useMaxWidth: false }
             });
             try {
                 const rendered = await mermaid.render(
@@ -50,7 +55,9 @@ export function Mermaid({ chart }: { chart: string }) {
 
     return (
         <div
-            className='my-6 flex justify-center overflow-x-auto [&_svg]:max-w-full'
+            // mx-auto centres a narrow diagram; a wide one overflows and
+            // scrolls (flex justify-center would clip its left edge).
+            className='my-6 overflow-x-auto [&_svg]:block [&_svg]:mx-auto'
             dangerouslySetInnerHTML={{ __html: svg }}
         />
     );
