@@ -110,6 +110,8 @@ export function ChatPanel({
     memoryMode,
     memorySummary,
     onSetMemoryMode,
+    memoryOn,
+    onSetMemoryOn,
     memoryFolders,
     onManageMemory
 }: {
@@ -197,6 +199,8 @@ export function ChatPanel({
     memoryMode?: MemoryMode;
     memorySummary?: string;
     onSetMemoryMode?: (mode: MemoryMode) => void | Promise<void>;
+    memoryOn?: boolean;
+    onSetMemoryOn?: (on: boolean) => void;
     memoryFolders?: ScopeFolder[];
     onManageMemory?: () => void;
 }) {
@@ -865,6 +869,8 @@ export function ChatPanel({
             memoryMode={memoryMode}
             memorySummary={memorySummary}
             onSetMemoryMode={onSetMemoryMode}
+            memoryOn={memoryOn}
+            onSetMemoryOn={onSetMemoryOn}
             memoryFolders={memoryFolders}
             onManageMemory={onManageMemory}
             placeholder={

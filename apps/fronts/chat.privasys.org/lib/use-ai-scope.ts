@@ -54,6 +54,10 @@ export interface AIScopeState {
     setFolder: (_nodeId: string, _on: boolean) => Promise<void>;
     setConversations: (_on: boolean) => Promise<void>;
     setEntireDrive: (_on: boolean) => Promise<void>;
+    /** Whether the assistant may use `Memory/` — its notes about the user.
+     *  ON by default, but the user can switch it off. */
+    memoryOn: boolean;
+    setMemoryOn: (_on: boolean) => void;
     /** Derived read-out of the grant for the composer's Memory control. */
     memoryMode: MemoryMode;
     /** One-line state for the Memory pill, e.g. "past chats", "3 folders". */
@@ -65,6 +69,9 @@ export interface AIScopeState {
 
 const MEMORY_NAME = 'Memory';
 const CONVERSATIONS_NAME = 'Chat conversations';
+
+/** Per-Drive-tenant preference key for the Memory switch. */
+const memoryKey = (tenantId: string) => `privasys:chat:memory-on:${tenantId}`;
 
 export function useAIScope(session: SealedSession | null, tenantId: string | null): AIScopeState {
     const [loading, setLoading] = useState(false);
@@ -159,6 +166,34 @@ export function useAIScope(session: SealedSession | null, tenantId: string | nul
         [mutate, session, tenantId]
     );
 
+    // Memory (the assistant's notes about you) is ON by default and can be
+    // switched off. Drive has no server-side representation for "off" yet —
+    // `Memory/` is always inside the AI-scoped set — so this preference gates
+    // the CLIENT retrieval path and is stored per Drive tenant. When the
+    // in-enclave path lands, Drive needs to honour the same switch (see the
+    // note in drive-rag) or the two paths will disagree.
+    const [memoryOn, setMemoryOnState] = useState(true);
+    useEffect(() => {
+        if (!tenantId) return;
+        try {
+            setMemoryOnState(window.localStorage.getItem(memoryKey(tenantId)) !== '0');
+        } catch {
+            setMemoryOnState(true);
+        }
+    }, [tenantId]);
+    const setMemoryOn = useCallback(
+        (on: boolean) => {
+            setMemoryOnState(on);
+            if (!tenantId) return;
+            try {
+                window.localStorage.setItem(memoryKey(tenantId), on ? '1' : '0');
+            } catch {
+                /* private mode: the choice lasts for this session */
+            }
+        },
+        [tenantId]
+    );
+
     // Broadest wins: whole-Drive supersedes folders, which supersede past chats.
     const scopedFolders = folders.filter((f) => f.scoped);
     const conversationsScoped = conversationsNode ? scopedIds.has(conversationsNode.id) : false;
@@ -208,6 +243,8 @@ export function useAIScope(session: SealedSession | null, tenantId: string | nul
     );
 
     return {
+        memoryOn,
+        setMemoryOn,
         memoryMode,
         memorySummary,
         setMemoryMode,

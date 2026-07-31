@@ -1,14 +1,15 @@
 'use client';
 
-// Memory view (§8.7 / chat-memory-integration plan §4.2). One concept, one
-// source of truth: your Drive is the assistant's memory, and the AI-scope
-// GRANT is the only state. `Memory/` is always on — the spine the assistant
-// keeps notes in and writes back to. Everything else it may recall is opt-in.
+// Memory view (§8.7 / chat-memory-integration plan §4.2). One concept: your
+// Drive is the assistant's memory. `Memory/` — its notes about you — is ON by
+// default and can be switched off; everything else it may recall is opt-in.
 //
-// Every control here writes the grant, so a change is durable, cross-device,
-// and honoured identically by both retrieval paths (in-enclave and the client
-// fallback). Enforcement is server-side inside Drive; the UI only expresses
-// intent.
+// The recall controls write the AI-scope GRANT, so they are durable,
+// cross-device, and enforced server-side inside Drive. The Memory switch is
+// the exception: Drive has no server-side "off" for `Memory/` yet (it sits in
+// the always-scoped set), so that one gates the CLIENT retrieval path and is
+// stored per Drive tenant. Closing that gap is the follow-up — until then the
+// in-enclave path would still read Memory/ even when this says off.
 
 import { useState } from 'react';
 import type { SealedSession } from '@privasys/auth';
@@ -84,15 +85,17 @@ export function MemoryView({
                 )}
 
                 <p className="mb-2 text-[11px] font-medium tracking-wider text-[var(--color-text-muted)] uppercase">
-                    Always on
+                    Memory
                 </p>
                 <Row
                     title="What I remember about you"
-                    description="Notes I keep as we talk — preferences, context about your work — stored as files in your Drive's Memory folder."
+                    description={
+                        scope.memoryOn
+                            ? 'Notes I keep as we talk — preferences, context about your work — stored as files in your Drive\'s Memory folder.'
+                            : 'Off — I will not read my notes or add to them. Nothing already saved is deleted.'
+                    }
                     control={
-                        <span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-1 text-[11px] font-medium text-emerald-700">
-                            Always on
-                        </span>
+                        <Toggle on={scope.memoryOn} onChange={(on) => scope.setMemoryOn(on)} />
                     }
                 />
 

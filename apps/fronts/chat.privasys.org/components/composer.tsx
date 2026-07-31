@@ -59,6 +59,8 @@ export function Composer({
     memoryMode,
     memorySummary,
     onSetMemoryMode,
+    memoryOn,
+    onSetMemoryOn,
     memoryFolders,
     onManageMemory,
     placeholder,
@@ -111,6 +113,9 @@ export function Composer({
     memoryMode?: MemoryMode;
     memorySummary?: string;
     onSetMemoryMode?: (mode: MemoryMode) => void | Promise<void>;
+    /** Memory itself (the assistant's notes). On by default, switchable off. */
+    memoryOn?: boolean;
+    onSetMemoryOn?: (on: boolean) => void;
     /** The user's AI-enabled Drive folders, listed read-only in the popover. */
     memoryFolders?: ScopeFolder[];
     onManageMemory?: () => void;
@@ -359,6 +364,8 @@ export function Composer({
                             mode={memoryMode ?? 'off'}
                             summary={memorySummary ?? 'off'}
                             onSetMode={onSetMemoryMode}
+                            memoryOn={memoryOn !== false}
+                            onSetMemoryOn={onSetMemoryOn ?? (() => undefined)}
                             folders={memoryFolders ?? []}
                             onManage={onManageMemory}
                         />
@@ -488,8 +495,7 @@ function ToolRow({
 // override them for the current conversation only.
 // Memory control: your Drive as the assistant's memory.
 //
-// `Memory/` is ALWAYS on — it is the spine the assistant writes back to, not a
-// toggle. Everything else the assistant may recall (past chats, chosen folders,
+// `Memory/` is ON BY DEFAULT and can be switched off. Everything else the assistant may recall (past chats, chosen folders,
 // the whole Drive) is opt-in and off by default. Every change here writes the
 // AI-scope GRANT, which is the single source of truth both retrieval paths
 // read, so a change applies immediately, on every device, on any instance.
@@ -499,6 +505,8 @@ function MemoryControl({
     mode,
     summary,
     onSetMode,
+    memoryOn,
+    onSetMemoryOn,
     folders,
     onManage
 }: {
@@ -507,10 +515,15 @@ function MemoryControl({
     mode: MemoryMode;
     summary: string;
     onSetMode: (_mode: MemoryMode) => void | Promise<void>;
+    memoryOn: boolean;
+    onSetMemoryOn: (_on: boolean) => void;
     folders: ScopeFolder[];
     onManage?: () => void;
 }) {
     const on = mode !== 'off';
+    // The pill is live whenever Memory itself is on, whether or not extra
+    // recall is enabled — that is the honest read of "is memory working".
+    const live = memoryOn || on;
     const scoped = folders.filter((f) => f.scoped);
     return (
         <div className="relative ml-1">
@@ -524,8 +537,8 @@ function MemoryControl({
                 // anyone who cannot separate the hues, so the fill and the label
                 // carry it too. Off, it is as quiet as its neighbours.
                 className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ${
-                    on
-                        ? 'bg-[var(--color-primary-green)]/10 text-[var(--color-primary-green)]'
+                    live
+                        ? 'bg-[var(--color-primary-blue)]/10 text-[var(--color-primary-blue)]'
                         : open
                             ? 'text-[var(--color-text-primary)]'
                             : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]'
@@ -555,19 +568,23 @@ function MemoryControl({
                             </p>
                         </div>
 
-                        <div className="flex items-start gap-2 px-3 py-2">
+                        <button
+                            type="button"
+                            onClick={() => onSetMemoryOn(!memoryOn)}
+                            className="flex w-full items-start gap-2 px-3 py-2 text-left hover:bg-[var(--color-surface-2)]/60"
+                        >
                             <span className="min-w-0 flex-1">
                                 <span className="block text-sm text-[var(--color-text-primary)]">
                                     What I remember about you
                                 </span>
                                 <span className="block text-[11px] text-[var(--color-text-muted)]">
-                                    Notes I keep and write back as we talk.
+                                    {memoryOn
+                                        ? 'Notes I keep and write back as we talk.'
+                                        : 'Off — I will not read or add to my notes.'}
                                 </span>
                             </span>
-                            <span className="mt-0.5 shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
-                                Always on
-                            </span>
-                        </div>
+                            <Switch on={memoryOn} />
+                        </button>
 
                         <div className="border-t border-[var(--color-border-dark)]">
                             <button
