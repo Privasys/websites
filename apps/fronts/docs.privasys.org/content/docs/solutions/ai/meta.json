@@ -1,12 +1,8 @@
 {
-    "title": "Confidential AI",
+    "title": "Privasys AI",
     "defaultOpen": false,
     "pages": [
         "overview",
-        "architecture",
-        "attestation",
-        "models",
-        "api",
-        "privacy"
+        "chat-and-agents"
     ]
 }

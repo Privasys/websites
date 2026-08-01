@@ -1,31 +1,26 @@
 ---
 title: Overview
-description: Confidential GPU inference with end-to-end attestation, running open-source LLMs inside Intel TDX + NVIDIA confidential-compute enclaves.
+description: Verifiable confidential AI — attested inference, private-data memory, and agents that stay inside the trust boundary.
 ---
 
-Confidential AI runs open-source language models inside an Intel TDX trust domain with NVIDIA H100/H200 confidential-compute mode enabled. Prompts and responses are decrypted only inside the enclave, the model weights are loaded from a dm-verity protected disk, and every chat session can prove with a fresh remote-attestation handshake which exact code and which exact weights produced its answers.
+Privasys AI is confidential artificial intelligence you can verify. It runs open-weight models inside hardware-protected enclaves so the operator cannot see your prompts, your data, or the model's replies, and it hands every session a hardware-signed receipt of the exact code, model, and configuration that produced it. Connected to [Privasys Drive](/solutions/drive/overview), it reasons over your most sensitive files and runs agents on them without the data ever leaving the enclave.
 
-## Why this matters
-
-Today's hosted LLMs require unconditional trust in the operator: the provider can read every prompt, log every response, fine-tune on user data, or substitute a quietly modified model. There is no cryptographic mechanism a user can run to verify what was on the other end of the API call.
-
-Confidential AI removes that trust. The same hardware-rooted attestation chain that protects Privasys' confidential workloads also protects the model serving runtime:
-
-- The TDX quote pins MRTD + RTMR0..3, proving exactly which kernel, initrd, and userspace booted.
-- A custom x.509 extension on the enclave certificate (OID `1.3.6.1.4.1.65230.3.5.5`) carries the dm-verity root hash of the model disk.
-- The same RA-TLS handshake exposes the loaded model name, the proxy status, and any per-request challenge nonce, so a client can prove the response it received came from the attested binary.
+This solution page is the product orientation. The runtime, the attestation surface, and the API are documented in depth under [Confidential AI](/technology/confidential-ai/overview) in the Technology section.
 
 ## What you get
 
-- A drop-in OpenAI-compatible `/v1/chat/completions` endpoint that streams responses through the enclave.
-- Cryptographic proof of the model weights, the inference server binary, the GPU firmware, and the host platform, returned alongside every session.
-- A reproducible, signed image pipeline that lets you (or an auditor) rebuild the enclave bit-for-bit and confirm the measurements.
-- Operator transparency: the management plane can lock model load/unload behind a fleet token but cannot read prompts, responses, or KV-cache contents.
+- **Attested inference.** Models run in Intel TDX confidential VMs with NVIDIA H100 in confidential-compute mode. A client verifies the environment before sending a prompt, so the answer provably came from the model and weights you expected. See [Attestation](/technology/confidential-ai/attestation).
+- **A memory you own.** Your files, conversations, and notes live in Privasys Drive, sealed to an enclave only you can unlock. The assistant reaches them as an attested tool under a scope you set, so its memory is private, portable, and deletable by you. See [Memory for Chat](/solutions/drive/memory-for-chat).
+- **Agents inside the boundary.** Agents call tools and reach external services while the model and your data stay inside the attested environment, over the [Attested MCP](/technology/confidential-ai/attested-mcp) channel.
 
-## Where to go next
+## When to use it
 
-- [Architecture](architecture) - the components inside and around the enclave.
-- [Attestation](attestation) - the certificate extensions, RTMR replay, and challenge protocol.
-- [Models](models) - dm-verity model disks and how they get published.
-- [API](api) - the OpenAI-compatible endpoints exposed by the proxy.
-- [Privacy guarantees](privacy) - what the operator can and cannot see.
+Privasys AI is for work where the value is in the private data and the risk is in exposing it: financial analysis over real transactions, clinical reasoning over patient records, legal review over confidential files, or an agentic workflow that must read a project's documents without leaking them. Anywhere the honest options were "use AI and surrender control of the data" or "keep control and forgo AI", this is the third one.
+
+## How it fits together
+
+- The [Confidential AI](/technology/confidential-ai/overview) runtime serves the model and produces the attestation.
+- [Privasys Drive](/solutions/drive/overview) holds the data and serves it as an attested, scoped memory.
+- [Privasys Chat](https://chat.privasys.org) is the reference client that ties them together for people, with the same guarantees available to any application through the API.
+
+The [Chat and agents](/solutions/ai/chat-and-agents) page walks through the product experience end to end.

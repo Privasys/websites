@@ -5,6 +5,7 @@
         "overview",
         "confidential-computing",
         "attestation",
-        "sealed-session"
+        "sealed-session",
+        "confidential-ai"
     ]
 }

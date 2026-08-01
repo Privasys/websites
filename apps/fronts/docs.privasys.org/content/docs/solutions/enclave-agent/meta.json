@@ -1,9 +1,0 @@
-{
-    "title": "Enclave Agent",
-    "defaultOpen": false,
-    "pages": [
-        "overview",
-        "confidential-inference",
-        "attested-mcp"
-    ]
-}
