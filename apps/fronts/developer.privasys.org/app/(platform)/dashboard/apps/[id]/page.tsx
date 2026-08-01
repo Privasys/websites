@@ -2425,7 +2425,7 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
     async function handleConfirm() {
         if (tenancyChoice === 'shared' && !pickLocation) return;
         if (tenancyChoice === 'instance' && !pickInstance) return;
-        if (isUpload ? !cwasmFile : !pickVersion) return;
+        if (isUpload ? !cwasmFile : !pickVersion && !sizeChanged) return;
         if (deployBlockedByCredits) {
             setError('Your credit balance is empty. Top up credits or redeem a code on the Billing page to deploy.');
             return;
@@ -2441,6 +2441,12 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
             if (isUpload) {
                 setWorkMsg('Uploading module…');
                 versionId = (await uploadVersionCwasm(token, app.id, cwasmFile as File)).id;
+            } else if (!pickVersion && sizeChanged && currentDeployment) {
+                // Resize: no new version picked — redeploy the RUNNING version
+                // with the newly chosen size. Must be resolved before the
+                // source branches, which all parse pickVersion.
+                setWorkMsg('Resizing…');
+                versionId = currentDeployment.version_id;
             } else if (source === 'package') {
                 setWorkMsg(`Shipping ${pickVersion}…`);
                 // A version already shipped for this tag is REUSED. Semvers are
@@ -2696,7 +2702,15 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
     }
 
     const nothingToDeploy = !isUpload && !optLoading && choices.length === 0;
-    const confirmDisabled = working || deployBlockedByCredits || storeMissing.length > 0 || (isUpload ? !cwasmFile : (!pickVersion || nothingToDeploy));
+    // Same-version RESIZE: the deploy API takes instance_size per deployment
+    // (versions.go calls the deploy-time model "where resize lands"), so a
+    // size change alone is a valid submission — redeploy the version already
+    // running with the new size. The card used to disable the button whenever
+    // no NEWER version existed, while still rendering the resize cost delta
+    // for the size the user had just picked.
+    const currentSize = currentDeployment?.instance_size || app.instance_size || 'micro';
+    const sizeChanged = app.app_type === 'container' && !!currentDeployment && pickSize !== currentSize;
+    const confirmDisabled = working || deployBlockedByCredits || storeMissing.length > 0 || (isUpload ? !cwasmFile : (!pickVersion && !sizeChanged));
 
     // Why the Deploy/Upgrade button is greyed out. Credits and the store listing
     // already print their own amber line, so they return null here; everything
@@ -2707,9 +2721,12 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
         if (isUpload) return cwasmFile ? null : 'Choose a .cwasm module to deploy.';
         if (optLoading) return 'Loading versions…';
         if (optError) return `Could not list versions: ${optError}`;
+        if (inUpgrade && sizeChanged && !pickVersion) return null; // resize is a valid submission
         if (nothingToDeploy) {
             return inUpgrade
-                ? 'No newer version available. Push a new tag, then refresh.'
+                ? (app.app_type === 'container'
+                    ? 'Already on the newest version. Pick a different size to resize, or push a new tag.'
+                    : 'No newer version available. Push a new tag, then refresh.')
                 : 'No version available to deploy yet.';
         }
         if (!pickVersion) return 'Choose a version.';
@@ -2969,7 +2986,9 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                                                 disabled={confirmDisabled || !pickLocation}
                                                 className="px-4 py-2 text-sm font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
                                             >
-                                                {working ? 'Upgrading…' : 'Upgrade'}
+                                                {working
+                                                    ? (sizeChanged && !pickVersion ? 'Resizing…' : 'Upgrading…')
+                                                    : (sizeChanged && !pickVersion ? 'Resize' : 'Upgrade')}
                                             </button>
                                         </div>
                                         {app.app_type === 'container' && renderUpgradeCost(dep)}
