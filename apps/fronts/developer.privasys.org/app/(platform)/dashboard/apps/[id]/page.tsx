@@ -23,6 +23,7 @@ import type { App, BuildJob, AppVersion, AppDeployment, Enclave, CachedImage } f
 import { DEPLOYMENT_STATUS_LABELS, DEPLOYMENT_STATUS_COLORS, CONTAINER_STATE_LABELS, CONTAINER_STATE_COLORS } from '~/lib/types';
 import { fetchInstanceSizes, FALLBACK_INSTANCE_SIZES, monthlyGBP } from '~/lib/instance-sizes';
 import type { InstanceSize } from '~/lib/instance-sizes';
+import { isBinaryField, acceptFor, fileToBase64, formatBytes, base64Bytes } from '@privasys/app-call';
 import { RtmrVerifier } from '~/components/rtmr-verifier';
 import { AttestationConnect, AttestationResultView, useAttestation } from '@privasys/attestation-view';
 
@@ -1102,21 +1103,35 @@ function ApiTestingTab({ appId, token, deployments, versions }: { appId: string;
                         <div className="space-y-3">
                             <div className="text-[11px] uppercase tracking-wider text-black/30 dark:text-white/30 font-medium">Parameters</div>
                             <div className="space-y-2.5">
-                                {currentFunc!.params.map((p) => (
-                                    <div key={p.name} className="flex items-start gap-3">
-                                        <div className="flex items-center gap-1.5 min-h-[36px] min-w-[120px] shrink-0">
-                                            <span className="text-xs font-mono font-medium text-black/70 dark:text-white/70">{p.name}</span>
-                                            <span className="text-[10px] font-mono text-black/25 dark:text-white/25">{witTypeLabel(p.type)}</span>
+                                {currentFunc!.params.map((p) => {
+                                    // A binary manifest field (contentMediaType) is picked from
+                                    // a file, not typed; its base64 rides the same string param.
+                                    const schemaProp = currentFunc!.input_schema?.properties?.[p.name];
+                                    const binary = isBinaryField(schemaProp);
+                                    return (
+                                        <div key={p.name} className="flex items-start gap-3">
+                                            <div className="flex items-center gap-1.5 min-h-[36px] min-w-[120px] shrink-0">
+                                                <span className="text-xs font-mono font-medium text-black/70 dark:text-white/70">{p.name}</span>
+                                                <span className="text-[10px] font-mono text-black/25 dark:text-white/25">{binary ? 'file' : witTypeLabel(p.type)}</span>
+                                            </div>
+                                            <div className="flex-1">
+                                                {binary ? (
+                                                    <FileField
+                                                        prop={schemaProp!}
+                                                        value={typeof paramValues[p.name] === 'string' ? paramValues[p.name] as string : ''}
+                                                        onChange={(v) => setParamValues(prev => ({ ...prev, [p.name]: v }))}
+                                                    />
+                                                ) : (
+                                                    <ParamInput
+                                                        param={p}
+                                                        value={paramValues[p.name]}
+                                                        onChange={(v) => setParamValues(prev => ({ ...prev, [p.name]: v }))}
+                                                    />
+                                                )}
+                                            </div>
                                         </div>
-                                        <div className="flex-1">
-                                            <ParamInput
-                                                param={p}
-                                                value={paramValues[p.name]}
-                                                onChange={(v) => setParamValues(prev => ({ ...prev, [p.name]: v }))}
-                                            />
-                                        </div>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         </div>
                     ) : (
@@ -3439,6 +3454,64 @@ function meta(prop: JsonSchemaProp) {
     return prop['x-privasys'] ?? {};
 }
 
+// A field whose value is a file (JSON-Schema `contentMediaType` on the
+// manifest property): the browser reads the picked file and submits its
+// base64 as the ordinary string value, so the wire format is exactly what the
+// CLI, MCP and agents send. Generic for any app and any tool — the manifest
+// declares it, nothing here is app-specific.
+function FileField({ prop, value, onChange, disabled }: {
+    prop: JsonSchemaProp; value: string; onChange: (v: string) => void; disabled?: boolean;
+}) {
+    const inputRef = useRef<HTMLInputElement>(null);
+    const [picked, setPicked] = useState<{ name: string; size: number } | null>(null);
+    const [reading, setReading] = useState(false);
+    const [err, setErr] = useState<string | null>(null);
+    const accept = acceptFor(prop);
+
+    const pick = async (f: File | undefined) => {
+        if (!f) return;
+        setErr(null); setReading(true);
+        try {
+            onChange(await fileToBase64(f));
+            setPicked({ name: f.name, size: f.size });
+        } catch (e) {
+            onChange(''); setPicked(null); setErr((e as Error).message);
+        } finally {
+            setReading(false);
+            if (inputRef.current) inputRef.current.value = '';
+        }
+    };
+    const clear = () => { onChange(''); setPicked(null); setErr(null); };
+
+    const btn = 'px-3 py-1.5 text-xs font-medium rounded-lg border border-black/10 dark:border-white/15 hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-40';
+    return (
+        <div className="space-y-1">
+            <input ref={inputRef} type="file" accept={accept || undefined} className="hidden"
+                onChange={e => void pick(e.target.files?.[0])} />
+            {value ? (
+                <div className="flex items-center gap-2 rounded-lg border border-black/10 dark:border-white/10 bg-white dark:bg-black/30 px-3 py-2 text-sm">
+                    <svg className="w-4 h-4 shrink-0 text-black/40 dark:text-white/40" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" d="M13 2v7h7" /></svg>
+                    <span className="min-w-0 truncate">
+                        {picked ? picked.name : 'file content set'}
+                        <span className="ml-1.5 text-xs text-black/40 dark:text-white/40">{formatBytes(picked ? picked.size : base64Bytes(value))}</span>
+                    </span>
+                    <span className="ml-auto flex shrink-0 gap-1.5">
+                        <button type="button" className={btn} disabled={disabled || reading} onClick={() => inputRef.current?.click()}>Replace</button>
+                        <button type="button" className={btn} disabled={disabled || reading} onClick={clear}>Clear</button>
+                    </span>
+                </div>
+            ) : (
+                <button type="button" disabled={disabled || reading} onClick={() => inputRef.current?.click()}
+                    className="flex w-full items-center gap-2 rounded-lg border border-dashed border-black/20 dark:border-white/20 px-3 py-2 text-sm text-black/60 dark:text-white/60 hover:border-black/40 dark:hover:border-white/40 hover:text-black dark:hover:text-white disabled:opacity-40 transition-colors">
+                    <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" /></svg>
+                    {reading ? 'Reading…' : `Choose a file${accept ? ` (${accept})` : ''}…`}
+                </button>
+            )}
+            {err && <p className="text-xs text-red-600 dark:text-red-400">{err}</p>}
+        </div>
+    );
+}
+
 function FieldInput({ name, prop, value, onChange, appId, token, disabled }: {
     name: string; prop: JsonSchemaProp; value: string; onChange: (v: string) => void;
     appId: string; token: string; disabled?: boolean;
@@ -3464,7 +3537,9 @@ function FieldInput({ name, prop, value, onChange, appId, token, disabled }: {
     const choices = dynChoices ?? staticEnum;
 
     let input;
-    if (choices) {
+    if (isBinaryField(prop)) {
+        input = <FileField prop={prop} value={value} onChange={onChange} disabled={disabled} />;
+    } else if (choices) {
         input = (
             <select value={value} onChange={e => onChange(e.target.value)} disabled={disabled} className={cls}>
                 <option value="">{dynChoices === null && m.source ? 'loading…' : 'select…'}</option>
@@ -3488,7 +3563,7 @@ function FieldInput({ name, prop, value, onChange, appId, token, disabled }: {
     return (
         <div className="space-y-1">
             <div className="flex items-center justify-between gap-3">
-                <label className="block text-xs font-medium">{label}{prop.type ? <span className="ml-1 text-[10px] text-black/30 dark:text-white/30">{m.secret ? 'secret' : prop.type}</span> : null}</label>
+                <label className="block text-xs font-medium">{label}{prop.type ? <span className="ml-1 text-[10px] text-black/30 dark:text-white/30">{m.secret ? 'secret' : isBinaryField(prop) ? 'file' : prop.type}</span> : null}</label>
                 {m.details && (
                     <button type="button" onClick={() => setShowDetails(s => !s)}
                         className="shrink-0 text-xs text-black/40 dark:text-white/40 hover:text-black/70 dark:hover:text-white/70 underline-offset-2 hover:underline">

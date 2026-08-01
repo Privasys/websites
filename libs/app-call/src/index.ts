@@ -20,3 +20,4 @@
 
 export * from './manifest';
 export * from './call';
+export * from './file';
