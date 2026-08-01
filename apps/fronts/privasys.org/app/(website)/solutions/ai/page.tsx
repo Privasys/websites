@@ -16,7 +16,9 @@ export default function AISolution() {
                     Verify the answer came from the model you trust, on hardware you can prove.
                     Privasys AI runs open-weight models inside Intel TDX confidential VMs with
                     NVIDIA H100 in CC mode, so every chat session ships with a hardware-signed
-                    receipt of the exact code, model and configuration that produced it.
+                    receipt of the exact code, model and configuration that produced it. And with
+                    Privasys Drive as its memory, it reasons over your most sensitive data and runs
+                    agents on it without the data ever leaving the trust boundary.
                 </p>
                 <div className='mt-10 flex flex-wrap gap-4'>
                     <a href='https://chat.privasys.org/i/demo' target='_blank' rel='noopener noreferrer'
@@ -27,6 +29,56 @@ export default function AISolution() {
                         className='px-6 py-2.5 font-bold border rounded-full text-black dark:text-white hover:bg-black hover:text-white dark:border-white dark:hover:bg-white dark:hover:text-black transition-colors'>
                         Read the documentation
                     </a>
+                </div>
+            </section>
+
+            <section className='mt-20 lg:mt-40'>
+                <h2 className='text-2xl lg:text-4xl'>
+                    <Balancer>Bring your own data, and your agents.</Balancer>
+                </h2>
+                <div className='mt-16 grid grid-cols-1 lg:grid-cols-2 gap-16 lg:gap-x-32 lg:gap-y-20'>
+                    <div>
+                        <h3 className='text-xl lg:text-3xl'>AI that knows you</h3>
+                        <p>
+                            <Balancer>
+                                The best outcomes come from real, private data, not sanitised summaries.
+                                Privasys AI can work directly on your transactions, records, or contracts,
+                                because the data stays encrypted in hardware throughout. More accurate,
+                                more relevant, and safe.
+                            </Balancer>
+                        </p>
+                    </div>
+                    <div>
+                        <h3 className='text-xl lg:text-3xl'>Private knowledge retrieval</h3>
+                        <p>
+                            <Balancer>
+                                Augment the model with your own documents through{' '}
+                                <a href='/solutions/drive/' className='underline'>Privasys Drive</a>.
+                                Ingestion, embedding, and retrieval all happen inside the enclave, so your
+                                data is never exposed, even to the model provider.
+                            </Balancer>
+                        </p>
+                    </div>
+                    <div>
+                        <h3 className='text-xl lg:text-3xl'>Agents inside the trust boundary</h3>
+                        <p>
+                            <Balancer>
+                                Agents call tools and reach external services while the model and your data
+                                stay inside the attested environment. The trust boundary holds even when the
+                                agent reaches out.
+                            </Balancer>
+                        </p>
+                    </div>
+                    <div>
+                        <h3 className='text-xl lg:text-3xl'>Where it was impossible before</h3>
+                        <p>
+                            <Balancer>
+                                Finance running LLMs over transaction data, healthcare over patient records,
+                                legal over confidential files, government over classified information. Using
+                                AI on this data no longer means surrendering control of it.
+                            </Balancer>
+                        </p>
+                    </div>
                 </div>
             </section>
 
@@ -165,7 +217,7 @@ export default function AISolution() {
                         className='px-6 py-2.5 font-bold border rounded-full text-black dark:text-white hover:bg-black hover:text-white dark:border-white dark:hover:bg-white dark:hover:text-black transition-colors'>
                         Read the engineering posts
                     </a>
-                    <a href='https://docs.privasys.org/solutions/ai/architecture' target='_blank' rel='noopener noreferrer'
+                    <a href='https://docs.privasys.org/technology/confidential-ai/architecture' target='_blank' rel='noopener noreferrer'
                         className='px-6 py-2.5 font-bold border rounded-full text-black dark:text-white hover:bg-black hover:text-white dark:border-white dark:hover:bg-white dark:hover:text-black transition-colors'>
                         Read the architecture doc
                     </a>

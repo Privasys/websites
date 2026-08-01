@@ -22,16 +22,10 @@ const NAV_ITEMS = [
                 description: 'A distributed virtual HSM for keys, policies, approvals, and cryptographic operations inside secure enclaves.'
             },
             {
-                label: 'Enclave Agent',
-                href: '/solutions/enclave-agent/',
-                eyebrow: 'Agents',
-                description: 'Deploy AI agents and retrieval workflows where prompts, tools, and private data stay inside the trust boundary.'
-            },
-            {
                 label: 'Privasys AI',
                 href: '/solutions/ai/',
-                eyebrow: 'Inference',
-                description: 'Confidential inference for sensitive workloads, with hardware attestation from the client to the model endpoint.'
+                eyebrow: 'Inference & agents',
+                description: 'Confidential inference, retrieval, and agents on your private data, with hardware attestation from the client to the model endpoint.'
             },
             {
                 label: 'Privasys Platform',
@@ -44,6 +38,12 @@ const NAV_ITEMS = [
                 href: '/solutions/wallet/',
                 eyebrow: 'Identity',
                 description: 'Passwordless identity and approvals from your phone, with server verification before users authenticate.'
+            },
+            {
+                label: 'Privasys Drive',
+                href: '/solutions/drive/',
+                eyebrow: 'Storage',
+                description: 'End-to-end encrypted files sealed to an attested enclave, and the self-sovereign memory behind Privasys Chat.'
             }
         ],
         dropdownLinks: [

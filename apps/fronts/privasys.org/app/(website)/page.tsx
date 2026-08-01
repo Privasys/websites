@@ -48,12 +48,12 @@ export default function Home() {
                         </div>
                         <div>
                             <h3 className='text-xl lg:text-3xl'>
-                                <a href='/solutions/enclave-agent/' className='hover:underline'>Enclave Agent&nbsp;&rsaquo;</a>
+                                <a href='/solutions/ai/' className='hover:underline'>Privasys AI&nbsp;&rsaquo;</a>
                             </h3>
                             <p>
                                 <Balancer>
                                     Run AI models on your most sensitive data without ever exposing it.
-                                    Large language models, retrieval pipelines, and AI agents all operate inside hardware-protected environments.
+                                    Attested confidential inference, private retrieval, and AI agents all operate inside hardware-protected environments.
                                     Your data and model weights never leave the trust boundary.
                                 </Balancer>
                             </p>
