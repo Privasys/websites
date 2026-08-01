@@ -389,7 +389,7 @@ export async function getAppSchema(token: string, appId: string): Promise<AppSch
 export async function rpcCall(token: string, appId: string, func: string, params: unknown, billingApproved?: string, onResponse?: (_status: number, _headers: Headers) => void): Promise<unknown> {
     const meta = await appCallTarget(token, appId);
     if (!meta?.host) {
-        throw new ApiError('app is not deployed (no live hostname to call)', 409);
+        throw new ApiError('the app has no live hostname yet (not deployed, or mid-redeploy) — retry once it is running', 409);
     }
     try {
         const session = await getEnclaveSealedSession({ appHost: meta.host });
@@ -434,12 +434,15 @@ export async function rpcCall(token: string, appId: string, func: string, params
 }
 
 // appCallTarget resolves what a direct call needs to know about an app — name,
-// runtime, live hostname, manifest — once per page life. A null host (not
-// deployed, or the lookup failed) sends the call down the relay path.
+// runtime, live hostname, manifest — cached once RESOLVED. A result without a
+// hostname is deliberately NOT cached: an app can be mid-redeploy when the
+// first call happens (hostname briefly absent), and caching that empty answer
+// poisoned every later call on the page with "app is not deployed" until a
+// full reload. Unresolved targets retry on the next call instead.
 const appCallTargets = new Map<string, { name: string; type: string; host: string; manifest: AppManifest | null }>();
 async function appCallTarget(token: string, appId: string): Promise<{ name: string; type: string; host: string; manifest: AppManifest | null } | null> {
     const hit = appCallTargets.get(appId);
-    if (hit) return hit;
+    if (hit?.host) return hit;
     try {
         const app = await getApp(token, appId);
         const meta = {
@@ -448,7 +451,7 @@ async function appCallTarget(token: string, appId: string): Promise<{ name: stri
             host: app.hostname ?? '',
             manifest: (app.container_mcp as AppManifest | undefined) ?? null
         };
-        appCallTargets.set(appId, meta);
+        if (meta.host) appCallTargets.set(appId, meta);
         return meta;
     } catch {
         return null;
