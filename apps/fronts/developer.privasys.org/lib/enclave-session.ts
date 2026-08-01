@@ -68,10 +68,10 @@ function buildAuthFrame(appHost: string): AuthFrame {
     const cfg: AuthFrameConfig = {
         apiBase: getApiBaseUrl(),
         // The name the wallet shows on the approval push and in its session
-        // list. This frame fronts every portal app call (configure, actions,
-        // API testing), so it carries the platform's own name; the target app
-        // host stays in the label so each enclave's session is tellable apart.
-        appName: `${APP_NAME} (${appHost})`,
+        // list — the same APP_NAME as every other portal session (Bertrand:
+        // host-suffixed variants read far too long in the wallet). Per-host
+        // distinction lives in the rpId below, not the display name.
+        appName: APP_NAME,
         authOrigin: process.env.NEXT_PUBLIC_IDP_ORIGIN || 'https://privasys.id',
         rpId: `privasys-platform-deploy:${appHost}`,
         brokerUrl: process.env.NEXT_PUBLIC_BROKER_URL || 'wss://relay.privasys.org/relay',
