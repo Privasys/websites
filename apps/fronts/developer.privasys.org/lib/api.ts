@@ -277,6 +277,7 @@ export interface FieldMeta {
     placeholder?: string;                         // input placeholder
     details?: string;                             // long explanation, shown behind a "Details" toggle
     source?: { tool: string; select: string };   // dynamic enum from another tool
+    accept?: string;                              // file-picker filter for a binary field, e.g. ".ml,.p7b"
 }
 
 export interface JsonSchemaProp {
@@ -289,6 +290,12 @@ export interface JsonSchemaProp {
     'pattern'?: string;
     'minLength'?: number;
     'maxLength'?: number;
+    /** JSON Schema 2020-12: how the string value is encoded, e.g. "base64". */
+    'contentEncoding'?: string;
+    /** JSON Schema 2020-12: media type of the decoded bytes. Its presence is
+     *  the cue to render a FILE PICKER instead of a text box; the wire format
+     *  (a base64 string) is unchanged, so the CLI/MCP/agents are untouched. */
+    'contentMediaType'?: string;
     'x-privasys'?: FieldMeta;
 }
 
