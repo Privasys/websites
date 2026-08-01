@@ -2645,6 +2645,10 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
         const newSize = sizes.find(s => s.slug === pickSize);
         if (!newSize) return null;
         const curSlug = dep.instance_size || app.instance_size || 'micro';
+        // Nothing is changing → nothing to estimate. The running SIZE line
+        // above already states the current rate; repeating it here as an
+        // "after upgrade" figure just duplicated the card.
+        if (pickSize === curSlug && !pickVersion) return null;
         const curSize = sizes.find(s => s.slug === curSlug);
         const newHour = newSize.credits_per_hour;
         const curHour = curSize?.credits_per_hour ?? newHour;
@@ -2723,11 +2727,10 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
         if (optError) return `Could not list versions: ${optError}`;
         if (inUpgrade && sizeChanged && !pickVersion) return null; // resize is a valid submission
         if (nothingToDeploy) {
-            return inUpgrade
-                ? (app.app_type === 'container'
-                    ? 'Already on the newest version. Pick a different size to resize, or push a new tag.'
-                    : 'No newer version available. Push a new tag, then refresh.')
-                : 'No version available to deploy yet.';
+            // In the upgrade card the version picker itself already reads
+            // "Already on the newest version." — a second line saying the
+            // same (plus resize coaching) just duplicated the card.
+            return inUpgrade ? null : 'No version available to deploy yet.';
         }
         if (!pickVersion) return 'Choose a version.';
         if (inUpgrade && !pickLocation) {
