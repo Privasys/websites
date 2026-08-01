@@ -1,0 +1,32 @@
+---
+title: Chat and agents
+description: The Privasys AI experience end to end — attested chat, private-data memory via Drive, and agents over attested MCP.
+---
+
+This page describes how Privasys AI works as a product: the attested chat session, the memory it draws on, and how agents reach tools without leaving the trust boundary. The mechanisms live in the Technology section; this is the tour.
+
+## Attested chat
+
+A chat session opens a channel bound to the enclave's attestation, so the browser is talking to the exact code and model it verified, and the operator sees only ciphertext. Every reply carries a receipt of the code, weights, and configuration that produced it. The runtime, the API, and the guarantees are covered under [Confidential AI](/technology/confidential-ai/overview), with the client-side verification problem solved as described in [Sealed session](/technology/sealed-session).
+
+## Memory, from your Drive
+
+The assistant's memory is your [Privasys Drive](/solutions/drive/overview), not a database on our servers. Conversations, attachments, and durable notes are all sealed files. The assistant reaches them as an attested, read-only tool over a mutually attested channel, and only within a scope you set:
+
+- **Memory** (your notes about yourself or a project) is in scope by default.
+- **Past conversations**, **specific folders**, or the **whole Drive** are opt-in.
+
+Memory is served as an enumerable tree, so the assistant sees everything it knows before it answers, and documents are chunked along a stable structure so every passage it uses can be cited. The full design is in [Memory for Chat](/solutions/drive/memory-for-chat).
+
+## Agents, inside the trust boundary
+
+Agentic workflows call tools and reach external services. Privasys AI keeps the model and your data inside the attested environment while the agent works, and the tools it calls are themselves attested over [Attested MCP](/technology/confidential-ai/attested-mcp): the caller proves its measured identity to the tool, and the tool proves its own to the caller, so neither is a password an operator could copy.
+
+Because the assistant's reach is a grant you set, one Drive gives you two shapes of agent:
+
+- A **personal** assistant scoped to your whole Drive, carrying your history across conversations.
+- A **project** agent scoped to a single folder, seeing exactly that work and nothing of your private life. Share the folder and the agent is shared, still sealed to the enclave.
+
+## Try it
+
+[Privasys Chat](https://chat.privasys.org) is the reference client. Applications can reach the same attested inference through the OpenAI-compatible [API](/technology/confidential-ai/api), and the same sealed, scoped memory through the Drive tools.

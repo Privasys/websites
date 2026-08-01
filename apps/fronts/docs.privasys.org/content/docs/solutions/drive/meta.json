@@ -1,8 +1,8 @@
 {
-    "title": "Privasys AI",
+    "title": "Privasys Drive",
     "defaultOpen": false,
     "pages": [
         "overview",
-        "chat-and-agents"
+        "memory-for-chat"
     ]
 }

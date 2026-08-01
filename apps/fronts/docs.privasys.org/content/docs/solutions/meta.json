@@ -4,10 +4,10 @@
     "pages": [
         "enclave-os",
         "enclave-vaults",
-        "enclave-agent",
-        "ai",
         "platform",
         "cli",
-        "privasys-id"
+        "privasys-id",
+        "ai",
+        "drive"
     ]
 }

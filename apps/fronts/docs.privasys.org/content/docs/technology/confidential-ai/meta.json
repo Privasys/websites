@@ -1,0 +1,13 @@
+{
+    "title": "Confidential AI",
+    "defaultOpen": false,
+    "pages": [
+        "overview",
+        "architecture",
+        "attestation",
+        "models",
+        "api",
+        "attested-mcp",
+        "privacy"
+    ]
+}
