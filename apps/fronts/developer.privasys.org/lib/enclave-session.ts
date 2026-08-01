@@ -23,6 +23,7 @@
 
 import { AuthFrame, type AuthFrameConfig, type SealedSession } from '@privasys/auth';
 import { getApiBaseUrl } from './api-base-url';
+import { APP_NAME } from './constants';
 
 export interface OpenEnclaveSessionOptions {
     /** Hostname (no scheme) of the enclave's manager-mode SNI, e.g. `myenclave-mgr.apps.privasys.org`. */
@@ -66,7 +67,11 @@ function buildAuthFrame(appHost: string): AuthFrame {
     // provider's.
     const cfg: AuthFrameConfig = {
         apiBase: getApiBaseUrl(),
-        appName: `Privasys Deploy (${appHost})`,
+        // The name the wallet shows on the approval push and in its session
+        // list. This frame fronts every portal app call (configure, actions,
+        // API testing), so it carries the platform's own name; the target app
+        // host stays in the label so each enclave's session is tellable apart.
+        appName: `${APP_NAME} (${appHost})`,
         authOrigin: process.env.NEXT_PUBLIC_IDP_ORIGIN || 'https://privasys.id',
         rpId: `privasys-platform-deploy:${appHost}`,
         brokerUrl: process.env.NEXT_PUBLIC_BROKER_URL || 'wss://relay.privasys.org/relay',
