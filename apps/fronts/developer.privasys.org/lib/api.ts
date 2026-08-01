@@ -445,10 +445,19 @@ async function appCallTarget(token: string, appId: string): Promise<{ name: stri
     if (hit?.host) return hit;
     try {
         const app = await getApp(token, appId);
+        let host = app.hostname ?? '';
+        if (!host) {
+            // The apps row's hostname is legacy: the current deploy flow no
+            // longer writes it (mgmt's SetAppDeployment has no callers) and a
+            // stop NULLs it, so a stopped-then-redeployed app has none even
+            // while Running. The ACTIVE deployment is the source of truth.
+            const deps = await listDeployments(token, appId);
+            host = deps.find(d => d.status === 'active' && d.hostname)?.hostname ?? '';
+        }
         const meta = {
             name: app.name,
             type: app.app_type,
-            host: app.hostname ?? '',
+            host,
             manifest: (app.container_mcp as AppManifest | undefined) ?? null
         };
         if (meta.host) appCallTargets.set(appId, meta);
