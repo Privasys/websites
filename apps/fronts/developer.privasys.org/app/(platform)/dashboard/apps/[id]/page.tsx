@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { useAuth } from '~/lib/privasys-auth';
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { getApp, listBuilds, listVersions, listDeployments, listCompatibleEnclaves, deleteApp, deployDirect, stopDeployment, getAppSchema, rpcCall, updateStoreListing, publishApp, identiconUrl, getAppMcp, updateContainerMcp, detectContainerMcp, retryBuild, listAppOwners, addAppOwner, removeAppOwner, createVersion, stageProfile, promoteProfile, listPending, vaultExportTarget, pendingBinding, beginVaultApproval, pollVaultApproval, listRegistryTags, uploadAsset, listAppCommits, uploadVersionCwasm, getVersion, listCachedImages, listDeployLocations, listInstances, apiErrorCode, setAutoMigrate } from '~/lib/api';
+import { getApp, listBuilds, listVersions, listDeployments, listCompatibleEnclaves, deleteApp, deployDirect, stopDeployment, getAppSchema, rpcCall, configComplete, updateStoreListing, publishApp, identiconUrl, getAppMcp, updateContainerMcp, detectContainerMcp, retryBuild, listAppOwners, addAppOwner, removeAppOwner, createVersion, stageProfile, promoteProfile, listPending, vaultExportTarget, pendingBinding, beginVaultApproval, pollVaultApproval, listRegistryTags, uploadAsset, listAppCommits, uploadVersionCwasm, getVersion, listCachedImages, listDeployLocations, listInstances, apiErrorCode, setAutoMigrate } from '~/lib/api';
 
 // The IdP that runs the vault step-up approval ceremony.
 const IDP_ORIGIN = process.env.NEXT_PUBLIC_IDP_ORIGIN || 'https://privasys.id';
@@ -3637,10 +3637,12 @@ function ConfigureForm({ cfg, appId, token, frozen, onConfigured }: { cfg: Confi
             if (errMsg) { setError(errMsg); return; }
             setResult('Configuration applied.');
             setApplied(true);
-            // Reload deployments so the Frozen badge/tile clear immediately: the
-            // enclave lifts the freeze on this successful configure return and
-            // mgmt clears container_state, but the page holds a stale copy until
-            // the next fetch.
+            // The configure travelled over the sealed session — mgmt never saw
+            // it, so the Frozen badge would outlive it until the usage sweep
+            // reads the runtime's `configured` metric. Tell mgmt now (the
+            // config-complete latency shortcut, best-effort), THEN refetch so
+            // the page shows the cleared state immediately.
+            await configComplete(token, appId);
             onConfigured?.();
         } catch (e) {
             setError((e as Error).message);

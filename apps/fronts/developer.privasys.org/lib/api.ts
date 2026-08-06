@@ -373,6 +373,20 @@ export interface AppSchema {
     configure?: ConfigureSection;
 }
 
+// configComplete tells the control plane a successful configure just happened
+// on the ENCLAVE (the call itself went over the sealed session, so mgmt never
+// saw it). It is a latency shortcut only — the runtime's `configured` metric
+// clears the Frozen badge on the next usage sweep regardless — but without it
+// the badge outlives the configure by minutes, which reads as "it didn't
+// work". Best-effort by design: swallow failures.
+export async function configComplete(token: string, appId: string): Promise<void> {
+    try {
+        await request<unknown>(`/api/v1/apps/${encodeURIComponent(appId)}/config-complete`, token, { method: 'POST' });
+    } catch {
+        // The sweep will catch up.
+    }
+}
+
 export async function getAppSchema(token: string, appId: string): Promise<AppSchema> {
     const resp = await request<{ status: string; schema: AppSchema }>(`/api/v1/apps/${encodeURIComponent(appId)}/schema`, token, undefined, { proxied: true });
     if (resp.status !== 'schema') {
