@@ -134,6 +134,8 @@ Response:
 
 The attestation server needs access to a **Provisioning Certificate Caching Service** (PCCS) to fetch Intel's attestation collateral. You can run the PCCS on the same machine or on a separate server.
 
+Use **PCCS version 1.27 or later**. Intel PCS API v3 has reached end of life, and earlier PCCS releases still call it: they serve stale v3 collateral until it expires and then return `410 GONE`. Alternatively, skip the PCCS entirely and point the quote provider straight at Intel PCS API v4 by setting `pccs_url` and `collateral_service` to `https://api.trustedservices.intel.com/sgx/certification/v4/` in `/etc/sgx_default_qcnl.conf`. This direct configuration is how Privasys runs its own attestation server.
+
 ### Install
 
 ```bash
