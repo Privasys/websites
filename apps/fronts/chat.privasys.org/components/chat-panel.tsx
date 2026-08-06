@@ -821,8 +821,20 @@ export function ChatPanel({
         [persist, instance.id]
     );
 
+    // A turn waiting out the reconnect already shows ReconnectingNotice inline
+    // (anchored to the message, with "will be sent automatically"). Showing the
+    // spinner banner as well duplicated the exact same sentence above the
+    // composer, so the banner stands down while an inline notice is visible.
+    // The 'stale' variant always shows: it carries the Reconnect action, which
+    // no inline notice provides.
+    // The approve-on-your-phone variant is exempt: the inline notice does not
+    // say it, and hiding it would leave the user waiting on a tap they cannot
+    // see they owe.
+    const inlineReconnectNoticeVisible = messages.some((m) => m.reconnecting);
+    const suppressBanner =
+        transport === 'reconnecting' && inlineReconnectNoticeVisible && !sealedApprovalPending;
     const transportBanner =
-        transport === 'ok' ? null : (
+        transport === 'ok' || suppressBanner ? null : (
             <TransportBanner transport={transport} staleReason={staleReason} approvalPending={sealedApprovalPending} onReconnect={onReconnect} />
         );
 
