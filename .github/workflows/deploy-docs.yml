@@ -52,6 +52,9 @@ jobs:
           test -f dist/apps/fronts/docs.privasys.org/.next/index.html
           test -f dist/apps/fronts/docs.privasys.org/.next/sitemap.xml
           test -f dist/apps/fronts/docs.privasys.org/.next/robots.txt
+          test -f dist/apps/fronts/docs.privasys.org/.next/llms.txt
+          test -f dist/apps/fronts/docs.privasys.org/.next/llms-full.txt
+          test -f dist/apps/fronts/docs.privasys.org/.next/md/technology/overview.md
           test -d dist/apps/fronts/docs.privasys.org/.next/_next/static
           echo "::group::Files to deploy"
           find dist/apps/fronts/docs.privasys.org/.next -maxdepth 2 -type f | sort | head -200
@@ -84,6 +87,12 @@ jobs:
           rsync -avz --delete \
             -e "ssh -p ${PORT} -i ~/.ssh/id_ed25519" \
             "${DIST}/" "${OVH_USER}@${OVH_HOST}:${STAGING}/"
+          # Stock nginx mime.types has no .md mapping; without this the raw
+          # markdown pages under /md/ ship as application/octet-stream and AI
+          # fetchers refuse them. types blocks in the same context merge, so
+          # this only adds the one mapping. Idempotent.
+          ssh -p "$PORT" -i ~/.ssh/id_ed25519 "${OVH_USER}@${OVH_HOST}" "set -euo pipefail; \
+            printf 'types { text/markdown md; }\n' | sudo tee /etc/nginx/conf.d/markdown-mime.conf >/dev/null"
           ssh -p "$PORT" -i ~/.ssh/id_ed25519 "${OVH_USER}@${OVH_HOST}" "set -euo pipefail; \
             cd \$HOME && \
             sudo rsync -av --delete \
@@ -104,6 +113,16 @@ jobs:
           SITEMAP=$(curl -sS -o /dev/null -w '%{http_code}' https://docs.privasys.org/sitemap.xml)
           echo "sitemap=$SITEMAP"
           test "$SITEMAP" = "200"
+          LLMS=$(curl -sS -o /tmp/docs-llms.txt -w '%{http_code}' https://docs.privasys.org/llms.txt)
+          echo "llms=$LLMS"
+          test "$LLMS" = "200"
+          grep -q 'Privasys Documentation' /tmp/docs-llms.txt
+          FULL=$(curl -sS -o /dev/null -w '%{http_code}' https://docs.privasys.org/llms-full.txt)
+          echo "llms-full=$FULL"
+          test "$FULL" = "200"
+          MD_TYPE=$(curl -sS -o /dev/null -w '%{content_type}' https://docs.privasys.org/md/technology/overview.md)
+          echo "md content-type=$MD_TYPE"
+          case "$MD_TYPE" in text/markdown*) ;; *) echo 'raw markdown served with wrong MIME type' >&2; exit 1;; esac
           # The export pages are RSC shells: the stylesheet path lives in the
           # __next_f flight payload, not in a <link href> tag.
           CSS=$(grep -o '/_next/static/css/[A-Za-z0-9_-]*\.css' /tmp/docs-index.html | head -1)
