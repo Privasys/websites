@@ -38,7 +38,7 @@ The net effect is that the only reader of your assistant's memory is an attested
 
 ## Why a memory tree, and not only a vector search
 
-It is fashionable to treat retrieval as solved: embed everything, rank by similarity, paste the top matches into the prompt. That works for a document you are searching and fails for a memory you reason from, and the reason is worth stating precisely. A vector index answers "what is most like this query?". It never answers "what is there?". If the assistant is deciding what it knows about you or a project, it cannot miss a memory because the wording did not rhyme with the question. Memory needs enumeration, which similarity search alone cannot give.
+It is fashionable to treat retrieval as solved: embed everything, rank by similarity, paste the top matches into the prompt. That works for a document you are searching and fails for a memory you reason from. A vector index answers "what is most like this query?", but doesn't answer "what is there?". If the assistant is deciding what it knows about you or a project, it cannot miss a memory because the wording did not rhyme with the question. Memory needs enumeration, which similarity search alone cannot give.
 
 So `Memory/` is served as a tree. When the assistant opens its memory it receives either the whole thing inline, if it fits within a token budget, or a tree of titles and one-line descriptions with lazy drill-down into the entries that prove relevant. Either way it sees a complete index of what it knows before it decides what to read in full. Nothing hides behind a similarity threshold. A thousand memories become an index the assistant scans rather than a lottery it might lose, cheap enough to hold in context and honest about coverage.
 
