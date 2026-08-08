@@ -51,6 +51,7 @@ jobs:
           npx nx run privasys.org:build --skip-nx-cache
           test -f dist/apps/fronts/privasys.org/.next/index.html
           test -f dist/apps/fronts/privasys.org/.next/sitemap.xml
+          test -f dist/apps/fronts/privasys.org/.next/llms.txt
           test -d dist/apps/fronts/privasys.org/.next/_next/static
           echo "::group::Files to deploy"
           find dist/apps/fronts/privasys.org/.next -maxdepth 2 -type f | sort | head -200
@@ -102,6 +103,10 @@ jobs:
           test -n "$CSS"
           curl -sS "https://privasys.org${CSS}" -o /tmp/privasys-org.css
           grep -q 'pui-navbar-megamenu' /tmp/privasys-org.css
+          LLMS=$(curl -sS -o /tmp/privasys-org-llms.txt -w '%{http_code}' https://privasys.org/llms.txt)
+          echo "llms=$LLMS"
+          test "$LLMS" = "200"
+          grep -q 'confidential computing platform' /tmp/privasys-org-llms.txt
 
       - name: Prune old staged builds on OVH (keep last 5)
         if: always()
