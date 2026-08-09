@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import type { AvailableModel, Instance } from '~/lib/types';
+import type { AvailableModel, AvailableTool, Instance } from '~/lib/types';
 import {
     streamChatCompletion,
     ModelLoadingError,
@@ -26,7 +26,7 @@ import { AttachDropZone } from './attach-drop-zone';
 import { Markdown } from './markdown';
 import { MetadataDialog } from './metadata-dialog';
 import { ThinkingBlock } from './thinking-block';
-import { ToolCallCard } from './tool-call-card';
+import { ToolActivity } from './tool-activity';
 import { splitReasoning } from '~/lib/thinking';
 import {
     SYSTEM_PROMPT,
@@ -929,6 +929,7 @@ export function ChatPanel({
                                 key={m.id}
                                 message={m}
                                 instanceEndpoint={instance.endpoint}
+                                availableTools={instance.available_tools}
                                 token={token}
                                 onShowMeta={() => setMetaFor(m)}
                                 onRate={(rating, comment) => rateMessage(m.id, rating, comment)}
@@ -1017,6 +1018,7 @@ export function ChatPanel({
 function Message({
     message,
     instanceEndpoint,
+    availableTools,
     token,
     onShowMeta,
     onRate,
@@ -1027,6 +1029,8 @@ function Message({
 }: {
     message: DisplayMessage;
     instanceEndpoint: string;
+    /** Fleet tool rows, for the attested shield + code hash in tool activity. */
+    availableTools?: AvailableTool[];
     token?: string;
     onShowMeta: () => void;
     onRate: (rating: Rating | null, comment?: string) => void;
@@ -1044,22 +1048,18 @@ function Message({
     return (
         <div className='flex flex-col gap-2'>
             {message.toolInvocations && message.toolInvocations.length > 0 && (
-                <div className='flex flex-col gap-1'>
-                    {message.toolInvocations.map((inv) => (
-                        <ToolCallCard
-                            key={inv.id}
-                            invocation={inv}
-                            onAllow={() => {
-                                void postConsent(instanceEndpoint, inv.id, true, token);
-                                onConsentDecision(inv.id, true);
-                            }}
-                            onDeny={() => {
-                                void postConsent(instanceEndpoint, inv.id, false, token);
-                                onConsentDecision(inv.id, false);
-                            }}
-                        />
-                    ))}
-                </div>
+                <ToolActivity
+                    invocations={message.toolInvocations}
+                    tools={availableTools}
+                    onAllow={(callId) => {
+                        void postConsent(instanceEndpoint, callId, true, token);
+                        onConsentDecision(callId, true);
+                    }}
+                    onDeny={(callId) => {
+                        void postConsent(instanceEndpoint, callId, false, token);
+                        onConsentDecision(callId, false);
+                    }}
+                />
             )}
             {message.content ? (
                 <AssistantContent
