@@ -90,9 +90,12 @@ jobs:
           # Stock nginx mime.types has no .md mapping; without this the raw
           # markdown pages under /md/ ship as application/octet-stream and AI
           # fetchers refuse them. types blocks in the same context merge, so
-          # this only adds the one mapping. Idempotent.
+          # this only adds the one mapping. The charset directives append
+          # '; charset=utf-8' to text/plain and text/markdown responses
+          # (llms.txt et al are UTF-8; without it browsers assume
+          # windows-1252 and render mojibake). Idempotent.
           ssh -p "$PORT" -i ~/.ssh/id_ed25519 "${OVH_USER}@${OVH_HOST}" "set -euo pipefail; \
-            printf 'types { text/markdown md; }\n' | sudo tee /etc/nginx/conf.d/markdown-mime.conf >/dev/null"
+            printf 'types { text/markdown md; }\ncharset utf-8;\ncharset_types text/plain text/markdown;\n' | sudo tee /etc/nginx/conf.d/markdown-mime.conf >/dev/null"
           ssh -p "$PORT" -i ~/.ssh/id_ed25519 "${OVH_USER}@${OVH_HOST}" "set -euo pipefail; \
             cd \$HOME && \
             sudo rsync -av --delete \
@@ -117,6 +120,9 @@ jobs:
           echo "llms=$LLMS"
           test "$LLMS" = "200"
           grep -q 'Privasys Documentation' /tmp/docs-llms.txt
+          LLMS_TYPE=$(curl -sS -o /dev/null -w '%{content_type}' https://docs.privasys.org/llms.txt)
+          echo "llms content-type=$LLMS_TYPE"
+          test "$LLMS_TYPE" = "text/plain; charset=utf-8"
           FULL=$(curl -sS -o /dev/null -w '%{http_code}' https://docs.privasys.org/llms-full.txt)
           echo "llms-full=$FULL"
           test "$FULL" = "200"

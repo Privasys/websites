@@ -84,6 +84,12 @@ jobs:
           rsync -avz --delete \
             -e "ssh -p ${PORT} -i ~/.ssh/id_ed25519" \
             "${DIST}/" "${OVH_USER}@${OVH_HOST}:${STAGING}/"
+          # Same nginx text-content snippet as deploy-docs.yml installs:
+          # .md MIME mapping + UTF-8 charset on text/plain and text/markdown
+          # (llms.txt renders as mojibake in browsers without the charset).
+          # One shared conf.d file, idempotent from either workflow.
+          ssh -p "$PORT" -i ~/.ssh/id_ed25519 "${OVH_USER}@${OVH_HOST}" "set -euo pipefail; \
+            printf 'types { text/markdown md; }\ncharset utf-8;\ncharset_types text/plain text/markdown;\n' | sudo tee /etc/nginx/conf.d/markdown-mime.conf >/dev/null"
           ssh -p "$PORT" -i ~/.ssh/id_ed25519 "${OVH_USER}@${OVH_HOST}" "set -euo pipefail; \
             cd \$HOME && \
             sudo rsync -av --delete \
@@ -107,6 +113,9 @@ jobs:
           echo "llms=$LLMS"
           test "$LLMS" = "200"
           grep -q 'confidential computing platform' /tmp/privasys-org-llms.txt
+          LLMS_TYPE=$(curl -sS -o /dev/null -w '%{content_type}' https://privasys.org/llms.txt)
+          echo "llms content-type=$LLMS_TYPE"
+          test "$LLMS_TYPE" = "text/plain; charset=utf-8"
 
       - name: Prune old staged builds on OVH (keep last 5)
         if: always()
