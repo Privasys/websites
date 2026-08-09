@@ -408,10 +408,18 @@ function argHostChips(invocations: ToolInvocation[]): string[] {
 
 // Collect string values from the args object, two levels deep — enough for
 // every MCP arg shape seen in practice without walking arbitrary payloads.
+// The stream sometimes delivers args as a JSON-encoded STRING rather than an
+// object (the model emits arguments as text); parse that first, or the whole
+// document becomes one "string value" and every shape heuristic misses.
 function argStrings(args: unknown): string[] {
     const out: string[] = [];
     const visit = (v: unknown, depth: number) => {
         if (typeof v === 'string') {
+            const parsed = parseJSONObject(v);
+            if (parsed !== null && depth > 0) {
+                visit(parsed, depth);
+                return;
+            }
             out.push(v);
             return;
         }
@@ -421,6 +429,18 @@ function argStrings(args: unknown): string[] {
     };
     visit(args, 2);
     return out;
+}
+
+// Parse a string that is itself a JSON object/array; null for plain text.
+function parseJSONObject(s: string): unknown | null {
+    const t = s.trim();
+    if (!t.startsWith('{') && !t.startsWith('[')) return null;
+    try {
+        const v = JSON.parse(t) as unknown;
+        return typeof v === 'object' && v !== null ? v : null;
+    } catch {
+        return null;
+    }
 }
 
 // The most salient non-URL string: the longest one that still reads as an
@@ -458,11 +478,16 @@ function toolRowFor(inv: ToolInvocation, tools?: AvailableTool[]): AvailableTool
     return tools?.find((t) => t.name === server);
 }
 
+// The loop runs calls sequentially, so the sum of per-call durations is the
+// honest figure. Wall-clock (finishedAt - startedAt) looked right but the
+// persisted timestamps collapse on reload and it showed "0.1s" for a run
+// with six 10-second page fetches.
 function totalDuration(invocations: ToolInvocation[]): number | null {
-    const start = Math.min(...invocations.map((i) => i.startedAt));
-    const ends = invocations.map((i) => i.finishedAt ?? 0).filter(Boolean);
-    if (!Number.isFinite(start) || ends.length === 0) return null;
-    return Math.max(...ends) - start;
+    const durations = invocations
+        .map((i) => i.durationMs)
+        .filter((d): d is number => typeof d === 'number' && d > 0);
+    if (durations.length === 0) return null;
+    return durations.reduce((a, b) => a + b, 0);
 }
 
 function errorSub(inv: ToolInvocation): string {
