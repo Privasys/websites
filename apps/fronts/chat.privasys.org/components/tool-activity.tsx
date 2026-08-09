@@ -99,21 +99,29 @@ export function ToolActivity({
             </button>
 
             {open && (
-                <div className='border-t border-[var(--color-border-dark)] px-3.5 pt-1 pb-2.5'>
-                    {invocations.map((inv, i) => (
+                <div className='relative border-t border-[var(--color-border-dark)] px-3.5 pt-1 pb-2.5'>
+                    {/* One continuous rail behind the step tiles: rows vary in
+                        height (one- and two-line), so per-gap segments never
+                        span cleanly. The tiles are opaque and stack above it,
+                        masking the rail where they sit. */}
+                    {invocations.length + (!running && !consentPending ? 1 : 0) > 1 && (
+                        <span
+                            className='absolute top-[24px] bottom-[24px] left-[24px] w-[1.5px] bg-[var(--color-border-dark)]'
+                            aria-hidden
+                        />
+                    )}
+                    {invocations.map((inv) => (
                         <Step
                             key={inv.id}
                             inv={inv}
-                            first={i === 0}
                             tool={toolRowFor(inv, tools)}
                             onAllow={() => onAllow(inv.id)}
                             onDeny={() => onDeny(inv.id)}
                         />
                     ))}
                     {!running && !consentPending && (
-                        <div className='relative flex items-center gap-2.5 pt-2'>
-                            <Connector />
-                            <span className='grid h-[21px] w-[21px] shrink-0 place-items-center text-[var(--color-primary-green)]'>
+                        <div className='flex items-center gap-2.5 pt-2'>
+                            <span className='relative z-[1] grid h-[21px] w-[21px] shrink-0 place-items-center rounded-full bg-[var(--color-surface-1)] text-[var(--color-primary-green)]'>
                                 <svg viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2.4' className='h-[15px] w-[15px]' aria-hidden>
                                     <path d='M20 6L9 17l-5-5' />
                                 </svg>
@@ -131,13 +139,11 @@ export function ToolActivity({
 
 function Step({
     inv,
-    first,
     tool,
     onAllow,
     onDeny
 }: {
     inv: ToolInvocation;
-    first: boolean;
     tool?: AvailableTool;
     onAllow: () => void;
     onDeny: () => void;
@@ -150,8 +156,7 @@ function Step({
 
     return (
         <>
-            <div className='relative flex items-start gap-2.5 py-[7px]'>
-                {!first && <Connector />}
+            <div className='flex items-start gap-2.5 py-[7px]'>
                 <StepTile view={view} server={server} />
                 <span className='min-w-0 flex-1'>
                     <span className='block overflow-hidden text-[13.5px] text-ellipsis whitespace-nowrap text-[var(--color-text-primary)]'>
@@ -257,13 +262,13 @@ function StepTile({ view, server }: { view: StepView; server: string }) {
                 src={`https://${host}/favicon.ico`}
                 onError={() => setFailed(true)}
                 alt=''
-                className='mt-px h-[21px] w-[21px] shrink-0 rounded-md border border-[var(--color-border-dark)] bg-[var(--color-surface-2)] object-contain p-0.5'
+                className='relative z-[1] mt-px h-[21px] w-[21px] shrink-0 rounded-md border border-[var(--color-border-dark)] bg-[var(--color-surface-2)] object-contain p-0.5'
             />
         );
     }
     if (view.kind === 'drive') {
         return (
-            <span className='mt-px grid h-[21px] w-[21px] shrink-0 place-items-center rounded-md border border-[var(--color-border-dark)] bg-[var(--color-surface-2)] text-[var(--color-text-secondary)]'>
+            <span className='relative z-[1] mt-px grid h-[21px] w-[21px] shrink-0 place-items-center rounded-md border border-[var(--color-border-dark)] bg-[var(--color-surface-2)] text-[var(--color-text-secondary)]'>
                 <svg viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2' className='h-3 w-3' aria-hidden>
                     <path d='M3 7l3-4h12l3 4M3 7v11a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7M3 7h18' />
                 </svg>
@@ -280,7 +285,7 @@ function LetterTile({ seed }: { seed: string }) {
     const hue = h % 360;
     return (
         <span
-            className='mt-px grid h-[21px] w-[21px] shrink-0 place-items-center rounded-md text-[10px] font-bold text-white'
+            className='relative z-[1] mt-px grid h-[21px] w-[21px] shrink-0 place-items-center rounded-md text-[10px] font-bold text-white'
             style={{ background: `hsl(${hue} 55% 45%)` }}
             aria-hidden
         >
@@ -311,15 +316,6 @@ function Shield({ attested }: { attested: boolean }) {
             </svg>
             {attested ? 'enclave' : 'external'}
         </span>
-    );
-}
-
-function Connector() {
-    return (
-        <span
-            className='absolute top-[-7px] left-[10px] h-[13px] border-l-[1.5px] border-[var(--color-border-dark)]'
-            aria-hidden
-        />
     );
 }
 
