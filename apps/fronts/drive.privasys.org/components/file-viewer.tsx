@@ -16,6 +16,7 @@ import { CloseIcon, DownloadIcon, FileIcon } from './icons';
 
 type Preview =
     | { kind: 'image'; url: string }
+    | { kind: 'pdf'; url: string }
     | { kind: 'markdown'; text: string }
     | { kind: 'text'; text: string }
     | { kind: 'none' };
@@ -35,10 +36,11 @@ const MD_EXT = new Set(['md', 'markdown', 'mdx']);
 const IMG_EXT = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'avif', 'bmp', 'ico']);
 
 /** Decide how to render a node from its mime hint and extension. */
-function classify(node: DriveNode): 'image' | 'markdown' | 'text' | 'none' {
+function classify(node: DriveNode): 'image' | 'pdf' | 'markdown' | 'text' | 'none' {
     const mime = node.mime_hint ?? '';
     const ext = extOf(node.name);
     if (mime.startsWith('image/') || IMG_EXT.has(ext)) return 'image';
+    if (mime === 'application/pdf' || ext === 'pdf') return 'pdf';
     if (mime === 'text/markdown' || MD_EXT.has(ext)) return 'markdown';
     if (mime.startsWith('text/') || mime === 'application/json' || TEXT_EXT.has(ext)) return 'text';
     return 'none';
@@ -79,6 +81,11 @@ export function FileViewer({
                     type: node.mime_hint || `image/${extOf(node.name)}`
                 });
                 setPreview({ kind: 'image', url: URL.createObjectURL(blob) });
+            } else if (kind === 'pdf') {
+                // The browser's built-in PDF viewer renders the blob URL in an
+                // iframe; the bytes never leave the page's origin sandbox.
+                const blob = new Blob([bytes as BlobPart], { type: 'application/pdf' });
+                setPreview({ kind: 'pdf', url: URL.createObjectURL(blob) });
             } else {
                 const text = new TextDecoder().decode(bytes);
                 setPreview({ kind: kind === 'markdown' ? 'markdown' : 'text', text });
@@ -96,7 +103,7 @@ export function FileViewer({
     // Revoke the object URL when the preview changes or unmounts.
     useEffect(() => {
         return () => {
-            if (preview?.kind === 'image') URL.revokeObjectURL(preview.url);
+            if (preview?.kind === 'image' || preview?.kind === 'pdf') URL.revokeObjectURL(preview.url);
         };
     }, [preview]);
 
@@ -153,6 +160,13 @@ export function FileViewer({
                                 className="max-h-[82vh] max-w-full rounded-lg object-contain"
                             />
                         </div>
+                    ) : preview.kind === 'pdf' ? (
+                        <iframe
+                            src={preview.url}
+                            title={node.name}
+                            className="h-full w-full"
+                            style={{ border: 'none', minHeight: '100%' }}
+                        />
                     ) : preview.kind === 'markdown' ? (
                         <div className="drv-markdown mx-auto max-w-3xl px-6 py-6">
                             <ReactMarkdown remarkPlugins={[remarkGfm]}>{preview.text}</ReactMarkdown>
