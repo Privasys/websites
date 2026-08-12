@@ -147,8 +147,8 @@ The enclave maintains a reserved `__system__` namespace for its own configuratio
 |--------|------------|
 | **Host reads plaintext data** | All values are AES-256-GCM encrypted. The master key is inside the enclave. |
 | **Host modifies ciphertext** | GCM authentication tag detects any tampering. |
-| **Host replays old ciphertext** | Partial mitigation: the enclave can detect stale values by including versioning in the plaintext. Full rollback protection requires a monotonic counter (future work). |
-| **Host deletes keys** | Detected if the application expects certain keys to exist. Merkle tree covers configuration keys. |
+| **Host replays old ciphertext** | Not detected by the KV store itself. For state that must be fresh, use the [Merkle store](/docs/solutions/enclave-os/enclave-os-mini/merkle-store): reads verify against an in-memory root the host cannot roll back. |
+| **Host deletes keys** | Not detected by the KV store itself (an absent key looks absent). The [Merkle store](/docs/solutions/enclave-os/enclave-os-mini/merkle-store) proves both inclusion and absence against the root. |
 | **Host sees key names** | HMAC-SHA-256 hashes the key names, hiding them from the host. |
 | **Host correlates access patterns** | Not mitigated. The host can see which storage keys are accessed and when. ORAM would address this (future work). |
 | **Cross-app data access** | Prevented by automatic namespace prefixing inside the enclave. |
