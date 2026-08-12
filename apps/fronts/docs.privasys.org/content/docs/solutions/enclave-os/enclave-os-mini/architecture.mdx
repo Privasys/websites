@@ -20,10 +20,11 @@ Enclave OS (Mini) is a lightweight SGX enclave runtime that exposes an RA-TLS HT
 1. **RA-TLS Ingress.** Accept incoming TCP connections authenticated via RA-TLS (TLS 1.3 with SGX quotes embedded in X.509 certificates).
 2. **HTTPS Egress.** Make outbound HTTPS requests from inside the enclave (TLS termination inside the enclave, network I/O via host RPC).
 3. **Sealed Key-Value Store.** Encrypted KV database stored on the host, with both keys and values encrypted using a master key sealed to MRENCLAVE.
-4. **WASM Runtime.** Execute WebAssembly bytecode inside SGX with WASI support (random, sockets, KV).
-5. **JWT-Authenticated Vault.** Store and retrieve secrets gated by ES256 JWT verification.
-6. **Sealed Config.** All persistent state (CA material, egress CA bundle, KV master key) stored as a single MRENCLAVE-bound blob.
-7. **Config Attestation.** A Merkle root and per-module OIDs over all config inputs are embedded as custom X.509 extensions in every RA-TLS certificate.
+4. **Authenticated Merkle Store.** A versioned sparse Merkle tree over the same host storage: reads verified against an in-enclave root, inclusion/absence proofs, pruning, and the state root embedded in every RA-TLS certificate.
+5. **WASM Runtime.** Execute WebAssembly bytecode inside SGX with WASI support (random, sockets, KV).
+6. **JWT-Authenticated Vault.** Store and retrieve secrets gated by ES256 JWT verification.
+7. **Sealed Config.** All persistent state (CA material, egress CA bundle, KV master key) stored as a single MRENCLAVE-bound blob.
+8. **Config Attestation.** A Merkle root and per-module OIDs over all config inputs are embedded as custom X.509 extensions in every RA-TLS certificate.
 
 ## High-Level Topology
 

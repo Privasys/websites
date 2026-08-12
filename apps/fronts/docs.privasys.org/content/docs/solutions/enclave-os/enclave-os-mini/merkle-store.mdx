@@ -1,0 +1,100 @@
+---
+title: Merkle Store
+description: The authenticated key-value store — a versioned sparse Merkle tree with an encryption-independent root, verified reads, proofs, and pruning.
+---
+
+The [sealed KV store](/docs/solutions/enclave-os/enclave-os-mini/sealing-and-kv-store) hides *content* from the host, but it cannot detect a host that serves stale records or silently drops keys. The **Merkle store** (`enclave-os-merkle`) adds integrity and freshness on top of the same host storage: every read is verified against a root hash held in enclave memory, every commit produces a new root, and a single 32-byte value attests the entire logical data state.
+
+## Two Keys, Two Jobs
+
+The store separates *what is committed* from *how bytes are protected at rest*:
+
+| Key | Scope | Purpose |
+|-----|-------|---------|
+| **Commitment key (`ck`)** | The logical dataset | Derives tree positions and value commitments: `path = HMAC-SHA-256(ck, "p" ‖ key)`, `vh = HMAC-SHA-256(ck, "v" ‖ path ‖ plaintext)` |
+| **Storage key (`sk`)** | This enclave instance | AES-256-GCM encryption of value bytes at rest (fresh random nonce per write) |
+
+The tree commits only to `(path, vh)` pairs, so **the root is a pure function of the logical state and `ck`** — it does not depend on ciphertexts, nonces, or storage layout. Two replicas that share `ck` but hold different storage keys produce identical roots and can compare their entire state by comparing one `(version, root)` pair. This is the foundation for future replicated deployments.
+
+Keyed hashing also means the host cannot dictionary-attack low-entropy keys or values, and because the path is part of the value commitment, the host cannot even tell when two different keys hold the same value.
+
+## Structure
+
+Paths are 256 bits, walked one 4-bit nibble per level:
+
+- **16-ary storage, binary hashing.** Each level of the walk is one node record (depth ≈ log₁₆ N, about 5 reads at a million keys), but an internal node's hash is a 4-level *binary* Merkle tree over its 16 child slots. Empty ranges stand in as a placeholder constant; a range holding a single leaf collapses to that leaf's hash. I/O stays logarithmic while proofs stay compact binary sibling lists.
+- **Leaves terminate early.** A subtree containing one key is a single leaf node, however short the path prefix.
+- **Copy-on-write versions.** Node records are addressed by `(version, path prefix)` and are immutable: a commit rewrites only the touched path under the new version and links to unchanged subtrees from prior versions. Historical roots stay readable until pruned.
+
+```
+                 root (version 42)
+                   │
+        ┌──────────┴──────────┐
+        ▼                     ▼
+   node (v42, "a")       node (v17, "b")   ← untouched subtree,
+        │                                     still at version 17
+        ▼
+   leaf (v42, "a3…")  →  value record (vh, v42)
+```
+
+## Atomic Commits
+
+`put_batch` applies any mix of puts and deletes as **one commit**: new nodes, encrypted values, stale-index entries for every superseded record, the new root record, and an encrypted `(root, version)` checkpoint all land in a single atomic write batch on the host. The in-enclave `(root, version)` only advances after the host confirms. Deletes collapse single-leaf subtrees back up the tree; a batch that changes nothing does not commit at all.
+
+## Reads Fail Closed
+
+A read returns plaintext only after three independent checks:
+
+1. Every node on the path hashes to its parent's expectation, up to the **in-memory root**.
+2. The value's AES-256-GCM tag verifies under the storage key.
+3. The decrypted plaintext re-derives the committed `vh`.
+
+Any mismatch is an error, never data. A node cache (immutable records, so trivially coherent) removes host round trips, but cached nodes are still re-verified on every use — the cache accelerates I/O, never trust. Measured cost at 100k keys: about 4 backend reads per warm lookup.
+
+## Proofs
+
+`prove(key)` produces a compact binary sparse-Merkle proof of either **inclusion** (this key has this value commitment) or **absence** (this key holds nothing), verifiable by a pure function against just the root — no enclave, no storage. Absence proofs come free from the structure: the descent ends either on a placeholder (empty slot) or on another leaf that provably occupies the position. Proofs for historical versions are available while those versions remain unpruned.
+
+## Pruning
+
+Every commit stale-indexes the records it supersedes. `prune(before_version)` — or the convenience `retain_recent(window)` — range-deletes stale records and old roots in chunked atomic batches. Versions at or above the horizon stay fully readable and provable; older versions fail cleanly. Because node *and* value records are written by exactly one commit and never rewritten, deletion is blind: no reference counts, no liveness scans, cost proportional to garbage.
+
+## Module API
+
+With the `merkle` feature enabled, the store is exposed as an enclave module speaking JSON over `POST /data`, gated by platform roles:
+
+| Request | Role | Response |
+|---------|------|----------|
+| `{"merkle_root": {}}` | monitoring | `{"root": …, "version": n}` |
+| `{"merkle_get": {"key": hex}}` | monitoring | `{"value": hex \| null}` |
+| `{"merkle_prove": {"key": hex, "version"?: n}}` | monitoring | `{"proof": hex, "root": …, "version": n}` |
+| `{"merkle_put": {"ops": [{"key": hex, "value"?: hex}]}}` | manager | `{"root": …, "version": n}` |
+| `{"merkle_prune": {"retain_recent": n}}` | manager | prune statistics |
+
+An op without a `value` is a delete. Keys, values and proofs are hex-encoded.
+
+### Root in the Certificate
+
+The current `root ‖ version` is embedded in every freshly minted RA-TLS certificate under OID `1.3.6.1.4.1.65230.2.6`, alongside the config Merkle root. A client can therefore pin not just *which code* it is talking to, but *which data state* — and monitor root continuity across connections.
+
+## Freshness Model
+
+| Surface | Guarantee |
+|---------|-----------|
+| **Live reads** | Bound to the in-memory root: the host cannot roll back or forge state while the enclave runs. |
+| **Restart** | The store reopens from an encrypted checkpoint written atomically with every commit, and refuses to serve if storage does not verify against it. A host replaying an old checkpoint *together with* a matching old store snapshot is not locally detectable — the same residual that applies to SGX sealing itself. Client-side root pinning narrows it; replication closes it. |
+| **Historical reads** | Content is authenticated against the stored root record for that version; the version-to-root binding for history is host-held until a sealed root history lands. |
+
+## When to Use Which Store
+
+| | Sealed KV store | Merkle store |
+|---|---|---|
+| Confidentiality (keys + values) | ✔ | ✔ |
+| Per-record tamper detection | ✔ (GCM tag) | ✔ |
+| Stale-data / dropped-key detection | ✘ | ✔ (root-verified) |
+| One-value state attestation | ✘ | ✔ (root in cert OID) |
+| Inclusion / absence proofs | ✘ | ✔ |
+| Versioned history + pruning | ✘ | ✔ |
+| Write amplification | 1 record | ~depth records per commit (batched) |
+
+Use the sealed KV store for high-churn private state where the host serving stale data is tolerable; use the Merkle store when integrity, auditability, or state attestation matter.

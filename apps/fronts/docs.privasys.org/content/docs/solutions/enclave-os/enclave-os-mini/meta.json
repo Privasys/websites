@@ -6,6 +6,7 @@
         "rust-and-teaclave",
         "rpc-and-circular-buffers",
         "sealing-and-kv-store",
+        "merkle-store",
         "wasm-runtime",
         "mcp-tools",
         "guides"
