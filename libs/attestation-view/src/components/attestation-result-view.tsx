@@ -483,8 +483,15 @@ function QuoteSection({
             });
         }
         rows.push({ label: 'OID', value: quote.oid, description: 'Object Identifier of the x.509 extension containing the quote.' });
+        if (quoteVerify?.tcbStatus) {
+            rows.push({
+                label: 'TCB Status',
+                value: quoteVerify.tcbStatus,
+                description: 'Intel platform TCB status from PCS collateral. UpToDate and SWHardeningNeeded are the secure floor; other statuses require an explicit policy relaxation; Revoked is never accepted.'
+            });
+        }
         return rows;
-    }, [quote, challengeMode]);
+    }, [quote, challengeMode, quoteVerify]);
 
     // Anchor the merged Enclave OS release + measurements verdict tag next to
     // the measurement rows the release is actually verified against — MRENCLAVE
@@ -517,6 +524,11 @@ function QuoteSection({
                     )}
                     {quoteVerify && !quoteVerify.success && (
                         <Badge tone='err'>{`\u2717 ${quoteVerify.error || 'Verification failed'}`}</Badge>
+                    )}
+                    {quoteVerify?.tcbStatus && (
+                        <Badge tone={quoteVerify.tcbStatus === 'Revoked' ? 'err' : (quoteVerify.tcbStatus === 'UpToDate' || quoteVerify.tcbStatus === 'SWHardeningNeeded') ? 'ok' : 'warn'}>
+                            {`TCB: ${quoteVerify.tcbStatus}`}
+                        </Badge>
                     )}
                     {quoteVerifyError && (
                         <Badge tone='warn'>{`\u26a0 ${quoteVerifyError}`}</Badge>

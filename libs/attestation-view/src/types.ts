@@ -164,6 +164,10 @@ export interface QuoteVerifyResult {
     isvSvn?: number;
     tcbDate?: string;
     advisoryIds?: string[];
+    // Intel platform TCB status derived from PCS collateral (e.g. "UpToDate",
+    // "ConfigurationAndSWHardeningNeeded"). Present when the attestation server
+    // ran the TCB check (SGX_TCB_MODE report/enforce).
+    tcbStatus?: string;
     message?: string;
     error?: string;
 }
