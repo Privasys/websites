@@ -1,0 +1,43 @@
+---
+title: Architecture
+description: Attested Raft against rollback-capable hosts, quorum root verification, deterministic WASM replay, and the vault-anchored cluster credential.
+---
+
+## The adversary is the host
+
+Every node runs measured code inside SGX, so nodes cannot lie about the protocol. What remains hostile is each node's **host**: it can crash the process, delay or drop traffic, partition the network, and — the decisive power — roll back anything the node persisted. Plain Raft is unsafe against rollback (a restored vote record lets a node vote twice), so two hardenings move the rollback-sensitive facts into *cluster state*:
+
+1. **Incarnation-gated voting.** Every enclave start draws a fresh random incarnation, and the replicated membership records the incarnation under which each voter was admitted. A restarted node neither votes nor campaigns until the leader commits a re-admission for it, so a host that rolls back a vote record gains nothing: the old voting identity is retired by the quorum, not by the node's own (rollback-able) disk. A full-cluster restart recovers through a long leaderless timeout that no single rolled-back node can reach alone.
+2. **Quorum root confirmation.** Every node reports the ledger root it computed for each applied entry; the leader tracks per-node root watermarks and advances a **verified index** — the highest entry a quorum has confirmed byte-identically. A lone diverging follower is repaired; a leader outvoted on its own root steps down; verified entries become quorum-signed **commit certificates** that anyone can check offline.
+
+Liveness always remains host-controlled (a host can simply kill its process). Only safety is defended, and none of it depends on clocks.
+
+## One state, per-node encryption
+
+The ledger is the [Merkle store](/solutions/enclave-os/enclave-os-mini/merkle-store) with its two-key design: a shared *commitment key* makes the root a pure function of the logical state, while each node's *storage key* encrypts bytes at rest. Replicas therefore agree on roots while never sharing storage keys — and snapshot streaming to a lagging or repaired node re-encrypts every record under the receiver's own key, verifying the advertised root at the end. There is one state, but no two machines hold the same ciphertext.
+
+## Transactions
+
+A transaction is a sealed transition `(root_before, write-set, root_after)` produced by forking the ledger at the committed root. WASM apps reach the fork through the `privasys:enclave-os/ledger` interface; when the call returns successfully the write-set is proposed through consensus, every replica applies it fail-closed, and the quorum confirms the resulting root. A trap or error proposes nothing.
+
+**Replay mode** goes further: replicas do not even trust the write-set. The committed entry carries a replay envelope — DRBG seed, frozen timestamp, fuel budget — and every replica **re-executes the call** and requires the reproduced write-set to match, halting fail-closed otherwise. Determinism is engineered, not assumed:
+
+- `wasi:random` stays available, backed by one shared per-transaction DRBG seeded from the entry: draws iterate normally within the transaction, and replay reproduces the exact stream.
+- Clocks are frozen to the committed timestamp for the whole execution.
+- P-256 signatures use RFC 6979 (deterministic); P-384 signing and key generation are refused inside a transaction.
+- HTTPS egress and raw sockets are rejected at **load time** for replay apps — the measured runtime provably cannot run a replay app that observes the network.
+- The fuel budget rides in the entry, bounding execution identically everywhere.
+
+## Admission and the cluster credential
+
+Peer links are mutual TLS 1.3 terminated inside the enclaves, and admission is layered:
+
+1. **Fleet CA + measurement pin.** The peer's certificate must chain to the fleet CA and carry an SGX quote whose measurement is in the admissible set — and the quote must be cryptographically bound to that certificate's own key, so evidence cannot be transplanted between certificates.
+2. **Independent verification.** Each link's quote is also verified by an attestation server — signature chain to the Intel root, QE identity, revocation, debug flag, and the platform's Intel TCB status against an explicit acceptance policy. A stolen fleet CA key admits nobody, and a platform downgraded below the accepted TCB is refused. Links are recycled periodically so fresh quotes keep being presented.
+3. **The credential.** The shared commitment key is generated in-enclave, split across an [Enclave Vaults](/solutions/enclave-vaults/overview) constellation, and released only to enclaves passing the credential policy's checks. No shared secret exists outside TEEs, and *fetching the credential is admission*.
+
+The credential policy is also the **source of truth for upgrades**: nodes read the admissible measurement set from it and refresh periodically, so upgrading a cluster is an owner-approved policy change (admit the new release's measurement) followed by a rolling restart — no node reconfiguration, and the measurement gate never drops. Retiring the old measurement closes the window.
+
+## Operations, in brief
+
+Log compaction, snapshot streaming, repair-by-replay, and restart re-admission are automatic; membership changes (`add-learner`, `promote`, `remove`) are single manager calls; health is one status call per node plus the latest commit certificate. The full configuration reference and runbooks live in the [repository's operator documentation](https://github.com/Privasys/enclave-cluster/blob/main/docs/operations.md).

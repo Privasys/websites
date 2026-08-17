@@ -4,6 +4,7 @@
     "pages": [
         "enclave-os",
         "enclave-vaults",
+        "enclave-cluster",
         "platform",
         "cli",
         "privasys-id",
