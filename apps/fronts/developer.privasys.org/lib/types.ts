@@ -559,6 +559,11 @@ export interface VaultConstellation {
     vault_count?: number;
     created_at?: string;
     updated_at?: string;
+    // Intel TCB statuses accepted in addition to the secure floor.
+    acceptable_tcb_statuses?: string[];
+    // Set = drain state: serves existing keys but refuses activation, new
+    // members, and new key generations. Null/absent = live.
+    deprecated_at?: string | null;
 }
 
 export interface Vault {
@@ -589,6 +594,9 @@ export interface CreateConstellationBody {
 
 export type UpdateConstellationBody = Partial<CreateConstellationBody> & {
     clear_threshold?: boolean;
+    // true = deprecate (drain), false = restore. The active constellation
+    // cannot be deprecated (409).
+    deprecated?: boolean;
 };
 
 export interface CreateVaultBody {
