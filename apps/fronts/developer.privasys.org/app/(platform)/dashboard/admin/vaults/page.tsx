@@ -197,6 +197,12 @@ export default function AdminVaultsPage() {
                                     <td className="px-4 py-3">
                                         {c.active ? (
                                             <span className="inline-block px-2 py-0.5 text-xs font-medium rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300">active</span>
+                                        ) : c.deprecated_at ? (
+                                            <span
+                                                className="inline-block px-2 py-0.5 text-xs font-medium rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300"
+                                                title={`Deprecated ${new Date(c.deprecated_at).toLocaleDateString()} — serves existing keys only; no activation, members, or new key generations.`}>
+                                                deprecated
+                                            </span>
                                         ) : (
                                             <span className="text-xs text-black/40 dark:text-white/40">inactive</span>
                                         )}
@@ -205,13 +211,32 @@ export default function AdminVaultsPage() {
                                         <Link href={`/dashboard/admin/vaults/${c.id}`} className="text-sm font-medium underline mr-4">
                                             Vaults
                                         </Link>
-                                        {!c.active && (
+                                        {!c.active && !c.deprecated_at && (
                                             <button
                                                 type="button"
                                                 disabled={busy === c.id}
                                                 onClick={() => activate(c)}
                                                 className="text-sm font-medium text-emerald-700 dark:text-emerald-400 underline mr-4 disabled:opacity-50">
                                                 Activate
+                                            </button>
+                                        )}
+                                        {!c.active && (
+                                            <button
+                                                type="button"
+                                                disabled={busy === c.id}
+                                                onClick={async () => {
+                                                    if (!session?.accessToken) return;
+                                                    const dep = !c.deprecated_at;
+                                                    if (dep && !confirm(`Deprecate "${c.name}"? It keeps serving existing keys but refuses activation, new members, and new key generations.`)) return;
+                                                    try {
+                                                        await adminUpdateConstellation(session.accessToken, c.id, { deprecated: dep });
+                                                        reload();
+                                                    } catch (e) {
+                                                        alert(`${dep ? 'Deprecate' : 'Restore'} failed: ${(e as Error).message}`);
+                                                    }
+                                                }}
+                                                className="text-sm font-medium text-amber-700 dark:text-amber-400 underline mr-4 disabled:opacity-50">
+                                                {c.deprecated_at ? 'Restore' : 'Deprecate'}
                                             </button>
                                         )}
                                         <button type="button" onClick={() => setEditing(c)} className="text-sm font-medium underline mr-4">
