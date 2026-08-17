@@ -1,0 +1,8 @@
+{
+    "title": "Enclave Cluster",
+    "defaultOpen": false,
+    "pages": [
+        "overview",
+        "architecture"
+    ]
+}

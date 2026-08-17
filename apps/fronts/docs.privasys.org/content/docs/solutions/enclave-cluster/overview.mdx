@@ -1,0 +1,27 @@
+---
+title: Overview
+description: Multi-active confidential computing — a cluster of SGX enclaves executing WASM business logic against a replicated, quorum-verified ledger.
+---
+
+Enclave Cluster is the **distributed flavour** of [Enclave OS (Mini)](/solutions/enclave-os/enclave-os-mini/architecture): a set of SGX enclaves that replicate an authenticated ledger through consensus, execute WASM business logic against it, and can *prove* the cluster's state to third parties. Where a single enclave protects one machine's computation, a cluster keeps serving through machine loss — and keeps its guarantees even when the machines' **hosts** are the adversary.
+
+The product lives at [github.com/Privasys/enclave-cluster](https://github.com/Privasys/enclave-cluster) (AGPL-3.0): reproducible builds, signed releases with published measurements, and operator documentation.
+
+## What you get
+
+- **A replicated, authenticated ledger.** The state is a versioned sparse [Merkle store](/solutions/enclave-os/enclave-os-mini/merkle-store) whose 32-byte root attests everything. The root is *encryption independent*: every node encrypts its storage with its own key, yet all nodes produce byte-identical roots, so replicas compare entire states as one `(version, root)` pair.
+- **Attested consensus.** Raft, hardened for the case where every node's host can crash, delay, partition, and roll back disk. Only enclaves whose measurement is in the cluster's admissible set may participate; a rolled-back node cannot double-vote; a node whose state diverges is detected and repaired, not trusted.
+- **Verified commits.** Every node reports the ledger root it computed for each applied entry, and an entry counts as *verified* only once a quorum agrees on the root. Divergence is attributed — outlier follower, outlier leader, or genuine corruption — and handled automatically where that is safe.
+- **Commit certificates.** Quorum-signed P-256 attestations of `(index, root)`, verifiable offline against keys registered through the replicated log itself. An auditor can prove what the cluster's state was without trusting any single node.
+- **WASM transactions.** Business logic is a Component Model app; a call through the transaction path executes against a fork of the ledger and its write-set commits through consensus. In **replay mode**, replicas re-execute every transaction deterministically and fail closed unless they reproduce the exact same result.
+- **A vault-anchored cluster credential.** The shared ledger commitment key lives in an [Enclave Vaults](/solutions/enclave-vaults/overview) constellation and is released only to enclaves that pass the credential policy's measurement and TCB checks. *Obtaining the credential is cluster admission* — and cluster upgrades are an owner-approved policy change plus a rolling restart, with no node reconfiguration.
+
+## Where it sits
+
+| Deployment | Continuity | Trust anchor | State proof |
+|---|---|---|---|
+| Single enclave | One machine | Its attestation | Its own root |
+| **Enclave Cluster** | Survives machine loss | Every node attested + quorum | Quorum-signed certificate |
+| Conventional replicated DB | Survives machine loss | The operators | None |
+
+The threat model is deliberately unusual: the nodes are honest (their code is measured), but each node's *host* is not. That single assumption reshapes the consensus layer — voting rights live in replicated membership rather than local disk, and state continuity is confirmed by the quorum rather than asserted by any node. The [Architecture](/solutions/enclave-cluster/architecture) page walks through how.
