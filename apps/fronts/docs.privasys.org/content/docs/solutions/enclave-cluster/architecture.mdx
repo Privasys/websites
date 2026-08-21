@@ -30,11 +30,11 @@ A transaction is a sealed transition `(root_before, write-set, root_after)` prod
 
 ## Admission and the cluster credential
 
-Peer links are mutual TLS 1.3 terminated inside the enclaves, and admission is layered:
+Peer links are mutual challenge-mode RA-TLS (TLS 1.3) terminated inside the enclaves, and admission is layered:
 
-1. **Fleet CA + measurement pin.** The peer's certificate must chain to the fleet CA and carry an SGX quote whose measurement is in the admissible set — and the quote must be cryptographically bound to that certificate's own key, so evidence cannot be transplanted between certificates.
+1. **Fleet CA + challenge-bound quote.** The peer's certificate must chain to the fleet CA, and its embedded quote must commit to the fresh challenge nonce the other side issued for this exact connection, the certificate's own key, and the TLS session's channel binder — evidence cannot be transplanted between certificates, replayed from an earlier connection, or relayed from another session. The quote's measurement must be in the admissible set sourced from the credential policy.
 2. **Independent verification.** Each link's quote is also verified by an attestation server — signature chain to the Intel root, QE identity, revocation, debug flag, and the platform's Intel TCB status against an explicit acceptance policy. A stolen fleet CA key admits nobody, and a platform downgraded below the accepted TCB is refused. Links are recycled periodically so fresh quotes keep being presented.
-3. **The credential.** The shared commitment key is generated in-enclave, split across an [Enclave Vaults](/solutions/enclave-vaults/overview) constellation, and released only to enclaves passing the credential policy's checks. No shared secret exists outside TEEs, and *fetching the credential is admission*.
+3. **The credential.** The shared commitment key is generated in-enclave, split across an [Enclave Vaults](/solutions/enclave-vaults/overview) constellation, and released only to enclaves passing the credential policy's checks — on *every* boot: nodes keep no local copy, so removing a measurement from the policy is total revocation at the affected nodes' next restart. No shared secret exists outside TEEs, and *fetching the credential is admission*.
 
 The credential policy is also the **source of truth for upgrades**: nodes read the admissible measurement set from it and refresh periodically, so upgrading a cluster is an owner-approved policy change (admit the new release's measurement) followed by a rolling restart — no node reconfiguration, and the measurement gate never drops. Retiring the old measurement closes the window.
 
