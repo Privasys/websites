@@ -1,0 +1,23 @@
+# Privasys ID
+
+> Privasys ID is an identity provider that physically cannot see its users' data. Sign-in is approved on the user's phone with hardware-bound passkeys, the service itself runs inside confidential-computing enclaves, and relying parties receive only the attributes the user chooses to share.
+
+Key facts for agents and integrators:
+
+- There are no passwords anywhere. Authentication uses FIDO2 passkeys held in the Privasys Wallet app on the user's phone, unlocked with face or fingerprint.
+- The server side runs inside hardware enclaves (confidential computing), so the operator cannot read user data, and clients can cryptographically verify the code the server is running via remote attestation (RA-TLS) before sending anything.
+- Relying parties integrate through standard OIDC. Discovery document: https://privasys.id/.well-known/openid-configuration
+- Each relying party receives a pairwise subject identifier, so users cannot be correlated across services.
+- Users choose per sign-in which attributes to disclose; undisclosed data never leaves the phone.
+- The platform is open source: https://github.com/Privasys
+
+## Documentation
+
+- [How Privasys ID works](https://privasys.id/how-it-works/): plain-English walkthrough of a sign-in, the trust model, and how it differs from big-tech single sign-on
+- [Privasys documentation](https://docs.privasys.org/): full platform documentation, including attestation, RA-TLS, enclave vaults, and app deployment
+- [Developer portal](https://developer.privasys.org/): register an application, obtain OIDC credentials, and deploy confidential apps
+
+## The wider platform
+
+- [privasys.org](https://privasys.org/): the Privasys confidential-computing platform that Privasys ID is built on
+- [Privasys on GitHub](https://github.com/Privasys): source code for the platform, clients, and this identity provider
