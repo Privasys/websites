@@ -4,7 +4,7 @@ const path = require('path');
 const [src, dst] = process.argv.slice(2);
 if (!src || !dst) { console.error('Usage: copy-static.js <src> <dst>'); process.exit(1); }
 
-const STATIC_EXTS = new Set(['.html', '.css', '.js', '.ico', '.png', '.svg', '.jpg', '.webp', '.woff2', '.json']);
+const STATIC_EXTS = new Set(['.html', '.css', '.js', '.ico', '.png', '.svg', '.jpg', '.webp', '.woff2', '.json', '.xml', '.txt']);
 
 fs.rmSync(dst, { recursive: true, force: true });
 fs.mkdirSync(dst, { recursive: true });

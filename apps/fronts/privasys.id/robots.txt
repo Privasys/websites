@@ -1,0 +1,18 @@
+User-agent: *
+Allow: /
+# API and auth endpoints (OIDC, FIDO2, sessions) are not pages
+Disallow: /auth/
+Disallow: /authorize
+Disallow: /token
+Disallow: /userinfo
+Disallow: /jwks
+Disallow: /fido2/
+Disallow: /session/
+Disallow: /sessions
+Disallow: /device
+Disallow: /device_authorization
+Disallow: /wallet/
+Disallow: /vault/
+Disallow: /wia/
+
+Sitemap: https://privasys.id/sitemap.xml
