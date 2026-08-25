@@ -84,16 +84,23 @@ function LinkLanding() {
     // Mount the sign-in ceremony when signed out. Redeeming a link is a
     // minimal identity flow (a wallet sub, no PII): we request NO attributes,
     // so an open link never prompts the visitor for their name or email.
+    // A ceremony can die without completing (the wallet went through an
+    // install or attribute-import detour and the session expired, the
+    // network dropped): surface a retry instead of a dead blank frame.
+    const [ceremonyError, setCeremonyError] = useState<string | null>(null);
     useEffect(() => {
-        if (status !== 'signed-out' || started.current || !ceremonyRef.current) return;
+        if (status !== 'signed-out' || ceremonyError || started.current || !ceremonyRef.current) return;
         started.current = true;
-        void signInInto(ceremonyRef.current);
-    }, [status, signInInto]);
+        signInInto(ceremonyRef.current).catch(() => {
+            started.current = false;
+            setCeremonyError('The sign-in did not complete. Scan the code again to open the link.');
+        });
+    }, [status, signInInto, ceremonyError]);
 
     // Restricted-link step-up: re-run the ceremony requesting exactly the
     // attributes the link requires, then resolve + redeem again.
     useEffect(() => {
-        if (!stepUp || stepUpStarted.current || !ceremonyRef.current) return;
+        if (!stepUp || ceremonyError || stepUpStarted.current || !ceremonyRef.current) return;
         stepUpStarted.current = true;
         void (async () => {
             // Ask for the claim the link is checked against, not the spelling
@@ -102,16 +109,22 @@ function LinkLanding() {
             // link states that mapping; the referential answers for links
             // created before it did.
             const claims = resolved?.attribute_claims ?? {};
-            await signInInto(
-                ceremonyRef.current!,
-                missingAttrs.map((k) => claims[k] ?? requestKeyFor(shareAttrs, k))
-            );
+            try {
+                await signInInto(
+                    ceremonyRef.current!,
+                    missingAttrs.map((k) => claims[k] ?? requestKeyFor(shareAttrs, k))
+                );
+            } catch {
+                stepUpStarted.current = false;
+                setCeremonyError('The sign-in did not complete. Scan the code again to open the link.');
+                return;
+            }
             redeemed.current = false;
             setStepUp(false);
             stepUpStarted.current = false;
             setState('resolving');
         })();
-    }, [stepUp, missingAttrs, shareAttrs, resolved, signInInto]);
+    }, [stepUp, ceremonyError, missingAttrs, shareAttrs, resolved, signInInto]);
 
     // The attributes the visitor already consented to share at sign-in,
     // matched against what the link requires.
@@ -265,7 +278,19 @@ function LinkLanding() {
                                         : 'Sign in with the Privasys Wallet, or install it, to open it securely.'}
                                 </div>
                             </div>
-                            <div ref={ceremonyRef} className="h-[560px] w-full overflow-hidden rounded-xl" />
+                            {ceremonyError ? (
+                                <div className="py-10 text-center">
+                                    <p className="text-sm" style={{ color: 'var(--drv-text-muted)' }}>{ceremonyError}</p>
+                                    <button
+                                        onClick={() => setCeremonyError(null)}
+                                        className="drv-btn-primary mt-5 rounded-full px-5 py-2 text-sm"
+                                    >
+                                        Try again
+                                    </button>
+                                </div>
+                            ) : (
+                                <div ref={ceremonyRef} className="h-[560px] w-full overflow-hidden rounded-xl" />
+                            )}
                         </Card>
                     ) : !resolved ? (
                         <Card>

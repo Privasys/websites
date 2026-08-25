@@ -244,6 +244,11 @@ export function DriveProvider({ children }: { children: ReactNode }) {
                     setError(e.message);
                     setStatus('error');
                 }
+                // Rethrow so the caller can offer a retry: a swallowed
+                // ceremony failure leaves its page stuck on a dead frame
+                // (the wallet may have gone through an install or import
+                // detour that outlived the ceremony session).
+                throw e;
             }
         },
         [auth, host]
