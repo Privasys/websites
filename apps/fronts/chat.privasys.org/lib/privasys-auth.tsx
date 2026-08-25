@@ -345,9 +345,15 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
             // `container` is a constructor-only option in @privasys/auth
             // and the persistent frame must keep its renewal iframe
             // attached to <body>.
+            // Opening a shared conversation is a MINIMAL identity flow: the
+            // base config's email+profile scope would make the wallet prompt
+            // a visitor for their name and verified email, so it is overridden
+            // to the bare openid session here.
             const inline = new AuthFrame({
                 ...config,
                 container,
+                scope: ['openid', 'offline_access'] as const,
+                attributes: [],
                 ...(opts?.sessionRelayHost
                     ? {
                         sessionRelay: {
