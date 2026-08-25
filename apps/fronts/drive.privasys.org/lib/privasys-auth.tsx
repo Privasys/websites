@@ -361,16 +361,17 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
             // Share-link redeem is a MINIMAL identity flow: prove a wallet sub
             // to open a sealed session, nothing more. The account sign-in
             // (connectInto) still asks for name+email for display, but a visitor
-            // opening a shared file should not be prompted for PII. A restricted
-            // link that genuinely needs attributes passes exactly those here
-            // (and only then). Built as a variable so the requestedAttributes
-            // override rides the config (AuthFrameConfig does not type it, but
-            // the frame honours it at runtime, same as the spread from config).
+            // opening a shared file should not be prompted for PII. The frame
+            // derives the wallet prompt from `scope` bundles plus `attributes`
+            // named one by one, so the base config's email+profile scope must
+            // be overridden here — a restricted link that genuinely needs
+            // attributes names exactly those (and only then).
             const inlineConfig = {
                 ...config,
                 container,
                 methods: DRIVE_METHODS,
-                requestedAttributes: opts?.requestedAttributes ?? [],
+                scope: ['openid', 'offline_access'] as const,
+                attributes: opts?.requestedAttributes ?? [],
                 ...(opts?.sessionRelayHost
                     ? {
                         sessionRelay: {
