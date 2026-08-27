@@ -67,11 +67,13 @@ jobs:
             echo "env_file=~/chat-test.env"                        >> "$GITHUB_OUTPUT"
             # There is no dev inference fleet any more
             # (confidential-ai.apps-test no longer resolves), so
-            # chat.test.privasys.org is backed by the PROD confidential-AI
-            # enclave. The instance is therefore resolved on the PROD
-            # management-service, whose "demo" alias is the prod fleet.
+            # chat.test.privasys.org is backed by the PROD management-service.
+            # Since the m4 migration (2026-08) it points at the "staging"
+            # fleet (cai-probe2 on m4-tdx-gpu, vLLM 0.27): the validation
+            # target for the blue/green cutover. The prod "demo" alias keeps
+            # serving the untouched m2 fleet until cutover.
             echo "api_url=https://api.developer.privasys.org"      >> "$GITHUB_OUTPUT"
-            echo "default_instance=demo"                           >> "$GITHUB_OUTPUT"
+            echo "default_instance=staging"                        >> "$GITHUB_OUTPUT"
             # BYO-MCP stays dormant here: the dev chat-service enclave is down,
             # and a grant it minted would carry an audience the prod instance
             # rejects, so an empty URL is the honest wiring.
