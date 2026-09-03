@@ -5,10 +5,17 @@
             {
                 "appID": "3V8YCKN438.org.privasys.wallet",
                 "paths": ["/scp", "/scp/*"]
+            },
+            {
+                "appID": "HLW68Z8TMZ.org.privasys.wallet",
+                "paths": ["/scp", "/scp/*"]
             }
         ]
     },
     "webcredentials": {
-        "apps": ["3V8YCKN438.org.privasys.wallet"]
+        "apps": [
+            "3V8YCKN438.org.privasys.wallet",
+            "HLW68Z8TMZ.org.privasys.wallet"
+        ]
     }
 }
