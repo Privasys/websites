@@ -256,7 +256,7 @@ test.describe('Container Deploy to TDX', () => {
 
         const result = await resp.json();
         console.log(`Quote type: ${result.quote?.type}`);
-        console.log(`Quote OID: ${result.quote?.oid}`);
+        console.log(`Quote mode: ${result.quote?.attestation} (quote_time ${result.quote?.quote_time})`);
         console.log(`Extensions count: ${result.extensions?.length}`);
         console.log(`App extensions count: ${result.app_extensions?.length}`);
         console.log(`MRTD: ${result.quote?.mr_td}`);
@@ -346,10 +346,14 @@ test.describe('Container Deploy to TDX', () => {
         expect(result.quote).toBeTruthy();
         expect(result.quote.report_data).toBeTruthy();
 
-        // Challenge-response MUST be verified — the enclave must bind the
-        // nonce into the TDX quote's ReportData via the 0xFFBB extension.
+        // Challenge-response MUST be verified (RA-TLS v2): the enclave binds
+        // the challenge context and the connection's TLS exporter value into
+        // the TDX quote's ReportData in the post-handshake evidence exchange.
+        expect(result.quote.attestation).toBe('challenge');
+        expect(result.quote.context).toBe(challengeHex);
+        expect(result.quote.hctx).toBeTruthy();
         expect(result.quote.challenge_verified).toBe(true);
-        console.log('Challenge-response attestation verified: ReportData = SHA-512(SHA-256(pubkey) || nonce)');
+        console.log('Challenge-response attestation verified: ReportData = SHA-512(SHA-256(pubkey) || context || hctx)');
     });
 
     test('attestation tab renders correctly in UI', async ({ page }) => {

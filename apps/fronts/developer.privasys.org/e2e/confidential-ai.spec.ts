@@ -285,7 +285,18 @@ test.describe('Confidential AI Deployment', () => {
 
         expect(result.challenge_mode).toBe(true);
         expect(result.challenge).toBe(challengeHex);
+        // RA-TLS v2: the evidence is exchanged after the TLS 1.3 handshake.
+        // A 32-byte challenge is used verbatim as the context; the exporter
+        // value (hctx) of management-service's connection is 32 bytes base64.
+        expect(result.quote.attestation).toBe('challenge');
+        expect(result.quote.context).toBe(challengeHex);
+        expect(Buffer.from(result.quote.hctx, 'base64')).toHaveLength(32);
+        expect(result.quote.quote_time).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}Z$/);
+        expect(result.quote.report_data_verified).toBe(true);
         expect(result.quote.challenge_verified).toBe(true);
+        // GPU enclave: the GPU evidence travels with the quote, not in a
+        // certificate extension.
+        expect(result.quote.gpu_evidence_base64).toBeTruthy();
         console.log('Challenge-response: verified');
     });
 

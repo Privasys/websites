@@ -309,12 +309,12 @@ test.describe('Session-relay enc_pub survives an enclave restart (Sc 2)', () => 
         const exts = att.app_extensions ?? [];
         const valHex = (suffix: string) => exts.find((e) => e.oid.endsWith(suffix))?.value_hex;
         const hexToUtf8 = (h?: string) => (h ? Buffer.from(h, 'hex').toString('utf8') : undefined);
-        // Match the wallet's RA-TLS parser: hex for 3.1/3.2, UTF-8 string for 3.3/3.4.
+        // Match the wallet's RA-TLS parser (v2 OIDs): hex for 5.1/4.2, UTF-8 string for 4.3/6.1.
         const fields: Record<string, string | undefined> = {
-            workload_config_merkle_root: valHex('65230.3.1'),
-            workload_code_hash: valHex('65230.3.2'),
-            workload_image_ref: hexToUtf8(valHex('65230.3.3')),
-            workload_key_source: hexToUtf8(valHex('65230.3.4')),
+            workload_config_merkle_root: valHex('65230.5.1'),
+            workload_code_hash: valHex('65230.4.2'),
+            workload_image_ref: hexToUtf8(valHex('65230.4.3')),
+            workload_key_source: hexToUtf8(valHex('65230.6.1')),
         };
         const lines = Object.keys(fields)
             .filter((k) => fields[k] !== undefined && fields[k] !== '')

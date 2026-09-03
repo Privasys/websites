@@ -414,16 +414,35 @@ export interface AttestationCertificate {
     public_key_sha256: string;
 }
 
+// RA-TLS v2: the quote is exchanged on the TLS connection after a normal
+// TLS 1.3 handshake, so the certificate carries no quote extension.
 export interface AttestationQuote {
     type: string;
-    oid: string;
+    // TEE family as sent in the attest message: "sgx" | "tdx" | "tdx-gpu" | "sev-snp".
+    tee?: string;
     is_mock: boolean;
     version?: number;
     report_data?: string;
     raw_base64?: string;
-    // Base64 of the 32-byte RA-TLS channel binder folded into report_data
-    // (SHA-512(SHA-256(pubkey) || nonce || binder)) in challenge mode.
-    channel_binder?: string;
+    // Attestation mode management-service used: "challenge" when a challenge
+    // query was sent, "deterministic" otherwise.
+    attestation?: 'deterministic' | 'challenge';
+    // Quote minute, ASCII "YYYY-MM-DDTHH:MMZ". Deterministic binding value:
+    //   report_data = SHA-512( SHA-256(SPKI_DER) || quote_time )
+    quote_time?: string;
+    // Challenge mode only: hex of the 32-byte challenge context (equals the
+    // challenge sent when it is 32 bytes) and base64 of the 32-byte TLS
+    // exporter value of management-service's connection for that context:
+    //   report_data = SHA-512( SHA-256(SPKI_DER) || context || hctx )
+    context?: string;
+    hctx?: string;
+    // Base64 GPU evidence envelope (GPU enclaves); SHA-256 of it is appended
+    // to the bound value in both recipes.
+    gpu_evidence_base64?: string;
+    // Management-service's own verdicts on the report_data binding.
+    report_data_verified?: boolean;
+    challenge_verified?: boolean;
+    deterministic_verified?: boolean;
     mr_enclave?: string;
     mr_signer?: string;
     mr_td?: string;
@@ -458,7 +477,7 @@ export interface AttestationResult {
     // Challenge mode
     challenge_mode: boolean;
     challenge?: string;
-    // Stored CWASM hash for verification against APP_CODE_HASH_OID (3.2)
+    // Stored CWASM hash for verification against APP_CODE_HASH (OID 4.2)
     cwasm_hash?: string;
     // TCG2 event log for RTMR replay verification (TDX only)
     event_log_events?: EventLogDigest[];
