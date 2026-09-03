@@ -3,7 +3,7 @@ title: Architecture
 description: The architecture of Enclave OS Virtual, running OCI containers inside Confidential VMs with end-to-end attestation via RA-TLS.
 ---
 
-Enclave OS Virtual runs OCI containers inside Intel TDX (or AMD SEV-SNP) Confidential VMs with end-to-end attestation. Every container image digest, environment variable, volume mount, and platform configuration is measured into a deterministic Merkle tree and embedded in X.509 certificate extensions via RA-TLS. Clients can verify the full workload stack in a single TLS handshake.
+Enclave OS Virtual runs OCI containers inside Intel TDX (or AMD SEV-SNP) Confidential VMs with end-to-end attestation. Every container image digest, environment variable, volume mount, and platform configuration is measured into a deterministic Merkle tree and carried in X.509 certificate extensions via RA-TLS. Clients can verify the full workload stack on a single TLS connection: the certificate identifies the workload, the evidence exchange proves it.
 
 ## High-Level Topology
 
@@ -54,15 +54,15 @@ Three components run inside the Confidential VM:
 
 4. **Merkle tree.** A platform Merkle tree and per-container Merkle trees are recomputed after every load or unload. Leaves include the CA certificate, image digests, environment variables, volume configuration, and runtime version.
 
-5. **RA-TLS certificates.** The Merkle roots and container metadata are embedded as [X.509 extensions](/solutions/enclave-os/attestation/oids) in RA-TLS certificates, alongside the TDX or SEV-SNP attestation quote.
+5. **RA-TLS certificates.** The Merkle roots and container metadata are embedded as [X.509 extensions](/solutions/enclave-os/attestation/oids) in RA-TLS certificates. The TDX quote is not in the certificate: it is served on the connection by the [evidence exchange](/solutions/enclave-os/attestation/ra-tls#the-evidence-exchange) and bound to the certificate's key.
 
-6. **TLS handshake.** Clients connecting via TLS receive a certificate chain that proves: which TEE is running, what OS image booted, which containers are deployed (by digest), and how they are configured.
+6. **TLS handshake and evidence.** Clients connecting via TLS receive a certificate chain that states which OS image booted, which containers are deployed (by digest), and how they are configured; the evidence exchange then proves which TEE is running and that the certificate key lives inside it.
 
 7. **Health and metrics.** The management API exposes `/healthz`, `/readyz`, `/api/v1/status`, and Prometheus `/metrics` over RA-TLS at `manager.<machine-name>.<hostname>`.
 
 ## RA-TLS via Caddy
 
-The RA-TLS module is a Caddy `tls.issuance` module that generates RA-TLS certificates inside the Confidential VM. It supports the same [deterministic and challenge-response](/solutions/enclave-os/attestation/ra-tls#deterministic-vs-challenge-mode) attestation paths as Enclave OS Mini.
+The RA-TLS module is a Caddy `tls.issuance` module that generates RA-TLS certificates inside the Confidential VM. It serves the same [deterministic and challenge](/solutions/enclave-os/attestation/ra-tls#deterministic-vs-challenge-mode) evidence exchange as Enclave OS Mini.
 
 The module abstracts hardware-specific logic behind an `Attester` interface. Each TEE backend (TDX, SEV-SNP) lives in its own file and registers itself at init time.
 
@@ -75,20 +75,18 @@ The module abstracts hardware-specific logic behind an `Attester` interface. Eac
 
 ### How Certificates Are Generated
 
-**Deterministic path (cached):**
+**Certificate (per hostname, 24 hours):**
 
 1. An ECDSA P-256 key pair is generated inside the TEE.
-2. `ReportData = SHA-512( SHA-256(SPKI_DER) || creation_time )`, where `SPKI_DER` is the DER-encoded `SubjectPublicKeyInfo` of the leaf public key, and `creation_time` is `NotBefore` truncated to minute precision.
-3. A TEE quote is obtained from the configured backend (e.g. `/sys/kernel/config/tsm/report` for TDX).
-4. An X.509 certificate is signed by the operator-provisioned intermediary CA, embedding the quote and OID extensions.
-5. The certificate is cached by certmagic and auto-renewed.
+2. An X.509 certificate carrying the [OID extensions](/solutions/enclave-os/attestation/oids) is signed by the operator-provisioned intermediary CA. It carries no quote.
+3. The certificate is cached by certmagic and renewed every 24 hours; the key is kept across re-mints that change only extension values.
 
-**Challenge-response path (per-connection):**
+**Evidence (on request, `POST /__privasys/attest`):**
 
-1. The client sends a random nonce in a TLS `ClientHello` extension (`0xFFBB`).
-2. A fresh ECDSA P-256 key pair is generated.
-3. `ReportData = SHA-512( SHA-256(SPKI_DER) || nonce )`.
-4. A short-lived certificate (5 minutes) is signed by the same CA.
+1. The module checks that the request's `leaf` names a key it holds.
+2. Deterministic mode: the cached quote for that key is served, minted once with `report_data = SHA-512( SHA-256(SPKI_DER) || quote_time )`, where `SPKI_DER` is the DER-encoded `SubjectPublicKeyInfo` of the leaf public key and `quote_time` is the minting minute carried in the response.
+3. Challenge mode: `hctx` is derived from the connection's TLS exporter with the client's 32-byte `context`, and a fresh quote is obtained from the configured backend (`/sys/kernel/config/tsm/report` for TDX) with `report_data = SHA-512( SHA-256(SPKI_DER) || context || hctx )`.
+4. The response is served and the connection is tagged `X-Privasys-Attestation: deterministic` or `challenge`.
 
 ### SNI-Based Routing
 
@@ -106,13 +104,14 @@ Every container's RA-TLS certificate includes extensions specific to that contai
 
 | OID | Name | Value |
 |-----|------|-------|
-| `1.3.6.1.4.1.65230.3.1` | Container Config Merkle Root | SHA-256 root of the container's config tree |
-| `1.3.6.1.4.1.65230.3.2` | Container Image Digest | Raw SHA-256 digest of the OCI image |
-| `1.3.6.1.4.1.65230.3.3` | Container Image Ref | Full OCI image reference string |
-| `1.3.6.1.4.1.65230.3.4` | Container Volume Encryption | `"vault:<handle>"` or `"byok:<fingerprint>"` (present only when an encrypted volume is attached) |
-| `1.3.6.1.4.1.65230.3.6` | Container App Id | Platform-assigned app identity (`apps.id`, raw 16-byte UUID), stamped by the measured manager (omitted when the platform supplied none) |
+| `1.3.6.1.4.1.65230.4.1` | Container App Id | Platform-assigned app identity (`apps.id`, raw 16-byte UUID), stamped by the measured manager (omitted when the platform supplied none) |
+| `1.3.6.1.4.1.65230.4.2` | Container Image Digest | Raw SHA-256 digest of the OCI image |
+| `1.3.6.1.4.1.65230.4.3` | Container Image Ref | Full OCI image reference string |
+| `1.3.6.1.4.1.65230.5.1` | Container Config Merkle Root | SHA-256 root of the container's config tree |
+| `1.3.6.1.4.1.65230.6.1` | Container Volume Key Source | `"vault:<handle>"` or `"byok:<fingerprint>"` (present only when an encrypted volume is attached) |
+| `1.3.6.1.4.1.65230.7.1` | Attested Dependency Set | Canonical encoding of the container's pinned [dependencies](/solutions/enclave-os/attestation/dependencies), stamped by the runtime |
 
-The platform-level certificate (served for the management hostname) carries the [platform OIDs](/solutions/enclave-os/attestation/oids#platform-level-oids-arc-13614165230) including the combined workloads hash (OID `2.5`), runtime version (OID `2.4`), and data encryption key origin (OID `2.6`).
+The platform-level certificate (served for the management hostname) carries the platform OIDs ([arcs 1 to 3](/solutions/enclave-os/attestation/oids#arc-1-platform-identity)) including the runtime version hash (OID `1.1`), the image profile (OID `1.2`), the combined workloads hash (OID `2.4`), and the data encryption key origin (OID `3.1`).
 
 ## Requirements
 

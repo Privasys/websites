@@ -1,104 +1,181 @@
 ---
 title: X.509 OID Scheme
-description: Complete reference of the Privasys X.509 OID extensions used in RA-TLS certificates across Enclave OS Mini and Virtual.
+description: Reference of the Privasys X.509 OID scheme (version 2) carried by RA-TLS certificates on Enclave OS Mini and Enclave OS Virtual, and of the evidence type identifiers used by the evidence exchange.
 ---
 
-All Privasys OIDs live under the Private Enterprise Number arc `1.3.6.1.4.1.65230`. The scheme is shared across both Enclave OS editions so that [verification libraries](/solutions/platform/verification-libraries) work regardless of the TEE backend.
+All Privasys OIDs live under the Private Enterprise Number arc `1.3.6.1.4.1.65230`. The scheme is shared across both Enclave OS editions so that [verification libraries](/solutions/platform/verification-libraries) work regardless of the TEE backend. This page describes scheme version 2, which accompanies [RA-TLS version 2](/solutions/enclave-os/attestation/ra-tls).
 
-## Hardware Quote OIDs
+The rules of the scheme:
 
-These OIDs carry the raw hardware attestation quote. Each certificate contains exactly one, depending on the TEE type.
+- **One slot, one meaning, on both editions.** A number never means one thing on Enclave OS Mini and another on Enclave OS Virtual.
+- **Numbers are contiguous within an arc, and a retired slot is never reused.**
+- **Evidence is never a certificate extension.** The DCAP quote and any GPU evidence are served by the [evidence exchange](/solutions/enclave-os/attestation/ra-tls#the-evidence-exchange) on the connection, not embedded in the certificate. Arc 8 only names the evidence types.
+- **The app-defined sub-arc root (`5.4`) never carries a value.** Apps publish under it, never at it.
 
-| OID | Name | Present in |
-|-----|------|------------|
-| `1.2.840.113741.1.13.1.0` | Intel SGX DCAP Quote | Enclave OS Mini |
-| `1.2.840.113741.1.5.5.1.6` | Intel TDX Quote | Enclave OS Virtual |
-| `1.3.6.1.4.1.65230.4.1` | AMD SEV-SNP Attestation Report | Enclave OS Virtual |
-| `1.3.6.1.4.1.65230.5.1` | NVIDIA GPU CC Evidence | GPU workloads (secondary) |
+The "v1" column in each table maps the slot to its number in the previous scheme, for reading old certificates and old records. The SDKs parse version 2 only, and a certificate that still carries a version 1 quote extension is rejected as a version 1 leaf.
 
-The `4.*` and `5.*` arcs under `65230` are hardware-evidence families and are reserved for that use.
+## Arc 1, Platform identity
 
-## Platform-Level OIDs (arc `1.3.6.1.4.1.65230`)
+What runs here, and which instance.
 
-Platform OIDs describe the TEE instance as a whole: its configuration, loaded workloads, and operational parameters.
+| OID | Name | Encoding | Mini | Virtual | v1 |
+|-----|------|----------|------|---------|----|
+| `1.1` | Runtime Version Hash | 32 bytes, SHA-256 of the runtime version (Wasmtime on Mini, containerd on Virtual) | yes | yes | 2.4 |
+| `1.2` | Image Profile | UTF-8 string, `"production"` or `"dev"`, read from the dm-verity-measured marker `/etc/privasys/image-profile`. Verifiers reject `dev` unless explicitly opted in. | yes | yes | 2.8 |
+| `1.3` | Enclave Instance ID | 16-byte UUID, the management-service enclave id received at registration | yes | yes | new |
+| `1.4` | Platform Hardware Identity | reserved for platform ownership endorsements | no | no | new |
 
-| OID | Name | Description | Present in |
-|-----|------|-------------|------------|
-| `1.1` | Config Merkle Root | SHA-256 root of the platform [configuration tree](/solutions/enclave-os/attestation/merkle-tree) | Both |
-| `2.1` | Egress CA Hash | SHA-256 of the egress CA bundle | Mini |
-| `2.4` | Runtime Version Hash | SHA-256 of the runtime version string | Both |
-| `2.5` | Combined Workloads Hash | SHA-256 covering all loaded workload digests | Both |
-| `2.6` | Data Encryption Key Origin | `"byok:<fingerprint>"` or `"generated"` | Virtual |
-| `2.7` | Attestation Servers Hash | SHA-256 of the attestation server URL list | Both |
-| `2.8` | Image Profile | `"production"` or `"dev"` — the build flavor of the VM image, read from the dm-verity-measured marker `/etc/privasys/image-profile`. Verifiers reject `dev` unless explicitly opted in. Absent on images that predate the marker. | Virtual |
+## Arc 2, Platform configuration
 
-Per-workload code hashes live under the `3.*` arc (OID `3.2`), not here.
+Operator-chosen inputs of the platform.
 
-## Per-Workload OIDs (arc `1.3.6.1.4.1.65230.3.*`)
+| OID | Name | Encoding | Mini | Virtual | v1 |
+|-----|------|----------|------|---------|----|
+| `2.1` | Config Merkle Root | 32 bytes, root of the platform [configuration tree](/solutions/enclave-os/attestation/merkle-tree) over every configuration input of the platform | yes | yes | 1.1 |
+| `2.2` | Egress CA Bundle Hash | 32 bytes, SHA-256 of the outbound trust-anchor bundle | yes | no | 2.1 |
+| `2.3` | Attestation Servers Hash | 32 bytes, SHA-256 of the sorted attestation server URL list | yes | yes | 2.7 |
+| `2.4` | Combined Workloads Hash | 32 bytes, SHA-256 over the loaded workload set | yes | yes | 2.5 |
 
-Per-workload OIDs appear in certificates served via [SNI routing](/solutions/enclave-os/attestation/ra-tls#per-workload-certificates-and-sni-routing). Each workload (WASM app in Mini, OCI container in Virtual) gets its own leaf certificate with these extensions.
+## Arc 3, Platform keys and state
 
-| OID | Name | Description |
-|-----|------|-------------|
-| `3.1` | Workload Config Merkle Root | SHA-256 root of a per-workload [configuration tree](/solutions/enclave-os/attestation/merkle-tree) |
-| `3.2` | Workload Image/Code Digest | SHA-256 of the WASM bytecode or OCI image |
-| `3.3` | Container Image Ref | Full OCI image reference string (Virtual only) |
-| `3.4` | Volume/Key Source | `"byok:<fingerprint>"` or `"generated"` |
-| `3.5` | Workload Configuration Hash | SHA-256 of the workload's configuration metadata, stamped by the runtime (Mini). On Virtual this literal slot is a legacy home for the AI model digest, which has moved to `3.5.5`. |
-| `3.5.<n>` | App-Defined Extensions | Sub-arc for workload-supplied extensions, installed at runtime via the SDK (`set-attestation-extension`) or pinned at deploy time (e.g. attested environment variables). Well-known assignments: `3.5.5` AI model digest, `3.5.7` AI tools digest (Confidential AI). |
-| `3.6` | Workload App Id | Platform-assigned app identity (`apps.id`, raw 16-byte UUID). Pins *which* app a workload is: a vault key can be sealed to a specific app (MR_APP) so a same-code peer with a different app-id cannot unseal it, dependents select the matching [dependency entry](/solutions/enclave-os/attestation/dependencies) by it, and clients read the management app id straight off the attested leaf. Stamped by the measured runtime, never self-declared by the workload, on both the standing serving certificate and one-shot vault client identity leaves. Omitted when no app-id is supplied (MR_ENCLAVE). Both. |
+Key origin and authenticated state of the platform.
 
-## Cross-Enclave Dependency OIDs (arc `1.3.6.1.4.1.65230.6.*`)
+| OID | Name | Encoding | Mini | Virtual | v1 |
+|-----|------|----------|------|---------|----|
+| `3.1` | Data Encryption Key Origin | UTF-8 string, `"byok:<fingerprint>"` or `"generated"` (`"vault:<handle>"` on vault-keyed machines) | no | yes | 2.6 |
+| `3.2` | Authenticated State Root | 40 bytes, the 32-byte [Merkle store](/solutions/enclave-os/enclave-os-mini/merkle-store) root followed by a big-endian u64 version | yes | no | 2.6 |
 
-When a workload depends on other enclaves, it is pinned to a fixed set of dependency identities. That set is carried here and enforced fail-closed on outbound RA-TLS. See [Attested Dependencies](/solutions/enclave-os/attestation/dependencies).
+Slot `2.6` of version 1 meant the key origin on Virtual and the state root on Mini. Version 2 gives each its own slot.
 
-| OID | Name | Description |
-|-----|------|-------------|
-| `6.1` | Attested Dependency Set | Canonical encoding of the workload's **direct** dependency identities (per entry: app-id, allowed measurements, required OIDs, folded identity). Written by the runtime, never the app. Both. |
+## Arc 4, Workload identity
+
+Which app, and which code. These extensions appear in certificates served via [SNI routing](/solutions/enclave-os/attestation/ra-tls#per-workload-certificates-and-sni-routing): each workload (WASM app in Mini, OCI container in Virtual) gets its own leaf certificate.
+
+| OID | Name | Encoding | Mini | Virtual | v1 |
+|-----|------|----------|------|---------|----|
+| `4.1` | Workload App ID | 16-byte UUID, the management app id (`apps.id`). Pins *which* app a workload is: a vault key can be sealed to a specific app (MR_APP) so a same-code peer with a different app id cannot unseal it, dependents select the matching [dependency entry](/solutions/enclave-os/attestation/dependencies) by it, and clients read the app id straight off the attested leaf. Stamped by the measured runtime, never self-declared by the workload. Omitted when no app id is supplied (MR_ENCLAVE). | yes | yes | 3.6 |
+| `4.2` | Workload Code Digest | 32 bytes, SHA-256 of the WASM bytecode (Mini) or of the OCI manifest (Virtual) | yes | yes | 3.2 |
+| `4.3` | Workload Image Ref | UTF-8 string, image reference without digest | no | yes | 3.3 |
+
+## Arc 5, Workload configuration
+
+Configuration of one workload, including the app-defined sub-arc.
+
+| OID | Name | Encoding | Mini | Virtual | v1 |
+|-----|------|----------|------|---------|----|
+| `5.1` | Workload Config Merkle Root | 32 bytes, root of the per-workload [configuration tree](/solutions/enclave-os/attestation/merkle-tree) | yes | yes | 3.1 |
+| `5.2` | Workload Configuration Hash | 32 bytes, runtime-stamped hash of the workload configuration | yes | yes | 3.5 |
+| `5.3` | Reserved | reserved | no | no | new |
+| `5.4.<n>` | App-Defined Extensions | Sub-arc for workload-supplied extensions, installed at runtime via the SDK (`set-attestation-extension`) or pinned at deploy time (for example attested environment variables). Open-ended by design; the root `5.4` never carries a value. | yes | yes | 3.5.\<n\> |
+| `5.4.5` | Model Digest | app-defined, 32 bytes (Confidential AI) | no | yes | 3.5.5 |
+| `5.4.7` | Tools Digest | app-defined, 32 bytes (Confidential AI) | no | yes | 3.5.7 |
+
+## Arc 6, Workload keys and state
+
+Key source and authenticated state of one workload.
+
+| OID | Name | Encoding | Mini | Virtual | v1 |
+|-----|------|----------|------|---------|----|
+| `6.1` | Workload Key Source | UTF-8 string, `"byok:<fingerprint>"`, `"generated"` or `"vault:<path>"` | yes | yes | 3.4 |
+| `6.2` | Workload State Root | reserved, mirrors `3.2` for per-workload authenticated stores | no | no | new |
+
+## Arc 7, Trust relationships
+
+Pinned relationships between enclaves. See [Attested Dependencies](/solutions/enclave-os/attestation/dependencies).
+
+| OID | Name | Encoding | Mini | Virtual | v1 |
+|-----|------|----------|------|---------|----|
+| `7.1` | Attested Dependency Set | Canonical encoding of the workload's **direct** dependency identities (per entry: app id, allowed measurements, required OIDs, folded identity). Written by the runtime, never the app. | yes | yes | 6.1 |
+| `7.2` | Allowed Callers | reserved, enforced from the management database today | no | no | new |
+
+## Arc 8, Evidence types
+
+Identifiers for the evidence bodies served by the post-handshake [evidence exchange](/solutions/enclave-os/attestation/ra-tls#the-evidence-exchange). They name the `tee` value of an attest response and are never certificate extensions.
+
+| OID | Name | `tee` | v1 |
+|-----|------|-------|----|
+| `8.1` | Intel SGX DCAP quote | `sgx` | `1.2.840.113741.1.13.1.0` as a certificate extension |
+| `8.2` | Intel TDX DCAP quote | `tdx` | `1.2.840.113741.1.5.5.1.6` as a certificate extension |
+| `8.3` | AMD SEV-SNP report | `sev-snp` | `4.1`, never emitted |
+| `8.4` | NVIDIA GPU CC evidence | `nvidia-gpu` | `5.1` |
+
+A GPU workload answers with `tee: "tdx-gpu"`: a TDX quote plus a `gpu_evidence` body, cross-committed through `report_data`.
+
+## Prefixes
+
+| Prefix | Description |
+|--------|-------------|
+| `1.3.6.1.4.1.65230.` | The whole Privasys private-enterprise arc. Membership of an extension in the verified set is by arc, not by allowlist. |
+| `1.3.6.1.4.1.65230.5.4.` | The sub-arc apps publish attested digests under, through the SDK `set-attestation-extension` call. |
+
+## Retired version 1 slots
+
+| v1 | Was | Note |
+|----|-----|------|
+| `1.2.840.113741.1.13.1.0` | Intel SGX DCAP quote extension | Intel arc. In version 2 the quote travels in the attest response; a leaf that carries it is a version 1 leaf and is rejected. |
+| `1.2.840.113741.1.5.5.1.6` | Intel TDX quote extension | Intel arc. Same status. |
+| `2.3` | WASM apps hash | moved to `2.5` long before version 2 |
+| `2.9` | channel-binding marker | never emitted |
+| `3.5` (literal) | legacy model digest on Virtual, configuration hash on Mini | the sub-arc root carries no value in version 2; the configuration hash is `5.2` |
+| `3.7` | legacy tools digest | replaced by `3.5.7`, now `5.4.7` |
+| `4.1` | AMD SEV-SNP report extension | evidence type `8.3` |
+| `5.1` | NVIDIA GPU CC evidence extension | evidence type `8.4` |
 
 ## OID Hierarchy
 
 ```
-1.2.840.113741.1.13.1.0              Intel SGX DCAP Quote
-1.2.840.113741.1.5.5.1.6             Intel TDX Quote
-
 1.3.6.1.4.1.65230                    Privasys arc
-+-- 1.1                              Config Merkle root (platform-wide)
-+-- 2.*                              Platform OIDs
-|   +-- 2.1                          Egress CA bundle hash (Mini)
-|   +-- 2.4                          Runtime version hash
-|   +-- 2.5                          Combined workloads hash
-|   +-- 2.6                          Data encryption key origin (Virtual)
-|   +-- 2.7                          Attestation servers hash
-|   +-- 2.8                          Image profile (Virtual)
-+-- 3.*                              Per-workload OIDs
-    +-- 3.1                          Workload config Merkle root
-    +-- 3.2                          Workload image/code digest
-    +-- 3.3                          Container image ref (Virtual)
-    +-- 3.4                          Volume/key source
-    +-- 3.5                          Workload config hash (runtime-stamped)
-    |   +-- 3.5.<n>                  App-defined extensions
-    |       +-- 3.5.5                AI model digest (Confidential AI)
-    |       +-- 3.5.7                AI tools digest (Confidential AI)
-    +-- 3.6                          Workload app id
-+-- 4.1                              AMD SEV-SNP attestation report
-+-- 5.1                              NVIDIA GPU CC evidence
-+-- 6.*                              Cross-enclave dependency OIDs
-    +-- 6.1                          Attested dependency set
++-- 1.*                              Platform identity
+|   +-- 1.1                          Runtime version hash
+|   +-- 1.2                          Image profile
+|   +-- 1.3                          Enclave instance id
+|   +-- 1.4                          Platform hardware identity (reserved)
++-- 2.*                              Platform configuration
+|   +-- 2.1                          Config Merkle root
+|   +-- 2.2                          Egress CA bundle hash (Mini)
+|   +-- 2.3                          Attestation servers hash
+|   +-- 2.4                          Combined workloads hash
++-- 3.*                              Platform keys and state
+|   +-- 3.1                          Data encryption key origin (Virtual)
+|   +-- 3.2                          Authenticated state root (Mini)
++-- 4.*                              Workload identity
+|   +-- 4.1                          Workload app id
+|   +-- 4.2                          Workload code digest
+|   +-- 4.3                          Workload image ref (Virtual)
++-- 5.*                              Workload configuration
+|   +-- 5.1                          Workload config Merkle root
+|   +-- 5.2                          Workload configuration hash
+|   +-- 5.3                          Reserved
+|   +-- 5.4                          App-defined sub-arc (root carries no value)
+|       +-- 5.4.5                    Model digest (Confidential AI)
+|       +-- 5.4.7                    Tools digest (Confidential AI)
++-- 6.*                              Workload keys and state
+|   +-- 6.1                          Workload key source
+|   +-- 6.2                          Workload state root (reserved)
++-- 7.*                              Trust relationships
+|   +-- 7.1                          Attested dependency set
+|   +-- 7.2                          Allowed callers (reserved)
++-- 8.*                              Evidence types (never certificate extensions)
+    +-- 8.1                          Intel SGX DCAP quote
+    +-- 8.2                          Intel TDX DCAP quote
+    +-- 8.3                          AMD SEV-SNP report
+    +-- 8.4                          NVIDIA GPU CC evidence
 ```
 
 ## Verification Strategies
 
-In addition to the [Configuration Merkle Tree](/solutions/enclave-os/attestation/merkle-tree) root (OID `1.1`), both editions embed individual OID extensions for common properties. This gives clients two complementary approaches:
+The extensions identify; the evidence exchange proves. A certificate on its own says which runtime, workload and configuration the enclave claims to be running; the quote returned by the evidence exchange proves that the certificate's key was generated inside a TEE with specific measurements, and in challenge mode that the quote belongs to this connection. Extension values are only meaningful once that proof has passed, because the measured runtime that stamps them is what the quote attests.
 
-- **Full audit**: Request the configuration manifest and recompute the Merkle root to verify all inputs.
-- **Fast-path**: Check a single OID (for example, "does the workload hash match my expectation?") without any Merkle computation.
+In addition to the [Configuration Merkle Tree](/solutions/enclave-os/attestation/merkle-tree) roots (`2.1` for the platform, `5.1` for a workload), both editions embed individual extensions for common properties. This gives clients two complementary approaches:
 
-| Strategy | OIDs to check | What it proves |
-|----------|--------------|----------------|
-| **Code identity only** | Hardware quote OID | Correct binary, but configuration unknown |
-| **Code + Merkle root** | Hardware quote + `1.1` | Code and full configuration verified |
-| **Fast-path OIDs** | Specific `2.*` or `3.*` OIDs | Individual properties without full Merkle audit |
-| **Full manifest audit** | Request manifest, recompute `1.1` | Complete transparency of all inputs |
+- **Full audit**: request the configuration manifest and recompute the Merkle root to verify all inputs.
+- **Fast-path**: check a single extension (for example, "does the workload code digest match my expectation?") without any Merkle computation.
+
+| Strategy | What to check | What it proves |
+|----------|---------------|----------------|
+| **Code identity only** | Quote measurements from the evidence exchange, `report_data` against the leaf key | Correct runtime binary or image and a key inside it, but configuration unknown |
+| **Code + Merkle root** | Evidence + `2.1` (and `5.1` on a workload leaf) | Code and full configuration verified |
+| **Fast-path OIDs** | Evidence + specific extensions (`4.1`, `4.2`, `6.1`, `1.2`, ...) | Individual properties without a full Merkle audit |
+| **Full manifest audit** | Request the manifest, recompute `2.1` or `5.1` | Complete transparency of all inputs |
 
 See [RA-TLS Certificates: Verification](/solutions/enclave-os/attestation/ra-tls#verification) for the step-by-step verification flow.

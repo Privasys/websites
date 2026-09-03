@@ -17,7 +17,7 @@ Enclave OS (Mini) is a lightweight SGX enclave runtime that exposes an RA-TLS HT
 
 ## What the Enclave Provides
 
-1. **RA-TLS Ingress.** Accept incoming TCP connections authenticated via RA-TLS (TLS 1.3 with SGX quotes embedded in X.509 certificates).
+1. **RA-TLS Ingress.** Accept incoming TCP connections authenticated via RA-TLS (TLS 1.3 with enclave-issued X.509 certificates; the SGX quote is served on the connection by the evidence exchange).
 2. **HTTPS Egress.** Make outbound HTTPS requests from inside the enclave (TLS termination inside the enclave, network I/O via host RPC).
 3. **Sealed Key-Value Store.** Encrypted KV database stored on the host, with both keys and values encrypted using a master key sealed to MRENCLAVE.
 4. **Authenticated Merkle Store.** A versioned sparse Merkle tree over the same host storage: reads verified against an in-enclave root, inclusion/absence proofs, pruning, and the state root embedded in every RA-TLS certificate.
@@ -105,9 +105,9 @@ pub trait EnclaveModule: Send + Sync {
 
 | Module | Crate | Description |
 |--------|-------|-------------|
-| **egress** | `crates/enclave-os-egress` | HTTPS egress client; owns egress root CA store; registers `egress.ca_bundle` config leaf + OID `1.3.6.1.4.1.65230.2.1` |
+| **egress** | `crates/enclave-os-egress` | HTTPS egress client; owns egress root CA store; registers `egress.ca_bundle` config leaf + OID `1.3.6.1.4.1.65230.2.2` |
 | **kvstore** | `crates/enclave-os-kvstore` | Sealed (AES-256-GCM) KV store; owns master key from sealed config |
-| **wasm** | `crates/enclave-os-wasm` | WASM runtime (wasmtime); registers `wasm.code_hash` config leaf + OID `1.3.6.1.4.1.65230.2.5` (combined workloads hash) |
+| **wasm** | `crates/enclave-os-wasm` | WASM runtime (wasmtime); registers `wasm.code_hash` config leaf + OID `1.3.6.1.4.1.65230.2.4` (combined workloads hash) |
 | **vault** | `crates/enclave-os-vault` | JWT-authenticated (ES256) secret store and retrieval |
 | **helloworld** | `enclave/src/modules/helloworld.rs` | Smoke-test module: responds `"world"` to `"hello"` (inline, used by `default-ecall` feature) |
 
@@ -145,7 +145,7 @@ The host has **no access** to TLS keys, plaintext application data, or the maste
 The **enclave** runs inside SGX-protected memory. It:
 
 1. **Generates or unseals its master key.** On first boot, generates a 256-bit master key via SGX's hardware random number generator and seals it to MRENCLAVE. On subsequent boots, unseals the existing key.
-2. **Generates the RA-TLS certificate.** An ECDSA P-256 key pair is generated inside the enclave, bound to an SGX quote via `ReportData`, and wrapped in an X.509 certificate signed by the intermediary CA.
+2. **Generates the RA-TLS certificate.** An ECDSA P-256 key pair is generated inside the enclave and wrapped in an X.509 certificate signed by the intermediary CA. The SGX quote that binds the key to the enclave (via `report_data`) is served on demand by the [evidence exchange](/solutions/enclave-os/attestation/ra-tls#the-evidence-exchange), not embedded in the certificate.
 3. **Runs the TLS 1.3 server.** Raw TCP bytes arrive from the host; the enclave performs the TLS handshake, decrypts HTTPS requests, and dispatches them to registered modules.
 4. **Manages the WASM runtime.** Loads wasmtime Component Model modules, enforcing per-app namespace isolation for KV storage and filesystem access.
 5. **Makes HTTPS egress requests.** Modules can call out to external services; TLS termination happens inside the enclave with network I/O proxied through the host RPC layer.
@@ -156,14 +156,14 @@ The **enclave** runs inside SGX-protected memory. It:
 ```
 Root CA (privasys.root-ca.crt)
  └── Intermediary CA (sealed inside enclave)
-      └── Leaf RA-TLS certificate (generated per-connection)
-               ├── Extension: SGX Quote             (OID 1.2.840.113741.1.13.1.0)
-               ├── Extension: Config Merkle Root    (OID 1.3.6.1.4.1.65230.1.1)
-               ├── Extension: Egress CA Hash        (OID 1.3.6.1.4.1.65230.2.1)  ← egress module
-               └── Extension: Workloads Hash        (OID 1.3.6.1.4.1.65230.2.5)  ← wasm module
+      └── Leaf RA-TLS certificate (24 h, key kept across re-mints)
+               ├── Extension: Runtime Version Hash  (OID 1.3.6.1.4.1.65230.1.1)
+               ├── Extension: Config Merkle Root    (OID 1.3.6.1.4.1.65230.2.1)
+               ├── Extension: Egress CA Bundle Hash (OID 1.3.6.1.4.1.65230.2.2)  ← egress module
+               └── Extension: Workloads Hash        (OID 1.3.6.1.4.1.65230.2.4)  ← wasm module
 ```
 
-The intermediary CA cert + key are passed to the enclave at init time, sealed to disk as part of the unified `SealedConfig` (MRENCLAVE policy), and kept only in encrypted enclave memory. The leaf certificate is generated per-connection with an embedded SGX quote and signed by the intermediary CA. Module OIDs are registered by each module via `custom_oids()` and embedded as non-critical X.509 extensions.
+The intermediary CA cert + key are passed to the enclave at init time, sealed to disk as part of the unified `SealedConfig` (MRENCLAVE policy), and kept only in encrypted enclave memory. The leaf certificate is signed by the intermediary CA and renewed every 24 hours. It carries no quote: the SGX quote is served by the evidence exchange (`POST /__privasys/attest`) and bound to the leaf key through `report_data`. Module OIDs are registered by each module via `custom_oids()` and embedded as non-critical X.509 extensions.
 
 ## ECALL / OCALL Interface
 

@@ -5,10 +5,10 @@ description: How Enclave OS attests runtime configuration via a binary Merkle tr
 
 Hardware attestation (MRENCLAVE for SGX, MRTD/RTMRs for TDX) proves which *binary* or *image* is running, but says nothing about *how it is configured*. Two deployments with the same code could have different CA certificates, different workloads loaded, or different environment variables.
 
-The **Config Merkle Tree** closes this gap. Every configuration input is hashed into a leaf of a binary Merkle tree. The root hash is embedded in the [RA-TLS certificate](/solutions/enclave-os/attestation/ra-tls) as [OID `1.3.6.1.4.1.65230.1.1`](/solutions/enclave-os/attestation/oids).
+The **Config Merkle Tree** closes this gap. Every configuration input is hashed into a leaf of a binary Merkle tree. The root hash is embedded in the [RA-TLS certificate](/solutions/enclave-os/attestation/ra-tls) as [OID `1.3.6.1.4.1.65230.2.1`](/solutions/enclave-os/attestation/oids) (`5.1` for a per-workload tree).
 
 ```
-                 Root (OID 1.1)
+                 Root (OID 2.1)
            ┌───────────┴───────────┐
          H(0,1)                  H(2,3)
      ┌─────┴─────┐           ┌─────┴─────┐
@@ -83,7 +83,7 @@ In addition to the Merkle root, both editions embed individual [OID extensions](
 
 | Scope | Certificate | Merkle root OID | What it covers |
 |-------|-------------|-----------------|----------------|
-| **Platform-wide** | Enclave CA cert (Mini) or management cert (Virtual) | `1.1` | CA material, runtime config, combined workloads hash |
-| **Per-workload** | App leaf cert (Mini) or container cert (Virtual) | `3.1` | Workload-specific code hash, config, key source |
+| **Platform-wide** | Platform leaf (Mini) or management cert (Virtual) | `2.1` | CA material, runtime config, combined workloads hash |
+| **Per-workload** | App leaf cert (Mini) or container cert (Virtual) | `5.1` | Workload-specific code hash, config, key source |
 
-A client connecting via [SNI routing](/solutions/enclave-os/attestation/ra-tls#per-workload-certificates-and-sni-routing) receives the per-workload certificate and can verify both the workload's own Merkle root (`3.1`) and the platform-level root (`1.1`) from the parent CA certificate.
+A client connecting via [SNI routing](/solutions/enclave-os/attestation/ra-tls#per-workload-certificates-and-sni-routing) receives the per-workload certificate and can verify both the workload's own Merkle root (`5.1`) and the platform-level root (`2.1`) from the platform certificate.
