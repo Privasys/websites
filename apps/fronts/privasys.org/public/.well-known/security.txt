@@ -1,0 +1,12 @@
+# Privasys security contact
+# Vulnerabilities in the Privasys platform, its apps, and the Privasys forks of
+# rustls (github.com/Privasys/rustls) and Go (github.com/Privasys/go) are handled
+# by Privasys, not by the upstream projects.
+
+Contact: mailto:security@privasys.org
+Contact: https://github.com/Privasys/rustls/security/advisories/new
+Contact: https://github.com/Privasys/go/security/advisories/new
+Expires: 2027-09-03T10:57:53Z
+Preferred-Languages: en, fr
+Canonical: https://privasys.org/.well-known/security.txt
+Policy: https://github.com/Privasys/rustls/security/policy
