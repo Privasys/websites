@@ -5,28 +5,28 @@ description: How a confidential app pins the other enclaves it depends on, so us
 
 Confidential apps increasingly depend on other confidential apps. A private document service might call a confidential inference enclave; that enclave might call a confidential vector store. When a user consents to the first app, they are implicitly trusting the specific versions of everything it pulls in.
 
-**Attested dependencies** make that trust explicit and enforceable. An app is pinned to a fixed set of dependency identities, carried in its RA-TLS certificate at OID [`1.3.6.1.4.1.65230.6.1`](/solutions/enclave-os/attestation/oids#cross-enclave-dependency-oids-arc-13614165230-6), and the runtime refuses to talk to any dependency that does not match.
+**Attested dependencies** make that trust explicit and enforceable. An app is pinned to a fixed set of dependency identities, carried in its RA-TLS certificate at OID [`1.3.6.1.4.1.65230.7.1`](/solutions/enclave-os/attestation/oids#arc-7-trust-relationships), and the runtime refuses to talk to any dependency that does not match.
 
 ## What this gives you
 
-- **Attribution** — the user sees *which* dependency changed, not just "the app changed".
-- **Reuse** — approving a dependency once counts for every app that pulls it in.
-- **Decoupling** — a dependency can update on its own cadence.
+- **Attribution**: the user sees *which* dependency changed, not just "the app changed".
+- **Reuse**: approving a dependency once counts for every app that pulls it in.
+- **Decoupling**: a dependency can update on its own cadence.
 
 ## The dependency set is owned by the runtime
 
-Unlike app-defined extensions (the `3.5.<n>` sub-arc), the `6.1` extension is stamped by the measured runtime — an app **cannot** write it. The advertised set and the enforced set are therefore the same object: an app cannot claim a dependency it is not constrained to use, nor use one it did not advertise. A verifier can trust `6.1` for the same reason it trusts the rest of the certificate.
+Unlike app-defined extensions (the `5.4.<n>` sub-arc), the `7.1` extension is stamped by the measured runtime; an app **cannot** write it. The advertised set and the enforced set are therefore the same object: an app cannot claim a dependency it is not constrained to use, nor use one it did not advertise. A verifier can trust `7.1` for the same reason it trusts the rest of the certificate: the extensions are stamped by the measured runtime whose quote the [evidence exchange](/solutions/enclave-os/attestation/ra-tls#the-evidence-exchange) returns.
 
-The app owner (or the platform, for auto-update) changes the set through the control plane, which updates the enforced set and re-mints the certificate together.
+The app owner (or the platform, for auto-update) changes the set through the control plane, which updates the enforced set and re-mints the certificate together. The leaf key is kept across such a re-mint, so a cached deterministic quote for the key stays valid.
 
 ## A dependency identity is just an app identity
 
 Each entry pins one dependency by the same tuple used to verify any app:
 
-- the TEE measurement — MRENCLAVE (SGX) or MRTD + RTMRs (TDX);
-- required OID values, typically the code hash ([`3.2`](/solutions/enclave-os/attestation/oids#per-workload-oids-arc-13614165230-3)) and the app-id ([`3.6`](/solutions/enclave-os/attestation/oids#per-workload-oids-arc-13614165230-3)).
+- the TEE measurement, MRENCLAVE (SGX) or MRTD + RTMRs (TDX), read from the quote the peer serves through the evidence exchange;
+- required OID values, read from the peer's leaf certificate, typically the code digest ([`4.2`](/solutions/enclave-os/attestation/oids#arc-4-workload-identity)) and the app id ([`4.1`](/solutions/enclave-os/attestation/oids#arc-4-workload-identity)).
 
-Verification reuses the ordinary app-identity matcher — there is no second verifier.
+Verification reuses the ordinary app-identity matcher; there is no second verifier.
 
 ## Direct edges only, sound at depth
 
@@ -41,20 +41,20 @@ identity(X) = SHA-256(
 )
 ```
 
-Because `dependencies(X)` lists each direct dependency by an identity that already folds in its own `6.1`, `identity(X)` transitively commits to the entire subtree — while every hop still verifies only its direct edge. If something changes deep in the tree, the identity a dependent is pinned to changes, so the dependent fails closed and re-approval is forced. No chain-walking, no trusted-measurement allow-list.
+Because `dependencies(X)` lists each direct dependency by an identity that already folds in its own `7.1`, `identity(X)` transitively commits to the entire subtree, while every hop still verifies only its direct edge. If something changes deep in the tree, the identity a dependent is pinned to changes, so the dependent fails closed and re-approval is forced. No chain-walking, no trusted-measurement allow-list.
 
 ```mermaid
 graph LR
   subgraph A["Document service (app A)"]
-    A61["cert OID 6.1: pinned set<br/>stamped by the measured runtime"]
+    A71["cert OID 7.1: pinned set<br/>stamped by the measured runtime"]
   end
   subgraph B["Confidential inference (app B)"]
-    B61["its own 6.1 set,<br/>folded into identity(B)"]
+    B71["its own 7.1 set,<br/>folded into identity(B)"]
   end
   C["Confidential vector store (app C)"]
   X["Any undeclared enclave,<br/>even a genuine one"]
 
-  A -->|"mutual RA-TLS: peer must match<br/>measurement + code hash + app id"| B
+  A -->|"mutual RA-TLS: peer must match<br/>measurement + code digest + app id"| B
   B -->|"direct edge, verified by B"| C
   A -.->|"refused, fail closed"| X
 
@@ -65,13 +65,13 @@ A change in C changes `identity(B)`, which changes the entry A is pinned to: A f
 
 ## Encoding
 
-The `6.1` value is a deterministic, length-prefixed encoding (big-endian `u32` lengths; entries sorted by app-id, measurements and required OIDs sorted). The same logical set always encodes to the same bytes, and the encoding is byte-identical across the [verification libraries](/solutions/platform/verification-libraries), the enclave runtime, and the wallet.
+The `7.1` value is a deterministic, length-prefixed encoding (big-endian `u32` lengths; entries sorted by app id, measurements and required OIDs sorted). The same logical set always encodes to the same bytes, and the encoding is byte-identical across the [verification libraries](/solutions/platform/verification-libraries), the enclave runtime, and the wallet.
 
 ## Enforcement
 
-**Container apps.** The calling container verifies the peer with the RA-TLS SDK before sending any data: the peer's app-id (`3.6`) selects the pinned entry, and the peer must match its measurement and required OIDs, or the call fails closed. A genuine but *undeclared* enclave is refused.
+**Container apps.** The calling container verifies the peer with the RA-TLS SDK before sending any data: the peer's app id (`4.1`, read from its leaf certificate) selects the pinned entry, and the peer must match its measurement (from the quote returned by the evidence exchange) and its required OIDs (from the leaf), or the call fails closed. A genuine but *undeclared* enclave is refused.
 
-**WASM apps (Enclave OS Mini).** The enclave mints `6.1` from its measured config and the egress path fails closed against the pinned set, presenting the app's own attested client identity.
+**WASM apps (Enclave OS Mini).** The enclave mints `7.1` from its measured config and the egress path fails closed against the pinned set, presenting the app's own attested client identity on the [mutual leg](/solutions/enclave-os/attestation/mutual-ra-tls).
 
 ## Managing dependencies
 
@@ -94,7 +94,7 @@ where each entry pins a dependency by measurement and required OIDs:
         { "tdx": { "mrtd": "<hex>", "rtmr1": "<hex>", "rtmr2": "<hex>" } }
       ],
       "required_oids": [
-        { "OID": "1.3.6.1.4.1.65230.3.2", "ExpectedValue": "<base64 code hash>" }
+        { "OID": "1.3.6.1.4.1.65230.4.2", "ExpectedValue": "<base64 code digest>" }
       ]
     }
   ]

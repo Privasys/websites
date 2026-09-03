@@ -20,9 +20,9 @@ The `/data` key is a data encryption key held as **Shamir shares on the Enclave 
 
 1. On the very first boot, the machine redeems a single-use, operator-pre-approved bootstrap token with a fresh TDX quote whose measurements must match the approved Enclave OS release. It then generates the key in-enclave, splits it onto the vault constellation, and formats the partition with LUKS2+AEAD.
 2. On every later boot, a non-secret locator stored in the LUKS2 header points at the constellation; the machine authenticates with a fresh TDX quote, reconstructs the key from its shares over mutual RA-TLS, and opens the volume. No human is involved.
-3. The key origin (`"vault:<handle>"`, or `"byok:<fingerprint>"` on legacy machines) is written to `/run/luks/dek-origin` and published as **OID `1.3.6.1.4.1.65230.2.6`** in every RA-TLS certificate.
+3. The key origin (`"vault:<handle>"`, or `"byok:<fingerprint>"` on legacy machines) is written to `/run/luks/dek-origin` and published as **OID `1.3.6.1.4.1.65230.3.1`** in every RA-TLS certificate.
 
-This means a remote verifier can check the RA-TLS certificate's OID `2.6` extension and confirm how the data partition is keyed: vault-held (the default — the key is gated on the machine's attested identity) or a customer-provided key (legacy BYOK).
+This means a remote verifier can check the RA-TLS certificate's OID `3.1` extension and confirm how the data partition is keyed: vault-held (the default, where the key is gated on the machine's attested identity) or a customer-provided key (legacy BYOK).
 
 ## Per-Container Encrypted Volumes
 
@@ -38,7 +38,7 @@ When a container load request includes a BYOK key, the launcher:
 1. Creates a new LVM logical volume on the container volumes partition.
 2. Formats it with LUKS2+AEAD using the provided key.
 3. Mounts it at the container's designated volume path.
-4. Embeds `"byok:<fingerprint>"` in OID `1.3.6.1.4.1.65230.3.4` of that container's RA-TLS certificate.
+4. Embeds `"byok:<fingerprint>"` in OID `1.3.6.1.4.1.65230.6.1` of that container's RA-TLS certificate.
 
 When the key source is Enclave Vaults, the launcher establishes a mutual RA-TLS connection to the vault constellation, authenticates using the VM's own RA-TLS certificate, and retrieves the data encryption key. The vault verifies the VM's attestation before releasing the key, creating a mutual trust chain: the VM proves its identity to the vault, and the vault proves its identity to the VM.
 
@@ -60,7 +60,7 @@ The trade-off is that online resize is not supported. The `--integrity aead` mod
 
 1. The operator stores data encryption keys in the Enclave Vaults constellation using [Shamir secret sharing](/solutions/enclave-vaults/overview). Each key is split across multiple vault nodes; no single node holds the complete key.
 2. At container load time, the workload launcher connects to the vault constellation via mutual RA-TLS.
-3. The vaults verify the VM's RA-TLS certificate (checking the TDX quote, RTMR measurements, and dm-verity root hash) before releasing key shares.
+3. The vaults verify the VM's RA-TLS certificate and the TDX quote it presents through the evidence exchange (checking the RTMR measurements and dm-verity root hash) before releasing key shares.
 4. The launcher reconstructs the key from the shares and uses it to open or format the container's LUKS2 volume.
 
 This creates a closed attestation loop: the VM must prove it is running trusted code before it can access keys, and the vault must prove it is running trusted code before the VM accepts the key.
@@ -71,8 +71,8 @@ The encryption key origin is embedded in RA-TLS certificates at two levels:
 
 | Level | OID | Value |
 |-------|-----|-------|
-| Platform (OS data partition) | `1.3.6.1.4.1.65230.2.6` | `"vault:<handle>"` or `"byok:<fingerprint>"` |
-| Per-container (volume) | `1.3.6.1.4.1.65230.3.4` | `"vault:<handle>"` or `"byok:<fingerprint>"` |
+| Platform (OS data partition) | `1.3.6.1.4.1.65230.3.1` | `"vault:<handle>"` or `"byok:<fingerprint>"` |
+| Per-container (volume) | `1.3.6.1.4.1.65230.6.1` | `"vault:<handle>"` or `"byok:<fingerprint>"` |
 
 A client verifying the RA-TLS certificate can confirm:
 

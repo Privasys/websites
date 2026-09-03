@@ -75,7 +75,7 @@ An op without a `value` is a delete. Keys, values and proofs are hex-encoded.
 
 ### Root in the Certificate
 
-The current `root ‖ version` is embedded in every freshly minted RA-TLS certificate under OID `1.3.6.1.4.1.65230.2.6`, alongside the config Merkle root. A client can therefore pin not just *which code* it is talking to, but *which data state* — and monitor root continuity across connections.
+The current `root ‖ version` is embedded in every freshly minted RA-TLS certificate under OID `1.3.6.1.4.1.65230.3.2` (Authenticated State Root), alongside the config Merkle root. A client can therefore pin not just *which code* it is talking to, but *which data state*, and monitor root continuity across connections.
 
 ## Freshness Model
 
