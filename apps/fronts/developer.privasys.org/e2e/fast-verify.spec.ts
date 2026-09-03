@@ -744,9 +744,9 @@ test.describe('Fast Verification Suite', () => {
         expect(result.pem).toContain('BEGIN CERTIFICATE');
         expect(result.app_extensions).toBeTruthy();
         expect(result.app_extensions.length).toBeGreaterThan(0);
-        // Verify specific workload OID labels (Privasys arc 1.3.6.1.4.1.65230.3.x)
+        // Verify specific workload OID labels (Privasys v2 arc 1.3.6.1.4.1.65230.4.x)
         const oids = result.app_extensions.map((e: { oid: string }) => e.oid);
-        expect(oids).toContain('1.3.6.1.4.1.65230.3.2'); // Workload Code Hash
+        expect(oids).toContain('1.3.6.1.4.1.65230.4.2'); // Workload Code Hash
         console.log(
             `WASM attestation: ${result.app_extensions.length} workload extensions (OIDs: ${oids.join(', ')})`,
         );
@@ -877,13 +877,18 @@ test.describe('Fast Verification Suite', () => {
         expect(result.quote.report_data).toHaveLength(128);
         // Platform cert extensions (Privasys OIDs)
         expect(result.extensions).toBeDefined();
-        // Per-workload cert extensions (Privasys arc 1.3.6.1.4.1.65230.3.x)
+        // Per-workload cert extensions (Privasys v2 arcs 1.3.6.1.4.1.65230.4.x / 5.x)
         expect(result.app_extensions).toBeDefined();
         expect(result.app_extensions.length).toBeGreaterThan(0);
         // Verify specific workload OID labels
         const appOids = result.app_extensions.map((e: { oid: string }) => e.oid);
-        expect(appOids).toContain('1.3.6.1.4.1.65230.3.2'); // Image Digest
-        expect(appOids).toContain('1.3.6.1.4.1.65230.3.1'); // Config Merkle Root
+        expect(appOids).toContain('1.3.6.1.4.1.65230.4.2'); // Image Digest
+        expect(appOids).toContain('1.3.6.1.4.1.65230.5.1'); // Workload Config Merkle Root
+        // RA-TLS v2: no quote extension in the certificate; the quote comes
+        // from the post-handshake evidence exchange in deterministic mode.
+        expect(result.quote.attestation).toBe('deterministic');
+        expect(result.quote.quote_time).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}Z$/);
+        expect(result.quote.deterministic_verified).toBe(true);
         // Container image reference should be present
         expect(result.container_image).toBeTruthy();
         // Event log may not be available right after deploy
@@ -921,6 +926,14 @@ test.describe('Fast Verification Suite', () => {
 
         expect(result.challenge_mode).toBe(true);
         expect(result.challenge).toBe(challengeHex);
+        // RA-TLS v2: the evidence is exchanged after the TLS 1.3 handshake.
+        // A 32-byte challenge is used verbatim as the context; the exporter
+        // value (hctx) of management-service's connection is 32 bytes base64.
+        expect(result.quote.attestation).toBe('challenge');
+        expect(result.quote.context).toBe(challengeHex);
+        expect(Buffer.from(result.quote.hctx, 'base64')).toHaveLength(32);
+        expect(result.quote.quote_time).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}Z$/);
+        expect(result.quote.report_data_verified).toBe(true);
         expect(result.quote.challenge_verified).toBe(true);
         console.log('Container challenge-response: verified');
     });

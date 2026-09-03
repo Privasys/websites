@@ -22,7 +22,7 @@
  *   apps now declare `config_api` (method+path) in privasys.json or the
  *   container LABEL, and the manager forwards the first POST to that path
  *   in-process; the app then registers attestation extensions under sub-arc
- *   1.3.6.1.4.1.65230.3.5.* via the `setAttestationExtension` SDK call.
+ *   1.3.6.1.4.1.65230.5.4.* via the `setAttestationExtension` SDK call.
  *   The end-to-end OID flow is covered by an integration test in the
  *   confidential-ai repo (which owns the in-app SDK use), not here.
  *
@@ -325,7 +325,7 @@ test.describe('Cloud-image deploy', () => {
         // Per-env-var OID extensions were removed when env vars were dropped
         // from the deploy API. Apps now register attestation extensions via
         // the SDK's `setAttestationExtension(oid, value)` call (sub-arc
-        // 1.3.6.1.4.1.65230.3.5.*); coverage for that flow lives with the
+        // 1.3.6.1.4.1.65230.5.4.*); coverage for that flow lives with the
         // app that uses it (see confidential-ai integration tests). The
         // legacy block below is preserved in git history for reference.
         return;
