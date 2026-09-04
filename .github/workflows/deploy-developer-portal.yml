@@ -50,7 +50,7 @@ jobs:
             echo "container=developer-portal"               >> "$GITHUB_OUTPUT"
             echo "host_port=3001"                           >> "$GITHUB_OUTPUT"
             echo "env_file=~/developer-portal-test.env"     >> "$GITHUB_OUTPUT"
-            echo "api_url=https://api-test.developer.privasys.org" >> "$GITHUB_OUTPUT"
+            echo "api_url=https://api.developer.test.privasys.org" >> "$GITHUB_OUTPUT"
           fi
           echo "tag=$(date -u +%Y%m%d-%H%M%S)-${ENV}-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
