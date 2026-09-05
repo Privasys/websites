@@ -77,6 +77,8 @@ interface HastNode {
     type: string;
     tagName?: string;
     properties?: { className?: string[] };
+    data?: { meta?: string };
+    value?: string;
     children?: HastNode[];
 }
 
@@ -110,6 +112,43 @@ function rehypeMermaidBlocks() {
     };
 }
 
+
+/**
+ * Opt-in highlighted code block. A fence whose info string carries the word
+ * `dark` (for example ```go dark) is rendered at build time by shiki with the
+ * github-dark theme, which sets its own dark background inline. Every other
+ * fence keeps the article's plain <pre> styling, and mermaid blocks were
+ * already lifted out above. remark-rehype exposes the fence meta on the
+ * <code> element's data.meta.
+ */
+function rehypeDarkCodeBlocks() {
+    return async (tree: HastNode) => {
+        const targets: Array<{ parent: HastNode; index: number; lang: string; source: string }> = [];
+        function walk(node: HastNode) {
+            if (!node.children) return;
+            node.children.forEach((child, index) => {
+                const code = child.tagName === 'pre' ? child.children?.[0] : undefined;
+                const meta = (code?.data as { meta?: string } | undefined)?.meta ?? '';
+                const classes = (code?.properties?.className ?? []) as string[];
+                const langClass = classes.find((c) => c.startsWith('language-'));
+                if (code?.tagName === 'code' && langClass && /\bdark\b/.test(meta)) {
+                    const source = (code.children ?? []).map((c) => c.value ?? '').join('');
+                    targets.push({ parent: node, index, lang: langClass.slice('language-'.length), source });
+                    return;
+                }
+                walk(child);
+            });
+        }
+        walk(tree);
+        for (const t of targets) {
+            const { codeToHast } = await import('shiki');
+            const hast = (await codeToHast(t.source, { lang: t.lang, theme: 'github-dark' })) as HastNode;
+            const pre = hast.children?.find((c) => c.tagName === 'pre');
+            if (pre) t.parent.children![t.index] = pre;
+        }
+    };
+}
+
 export async function renderMarkdown(markdownContent: string): Promise<string> {
     const result = await unified()
         .use(remarkParse)
@@ -117,6 +156,7 @@ export async function renderMarkdown(markdownContent: string): Promise<string> {
         .use(remarkMath)
         .use(remarkRehype)
         .use(rehypeMermaidBlocks)
+        .use(rehypeDarkCodeBlocks)
         .use(rehypeKatex)
         .use(rehypeStringify)
         .process(markdownContent);

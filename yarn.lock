@@ -4444,6 +4444,7 @@ __metadata:
     remark-gfm: "npm:^4.0.1"
     remark-math: "npm:^6.0.0"
     remark-rehype: "npm:^11.1.2"
+    shiki: "npm:^3.23.0"
     tailwindcss: "npm:4.1.12"
     ts-jest: "npm:29.4.1"
     ts-node: "npm:10.9.2"
@@ -19944,7 +19945,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"shiki@npm:3.23.0, shiki@npm:^3.13.0":
+"shiki@npm:3.23.0, shiki@npm:^3.13.0, shiki@npm:^3.23.0":
   version: 3.23.0
   resolution: "shiki@npm:3.23.0"
   dependencies:
