@@ -71,7 +71,7 @@ For wallet users the practical consequence is that **the Privasys wallet must be
 
 For developers, [ra-tls-clients](https://github.com/Privasys/ra-tls-clients) v0.9.1 carries the v2 SDKs in Rust, Go, TypeScript, Python and C#, each on the upstream TLS library of its language: rustls, `crypto/tls`, Node's `tls`, Python's `ssl` and .NET's `SslStream`. The platform CLI is v0.39.0. The Go path looks like this, with challenge mode written out although it is the default:
 
-```go
+```go dark
 import "enclave-os-mini/clients/go/ratls"
 
 client, err := ratls.Connect("my-app.apps.privasys.org", 443, &ratls.Options{
