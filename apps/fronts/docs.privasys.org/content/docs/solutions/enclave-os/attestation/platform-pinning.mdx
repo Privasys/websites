@@ -48,7 +48,7 @@ info, err := client.VerifyCertificate(&ratls.VerificationPolicy{
 })
 ```
 
-The check runs twice. The list travels with the verification request, and the attestation server refuses evidence from any other platform with the verdict `PLATFORM_NOT_ALLOWED`. The SDK then compares the identity the server reported against the list itself, so the decision does not depend on the server honouring the request. A non-empty list needs quote verification, since the identity is read from the verified evidence, and fails closed when the server reports no identity.
+The check runs twice. The list travels with the verification request, and the attestation server refuses evidence from any other platform with the verdict `PLATFORM_NOT_ALLOWED`. Once the server has accepted the quote, the SDK reads the identity itself from the PCK certificate embedded in that same quote, cross-checks it with what the server reported, and enforces the list on its own reading; a server that disagrees with the quote fails the verification. The decision therefore depends on the server for the quote verdict, not for the identity. A non-empty list needs quote verification, since the identity only means something once the quote is verified, and fails closed when no identity is available.
 
 From the CLI:
 
@@ -69,7 +69,7 @@ A revoked certificate, or a CRL that cannot be obtained or has expired, fails th
 
 Pinning names machines; it does not prove they are physically protected. The owner decides which machines belong on the list. Intel's Platform Ownership Endorsements will let a platform prove its owner directly, and the certificate scheme reserves a slot for them; the allow-list is the interim mechanism until a distribution channel exists.
 
-The SDKs take the platform identity from the attestation server's response rather than parsing the embedded certificate themselves, so a relying party trusts the server for this verdict as it already does for the signature and TCB verdicts.
+The SDKs read the identity from the quote but do not verify the PCK chain themselves; the attestation server's verdict on the quote is what makes the embedded certificate the one that certified it, so a relying party trusts the server for that verdict as it already does for the signature and TCB verdicts.
 
 ## References
 
