@@ -7,6 +7,10 @@ export const API_BASE_URL =
     process.env.NEXT_PUBLIC_API_BASE_URL ?? 'https://api.developer.privasys.org';
 
 export interface ResolvedApp {
+    /** Management app id, the same value the enclave stamps on its RA-TLS leaf
+     *  as OID 1.3.6.1.4.1.65230.4.1. Optional: an older management service does
+     *  not send it. */
+    app_id?: string;
     name: string;
     display_name: string;
     app_type: 'wasm' | 'container' | string;
@@ -23,7 +27,7 @@ export type ResolveOutcome =
     | { ok: true; app: ResolvedApp }
     | { ok: false; error: string };
 
-/** Resolve a Privasys app by name/alias. A non-2xx comes back as a
+/** Resolve a Privasys app by name or app id (the endpoint accepts either). A non-2xx comes back as a
  *  human-readable error (e.g. "app is not deployed"). */
 export async function resolveApp(ref: string): Promise<ResolveOutcome> {
     try {
