@@ -6,6 +6,7 @@
         "oids",
         "merkle-tree",
         "mutual-ra-tls",
-        "dependencies"
+        "dependencies",
+        "platform-pinning"
     ]
 }

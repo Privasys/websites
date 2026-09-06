@@ -1,0 +1,79 @@
+---
+title: Platform Pinning
+description: Pin the physical machines an enclave may run on, and how revoked platforms are kept out.
+---
+
+A quote that verifies proves that a genuine TEE with the reported measurements signed it. It does not prove which machine it came from: evidence from any platform whose attestation key has not been revoked passes, and measurements say what runs, not where. Platform pinning closes that gap for relying parties that know which machines they operate, and revocation checking keeps platforms Intel has withdrawn out of the fleet.
+
+This page covers both. The mechanics of the evidence exchange are on the [RA-TLS](/solutions/enclave-os/attestation/ra-tls) page.
+
+## Where the identity comes from
+
+Every Intel SGX and TDX quote embeds the certificate chain of the platform's **Provisioning Certification Key** (PCK). Intel issues the PCK certificate when the platform is provisioned, and its SGX extension carries the platform's identifiers:
+
+| Identifier | Present on | Meaning |
+|-----------|-----------|---------|
+| Platform Instance ID | certificates issued by the Intel SGX PCK **Platform** CA (multi-package hosts) | assigned by Intel's registration service from the platform manifest; identifies the physical platform |
+| PPID | every PCK certificate | derived from the package's provisioning key; identifies the CPU package |
+| FMSPC | every PCK certificate | family, model, stepping, platform and custom SKU; reference only |
+
+AMD SEV-SNP reports carry the die's `CHIP_ID` instead.
+
+The values are signed by Intel inside the quote. The quote body is signed by the attestation key, the Quoting Enclave report that vouches for the attestation key is signed by the PCK private key, and the PCK certificate chains to the Intel SGX Root CA. Neither the enclave runtime nor Privasys can change them without breaking the quote signature. To present an allowed identifier from another machine, an attacker would need Intel to issue a certificate carrying it for their key, or the PCK private key of the allowed machine itself.
+
+The [attestation server](/technology/attestation/attestation-server) reads the identifiers from the leaf that actually certified the quote, after verifying the QE report signature with that leaf's key and the chain to the pinned Intel root, and reports them in every response:
+
+```json
+"platform": {
+  "ppid": "414afbe506e8ac361add41f3133aab6f",
+  "platformInstanceId": "c055fc7b49bd4185dda796bf1795af32",
+  "fmspc": "00806f050000"
+}
+```
+
+## Pinning a platform
+
+The identifier of record is the Platform Instance ID when the certificate carries one, else the PPID, else the `CHIP_ID`. The PPID does not stand in for a Platform Instance ID that is present.
+
+Every SDK exposes the allow-list on its verification policy: `AllowedPlatformIDs` in Go, `allowed_platform_ids` in Rust and Python, `allowedPlatformIds` in TypeScript, `AllowedPlatformIds` in .NET. Entries are hex; case and separators are ignored.
+
+```go
+info, err := client.VerifyCertificate(&ratls.VerificationPolicy{
+    TEE:                ratls.TeeTypeTDX,
+    MRTD:               expectedMRTD,
+    RTMR1:              expectedRTMR1,
+    RTMR2:              expectedRTMR2,
+    AllowedPlatformIDs: []string{"d4602590b11c770aa7b9ee404649e802"},
+    QuoteVerification:  &ratls.QuoteVerificationConfig{Endpoint: "https://as.privasys.org"},
+})
+```
+
+The check runs twice. The list travels with the verification request, and the attestation server refuses evidence from any other platform with the verdict `PLATFORM_NOT_ALLOWED`. The SDK then compares the identity the server reported against the list itself, so the decision does not depend on the server honouring the request. A non-empty list needs quote verification, since the identity is read from the verified evidence, and fails closed when the server reports no identity.
+
+From the CLI:
+
+```sh
+privasys attest my-app                                              # prints the platform row
+privasys attest my-app --allowed-platform d4602590b11c770aa7b9ee404649e802
+```
+
+The identifier names the host, not the VM. On a cloud provider a stop and start can land the VM on a different host, and the list then has to be updated. That is the intended behaviour of pinning.
+
+## Revocation
+
+A chain that reaches the Intel root says nothing about revocation: a platform whose PCK certificate Intel has revoked, the compromised-key case, still chains. The attestation server checks every SGX and TDX quote against Intel's current CRLs: the PCK leaf against the PCK CRL of its issuing CA, and the issuing CA against the Root CA CRL. The PCK CRL must arrive with an issuer chain ending at the pinned root and be signed by the CA that issued the leaf, matched by subject and key. A CRL outside its validity window is refused.
+
+A revoked certificate, or a CRL that cannot be obtained or has expired, fails the verification. CRLs are cached with a 24-hour grace window through an Intel outage, so the steady state is a cache hit. Every response reports the outcome in `pckRevocationChecked`.
+
+## What this does not cover
+
+Pinning names machines; it does not prove they are physically protected. The owner decides which machines belong on the list. Intel's Platform Ownership Endorsements will let a platform prove its owner directly, and the certificate scheme reserves a slot for them; the allow-list is the interim mechanism until a distribution channel exists.
+
+The SDKs take the platform identity from the attestation server's response rather than parsing the embedded certificate themselves, so a relying party trusts the server for this verdict as it already does for the signature and TCB verdicts.
+
+## References
+
+- [GHSA-pj2x-5wqv-fh57](https://github.com/Privasys/ra-tls-clients/security/advisories/GHSA-pj2x-5wqv-fh57), the diversion advisory this mechanism answers
+- [Identity Crisis in Confidential Computing: Formal Analysis of Attested TLS](https://doi.org/10.1145/3779208.3785387)
+- [Intel Platform Ownership Endorsements](https://www.intel.com/content/www/us/en/developer/articles/technical/software-security-guidance/technical-documentation/platform-ownership-endorsements.html)
+- [Intel SGX PCK Certificate specification](https://download.01.org/intel-sgx/latest/dcap-latest/linux/docs/Intel_SGX_PCK_Certificate_CRL_Spec-1.5.pdf), the SGX extension and its identifiers

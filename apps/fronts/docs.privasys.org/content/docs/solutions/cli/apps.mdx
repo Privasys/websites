@@ -62,14 +62,18 @@ quote type    TDX Quote
 challenged    true   nonce 42e0ac75…
 workload      code b453d9aa…   image my-app:817987b
 quote status  OK
+platform      d4602590b11c770aa7b9ee404649e802 (instance id; ppid b8a2d1ca…)
 ✓ VERIFIED    hardware attestation matches the source
 ```
+
+The `platform` row is the physical machine's identity read from the verified quote; see [platform pinning](/solutions/enclave-os/attestation/platform-pinning) for pinning it and for revocation.
 
 Useful flags:
 
 ```sh
 privasys attest my-app --host my-app.apps.privasys.org   # skip the control-plane hostname lookup entirely
 privasys attest my-app --mrtd <hex>                      # pin an expected measurement
+privasys attest my-app --allowed-platform <hex>          # pin the physical machine (the "platform" row; repeatable)
 privasys attest my-app --out ./att                       # dump certificate.pem, quote.bin, attestation.json
 privasys attest my-app --format json                     # full result as JSON
 ```
