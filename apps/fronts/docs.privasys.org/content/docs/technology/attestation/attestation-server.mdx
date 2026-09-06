@@ -126,9 +126,21 @@ Response:
 {
   "success": true,
   "status": "OK",
+  "mrtd": "feb74866...",
+  "rtmrs": ["...", "...", "...", "..."],
+  "platform": {
+    "ppid": "414afbe506e8ac361add41f3133aab6f",
+    "platformInstanceId": "c055fc7b49bd4185dda796bf1795af32",
+    "fmspc": "00806f050000"
+  },
+  "pckRevocationChecked": true,
   "message": "TDX quote verified (signature + certificate chain)"
 }
 ```
+
+### Platform identity, allow-list and revocation
+
+Every verification reports the physical platform's identity read from the verified evidence (`platform`: the PCK certificate's PPID, its Platform Instance ID on multi-package hosts, the FMSPC; `chipId` for SEV-SNP) and the outcome of the revocation check (`pckRevocationChecked`). A request may carry `allowedPlatformIds`, a list of hex identifiers; evidence from any other platform fails with `PLATFORM_NOT_ALLOWED`. The PCK chain of every SGX and TDX quote is checked against Intel's PCK and Root CA CRLs (`PCK_REVOCATION_MODE`, `enforce` by default). See [platform pinning](/solutions/enclave-os/attestation/platform-pinning).
 
 ## Setting Up the PCCS
 
