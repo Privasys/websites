@@ -18,6 +18,7 @@ import {
 } from '~/lib/drive-api';
 import { formatBytes, formatDate, ownerLabel } from '~/lib/format';
 import { useDrive } from '~/lib/use-drive';
+import { collectDroppedFiles, snapshotEntries } from '~/lib/drop-entries';
 import { ShareDialog } from './share-dialog';
 import { MoveDialog } from './move-dialog';
 import { FileViewer, canPreview } from './file-viewer';
@@ -239,6 +240,54 @@ export function FileBrowser({
         }
     };
 
+    // A dropped folder: recreate its tree under the destination, then upload
+    // every file into the folder it came from. A folder that already exists
+    // (a re-drop of the same tree) is reused rather than failing the drop.
+    const onUploadEntries = async (entries: FileSystemEntry[], parentID?: string | null) => {
+        const dest = parentID === undefined ? current.id : parentID;
+        setBusy(true);
+        setError(null);
+        try {
+            setProgress({ name: 'Reading folder…', pct: 0 });
+            const { files, dirs } = await collectDroppedFiles(entries);
+            const folderIDs = new Map<string, string | null>([['', dest]]);
+            const ensureDir = async (segs: string[]): Promise<string | null> => {
+                const key = segs.join('/');
+                const known = folderIDs.get(key);
+                if (known !== undefined) return known;
+                const parent = await ensureDir(segs.slice(0, -1));
+                const name = segs[segs.length - 1];
+                let id: string;
+                try {
+                    id = (await createFolder(session, tenant.id, parent, name)).id;
+                } catch (e) {
+                    const existing = (await listChildren(session, tenant.id, parent)).find(
+                        (n) => n.kind === 'folder' && n.name === name
+                    );
+                    if (!existing) throw e;
+                    id = existing.id;
+                }
+                folderIDs.set(key, id);
+                return id;
+            };
+            for (const d of dirs) await ensureDir(d);
+            for (const { file, dirs: fileDirs } of files) {
+                const label = [...fileDirs, file.name].join('/');
+                setProgress({ name: label, pct: 0 });
+                const folder = await ensureDir(fileDirs);
+                await uploadFileStreaming(session, tenant.id, folder, file, (sent, total) =>
+                    setProgress({ name: label, pct: total ? Math.round((sent / total) * 100) : 100 })
+                );
+            }
+            await reload();
+        } catch (e) {
+            setError(e instanceof Error ? e.message : 'Upload failed.');
+        } finally {
+            setBusy(false);
+            setProgress(null);
+        }
+    };
+
     const onCreateFolder = async (name: string) => {
         setNewFolder(false);
         const trimmed = name.trim();
@@ -324,6 +373,12 @@ export function FileBrowser({
         e.preventDefault();
         dragDepth.current = 0;
         setPageDrag(false);
+        // Entries must be captured before this handler returns.
+        const entries = snapshotEntries(e.dataTransfer);
+        if (entries.length) {
+            void onUploadEntries(entries);
+            return;
+        }
         if (e.dataTransfer.files?.length) void onUpload(e.dataTransfer.files);
     };
 
@@ -350,6 +405,11 @@ export function FileBrowser({
         setDropTarget(null);
         setPageDrag(false);
         dragDepth.current = 0;
+        const entries = snapshotEntries(e.dataTransfer);
+        if (entries.length) {
+            void onUploadEntries(entries, folder.id);
+            return;
+        }
         if (e.dataTransfer.files?.length) {
             void onUpload(e.dataTransfer.files, folder.id);
             return;
