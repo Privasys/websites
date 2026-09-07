@@ -432,7 +432,7 @@ function FleetEditor({
                                 inputMode="numeric"
                             />
                         </Field>
-                        <Field label="Endpoint" hint="Public chat orchestrator URL (e.g. https://confidential-ai.apps-test.privasys.org).">
+                        <Field label="Endpoint" hint="Public chat orchestrator URL (e.g. https://confidential-ai.apps.test.privasys.org).">
                             <input
                                 value={form.endpoint}
                                 onChange={(e) => set('endpoint', e.target.value)}
