@@ -101,7 +101,7 @@ jobs:
                 A='https://api.developer.privasys.org'
                 I='cf7a0d58-5468-4168-84c3-41ebe0ce4025' ;;
               drive.test.privasys.org)
-                H='drive-demo.apps-test.privasys.org'
+                H='drive-demo.apps.test.privasys.org'
                 A='https://api-test.developer.privasys.org'
                 I='02104572-ca2f-41e8-ae2d-24c0294e6f5e' ;;
               *)
@@ -119,7 +119,7 @@ jobs:
             *.test.privasys.org) ;;
             *)
               case "$H$A$I" in
-                *apps-test*|*api-test*|*02104572*)
+                *apps-test*|*apps.test*|*api-test*|*02104572*)
                   echo "::error::Refusing to publish production site '$SITE' against a TEST backend (drive_host=$H api_base=$A app_id=$I)."
                   exit 1 ;;
               esac ;;
