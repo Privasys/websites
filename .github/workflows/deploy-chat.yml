@@ -80,7 +80,7 @@ jobs:
             echo "chat_service_url="                               >> "$GITHUB_OUTPUT"
             # Drive ↔ Chat (§8.7) deliberately stays on the DEV Drive enclave
             # so staging never reads or writes production Drive data.
-            echo "drive_app_host=drive-demo.apps-test.privasys.org" >> "$GITHUB_OUTPUT"
+            echo "drive_app_host=drive-demo.apps.test.privasys.org" >> "$GITHUB_OUTPUT"
           fi
           echo "tag=$(date -u +%Y%m%d-%H%M%S)-${ENV}-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
