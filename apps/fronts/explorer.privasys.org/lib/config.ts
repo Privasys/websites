@@ -15,7 +15,7 @@ export interface EnvPreset {
 
 export const ENV_CONFIG: Record<EnvKey, EnvPreset> = {
     production: { baseUrl: 'https://api.developer.privasys.org', gatewayDomain: 'apps.privasys.org', authOrigin: 'https://privasys.id' },
-    development: { baseUrl: 'https://api-test.developer.privasys.org', gatewayDomain: 'apps-test.privasys.org', authOrigin: 'https://privasys.id' }
+    development: { baseUrl: 'https://api-test.developer.privasys.org', gatewayDomain: 'apps.test.privasys.org', authOrigin: 'https://privasys.id' }
 };
 
 export const DEFAULT_BROKER_URL = 'wss://relay.privasys.org/relay';
