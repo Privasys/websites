@@ -12,9 +12,11 @@ import { InsightsView } from './insights-view';
 import { GraphView } from './graph-view';
 import { SecurityView } from './security-view';
 import { TrustFooter } from './trust-footer';
-import { ChartIcon, FolderIcon, GraphIcon, HomeIcon, InboxIcon, PeopleIcon, PlusIcon, ShieldCheck } from './icons';
+import { StorageGauge } from './storage-gauge';
+import { AppsView } from './apps-view';
+import { AppsIcon, ChartIcon, FolderIcon, GraphIcon, HomeIcon, InboxIcon, PeopleIcon, PlusIcon, ShieldCheck } from './icons';
 
-type View = 'files' | 'shared' | 'requests' | 'members' | 'insights' | 'graph' | 'security';
+type View = 'files' | 'shared' | 'requests' | 'members' | 'insights' | 'graph' | 'security' | 'apps';
 
 const FOOTER_LINKS = [{ label: 'Legal', href: 'https://privasys.org/legal/', external: true }];
 
@@ -112,6 +114,12 @@ export function DriveApp() {
                             icon={<GraphIcon width={18} height={18} />}
                             label="Graph"
                         />
+                        <SidebarItem
+                            active={view === 'apps'}
+                            onClick={() => setView('apps')}
+                            icon={<AppsIcon width={18} height={18} />}
+                            label="Apps with access"
+                        />
                         {canSeeInsights && (
                             <SidebarItem
                                 active={view === 'insights'}
@@ -185,6 +193,7 @@ export function DriveApp() {
                             </>
                         )}
                     </nav>
+                    <StorageGauge key={tenant.id} session={session} tenant={tenant} />
                     <TrustFooter
                         session={session}
                         onOpenSecurity={() => {
@@ -206,6 +215,8 @@ export function DriveApp() {
                         <InsightsView key={tenant.id} session={session} tenant={tenant} />
                     ) : view === 'graph' ? (
                         <GraphView key={tenant.id} session={session} tenant={tenant} />
+                    ) : view === 'apps' ? (
+                        <AppsView key={tenant.id} session={session} tenant={tenant} />
                     ) : view === 'security' ? (
                         <SecurityView onBack={() => setView(prevView)} />
                     ) : (

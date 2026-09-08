@@ -69,6 +69,9 @@ export interface DriveNode {
     created_by?: string;
     /** RFC3339 (Modified column). */
     updated_at?: string;
+    /** Set on a folder that holds a workspace snapshot (`.workspace.json`
+     *  beside `.blobs/`): the manifest file id. Rendered as one item. */
+    workspace_manifest_id?: string;
 }
 
 export type TenantKind = 'user' | 'enterprise';
@@ -636,4 +639,65 @@ export async function getLint(session: SealedSession, tenantID: string): Promise
         dangling_links: data.dangling_links ?? [],
         orphan_nodes: data.orphan_nodes ?? []
     };
+}
+
+// ---- Storage gauge, apps with access, workspace snapshots ----------------
+// The user model of plans/drive-as-remote-disk.md: one gauge with a
+// by-folder breakdown, the list of apps holding a grant, and workspace
+// snapshots as a single item with an export.
+
+export interface UsageEntry {
+    node_id: string;
+    name: string;
+    kind: NodeKind;
+    bytes: number;
+}
+
+export interface Quota {
+    used_bytes: number;
+    limit_bytes: number;
+    unlimited: boolean;
+    remaining_bytes?: number;
+    /** Top-level entries, largest first. */
+    breakdown?: UsageEntry[];
+    /** Per-app entries under AppData, largest first. */
+    apps?: UsageEntry[];
+}
+
+export function getQuota(session: SealedSession, tenantID: string): Promise<Quota> {
+    return json<Quota>(session, 'GET', `/v1/tenants/${tenantID}/quota`);
+}
+
+export interface AppAccess {
+    grant_id: string;
+    app_id: string;
+    app_name?: string;
+    node_id: string;
+    folder: string;
+    scope: string[];
+    created_at: string;
+    expires_at?: string;
+    via?: string;
+}
+
+export async function listAppsWithAccess(session: SealedSession, tenantID: string): Promise<AppAccess[]> {
+    const res = await json<{ apps: AppAccess[] }>(session, 'GET', `/v1/tenants/${tenantID}/apps`);
+    return res.apps ?? [];
+}
+
+/** The working tree of a workspace snapshot, rebuilt from its manifest as a ZIP. */
+export async function exportWorkspaceZip(
+    session: SealedSession,
+    tenantID: string,
+    folderID: string
+): Promise<Uint8Array> {
+    const res = await timed(
+        session,
+        'GET',
+        `/v1/tenants/${tenantID}/nodes/${folderID}/workspace.zip`,
+        undefined,
+        TRANSFER_TIMEOUT_MS
+    );
+    if (!ok(res)) throw decodeError(res);
+    return res.body ?? new Uint8Array(0);
 }
