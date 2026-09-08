@@ -79,7 +79,7 @@ GET /v1/tenants/{t}/quota
 GET /v1/tenants/{t}/apps
 ```
 
-`grants/mine` lists every active grant bound to the calling app's key, for rediscovery after a redeploy. `quota` returns used and limit bytes plus a `breakdown` by top-level entry and an `apps` breakdown of `AppData/`, largest first. `apps` lists the app grants on the tenant with app name, folder, scope and expiry; the ordinary grant `DELETE` revokes one.
+`grants/mine` lists every active grant bound to the calling app's key, so a new instance on a fresh volume, or a second host, finds its folders again. `quota` returns used and limit bytes plus a `breakdown` by top-level entry and an `apps` breakdown of `AppData/`, largest first. `apps` lists the app grants on the tenant with app name, folder, scope and expiry; the ordinary grant `DELETE` revokes one.
 
 ## Workspace snapshots
 
