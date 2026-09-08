@@ -55,7 +55,7 @@ A share link carries a random secret in its URL fragment; the service stores onl
 
 ## Where the ciphertext lives
 
-The default backend is the enclave's own sealed volume. An owner can point the Drive at an object backend of their choice; chunk bodies are encrypted inside the enclave before they are written, so the backend sees opaque blobs. Durability can live on infrastructure you already trust without extending that trust to readability.
+Chunk bodies are encrypted inside the enclave before they are written, so wherever they land the backend sees opaque blobs: the enclave's own sealed volume, or an object store of the owner's choice (Google Cloud Storage, S3-compatible stores, OVH Object Storage). The public instance keeps its chunks in a bucket; an instance can be moved from its volume to a bucket, or between buckets, by copying ciphertext and pointing the configuration at the new home, and the keys never move. Durability can live on infrastructure you already trust without extending that trust to readability.
 
 ## Limits
 
@@ -67,4 +67,4 @@ The default backend is the enclave's own sealed volume. An owner can point the D
 
 ## Next
 
-The [Memory for Chat](/solutions/drive/memory-for-chat) page describes how this sealed store is exposed to an AI as an attested tool, and how it becomes a self-sovereign memory for personal and project-scoped agentic work.
+The [Memory for Chat](/solutions/drive/memory-for-chat) page describes how this sealed store is exposed to an AI as an attested tool, and how it becomes a self-sovereign memory for personal and project-scoped agentic work. [Apps and the wallet](/solutions/drive/apps-and-wallet) describes how a confidential app obtains a folder with your consent, and the [Filesystem API](/solutions/drive/filesystem-api) lists what an app or an agent can do with it.

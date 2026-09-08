@@ -3,6 +3,8 @@
     "defaultOpen": false,
     "pages": [
         "overview",
-        "memory-for-chat"
+        "memory-for-chat",
+        "apps-and-wallet",
+        "filesystem-api"
     ]
 }
