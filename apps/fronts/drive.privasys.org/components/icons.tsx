@@ -216,3 +216,30 @@ export const MoreIcon = (p: P) => (
         <circle cx="19" cy="12" r="1.4" fill="currentColor" stroke="none" />
     </svg>
 );
+
+/** A workspace snapshot: a folder with a layered-tree mark. */
+export const WorkspaceIcon = (p: P) => (
+    <svg {...base(p)}>
+        <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" />
+        <path d="M8 13h8M8 16h5" />
+    </svg>
+);
+
+/** Apps with access: a grid of squares. */
+export const AppsIcon = (p: P) => (
+    <svg {...base(p)}>
+        <rect x="4" y="4" width="6" height="6" rx="1.2" />
+        <rect x="14" y="4" width="6" height="6" rx="1.2" />
+        <rect x="4" y="14" width="6" height="6" rx="1.2" />
+        <rect x="14" y="14" width="6" height="6" rx="1.2" />
+    </svg>
+);
+
+/** Storage: a stacked disc. */
+export const StorageIcon = (p: P) => (
+    <svg {...base(p)}>
+        <ellipse cx="12" cy="6" rx="8" ry="3" />
+        <path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6" />
+        <path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3" />
+    </svg>
+);

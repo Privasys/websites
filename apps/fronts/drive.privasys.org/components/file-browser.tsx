@@ -22,6 +22,7 @@ import { collectDroppedFiles, snapshotEntries } from '~/lib/drop-entries';
 import { ShareDialog } from './share-dialog';
 import { MoveDialog } from './move-dialog';
 import { FileViewer, canPreview } from './file-viewer';
+import { WorkspaceView } from './workspace-view';
 import {
     ChevronRight,
     DownloadIcon,
@@ -39,7 +40,8 @@ import {
     TrashIcon,
     UploadIcon,
     EyeIcon,
-    CloseIcon
+    CloseIcon,
+    WorkspaceIcon
 } from './icons';
 
 interface Crumb {
@@ -76,6 +78,7 @@ export function FileBrowser({
     const [selected, setSelected] = useState<Set<string>>(new Set());
     const [shareNode, setShareNode] = useState<DriveNode | null>(null);
     const [viewNode, setViewNode] = useState<DriveNode | null>(null);
+    const [wsNode, setWsNode] = useState<DriveNode | null>(null);
     const [moveOpen, setMoveOpen] = useState(false);
     const [newFolder, setNewFolder] = useState(false);
     const [pageDrag, setPageDrag] = useState(false);
@@ -186,7 +189,10 @@ export function FileBrowser({
     };
 
     const openNode = (n: DriveNode) => {
-        if (n.kind === 'folder') {
+        if (n.kind === 'folder' && n.workspace_manifest_id) {
+            // A workspace snapshot is one item: browsed read-only, never as a tree of nodes.
+            setWsNode(n);
+        } else if (n.kind === 'folder') {
             setPath((p) => [...p, { id: n.id, name: n.name }]);
         } else if (canPreview(n)) {
             setViewNode(n);
@@ -434,6 +440,20 @@ export function FileBrowser({
     const soleNode = selectedNodes.length === 1 ? selectedNodes[0] : null;
     const anyFileSelected = selectedNodes.some((n) => n.kind === 'file');
 
+    if (wsNode) {
+        return (
+            <WorkspaceView
+                session={session}
+                tenant={tenant}
+                node={wsNode}
+                onBack={() => setWsNode(null)}
+                onDeleted={() => {
+                    setWsNode(null);
+                    void reload();
+                }}
+            />
+        );
+    }
     return (
         <div
             className="relative flex flex-1 flex-col"
@@ -777,6 +797,9 @@ function StatusIcon({ node }: { node: DriveNode }) {
 }
 
 function NodeIcon({ node }: { node: DriveNode }) {
+    if (node.kind === 'folder' && node.workspace_manifest_id) {
+        return <WorkspaceIcon width={22} height={22} style={{ color: 'var(--drv-accent)' }} />;
+    }
     return node.kind === 'folder' ? (
         <FolderIcon width={22} height={22} style={{ color: 'var(--drv-accent)' }} />
     ) : (
@@ -877,7 +900,7 @@ function ListLayout({
                             {formatDate(n.updated_at)}
                         </span>
                         <span className="hidden text-sm sm:block" style={{ color: 'var(--drv-text-muted)' }}>
-                            {n.kind === 'folder' ? '—' : formatBytes(n.size_bytes)}
+                            {n.kind === 'folder' ? (n.workspace_manifest_id ? 'snapshot' : '—') : formatBytes(n.size_bytes)}
                         </span>
                         <span className="flex justify-center">
                             <StatusIcon node={n} />
