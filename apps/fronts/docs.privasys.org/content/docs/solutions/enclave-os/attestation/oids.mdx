@@ -23,7 +23,7 @@ What runs here, and which instance.
 | `1.1` | Runtime Version Hash | 32 bytes, SHA-256 of the runtime version (Wasmtime on Mini, containerd on Virtual) | yes | yes | 2.4 |
 | `1.2` | Image Profile | UTF-8 string, `"production"` or `"dev"`, read from the dm-verity-measured marker `/etc/privasys/image-profile`. Verifiers reject `dev` unless explicitly opted in. | yes | yes | 2.8 |
 | `1.3` | Enclave Instance ID | 16-byte UUID, the management-service enclave id received at registration | yes | yes | new |
-| `1.4` | Platform Hardware Identity | reserved for platform ownership endorsements | no | no | new |
+| `1.4` | Platform Owner | reserved for the owner identifier a platform ownership endorsement attests; the endorsement itself is evidence (8.5) | no | no | new |
 
 ## Arc 2, Platform configuration
 
@@ -98,6 +98,7 @@ Identifiers for the evidence bodies served by the post-handshake [evidence excha
 | `8.2` | Intel TDX DCAP quote | `tdx` | `1.2.840.113741.1.5.5.1.6` as a certificate extension |
 | `8.3` | AMD SEV-SNP report | `sev-snp` | `4.1`, never emitted |
 | `8.4` | NVIDIA GPU CC evidence | `nvidia-gpu` | `5.1` |
+| `8.5` | Platform ownership endorsement | `intel-poe` | new; reserved until endorsements have a distribution channel |
 
 A GPU workload answers with `tee: "tdx-gpu"`: a TDX quote plus a `gpu_evidence` body, cross-committed through `report_data`.
 
@@ -160,6 +161,7 @@ A GPU workload answers with `tee: "tdx-gpu"`: a TDX quote plus a `gpu_evidence` 
     +-- 8.2                          Intel TDX DCAP quote
     +-- 8.3                          AMD SEV-SNP report
     +-- 8.4                          NVIDIA GPU CC evidence
+    +-- 8.5                          Platform ownership endorsement (reserved)
 ```
 
 ## Verification Strategies
