@@ -67,7 +67,7 @@ A revoked certificate, or a CRL that cannot be obtained or has expired, fails th
 
 ## What this does not cover
 
-Pinning names machines; it does not prove they are physically protected. The owner decides which machines belong on the list. Intel's Platform Ownership Endorsements will let a platform prove its owner directly, and the certificate scheme reserves a slot for them; the allow-list is the interim mechanism until a distribution channel exists.
+Pinning names machines; it does not prove they are physically protected. The owner decides which machines belong on the list. Intel's Platform Ownership Endorsements will let a platform prove its owner directly; the certificate scheme reserves slot 1.4 for the owner they attest and evidence type 8.5 for the endorsement itself, and the allow-list is the interim mechanism until a distribution channel exists.
 
 The SDKs read the identity from the quote but do not verify the PCK chain themselves; the attestation server's verdict on the quote is what makes the embedded certificate the one that certified it, so a relying party trusts the server for that verdict as it already does for the signature and TCB verdicts.
 
