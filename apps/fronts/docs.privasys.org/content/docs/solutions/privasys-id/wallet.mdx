@@ -89,3 +89,7 @@ If the attestation has changed since registration, the wallet shows the differen
 Privasys Wallet is available on the Apple Store (iOS) and Google Play (Android).
 
 The application is open source under the AGPL-3.0 licence as part of the [Privasys identity-platform repository](https://github.com/Privasys/identity-platform).
+
+## Granting apps a resource
+
+The wallet is also where a user approves a confidential app's request for something they own, such as a folder in their Drive. The app names what it asks for; the wallet fetches the request from the attested app itself, so the key being authorised is learned inside an attested channel and never from a notification; the user approves on the device; and the wallet carries the approval to the resource service, which mints a grant bound to the app's key. A refusal is delivered too, so an app stops asking. The flow, what a grant is bound to, and what the user sees afterwards are described in [Apps and the wallet](/solutions/drive/apps-and-wallet).

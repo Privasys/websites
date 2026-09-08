@@ -1,0 +1,114 @@
+---
+title: Filesystem API
+description: The endpoints that let an app or an agent treat a Drive folder as a disk, revisions, paths, appends, ranges, a change feed, search, and workspace snapshots.
+---
+
+Upload and download are enough for a photo library. An agent writing a session log, a build tool keeping a checkout, or two enclaves editing the same file need what a filesystem gives them. This page lists the endpoints Drive adds for that, all reachable with a user bearer or an app's grant, all confined to the caller's scope. `{t}` is a tenant id, `{root}` a folder id.
+
+## Revisions and conditional writes
+
+Every node carries a revision, `rev`: a counter bumped on each change of its content or metadata and, for a folder, whenever a direct child is added, removed or moved. Reads return it as the `ETag`; writes accept it as `If-Match`.
+
+```http
+PUT /v1/tenants/{t}/nodes/{id}/content
+If-Match: "7"
+
+412 Precondition Failed
+{"error": "stale", "rev": 9}
+```
+
+A stale writer is refused before anything is written, and the answer carries the current revision so the client re-reads, merges, and retries. Two enclaves editing one file cannot silently clobber each other.
+
+## Addressing by path
+
+```http
+GET /v1/tenants/{t}/path?root={root}&path=notes/today.md
+PUT /v1/tenants/{t}/path?root={root}&path=notes/today.md
+X-Drive-Parents: create
+If-None-Match: *
+```
+
+`GET` on a path returns the node for a folder or the bytes for a file. `PUT` writes at a path under a root the caller may write; `X-Drive-Parents: create` makes the intermediate folders, `If-None-Match: *` creates only (412 if the file exists), and `If-Match` replaces only the given revision.
+
+## Append
+
+```http
+POST /v1/tenants/{t}/nodes/{id}/append
+If-Match: "12"
+```
+
+The body is appended as new sealed chunks under the file's existing key and the manifest is rewritten. A 10 MB log appends in time proportional to the turn, not the log. A per-node lock serialises appenders.
+
+## Range reads
+
+```http
+GET /v1/tenants/{t}/files/{id}
+Range: bytes=0-1048575
+```
+
+answers `206 Partial Content` with `Content-Range`. Chunks are decrypted inside the enclave and only the requested bytes leave it.
+
+## Change feed
+
+```http
+GET /v1/tenants/{t}/changes?since=1042&root={root}&wait=60
+```
+
+holds the request (up to 60 seconds) until something changes under the root, then returns the change rows: sequence, node, parent, name, kind, revision. Deletions are attributed to the parent they were in, so a watcher can keep a directory view current without walking it.
+
+## Search inside the enclave
+
+Two tools run over decrypted streams without writing plaintext anywhere.
+
+```json
+POST /tools/grep
+{"tenant_id": "{t}", "root": "{root}", "pattern": "TODO|FIXME",
+ "include": "**/*.go", "max_matches": 200}
+
+POST /tools/glob
+{"tenant_id": "{t}", "root": "{root}", "pattern": "src/**/*.ts"}
+```
+
+`grep` returns matching lines with their path relative to the root and their line number, like ripgrep. Patterns are RE2: no look-around and no back-references, so anything RE2 accepts behaves the same as in ripgrep's default engine. A call that would scan more than 256 MiB is refused with `SEARCH_RAW_OUTPUT_OVERFLOW` rather than run unbounded; narrow it with `include` or a smaller root. Searches are metered like any other access.
+
+## Grants and storage
+
+```http
+GET /v1/grants/mine          (Authorization: Bearer <AppGrant>)
+GET /v1/tenants/{t}/quota
+GET /v1/tenants/{t}/apps
+```
+
+`grants/mine` lists every active grant bound to the calling app's key, for rediscovery after a redeploy. `quota` returns used and limit bytes plus a `breakdown` by top-level entry and an `apps` breakdown of `AppData/`, largest first. `apps` lists the app grants on the tenant with app name, folder, scope and expiry; the ordinary grant `DELETE` revokes one.
+
+## Workspace snapshots
+
+A working tree must not be stored file-per-node. Keep it on the app's own volume and store a snapshot: a folder holding `.workspace.json` beside a `.blobs/` folder.
+
+```json
+{
+  "version": 1,
+  "app": "<app id>",
+  "saved_at": "2026-09-08T10:00:00Z",
+  "files": [
+    {"path": "src/main.go", "size": 1234, "mode": "0644", "blob": "<sha256 hex>"},
+    {"path": "README.md", "size": 88, "blob": "<sha256 hex>"}
+  ]
+}
+```
+
+Each blob is a file named by its sha256 inside `.blobs/`; upload only the ones the folder lacks. Paths are relative and forward-slash, without parent escapes. Write the manifest last, with `If-Match`, and exclude the folder from indexing (`PUT /v1/tenants/{t}/nodes/{folder}/indexing {"no_index": true}`).
+
+Drive flags the folder in listings (`workspace_manifest_id`), the Drive front shows it as one item with a read-only tree, and
+
+```http
+GET /v1/tenants/{t}/nodes/{folder}/workspace.zip
+```
+
+rebuilds the working tree as a ZIP. Escaping paths are dropped and blobs the manifest names but the folder lacks are listed in `WORKSPACE-MISSING-BLOBS.txt` inside the archive.
+
+## Limits
+
+- There is no mounted filesystem. The API is what a client library or a runtime snapshot engine builds on; a FUSE mount is a possible later step.
+- Snapshots are taken at explicit points, so the durable copy lags the working tree by design.
+- The quota applies to plaintext bytes across the user's whole personal tenant; an app that hits it should keep its local tree and say so rather than lose data.
