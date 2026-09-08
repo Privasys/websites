@@ -3,7 +3,7 @@ title: Apps and the wallet
 description: How a confidential app obtains a folder in a user's Drive with the user's consent on their wallet, what the grant is bound to, and how the user stays in control.
 ---
 
-A confidential app that needs to keep something for a user has, until now, had two bad options: keep it on its own volume, where it survives only as long as the deployment, or ask the user to hand it their storage. Privasys Drive gives an app a third one. The app asks for a folder by name, the user approves on their wallet, and the app receives a grant to that folder and nothing else. This page describes the consent flow, the grant, and what the user sees.
+A confidential app that needs to keep something for a user already has a durable, confidential place for it: its own encrypted volume, sealed to the enclave and preserved across upgrades and redeploys. What that place lacks is the user, who cannot see what was kept, reach it from elsewhere, or take it away. Privasys Drive gives an app a folder in the user's own Drive instead. The app asks for a folder by name, the user approves on their wallet, and the app receives a grant to that folder and nothing else. This page describes the consent flow, the grant, and what the user sees.
 
 ## The consent flow
 
@@ -45,7 +45,7 @@ The grant carries a scope (`read`, `write`) and an optional expiry. Everything t
 
 ## Working with the folder
 
-The granted folder is reachable through Drive's [filesystem API](/solutions/drive/filesystem-api): addressing by path, revisions with conditional writes, appends, byte ranges, a change feed, and search that runs inside the enclave. An app that lost its local state after a redeploy calls `GET /v1/grants/mine` with its grant and finds its folders again without asking the user.
+The granted folder is reachable through Drive's [filesystem API](/solutions/drive/filesystem-api): addressing by path, revisions with conditional writes, appends, byte ranges, a change feed, and search that runs inside the enclave. A new instance of an app, on a fresh volume or a second host, calls `GET /v1/grants/mine` with its grant and finds its folders again without asking the user.
 
 For a working tree (a repository, a build, a data directory) the app keeps the files on its own volume and saves **workspace snapshots** to the folder: a manifest beside content-addressed blobs, stored as one item. The format is on the same page.
 
