@@ -53,7 +53,7 @@ A request may carry `allowedPlatformIds`, a list of hex identifiers, and evidenc
 
 The SDKs, in [ra-tls-clients](https://github.com/Privasys/ra-tls-clients) v0.11.0, expose the list on the verification policy in all five languages. A Go policy that pins the runtime, the workload and the machine reads:
 
-```go
+```go dark
 info, err := client.VerifyCertificate(&ratls.VerificationPolicy{
     TEE:                ratls.TeeTypeTDX,
     MRTD:               expectedMRTD,
