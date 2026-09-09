@@ -1,0 +1,105 @@
+---
+title: Spend tokens
+description: How an app pays for what it calls with its user's credits, and how a service knows who pays.
+---
+
+An app on the platform often calls other services for the person using it: an
+inference endpoint, a paid tool, a search index. Someone pays for each call.
+Spend tokens let the **user** pay, with their own credits, without the app
+ever holding a credential that could leak, and without the called service
+having to know anything about the app.
+
+## The user allows the app once
+
+When a user signs in to an app with the Privasys Wallet, the approval screen
+can carry one extra line: *Let this app spend my credits*, with a monthly
+cap. The wallet records that consent with Privasys ID, keyed by the app's
+attested identity. The user can change the cap or withdraw the consent at any
+time from the wallet or from [privasys.id/account](https://privasys.id/account).
+Withdrawal takes effect within a minute everywhere.
+
+The services the app calls are never listed. The cap bounds all of them.
+
+## The app fetches a token per user
+
+At boot the app generates a P-256 key and publishes the public half at
+`/.well-known/privasys-spend-keys.json` on its own origin. For each signed-in
+user it asks Privasys ID for a spend token, authenticating as itself with a
+JWT signed by that key:
+
+```http
+POST https://privasys.id/spend/token
+Content-Type: application/json
+
+{"sub": "<the user>", "client_assertion": "<JWT signed by the app key>"}
+```
+
+The token names the user, the app, the consent session and the cap, and binds
+the app's key in its `cnf` claim. It lives at most 24 hours and never outlives
+the consent.
+
+## Every call carries the token and a proof
+
+On each outbound call the app sends two headers:
+
+| Header | Content |
+|---|---|
+| `X-Privasys-Spend` | the spend token |
+| `X-Privasys-Spend-Proof` | a JWT signed with the app key: the callee host, the time, a one-time id |
+
+A leaked token is useless without the key. A leaked proof is worth one call,
+to one host, for one minute.
+
+## The runtime verifies, the service reads one header
+
+For an app running on Enclave OS, the runtime verifies the token and the proof
+on the way in, checks with the platform that the user may still spend through
+that app (account, cap, balance), and hands the app three headers it can
+trust:
+
+| Header | Content |
+|---|---|
+| `X-Privasys-Peer-Payer` | the paying user |
+| `X-Privasys-Peer-Payer-App` | the app spending for them |
+| `X-Privasys-Peer-Payer-Sid` | the consent session |
+
+The runtime strips those headers from every request it did not verify, so a
+service never sees a payer it can't trust. A bad token or proof is refused
+with `403`; a user who may not spend right now is refused with `402` and a
+reason (`no_account`, `cap_reached`, `no_balance`).
+
+A service that does not run on Enclave OS can do the same verification itself
+with the `spend.Verifier` in the Go client library.
+
+## What it does not depend on
+
+Spend tokens are independent of attestation pinning. A service may restrict
+which apps can connect to it; that is its own access policy. Who pays is
+decided from the token alone, so an open service can serve any app whose
+users have allowed it to spend.
+
+## Using it from Go
+
+```go
+import "enclave-os-mini/clients/go/spend"
+
+signer, _ := spend.NewSigner(os.Getenv("PRIVASYS_APP_ID"), spend.IssuerFromEnv(os.Getenv))
+mux.HandleFunc("GET "+spend.WellKnownPath, signer.ServeJWKS)
+
+// on every call made for a signed-in user:
+req, _ := http.NewRequest("POST", "https://inference.apps.privasys.org/v1/chat/completions", body)
+if err := signer.Decorate(ctx, req, userSub); err != nil {
+    // spend.ErrNoConsent: the user has not allowed this app to spend
+}
+```
+
+On the receiving side, behind Enclave OS:
+
+```go
+if payer := spend.PayerFromRequest(r); payer != nil {
+    meterAgainst(payer.Sub, payer.AppID)
+}
+```
+
+To ask the wallet for the consent at sign-in, pass `spend: { cap }` in the
+`AuthFrame` configuration (credits per month; 1 credit = £0.000001).
