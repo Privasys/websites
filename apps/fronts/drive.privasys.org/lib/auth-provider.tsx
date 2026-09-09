@@ -33,7 +33,13 @@ const SDK_CONFIG = {
     // sign-in (the `profile` scope alone does not raise the picker). Shared
     // transiently for display only; the platform stores no PII of its own.
     requestedAttributes: ['name', 'email'],
-    privacyPolicyUrl: 'https://privasys.org/legal/'
+    privacyPolicyUrl: 'https://privasys.org/legal/',
+    // Spend consent (acting-subject plan v2): Drive pays for a user's
+    // query-time embeddings with the USER's credits, under a monthly cap
+    // the wallet asks them to approve at sign-in. Suggested cap £5.
+    // Typed natively by @privasys/auth 0.12.0; the hosted iframe honours
+    // it whatever client version renders the page.
+    spend: { cap: 5_000_000 }
 };
 
 export function AuthProvider({ children }: { children: ReactNode }) {
