@@ -59,6 +59,9 @@ jobs:
             # Staging keeps pointing at the DEV Drive below, so prod data is
             # never read or written from chat.test.privasys.org.
             echo "drive_app_host=privasys-drive.apps.privasys.org" >> "$GITHUB_OUTPUT"
+            # Chat is replaced by the Privasys Harness (2026-09-09): the
+            # front is a 301 to the harness served from its own enclave.
+            echo "harness_host=harness.apps.privasys.org"          >> "$GITHUB_OUTPUT"
           else
             echo "container=chat"                                  >> "$GITHUB_OUTPUT"
             echo "host_port=3011"                                  >> "$GITHUB_OUTPUT"
@@ -81,6 +84,8 @@ jobs:
             # Drive ↔ Chat (§8.7) deliberately stays on the DEV Drive enclave
             # so staging never reads or writes production Drive data.
             echo "drive_app_host=drive-demo.apps.test.privasys.org" >> "$GITHUB_OUTPUT"
+            # Staging redirects to the dev harness.
+            echo "harness_host=attested-harness.apps.test.privasys.org" >> "$GITHUB_OUTPUT"
           fi
           echo "tag=$(date -u +%Y%m%d-%H%M%S)-${ENV}-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
@@ -103,6 +108,7 @@ jobs:
             echo "NEXT_PUBLIC_DEFAULT_INSTANCE=${{ steps.target.outputs.default_instance }}"
             echo "NEXT_PUBLIC_CHAT_SERVICE_URL=${{ steps.target.outputs.chat_service_url }}"
             echo "NEXT_PUBLIC_DRIVE_APP_HOST=${{ steps.target.outputs.drive_app_host }}"
+            echo "NEXT_PUBLIC_HARNESS_HOST=${{ steps.target.outputs.harness_host }}"
             # Build provenance shown bottom-left in the sidebar (links to
             # the exact commit on GitHub).
             echo "NEXT_PUBLIC_COMMIT_SHA=${GITHUB_SHA}"
