@@ -176,6 +176,11 @@ export default function BillingPage() {
                 Credit balance and usage for your account. Every account includes a
                 monthly allowance; usage is metered per resource. 1 credit = £0.000001.
             </p>
+            <p className="mt-2 text-sm text-black/60 dark:text-white/60">
+                Your personal spending, the apps allowed to spend your credits and their
+                monthly caps live at{' '}
+                <a href="https://privasys.id/account" className="underline">privasys.id/account</a>.
+            </p>
 
             {error && (
                 <div className="mt-4 p-3 rounded-lg bg-red-50 dark:bg-red-900/20 text-sm text-red-700 dark:text-red-300">
