@@ -17,6 +17,7 @@ import {
     type Tenant
 } from '~/lib/drive-api';
 import { formatBytes, formatDate, ownerLabel } from '~/lib/format';
+import { clickSelection } from '~/lib/selection';
 import { useDrive } from '~/lib/use-drive';
 import { collectDroppedFiles, snapshotEntries } from '~/lib/drop-entries';
 import { ShareDialog } from './share-dialog';
@@ -103,6 +104,7 @@ export function FileBrowser({
         setLoading(true);
         setError(null);
         setSelected(new Set());
+        setAnchor(null);
         try {
             const kids = await listChildren(session, tenant.id, current.id);
             kids.sort((a, b) =>
@@ -174,19 +176,27 @@ export function FileBrowser({
     };
 
     // ---- selection ----
-    const clearSelection = () => setSelected(new Set());
-    const selectOne = (id: string) => setSelected(new Set([id]));
-    const toggle = (id: string) =>
-        setSelected((cur) => {
-            const next = new Set(cur);
-            if (next.has(id)) next.delete(id);
-            else next.add(id);
-            return next;
-        });
-    const onRowClick = (e: React.MouseEvent, id: string) => {
-        if (e.metaKey || e.ctrlKey) toggle(id);
-        else selectOne(id);
+    // The anchor a shift-click extends from: the row the last plain or
+    // ctrl/cmd click landed on. `lib/selection` owns the rules.
+    const [anchor, setAnchor] = useState<string | null>(null);
+    const clearSelection = () => {
+        setSelected(new Set());
+        setAnchor(null);
     };
+    /** Resolve a click on a row against the rows in display order. */
+    const applyClick = (id: string, mods: { shift: boolean; toggle: boolean }) => {
+        const next = clickSelection(
+            nodes.map((n) => n.id),
+            { selected, anchor },
+            id,
+            mods
+        );
+        setSelected(next.selected);
+        setAnchor(next.anchor);
+    };
+    const toggle = (id: string) => applyClick(id, { shift: false, toggle: true });
+    const onRowClick = (e: React.MouseEvent, id: string) =>
+        applyClick(id, { shift: e.shiftKey, toggle: e.metaKey || e.ctrlKey });
 
     const openNode = (n: DriveNode) => {
         if (n.kind === 'folder' && n.workspace_manifest_id) {
@@ -860,6 +870,8 @@ function ListLayout({
             {nodes.map((n) => {
                 const rp = rowProps(n);
                 const isSel = selected.has(n.id);
+                // select-none: a shift-click over a range must not leave a blue
+                // text highlight dragged across the rows it spans.
                 return (
                     <div
                         key={n.id}
@@ -870,7 +882,7 @@ function ListLayout({
                         onDrop={rp.onDrop}
                         onClick={(e) => onRowClick(e, n.id)}
                         onDoubleClick={() => onOpen(n)}
-                        className={`group grid cursor-pointer ${LIST_COLS} items-center px-4 py-2.5`}
+                        className={`group grid cursor-pointer select-none ${LIST_COLS} items-center px-4 py-2.5`}
                         style={{
                             borderBottom: '1px solid var(--drv-border)',
                             background: rp.isDropTarget
@@ -885,7 +897,15 @@ function ListLayout({
                         <input
                             type="checkbox"
                             checked={isSel}
-                            onClick={(e) => e.stopPropagation()}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                // Shift on the box means what it means on the row:
+                                // a range from the anchor, not a toggle of this one.
+                                if (e.shiftKey) {
+                                    e.preventDefault();
+                                    onRowClick(e, n.id);
+                                }
+                            }}
                             onChange={() => onToggle(n.id)}
                             className={`h-4 w-4 accent-[var(--drv-accent)] ${isSel ? '' : 'opacity-0 group-hover:opacity-100'}`}
                         />
@@ -1011,7 +1031,7 @@ function GridLayout({
                         onDrop={rp.onDrop}
                         onClick={(e) => onRowClick(e, n.id)}
                         onDoubleClick={() => onOpen(n)}
-                        className="group relative cursor-pointer rounded-xl border p-3 transition-shadow hover:shadow-md"
+                        className="group relative cursor-pointer select-none rounded-xl border p-3 transition-shadow hover:shadow-md"
                         style={{
                             borderColor: rp.isDropTarget || isSel ? 'var(--drv-accent)' : 'var(--drv-border)',
                             background: rp.isDropTarget || isSel ? 'var(--drv-accent-weak)' : 'var(--drv-surface)'
