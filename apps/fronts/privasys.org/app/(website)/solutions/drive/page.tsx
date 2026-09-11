@@ -13,8 +13,9 @@ export default function Drive() {
                 <p className='hero-intro mt-8'>
                     End-to-end encrypted file storage where the operator holds no key, and you can
                     prove it. Your files are sealed inside an attested confidential enclave, unlockable
-                    only by you. And when you connect Privasys Chat, that same sealed store becomes your
-                    assistant&rsquo;s memory: a self-sovereign brain that answers only to you.
+                    only by you. Connect Privasys Chat and the same sealed store becomes your
+                    assistant&rsquo;s memory. Approve an app on your wallet and it becomes that
+                    app&rsquo;s disk: a folder of its own, under your quota, with your Revoke.
                 </p>
                 <div className='mt-10 flex flex-wrap gap-4'>
                     <a href='https://docs.privasys.org/solutions/drive/overview' target='_blank' rel='noopener noreferrer'
@@ -101,16 +102,91 @@ export default function Drive() {
                 </div>
             </section>
 
+            <section className='mt-20 lg:mt-40'>
+                <h2 className='text-2xl lg:text-4xl'>
+                    <Balancer>The disk of every confidential app, on your terms.</Balancer>
+                </h2>
+                <div className='mt-16 grid grid-cols-1 lg:grid-cols-2 gap-16 lg:gap-x-32 lg:gap-y-20'>
+                    <div>
+                        <h3 className='text-xl lg:text-3xl'>Apps ask, you approve, on your wallet</h3>
+                        <p>
+                            <Balancer>
+                                An app that needs storage asks for a folder by name. Your wallet fetches the
+                                request from the attested app itself, shows you exactly what is asked, and
+                                only your approval hands the app a grant bound to its own key. Refuse once
+                                and the app stops asking.
+                            </Balancer>
+                        </p>
+                    </div>
+                    <div>
+                        <h3 className='text-xl lg:text-3xl'>A folder of its own, never yours</h3>
+                        <p>
+                            <Balancer>
+                                Every approved app writes under AppData in your personal Drive, in a folder
+                                bound to that app and no other. It is an ordinary folder: browse it, share
+                                it, delete it. Deleting it is how you wipe an app&rsquo;s data, and the app
+                                has to ask again.
+                            </Balancer>
+                        </p>
+                    </div>
+                    <div>
+                        <h3 className='text-xl lg:text-3xl'>A filesystem, not a bucket</h3>
+                        <p>
+                            <Balancer>
+                                Apps and agents get what a disk gives them: paths, revisions with
+                                conditional writes so two enclaves never clobber each other, appends that
+                                cost what is appended, byte ranges, a change feed, and grep and glob that
+                                run inside the enclave over decrypted streams.
+                            </Balancer>
+                        </p>
+                    </div>
+                    <div>
+                        <h3 className='text-xl lg:text-3xl'>Working trees as one item</h3>
+                        <p>
+                            <Balancer>
+                                A repository or a build is thousands of small files. An app keeps them on
+                                its own volume and saves snapshots to your Drive as one item: a manifest
+                                beside content-addressed blobs, browsable read-only, exportable as a ZIP,
+                                deletable in one gesture.
+                            </Balancer>
+                        </p>
+                    </div>
+                    <div>
+                        <h3 className='text-xl lg:text-3xl'>One gauge, one list, one Revoke</h3>
+                        <p>
+                            <Balancer>
+                                Everything an app stores counts against your quota, and the gauge breaks it
+                                down by folder and by app. The apps with access are listed with their
+                                folder, permissions and expiry. Revoke keeps your files and closes the
+                                app&rsquo;s door.
+                            </Balancer>
+                        </p>
+                    </div>
+                    <div>
+                        <h3 className='text-xl lg:text-3xl'>Attested on both ends</h3>
+                        <p>
+                            <Balancer>
+                                A grant is worthless without the key it is bound to, and an app calling
+                                over an attested channel must also be the app the grant names. The runtime
+                                brokers consent for apps that declare their needs, so an app never holds
+                                the protocol, only the folder.
+                            </Balancer>
+                        </p>
+                    </div>
+                </div>
+            </section>
+
             <section className='mt-20 lg:mt-40 w-full lg:w-3/4'>
                 <h2 className='text-2xl lg:text-4xl'>
                     <Balancer>Read the details.</Balancer>
                 </h2>
                 <p className='mt-8'>
                     <Balancer>
-                        The encryption, the key hierarchy, and the difference between sovereign and
-                        escrowed mode are covered in depth in the documentation and in two companion
-                        essays: one on the storage layer, one on turning the Drive into a self-sovereign
-                        memory for agents.
+                        The encryption, the key hierarchy, the difference between sovereign and
+                        escrowed mode, and how apps obtain and use a folder are covered in depth in the
+                        documentation and in three companion essays: one on the storage layer, one on
+                        turning the Drive into a self-sovereign memory for agents, and one on the Drive
+                        as the disk of confidential apps.
                     </Balancer>
                 </p>
                 <div className='mt-10 flex flex-wrap gap-4'>
@@ -122,9 +198,13 @@ export default function Drive() {
                         className='px-6 py-2.5 font-bold border rounded-full text-black dark:text-white hover:bg-black hover:text-white dark:border-white dark:hover:bg-white dark:hover:text-black transition-colors'>
                         A brain you own
                     </a>
-                    <a href='https://docs.privasys.org/solutions/drive/overview' target='_blank' rel='noopener noreferrer'
+                    <a href='/blog/the-disk-of-a-confidential-app-consent-from-the-wallet-a-filesystem-for-agents/'
                         className='px-6 py-2.5 font-bold border rounded-full text-black dark:text-white hover:bg-black hover:text-white dark:border-white dark:hover:bg-white dark:hover:text-black transition-colors'>
-                        Read the documentation
+                        The disk of a confidential app
+                    </a>
+                    <a href='https://docs.privasys.org/solutions/drive/apps-and-wallet' target='_blank' rel='noopener noreferrer'
+                        className='px-6 py-2.5 font-bold border rounded-full text-black dark:text-white hover:bg-black hover:text-white dark:border-white dark:hover:bg-white dark:hover:text-black transition-colors'>
+                        Apps and the wallet
                     </a>
                 </div>
             </section>
