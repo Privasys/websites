@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useAuth, hasManagerRole } from '~/lib/privasys-auth';
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { adminEnclaveHealth, adminInspectEnclave, adminEnclaveMeasurements, adminListEnclaves, adminListAppsOnEnclave, adminCreateEnclave, adminUpdateEnclave, adminDeleteEnclave, adminListCloudProviders, adminListCloudRegions, adminMatchCloudRegion, adminRefreshCloudRegions, adminReverifyOsRelease } from '~/lib/api';
+import { adminEnclaveHealth, adminInspectEnclave, adminEnclaveMeasurements, adminListEnclaves, adminListAppsOnEnclave, adminCreateEnclave, adminUpdateEnclave, adminDeleteEnclave, adminListCloudProviders, adminListCloudRegions, adminMatchCloudRegion, adminRefreshCloudRegions, adminReverifyOsRelease, isApiStatus } from '~/lib/api';
 import { useSSE } from '~/lib/sse-context';
 import { COUNTRIES, regionForCountry, displayCountryName } from '~/lib/countries';
 import { Badge } from '@privasys/attestation-view';
@@ -69,6 +69,9 @@ export default function AdminEnclavePage() {
     // Apps placed on each expanded enclave. Refetched on every expand: apps
     // move between enclaves, so a cached list would go stale.
     const [enclaveApps, setEnclaveApps] = useState<Record<string, { loading: boolean; apps: EnclaveApp[]; error?: string }>>({});
+    // The enclave a delete was just refused for (409): the error banner links
+    // to its volumes so the blockers can be cleared from there.
+    const [blockedDeleteId, setBlockedDeleteId] = useState<string | null>(null);
 
     // Cloud-region reference data: providers dropdown + per-provider regions +
     // the zone→region match that pre-fills the location fields.
@@ -388,12 +391,14 @@ export default function AdminEnclavePage() {
         // Removes the record only. The server refuses while apps or open volumes
         // are still on the enclave, and names them in the error banner.
         if (!confirm(`Remove ${name} from the enclave list? This does not touch any machine. It is refused while apps or open volumes are still on it.`)) return;
+        setBlockedDeleteId(null);
         try {
             await adminDeleteEnclave(session.accessToken, id);
             setExpandedId(prev => (prev === id ? null : prev));
             await load();
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to delete');
+            if (isApiStatus(err, 409)) setBlockedDeleteId(id);
         }
     }
 
@@ -432,7 +437,15 @@ export default function AdminEnclavePage() {
             </div>
 
             {error && (
-                <div className="mt-4 p-3 rounded-lg bg-red-50 dark:bg-red-900/20 text-sm text-red-700 dark:text-red-300">{error}</div>
+                <div className="mt-4 p-3 rounded-lg bg-red-50 dark:bg-red-900/20 text-sm text-red-700 dark:text-red-300">
+                    {error}
+                    {blockedDeleteId && (
+                        <Link href={`/dashboard/admin/volumes?enclave=${encodeURIComponent(blockedDeleteId)}`}
+                            className="ml-2 font-medium underline hover:no-underline">
+                            Manage the volumes on this enclave
+                        </Link>
+                    )}
+                </div>
             )}
 
             {/* Create / Edit form */}
@@ -763,7 +776,13 @@ export default function AdminEnclavePage() {
                                                         </div>
                                                         {/* Apps placed on this enclave (its live deployments), fetched on every expand. */}
                                                         <div className="col-span-3">
-                                                            <div className="text-xs text-black/50 dark:text-white/50">Apps on this enclave</div>
+                                                            <div className="flex items-center gap-3 text-xs text-black/50 dark:text-white/50">
+                                                                <span>Apps on this enclave</span>
+                                                                <Link href={`/dashboard/admin/volumes?enclave=${encodeURIComponent(enc.id)}`} onClick={e => e.stopPropagation()}
+                                                                    className="text-blue-600 dark:text-blue-400 hover:underline">
+                                                                    Volumes on this enclave
+                                                                </Link>
+                                                            </div>
                                                             {(() => {
                                                                 const st = enclaveApps[enc.id];
                                                                 if (!st || (st.loading && st.apps.length === 0)) {
