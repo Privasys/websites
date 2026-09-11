@@ -1481,6 +1481,51 @@ export function deleteVolume(token: string, id: string): Promise<{ status: strin
     });
 }
 
+// --- Volumes across owners (platform operators) ---
+
+export interface AdminVolume {
+    id: string;
+    name: string;
+    lv_name: string;
+    size_gb: number;
+    provider: string;
+    region: string;
+    status: string;
+    created_at: string;
+    updated_at: string;
+    owner_sub: string;
+    owner_email: string;
+    app_id?: string;
+    app_name?: string;
+    enclave_id?: string;
+    enclave_name?: string;
+    enclave_host?: string;
+    enclave_status?: string;
+    // The bound app runs on this volume's host.
+    attached: boolean;
+}
+
+export async function adminListVolumes(token: string, enclaveId?: string): Promise<AdminVolume[]> {
+    const q = enclaveId ? `?enclave_id=${encodeURIComponent(enclaveId)}` : '';
+    const res = await request<{ volumes: AdminVolume[] }>(`/api/v1/admin/volumes/${q}`, token);
+    return res.volumes ?? [];
+}
+
+// adminDeleteVolume destroys any owner's volume through its host.
+export function adminDeleteVolume(token: string, id: string): Promise<{ status: string }> {
+    return request<{ status: string }>(`/api/v1/admin/volumes/${encodeURIComponent(id)}`, token, {
+        method: 'DELETE'
+    });
+}
+
+// adminForgetVolume closes a volume's record and stops its billing without
+// contacting its host, for a volume whose machine is gone.
+export function adminForgetVolume(token: string, id: string): Promise<{ status: string }> {
+    return request<{ status: string }>(`/api/v1/admin/volumes/${encodeURIComponent(id)}/forget`, token, {
+        method: 'POST'
+    });
+}
+
 export async function listInstances(token: string): Promise<Instance[]> {
     const res = await request<{ instances: Instance[] }>('/api/v1/instances', token);
     return res.instances ?? [];

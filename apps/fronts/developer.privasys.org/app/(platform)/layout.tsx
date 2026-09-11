@@ -27,6 +27,7 @@ const STATUS_DOT: Record<string, string> = {
 const ADMIN_ITEMS = [
     { label: 'Review apps', href: '/dashboard/admin', icon: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z' },
     { label: 'Enclave', href: '/dashboard/admin/enclave', icon: 'M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2' },
+    { label: 'Volumes', href: '/dashboard/admin/volumes', icon: 'M4 7c0-1.657 3.582-3 8-3s8 1.343 8 3-3.582 3-8 3-8-1.343-8-3zm0 0v10c0 1.657 3.582 3 8 3s8-1.343 8-3V7M4 12c0 1.657 3.582 3 8 3s8-1.343 8-3' },
     { label: 'Gateway', href: '/dashboard/admin/gateway', icon: 'M13 10V3L4 14h7v7l9-11h-7z' },
     { label: 'AI fleets', href: '/dashboard/admin/fleets', icon: 'M9 17l-5-5 5-5M15 17l5-5-5-5' },
     { label: 'Vaults', href: '/dashboard/admin/vaults', icon: 'M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z' },
