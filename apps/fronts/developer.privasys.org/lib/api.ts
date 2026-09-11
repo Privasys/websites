@@ -1,4 +1,4 @@
-import type { App, CreateAppRequest, ReviewRequest, DeploymentLog, BuildJob, Enclave, CreateEnclaveRequest, EnclaveMeasurements, AppVersion, AppDeployment, AttestationResult, TeeType, CachedImage, CloudProvider, CloudRegion, CloudRegionsMeta } from './types';
+import type { App, CreateAppRequest, ReviewRequest, DeploymentLog, BuildJob, Enclave, EnclaveApp, CreateEnclaveRequest, EnclaveMeasurements, AppVersion, AppDeployment, AttestationResult, TeeType, CachedImage, CloudProvider, CloudRegion, CloudRegionsMeta } from './types';
 import { getApiBaseUrl } from './api-base-url';
 import { callApp, AppCallError, type AppManifest } from '@privasys/app-call';
 import { getEnclaveSealedSession, dropEnclaveAuthFrame } from './enclave-session';
@@ -706,6 +706,12 @@ export function adminDeleteEnclave(token: string, id: string): Promise<void> {
     return request<void>(`/api/v1/admin/enclaves/${encodeURIComponent(id)}`, token, {
         method: 'DELETE'
     });
+}
+
+// adminListAppsOnEnclave lists the apps placed on one enclave (its deploying,
+// starting and active deployments).
+export function adminListAppsOnEnclave(token: string, id: string): Promise<EnclaveApp[]> {
+    return request<EnclaveApp[]>(`/api/v1/admin/enclaves/${encodeURIComponent(id)}/apps`, token);
 }
 
 // adminReverifyOsRelease re-checks the enclave's current measurements against
