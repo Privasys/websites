@@ -200,6 +200,7 @@ export interface Enclave {
     cloud_region_code: string;
     status: 'active' | 'maintenance' | 'retired';
     max_apps: number;
+    // Apps placed on the enclave: its deploying, starting and active deployments.
     app_count: number;
     os_release_url?: string;
     os_release_tag?: string;
@@ -209,6 +210,25 @@ export interface Enclave {
     os_release_checked_at?: string;
     created_at: string;
     updated_at: string;
+}
+
+// One app placed on an enclave, from GET /api/v1/admin/enclaves/{id}/apps.
+export interface EnclaveApp {
+    deployment_id: string;
+    app_id: string;
+    name: string;
+    display_name: string;
+    app_type: string;
+    owner_email: string;
+    owner_name: string;
+    version_number: number;
+    semver?: string;
+    status: string;
+    container_state: ContainerState;
+    reconcile_message?: string;
+    hostname?: string;
+    deployed_at?: string;
+    last_checked_at?: string;
 }
 
 // Cloud-provider / region reference data (imported dataset) used to pre-fill
@@ -368,7 +388,7 @@ export const CONTAINER_STATE_LABELS: Record<ContainerState, string> = {
     running: 'Running',
     unhealthy: 'Unhealthy',
     pulling: 'Pulling image',
-    missing: 'Missing — auto-redeploying',
+    missing: 'Missing, redeploying automatically',
     failed: 'Failed',
     unreachable: 'Enclave unreachable',
     awaiting_config: 'Frozen'

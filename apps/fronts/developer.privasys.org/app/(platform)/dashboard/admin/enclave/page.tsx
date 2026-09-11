@@ -1,12 +1,14 @@
 'use client';
 
+import Link from 'next/link';
 import { useAuth, hasManagerRole } from '~/lib/privasys-auth';
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { adminEnclaveHealth, adminInspectEnclave, adminEnclaveMeasurements, adminListEnclaves, adminCreateEnclave, adminUpdateEnclave, adminDeleteEnclave, adminListCloudProviders, adminListCloudRegions, adminMatchCloudRegion, adminRefreshCloudRegions, adminReverifyOsRelease } from '~/lib/api';
+import { adminEnclaveHealth, adminInspectEnclave, adminEnclaveMeasurements, adminListEnclaves, adminListAppsOnEnclave, adminCreateEnclave, adminUpdateEnclave, adminDeleteEnclave, adminListCloudProviders, adminListCloudRegions, adminMatchCloudRegion, adminRefreshCloudRegions, adminReverifyOsRelease } from '~/lib/api';
 import { useSSE } from '~/lib/sse-context';
 import { COUNTRIES, regionForCountry, displayCountryName } from '~/lib/countries';
 import { Badge } from '@privasys/attestation-view';
-import type { Enclave, CreateEnclaveRequest, TeeType, EnclaveMeasurements, CloudProvider, CloudRegion, CloudRegionsMeta } from '~/lib/types';
+import type { Enclave, EnclaveApp, CreateEnclaveRequest, TeeType, EnclaveMeasurements, CloudProvider, CloudRegion, CloudRegionsMeta } from '~/lib/types';
+import { CONTAINER_STATE_LABELS, CONTAINER_STATE_COLORS } from '~/lib/types';
 
 const EMPTY_FORM: CreateEnclaveRequest = {
     name: '', port: 8445, gateway_host: '', tee_type: 'sgx', mr_enclave: '', country: '', region: '', zone: '', provider: '', owner: '',
@@ -64,6 +66,9 @@ export default function AdminEnclavePage() {
     const [enclaveHealth, setEnclaveHealth] = useState<Record<string, { status: string; error?: string } | null>>({});
     // null = loading, undefined-key = not fetched yet
     const [measurements, setMeasurements] = useState<Record<string, EnclaveMeasurements | null>>({});
+    // Apps placed on each expanded enclave. Refetched on every expand: apps
+    // move between enclaves, so a cached list would go stale.
+    const [enclaveApps, setEnclaveApps] = useState<Record<string, { loading: boolean; apps: EnclaveApp[]; error?: string }>>({});
 
     // Cloud-region reference data: providers dropdown + per-provider regions +
     // the zone→region match that pre-fills the location fields.
@@ -221,10 +226,25 @@ export default function AdminEnclavePage() {
         }
     }, [session?.accessToken]);
 
+    const loadEnclaveApps = useCallback(async (id: string) => {
+        if (!session?.accessToken) return;
+        setEnclaveApps(prev => ({ ...prev, [id]: { loading: true, apps: prev[id]?.apps ?? [] } }));
+        try {
+            const apps = await adminListAppsOnEnclave(session.accessToken, id);
+            setEnclaveApps(prev => ({ ...prev, [id]: { loading: false, apps } }));
+        } catch (e) {
+            setEnclaveApps(prev => ({
+                ...prev,
+                [id]: { loading: false, apps: [], error: e instanceof Error ? e.message : 'Could not load the apps on this enclave' },
+            }));
+        }
+    }, [session?.accessToken]);
+
     function toggleExpand(id: string) {
         const opening = expandedId !== id;
         setExpandedId(opening ? id : null);
         if (opening) {
+            void loadEnclaveApps(id);
             if (!(id in measurements)) loadMeasurements(id);
             // Re-verify the measurement match on open so the badge reflects the
             // running enclave, not a status stamped before the last rotation.
@@ -364,9 +384,13 @@ export default function AdminEnclavePage() {
 
     async function handleDelete(id: string) {
         if (!session?.accessToken) return;
-        if (!confirm('Delete this enclave? All apps assigned to it will be unlinked.')) return;
+        const name = enclaves.find(e => e.id === id)?.name ?? 'this enclave';
+        // Removes the record only. The server refuses while apps or open volumes
+        // are still on the enclave, and names them in the error banner.
+        if (!confirm(`Remove ${name} from the enclave list? This does not touch any machine. It is refused while apps or open volumes are still on it.`)) return;
         try {
             await adminDeleteEnclave(session.accessToken, id);
+            setExpandedId(prev => (prev === id ? null : prev));
             await load();
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to delete');
@@ -696,7 +720,7 @@ export default function AdminEnclavePage() {
                                                 {enc.provider || '—'}
                                             </td>
                                             <td className="px-4 py-3">
-                                                <span className="text-xs">
+                                                <span className="text-xs" title="Apps placed on this enclave. Open the row to see them.">
                                                     {enc.app_count}{enc.max_apps > 0 ? ` / ${enc.max_apps}` : ''}
                                                 </span>
                                             </td>
@@ -736,6 +760,82 @@ export default function AdminEnclavePage() {
                                                                     </span>
                                                                 )
                                                             )}
+                                                        </div>
+                                                        {/* Apps placed on this enclave (its live deployments), fetched on every expand. */}
+                                                        <div className="col-span-3">
+                                                            <div className="text-xs text-black/50 dark:text-white/50">Apps on this enclave</div>
+                                                            {(() => {
+                                                                const st = enclaveApps[enc.id];
+                                                                if (!st || (st.loading && st.apps.length === 0)) {
+                                                                    return <div className="mt-1 text-xs text-black/40 dark:text-white/40 animate-pulse">Loading apps…</div>;
+                                                                }
+                                                                if (st.error) {
+                                                                    return <div className="mt-1 text-xs text-red-600 dark:text-red-400">{st.error}</div>;
+                                                                }
+                                                                if (st.apps.length === 0) {
+                                                                    return <div className="mt-1 text-xs text-black/40 dark:text-white/40">No apps are placed on this enclave.</div>;
+                                                                }
+                                                                return (
+                                                                    <div className="mt-1 border border-black/10 dark:border-white/10 rounded-lg overflow-x-auto">
+                                                                        <table className="w-full text-xs">
+                                                                            <thead>
+                                                                                <tr className="border-b border-black/5 dark:border-white/5 text-black/50 dark:text-white/50">
+                                                                                    <th className="text-left px-3 py-2 font-medium">App</th>
+                                                                                    <th className="text-left px-3 py-2 font-medium">Owner</th>
+                                                                                    <th className="text-left px-3 py-2 font-medium">Type</th>
+                                                                                    <th className="text-left px-3 py-2 font-medium">Version</th>
+                                                                                    <th className="text-left px-3 py-2 font-medium">State</th>
+                                                                                    <th className="text-left px-3 py-2 font-medium">Address</th>
+                                                                                    <th className="text-left px-3 py-2 font-medium">Deployed</th>
+                                                                                </tr>
+                                                                            </thead>
+                                                                            <tbody>
+                                                                                {st.apps.map(a => (
+                                                                                    <tr key={a.deployment_id} className="border-b border-black/5 dark:border-white/5 last:border-b-0">
+                                                                                        <td className="px-3 py-2">
+                                                                                            <Link href={`/dashboard/admin/apps/${a.app_id}`} onClick={e => e.stopPropagation()}
+                                                                                                className="font-medium hover:underline">
+                                                                                                {a.display_name || a.name}
+                                                                                            </Link>
+                                                                                            {a.display_name && a.display_name !== a.name && (
+                                                                                                <div className="font-mono text-[10px] text-black/40 dark:text-white/40">{a.name}</div>
+                                                                                            )}
+                                                                                        </td>
+                                                                                        <td className="px-3 py-2 text-black/60 dark:text-white/60">{a.owner_name || a.owner_email}</td>
+                                                                                        <td className="px-3 py-2 text-black/60 dark:text-white/60">
+                                                                                            {a.app_type === 'wasm' ? 'WASM' : a.app_type === 'container' ? 'Container' : a.app_type}
+                                                                                        </td>
+                                                                                        <td className="px-3 py-2">{a.semver || `#${a.version_number}`}</td>
+                                                                                        <td className="px-3 py-2">
+                                                                                            {a.status === 'active' ? (
+                                                                                                <span title={a.reconcile_message || undefined}
+                                                                                                    className={`inline-block px-2 py-0.5 rounded-full font-medium ${CONTAINER_STATE_COLORS[a.container_state] ?? CONTAINER_STATE_COLORS.unknown}`}>
+                                                                                                    {CONTAINER_STATE_LABELS[a.container_state] ?? a.container_state}
+                                                                                                </span>
+                                                                                            ) : (
+                                                                                                <span className="inline-block px-2 py-0.5 rounded-full font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
+                                                                                                    {a.status === 'deploying' ? 'Deploying' : 'Starting'}
+                                                                                                </span>
+                                                                                            )}
+                                                                                        </td>
+                                                                                        <td className="px-3 py-2">
+                                                                                            {a.hostname && (
+                                                                                                <a href={`https://${a.hostname}`} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}
+                                                                                                    className="font-mono text-blue-600 dark:text-blue-400 hover:underline break-all">
+                                                                                                    {a.hostname} ↗
+                                                                                                </a>
+                                                                                            )}
+                                                                                        </td>
+                                                                                        <td className="px-3 py-2 text-black/60 dark:text-white/60 whitespace-nowrap">
+                                                                                            {a.deployed_at ? new Date(a.deployed_at).toLocaleString() : 'In progress'}
+                                                                                        </td>
+                                                                                    </tr>
+                                                                                ))}
+                                                                            </tbody>
+                                                                        </table>
+                                                                    </div>
+                                                                );
+                                                            })()}
                                                         </div>
                                                         {/* Attested measurements: MRENCLAVE (SGX) or MRTD + RTMR0-3 (TDX, reported on boot). */}
                                                         {(() => {
