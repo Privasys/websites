@@ -6,6 +6,8 @@ import {
     createFolder,
     deleteNode,
     downloadFile,
+    downloadZip,
+    DriveError,
     listChildren,
     moveNode,
     searchTenant,
@@ -18,10 +20,12 @@ import {
 } from '~/lib/drive-api';
 import { formatBytes, formatDate, ownerLabel } from '~/lib/format';
 import { clickSelection } from '~/lib/selection';
+import { copyName, type ConflictChoice } from '~/lib/upload-conflict';
 import { useDrive } from '~/lib/use-drive';
 import { collectDroppedFiles, snapshotEntries } from '~/lib/drop-entries';
 import { ShareDialog } from './share-dialog';
 import { MoveDialog } from './move-dialog';
+import { ConflictDialog } from './conflict-dialog';
 import { FileViewer, canPreview } from './file-viewer';
 import { WorkspaceView } from './workspace-view';
 import {
@@ -81,6 +85,12 @@ export function FileBrowser({
     const [viewNode, setViewNode] = useState<DriveNode | null>(null);
     const [wsNode, setWsNode] = useState<DriveNode | null>(null);
     const [moveOpen, setMoveOpen] = useState(false);
+    // An upload onto a taken name waits here while the user decides.
+    const [conflict, setConflict] = useState<{
+        name: string;
+        remaining: number;
+        decide: (choice: ConflictChoice | null) => void;
+    } | null>(null);
     const [newFolder, setNewFolder] = useState(false);
     const [pageDrag, setPageDrag] = useState(false);
     const [dropTarget, setDropTarget] = useState<string | null>(null);
@@ -213,25 +223,93 @@ export function FileBrowser({
 
     const navigateTo = (i: number) => setPath((p) => p.slice(0, i + 1));
 
+    const saveBytes = (bytes: Uint8Array, filename: string, mime: string) => {
+        const blob = new Blob([bytes as BlobPart], { type: mime });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+    };
+
     const download = async (n: DriveNode) => {
         try {
             const bytes = await downloadFile(session, tenant.id, n.id);
-            const blob = new Blob([bytes as BlobPart], { type: n.mime_hint || 'application/octet-stream' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = n.name;
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
-            URL.revokeObjectURL(url);
+            saveBytes(bytes, n.name, n.mime_hint || 'application/octet-stream');
         } catch (e) {
             setError(e instanceof Error ? e.message : 'Download failed.');
         }
     };
 
+    // One file downloads as itself; a folder, or several items, come back
+    // as a ZIP the enclave assembles (the browser cannot write a tree).
     const downloadSelected = async () => {
-        for (const n of selectedNodes) if (n.kind === 'file') await download(n);
+        if (selectedNodes.length === 0) return;
+        if (selectedNodes.length === 1 && selectedNodes[0].kind === 'file') {
+            await download(selectedNodes[0]);
+            return;
+        }
+        const name = selectedNodes.length === 1 ? selectedNodes[0].name : 'drive-download';
+        setBusy(true);
+        setError(null);
+        try {
+            const bytes = await downloadZip(
+                session,
+                tenant.id,
+                selectedNodes.map((n) => n.id),
+                name
+            );
+            saveBytes(bytes, `${name}.zip`, 'application/zip');
+        } catch (e) {
+            setError(e instanceof Error ? e.message : 'Download failed.');
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    /** Put the question to the user and wait for the answer. */
+    const askConflict = (name: string, remaining: number) =>
+        new Promise<ConflictChoice | null>((decide) => setConflict({ name, remaining, decide }));
+
+    /**
+     * Upload a queue, asking what to do whenever the Drive refuses a name
+     * that is taken (409). "Do this for the rest" is remembered for the
+     * remainder of this queue only. Returns false when the user cancelled.
+     */
+    const uploadQueue = async (items: { file: File; dest: string | null; label: string }[]) => {
+        let sticky: ConflictChoice['action'] | null = null;
+        for (let i = 0; i < items.length; i++) {
+            const { file, dest, label } = items[i];
+            const onProgress = (sent: number, total: number) =>
+                setProgress({ name: label, pct: total ? Math.round((sent / total) * 100) : 100 });
+            setProgress({ name: label, pct: 0 });
+            try {
+                await uploadFileStreaming(session, tenant.id, dest, file, onProgress);
+                continue;
+            } catch (e) {
+                if (!(e instanceof DriveError) || e.status !== 409) throw e;
+            }
+            let action = sticky;
+            if (!action) {
+                const choice = await askConflict(file.name, items.length - i - 1);
+                if (!choice) return false;
+                action = choice.action;
+                if (choice.applyToRest) sticky = choice.action;
+            }
+            if (action === 'skip') continue;
+            if (action === 'replace') {
+                await uploadFileStreaming(session, tenant.id, dest, file, onProgress, { overwrite: true });
+                continue;
+            }
+            const siblings = await listChildren(session, tenant.id, dest);
+            await uploadFileStreaming(session, tenant.id, dest, file, onProgress, {
+                name: copyName(file.name, siblings.map((n) => n.name))
+            });
+        }
+        return true;
     };
 
     const onUpload = async (files: FileList | File[] | null, parentID?: string | null) => {
@@ -240,12 +318,7 @@ export function FileBrowser({
         setBusy(true);
         setError(null);
         try {
-            for (const f of Array.from(files)) {
-                setProgress({ name: f.name, pct: 0 });
-                await uploadFileStreaming(session, tenant.id, dest, f, (sent, total) =>
-                    setProgress({ name: f.name, pct: total ? Math.round((sent / total) * 100) : 100 })
-                );
-            }
+            await uploadQueue(Array.from(files).map((file) => ({ file, dest, label: file.name })));
             await reload();
         } catch (e) {
             setError(e instanceof Error ? e.message : 'Upload failed.');
@@ -287,14 +360,15 @@ export function FileBrowser({
                 return id;
             };
             for (const d of dirs) await ensureDir(d);
+            const queued: { file: File; dest: string | null; label: string }[] = [];
             for (const { file, dirs: fileDirs } of files) {
-                const label = [...fileDirs, file.name].join('/');
-                setProgress({ name: label, pct: 0 });
-                const folder = await ensureDir(fileDirs);
-                await uploadFileStreaming(session, tenant.id, folder, file, (sent, total) =>
-                    setProgress({ name: label, pct: total ? Math.round((sent / total) * 100) : 100 })
-                );
+                queued.push({
+                    file,
+                    dest: await ensureDir(fileDirs),
+                    label: [...fileDirs, file.name].join('/')
+                });
             }
+            await uploadQueue(queued);
             await reload();
         } catch (e) {
             setError(e instanceof Error ? e.message : 'Upload failed.');
@@ -448,7 +522,6 @@ export function FileBrowser({
 
     const soleFile = selectedNodes.length === 1 && selectedNodes[0].kind === 'file' ? selectedNodes[0] : null;
     const soleNode = selectedNodes.length === 1 ? selectedNodes[0] : null;
-    const anyFileSelected = selectedNodes.some((n) => n.kind === 'file');
 
     if (wsNode) {
         return (
@@ -508,9 +581,15 @@ export function FileBrowser({
                         {soleNode && (
                             <IconButton title="Share" onClick={() => setShareNode(soleNode)} icon={<ShareIcon width={18} height={18} />} />
                         )}
-                        {anyFileSelected && (
-                            <IconButton title="Download" onClick={() => void downloadSelected()} icon={<DownloadIcon width={18} height={18} />} />
-                        )}
+                        <IconButton
+                            title={
+                                selectedNodes.length === 1 && selectedNodes[0].kind === 'file'
+                                    ? 'Download'
+                                    : 'Download as ZIP'
+                            }
+                            onClick={() => void downloadSelected()}
+                            icon={<DownloadIcon width={18} height={18} />}
+                        />
                         <IconButton title="Move" onClick={() => setMoveOpen(true)} icon={<MoveIcon width={18} height={18} />} />
                         {soleNode && soleNode.kind === 'folder' && (
                             <IconButton
@@ -707,6 +786,23 @@ export function FileBrowser({
                     node={viewNode}
                     onClose={() => setViewNode(null)}
                     onDownload={(n) => void download(n)}
+                />
+            )}
+
+            {conflict && (
+                <ConflictDialog
+                    name={conflict.name}
+                    remaining={conflict.remaining}
+                    onChoose={(choice) => {
+                        const decide = conflict.decide;
+                        setConflict(null);
+                        decide(choice);
+                    }}
+                    onCancel={() => {
+                        const decide = conflict.decide;
+                        setConflict(null);
+                        decide(null);
+                    }}
                 />
             )}
 
