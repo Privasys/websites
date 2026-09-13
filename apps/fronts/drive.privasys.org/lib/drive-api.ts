@@ -686,6 +686,28 @@ export async function listAppsWithAccess(session: SealedSession, tenantID: strin
 }
 
 /** The working tree of a workspace snapshot, rebuilt from its manifest as a ZIP. */
+/**
+ * Download a selection of files and folders as one ZIP, assembled inside
+ * the enclave. A browser can save a file but cannot lay out a folder tree,
+ * and zipping in the page would hold every byte in memory.
+ */
+export async function downloadZip(
+    session: SealedSession,
+    tenantID: string,
+    nodeIDs: string[],
+    name?: string
+): Promise<Uint8Array> {
+    const res = await timed(
+        session,
+        'POST',
+        `/v1/tenants/${tenantID}/download.zip`,
+        { node_ids: nodeIDs, name: name ?? '' },
+        TRANSFER_TIMEOUT_MS
+    );
+    if (!ok(res)) throw decodeError(res);
+    return res.body ?? new Uint8Array(0);
+}
+
 export async function exportWorkspaceZip(
     session: SealedSession,
     tenantID: string,
