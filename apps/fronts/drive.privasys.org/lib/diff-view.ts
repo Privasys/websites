@@ -42,11 +42,13 @@ export interface DiffView {
  * Number every line of every hunk on both sides, with a gap between hunks
  * that are not adjacent in the file.
  */
-export function toDiffRows(hunks: DiffHunk[]): DiffView {
+export function toDiffRows(hunks: DiffHunk[] | null | undefined): DiffView {
     const rows: DiffRow[] = [];
     let added = 0;
     let removed = 0;
-    hunks.forEach((hunk, i) => {
+    // An unchanged comparison may arrive with no list at all; a viewer that
+    // dies on "nothing changed" is worse than one that shows nothing.
+    (hunks ?? []).forEach((hunk, i) => {
         if (i > 0) rows.push({ kind: 'gap' });
         let oldLine = hunk.old_start;
         let newLine = hunk.new_start;

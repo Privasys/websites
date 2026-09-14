@@ -130,12 +130,12 @@ export function FileEditor({
     }, [session, tenantID, node.id, versions]);
 
     const showChanges = useCallback(
-        async (from?: number) => {
+        async (bounds: { from?: number; to?: number } = {}) => {
             setTab('changes');
             setBusy(true);
             setError(null);
             try {
-                const res = await diffVersions(session, tenantID, node.id, from ? { from } : {});
+                const res = await diffVersions(session, tenantID, node.id, bounds);
                 setDiff(res);
                 setDiffFrom(res.from_rev);
             } catch (e) {
@@ -249,7 +249,7 @@ export function FileEditor({
                 <div className="mx-5 mt-3 rounded-lg border px-3 py-2 text-sm" style={{ borderColor: 'var(--drv-accent)', background: 'var(--drv-accent-weak)' }}>
                     This file changed elsewhere while you were editing (it is now at revision {stale}).
                     Your text is still here.{' '}
-                    <button className="underline" onClick={() => void showChanges(rev)}>
+                    <button className="underline" onClick={() => void showChanges({ from: rev })}>
                         See what changed
                     </button>
                     , or{' '}
@@ -291,7 +291,7 @@ export function FileEditor({
                             </p>
                         ) : (
                             <div className="overflow-hidden rounded-xl border" style={{ borderColor: 'var(--drv-border)', background: 'var(--drv-surface)' }}>
-                                {versions.map((v) => (
+                                {versions.map((v, vi) => (
                                     <div
                                         key={v.rev}
                                         className="flex items-center gap-3 border-b px-4 py-3 last:border-b-0"
@@ -306,12 +306,15 @@ export function FileEditor({
                                                 {formatDate(v.created_at)} · {formatBytes(v.size_bytes)}
                                             </div>
                                         </div>
-                                        <button
-                                            onClick={() => void showChanges(v.rev)}
-                                            className="rounded-full px-3 py-1 text-sm hover:bg-[var(--drv-hover)]"
-                                        >
-                                            Changes
-                                        </button>
+                                        {/* The oldest revision has nothing before it to compare against. */}
+                                        {vi < versions.length - 1 && (
+                                            <button
+                                                onClick={() => void showChanges({ to: v.rev })}
+                                                className="rounded-full px-3 py-1 text-sm hover:bg-[var(--drv-hover)]"
+                                            >
+                                                Changes
+                                            </button>
+                                        )}
                                         {!v.current && (
                                             <>
                                                 <button
