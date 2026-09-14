@@ -370,10 +370,16 @@ export function FileEditor({
                                                 style={{
                                                     background:
                                                         row.op === '+'
-                                                            ? 'rgba(34,197,94,0.12)'
+                                                            ? 'rgba(34,197,94,0.16)'
                                                             : row.op === '-'
-                                                                ? 'rgba(239,68,68,0.12)'
-                                                                : undefined
+                                                                ? 'rgba(239,68,68,0.14)'
+                                                                : undefined,
+                                                    borderLeft:
+                                                        row.op === '+'
+                                                            ? '3px solid rgba(34,197,94,0.85)'
+                                                            : row.op === '-'
+                                                                ? '3px solid rgba(239,68,68,0.8)'
+                                                                : '3px solid transparent'
                                                 }}
                                             >
                                                 <span className="w-10 shrink-0 select-none text-right" style={{ color: 'var(--drv-text-muted)' }}>
@@ -382,10 +388,41 @@ export function FileEditor({
                                                 <span className="w-10 shrink-0 select-none text-right" style={{ color: 'var(--drv-text-muted)' }}>
                                                     {row.newLine ?? ''}
                                                 </span>
-                                                <span className="w-3 shrink-0 select-none" style={{ color: 'var(--drv-text-muted)' }}>
+                                                <span
+                                                    className="w-3 shrink-0 select-none font-semibold"
+                                                    style={{
+                                                        color:
+                                                            row.op === '+'
+                                                                ? 'rgb(21,128,61)'
+                                                                : row.op === '-'
+                                                                    ? 'rgb(185,28,28)'
+                                                                    : 'var(--drv-text-muted)'
+                                                    }}
+                                                >
                                                     {row.op.trim()}
                                                 </span>
-                                                <span className="whitespace-pre-wrap break-words">{row.text || ' '}</span>
+                                                <span className="min-w-0 whitespace-pre-wrap break-words">
+                                                    {row.segments
+                                                        ? row.segments.map((seg, k) => (
+                                                            <span
+                                                                key={k}
+                                                                style={
+                                                                    seg.changed
+                                                                        ? {
+                                                                            background:
+                                                                                row.op === '+'
+                                                                                    ? 'rgba(34,197,94,0.42)'
+                                                                                    : 'rgba(239,68,68,0.38)',
+                                                                            borderRadius: '2px'
+                                                                        }
+                                                                        : undefined
+                                                                }
+                                                            >
+                                                                {seg.text}
+                                                            </span>
+                                                        ))
+                                                        : row.text || ' '}
+                                                </span>
                                             </div>
                                         )
                                     )}
