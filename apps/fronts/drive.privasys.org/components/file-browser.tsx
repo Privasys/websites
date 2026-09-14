@@ -27,6 +27,7 @@ import { ShareDialog } from './share-dialog';
 import { MoveDialog } from './move-dialog';
 import { ConflictDialog } from './conflict-dialog';
 import { FileViewer, canPreview } from './file-viewer';
+import { FileEditor } from './file-editor';
 import { WorkspaceView } from './workspace-view';
 import {
     ChevronRight,
@@ -83,6 +84,8 @@ export function FileBrowser({
     const [selected, setSelected] = useState<Set<string>>(new Set());
     const [shareNode, setShareNode] = useState<DriveNode | null>(null);
     const [viewNode, setViewNode] = useState<DriveNode | null>(null);
+    // The file open in the editor, with its history and changes beside it.
+    const [editNode, setEditNode] = useState<DriveNode | null>(null);
     const [wsNode, setWsNode] = useState<DriveNode | null>(null);
     const [moveOpen, setMoveOpen] = useState(false);
     // An upload onto a taken name waits here while the user decides.
@@ -786,6 +789,20 @@ export function FileBrowser({
                     node={viewNode}
                     onClose={() => setViewNode(null)}
                     onDownload={(n) => void download(n)}
+                    onEdit={(n) => {
+                        setViewNode(null);
+                        setEditNode(n);
+                    }}
+                />
+            )}
+
+            {editNode && (
+                <FileEditor
+                    session={session}
+                    tenantID={tenant.id}
+                    node={editNode}
+                    onClose={() => setEditNode(null)}
+                    onSaved={() => void reload()}
                 />
             )}
 

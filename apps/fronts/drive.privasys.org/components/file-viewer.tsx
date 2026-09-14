@@ -55,13 +55,16 @@ export function FileViewer({
     tenantID,
     node,
     onClose,
-    onDownload
+    onDownload,
+    onEdit
 }: {
     session: SealedSession;
     tenantID: string;
     node: DriveNode;
     onClose: () => void;
     onDownload: (n: DriveNode) => void;
+    /** Offered for text files: hand this one to the editor. */
+    onEdit?: (n: DriveNode) => void;
 }) {
     const [preview, setPreview] = useState<Preview | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -129,6 +132,15 @@ export function FileViewer({
                             {formatBytes(node.size_bytes)}
                         </div>
                     </div>
+                    {onEdit && (kind === 'markdown' || kind === 'text') && (
+                        <button
+                            onClick={() => onEdit(node)}
+                            className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium hover:bg-[var(--drv-hover)]"
+                            style={{ color: 'var(--drv-text)' }}
+                        >
+                            Edit
+                        </button>
+                    )}
                     <button
                         onClick={() => onDownload(node)}
                         className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium hover:bg-[var(--drv-hover)]"

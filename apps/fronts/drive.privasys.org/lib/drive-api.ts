@@ -69,6 +69,9 @@ export interface DriveNode {
     created_by?: string;
     /** RFC3339 (Modified column). */
     updated_at?: string;
+    /** The node's revision: what to send back as the If-Match fence on a
+     *  conditional write, so a save cannot clobber a concurrent writer. */
+    rev?: number;
     /** Set on a folder that holds a workspace snapshot (`.workspace.json`
      *  beside `.blobs/`): the manifest file id. Rendered as one item. */
     workspace_manifest_id?: string;
@@ -686,6 +689,157 @@ export async function listAppsWithAccess(session: SealedSession, tenantID: strin
 }
 
 /** The working tree of a workspace snapshot, rebuilt from its manifest as a ZIP. */
+// ---- Editing ------------------------------------------------------------
+
+/** Raised when a save lost a race: someone else wrote first. */
+export class StaleWriteError extends Error {
+    /** The revision the file is at now, to re-read and retry against. */
+    rev: number;
+    constructor(rev: number) {
+        super('This file changed while you were editing it.');
+        this.name = 'StaleWriteError';
+        this.rev = rev;
+    }
+}
+
+/**
+ * Replace a text file's contents, refusing to clobber a concurrent writer.
+ *
+ * `ifRev` is the revision the editor loaded. The enclave compares it before
+ * touching storage and answers 412 with the current revision if another
+ * writer got there first, which surfaces here as StaleWriteError rather
+ * than a silent overwrite.
+ */
+export async function writeTextContent(
+    session: SealedSession,
+    tenantID: string,
+    nodeID: string,
+    text: string,
+    ifRev: number
+): Promise<number> {
+    const res = await timed(
+        session,
+        'PUT',
+        `/v1/tenants/${tenantID}/nodes/${nodeID}/content`,
+        new TextEncoder().encode(text),
+        TRANSFER_TIMEOUT_MS,
+        { headers: { 'If-Match': `"${ifRev}"` } }
+    );
+    if (res.status === 412) {
+        let rev = ifRev;
+        try {
+            const body = JSON.parse(new TextDecoder().decode(res.body ?? new Uint8Array())) as {
+                rev?: number;
+            };
+            if (typeof body.rev === 'number') rev = body.rev;
+        } catch {
+            /* the status is the signal; the body is a convenience */
+        }
+        throw new StaleWriteError(rev);
+    }
+    if (!ok(res)) throw decodeError(res);
+    const out = JSON.parse(new TextDecoder().decode(res.body ?? new Uint8Array())) as { rev: number };
+    return out.rev;
+}
+
+// ---- File history -------------------------------------------------------
+
+/** One retained revision of a file. */
+export interface FileVersion {
+    rev: number;
+    size_bytes: number;
+    mime_hint?: string;
+    /** Who wrote this revision; empty for content that predates history. */
+    actor?: string;
+    created_at: string;
+    /** True for the revision the file is at now. */
+    current?: boolean;
+}
+
+/** A file's retained revisions, newest first. */
+export async function listVersions(
+    session: SealedSession,
+    tenantID: string,
+    nodeID: string
+): Promise<{ node_id: string; rev: number; versions: FileVersion[] }> {
+    return json(session, 'GET', `/v1/tenants/${tenantID}/nodes/${nodeID}/versions`);
+}
+
+/** The bytes a file held at one revision. */
+export async function readVersion(
+    session: SealedSession,
+    tenantID: string,
+    nodeID: string,
+    rev: number
+): Promise<Uint8Array> {
+    const res = await timed(
+        session,
+        'GET',
+        `/v1/tenants/${tenantID}/nodes/${nodeID}/versions/${rev}`,
+        undefined,
+        TRANSFER_TIMEOUT_MS
+    );
+    if (!ok(res)) throw decodeError(res);
+    return res.body ?? new Uint8Array(0);
+}
+
+/**
+ * Put an older revision back. The enclave writes it as a NEW revision, so
+ * restoring is itself undoable and the history stays in order.
+ */
+export async function restoreVersion(
+    session: SealedSession,
+    tenantID: string,
+    nodeID: string,
+    rev: number
+): Promise<{ rev: number; restored_from: number; restored: boolean }> {
+    return json(session, 'POST', `/v1/tenants/${tenantID}/nodes/${nodeID}/versions/${rev}/restore`);
+}
+
+/** One line of a comparison: unchanged, removed or added. */
+export interface DiffLine {
+    op: ' ' | '-' | '+';
+    text: string;
+}
+
+/** A run of changed lines with its surrounding context. */
+export interface DiffHunk {
+    old_start: number;
+    old_lines: number;
+    new_start: number;
+    new_lines: number;
+    lines: DiffLine[];
+}
+
+export interface DiffResult {
+    node_id: string;
+    from_rev: number;
+    to_rev: number;
+    identical: boolean;
+    /** The revisions share too little to compare line by line. */
+    truncated: boolean;
+    hunks: DiffHunk[];
+}
+
+/**
+ * What changed between two revisions, compared inside the enclave (both
+ * revisions are decryptable there and nowhere else). With no bounds it
+ * answers what the last save changed. Text files only.
+ */
+export async function diffVersions(
+    session: SealedSession,
+    tenantID: string,
+    nodeID: string,
+    opts: { from?: number; to?: number; context?: number } = {}
+): Promise<DiffResult> {
+    const qs = new URLSearchParams();
+    if (opts.from !== undefined) qs.set('from', String(opts.from));
+    if (opts.to !== undefined) qs.set('to', String(opts.to));
+    if (opts.context !== undefined) qs.set('context', String(opts.context));
+    const suffix = qs.toString() ? `?${qs.toString()}` : '';
+    return json(session, 'GET', `/v1/tenants/${tenantID}/nodes/${nodeID}/diff${suffix}`);
+}
+
 /**
  * Download a selection of files and folders as one ZIP, assembled inside
  * the enclave. A browser can save a file but cannot lay out a folder tree,

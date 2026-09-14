@@ -64,13 +64,19 @@ export function ok(res: SealedResponse): boolean {
 export const REQUEST_TIMEOUT_MS = 30_000;
 export const TRANSFER_TIMEOUT_MS = 180_000; // uploads/downloads of larger files
 
-/** A sealed session request with a hard deadline. */
+/**
+ * A sealed session request with a hard deadline. `init` carries request
+ * headers where the API needs them: the conditional-write fence is an
+ * If-Match header, so a caller that must not clobber a concurrent writer
+ * has to be able to set one.
+ */
 export function timed(
     session: SealedSession,
     method: string,
     path: string,
     body: unknown,
-    ms: number = REQUEST_TIMEOUT_MS
+    ms: number = REQUEST_TIMEOUT_MS,
+    init?: RequestInit
 ): Promise<SealedResponse> {
     return new Promise<SealedResponse>((resolve, reject) => {
         const t = setTimeout(
@@ -83,7 +89,7 @@ export function timed(
                 ),
             ms
         );
-        session.request(method, path, body).then(
+        session.request(method, path, body, init).then(
             (r) => {
                 clearTimeout(t);
                 resolve(r);
@@ -102,9 +108,10 @@ export async function json<T>(
     method: string,
     path: string,
     body?: unknown,
-    ms: number = REQUEST_TIMEOUT_MS
+    ms: number = REQUEST_TIMEOUT_MS,
+    init?: RequestInit
 ): Promise<T> {
-    const res = await timed(session, method, path, body, ms);
+    const res = await timed(session, method, path, body, ms, init);
     if (!ok(res)) throw decodeError(res);
     const text = res.body && res.body.byteLength ? decoder.decode(res.body) : '';
     return (text ? JSON.parse(text) : {}) as T;
