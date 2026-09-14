@@ -73,3 +73,10 @@ describe('summariseDiff', () => {
         expect(summariseDiff({ rows: [], added: 0, removed: 5 })).toBe('5 removed');
     });
 });
+
+describe('a comparison that changed nothing', () => {
+    it('survives a missing list rather than dying on it', () => {
+        expect(toDiffRows(null)).toEqual({ rows: [], added: 0, removed: 0 });
+        expect(toDiffRows(undefined)).toEqual({ rows: [], added: 0, removed: 0 });
+    });
+});
