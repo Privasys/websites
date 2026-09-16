@@ -245,12 +245,21 @@ export async function downloadFile(
     return res.body ?? new Uint8Array(0);
 }
 
+/**
+ * Delete a node, and for a folder everything beneath it.
+ *
+ * This runs on the transfer timeout, not the request one: deleting a folder
+ * is a single call inside which the service reclaims the sealed blobs of
+ * every file in the subtree, so a large folder takes transfer-scale time.
+ * On the shorter budget the browser gave up at 30s and reported a failure
+ * while the enclave went on to finish the delete.
+ */
 export async function deleteNode(
     session: SealedSession,
     tenantID: string,
     nodeID: string
 ): Promise<void> {
-    const res = await timed(session, 'DELETE', `/v1/tenants/${tenantID}/nodes/${nodeID}`, undefined, REQUEST_TIMEOUT_MS);
+    const res = await timed(session, 'DELETE', `/v1/tenants/${tenantID}/nodes/${nodeID}`, undefined, TRANSFER_TIMEOUT_MS);
     if (!ok(res)) throw decodeError(res);
 }
 
