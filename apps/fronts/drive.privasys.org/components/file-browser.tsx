@@ -12,6 +12,7 @@ import {
     moveNode,
     searchTenant,
     setNodeIndexing,
+    subtreeStats,
     uploadFileStreaming,
     type DriveNode,
     type Me,
@@ -20,7 +21,7 @@ import {
 } from '~/lib/drive-api';
 import { formatBytes, formatDate, ownerLabel } from '~/lib/format';
 import { clickSelection } from '~/lib/selection';
-import { progressLabel, type TaskProgress } from '~/lib/task-progress';
+import { fileCount, progressLabel, type TaskProgress } from '~/lib/task-progress';
 import { copyName, type ConflictChoice } from '~/lib/upload-conflict';
 import { useDrive } from '~/lib/use-drive';
 import { collectDroppedFiles, snapshotEntries } from '~/lib/drop-entries';
@@ -435,12 +436,21 @@ export function FileBrowser({
             // through the selection is what the user can actually use.
             for (let i = 0; i < items.length; i++) {
                 const n = items[i];
-                setProgress({
-                    verb: 'Deleting',
-                    name: n.kind === 'folder' ? `${n.name} and everything in it` : n.name,
-                    pct: null,
-                    step: { index: i + 1, total: items.length }
-                });
+                const step = { index: i + 1, total: items.length };
+                let label = n.name;
+                if (n.kind === 'folder') {
+                    // Ask what the folder holds, so the wait has a size
+                    // attached to it rather than just a name.
+                    label = `${n.name} and everything in it`;
+                    setProgress({ verb: 'Deleting', name: label, pct: null, step });
+                    try {
+                        const stats = await subtreeStats(session, tenant.id, n.id);
+                        label = `${n.name}, ${fileCount(stats.files)}`;
+                    } catch {
+                        // A count is a courtesy; never fail a delete for it.
+                    }
+                }
+                setProgress({ verb: 'Deleting', name: label, pct: null, step });
                 await deleteNode(session, tenant.id, n.id);
             }
             await reload();
