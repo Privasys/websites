@@ -20,6 +20,7 @@ import {
 } from '~/lib/drive-api';
 import { formatBytes, formatDate, ownerLabel } from '~/lib/format';
 import { clickSelection } from '~/lib/selection';
+import { progressLabel, type TaskProgress } from '~/lib/task-progress';
 import { copyName, type ConflictChoice } from '~/lib/upload-conflict';
 import { useDrive } from '~/lib/use-drive';
 import { collectDroppedFiles, snapshotEntries } from '~/lib/drop-entries';
@@ -97,7 +98,7 @@ export function FileBrowser({
     const [newFolder, setNewFolder] = useState(false);
     const [pageDrag, setPageDrag] = useState(false);
     const [dropTarget, setDropTarget] = useState<string | null>(null);
-    const [progress, setProgress] = useState<{ name: string; pct: number } | null>(null);
+    const [progress, setProgress] = useState<TaskProgress | null>(null);
     // Semantic search: the input value, the submitted query, its hits.
     const [searchQ, setSearchQ] = useState('');
     const [activeSearch, setActiveSearch] = useState('');
@@ -286,9 +287,15 @@ export function FileBrowser({
         let sticky: ConflictChoice['action'] | null = null;
         for (let i = 0; i < items.length; i++) {
             const { file, dest, label } = items[i];
+            const step = { index: i + 1, total: items.length };
             const onProgress = (sent: number, total: number) =>
-                setProgress({ name: label, pct: total ? Math.round((sent / total) * 100) : 100 });
-            setProgress({ name: label, pct: 0 });
+                setProgress({
+                    verb: 'Uploading',
+                    name: label,
+                    pct: total ? Math.round((sent / total) * 100) : 100,
+                    step
+                });
+            setProgress({ verb: 'Uploading', name: label, pct: 0, step });
             try {
                 await uploadFileStreaming(session, tenant.id, dest, file, onProgress);
                 continue;
@@ -340,7 +347,7 @@ export function FileBrowser({
         setBusy(true);
         setError(null);
         try {
-            setProgress({ name: 'Reading folder…', pct: 0 });
+            setProgress({ verb: 'Reading the folder…', name: '', pct: null });
             const { files, dirs } = await collectDroppedFiles(entries);
             const folderIDs = new Map<string, string | null>([['', dest]]);
             const ensureDir = async (segs: string[]): Promise<string | null> => {
@@ -405,13 +412,28 @@ export function FileBrowser({
                 : `${items.length} items`;
         if (!confirm(`Delete ${label}?`)) return;
         setBusy(true);
+        setError(null);
         try {
-            for (const n of items) await deleteNode(session, tenant.id, n.id);
+            // Deleting a folder is one call the service answers once it has
+            // reclaimed every file beneath it, so there is no percentage to
+            // report inside it. Naming what is going and counting position
+            // through the selection is what the user can actually use.
+            for (let i = 0; i < items.length; i++) {
+                const n = items[i];
+                setProgress({
+                    verb: 'Deleting',
+                    name: n.kind === 'folder' ? `${n.name} and everything in it` : n.name,
+                    pct: null,
+                    step: { index: i + 1, total: items.length }
+                });
+                await deleteNode(session, tenant.id, n.id);
+            }
             await reload();
         } catch (e) {
             setError(e instanceof Error ? e.message : 'Delete failed.');
         } finally {
             setBusy(false);
+            setProgress(null);
         }
     };
 
@@ -692,16 +714,23 @@ export function FileBrowser({
                 >
                     <div className="mb-1.5 flex items-center justify-between text-xs">
                         <span className="truncate" style={{ color: 'var(--drv-text-muted)' }}>
-                            Uploading {progress.name}
+                            {progressLabel(progress)}
                         </span>
-                        <span className="ml-2 shrink-0 font-medium" style={{ color: 'var(--drv-accent)' }}>
-                            {progress.pct}%
-                        </span>
+                        {progress.pct !== null && (
+                            <span className="ml-2 shrink-0 font-medium" style={{ color: 'var(--drv-accent)' }}>
+                                {progress.pct}%
+                            </span>
+                        )}
                     </div>
                     <div className="h-1.5 overflow-hidden rounded-full" style={{ background: 'var(--drv-surface-2)' }}>
+                        {/* Work that cannot measure itself pulses rather than
+                            claiming a percentage it does not know. */}
                         <div
-                            className="h-full rounded-full transition-all"
-                            style={{ width: `${progress.pct}%`, background: 'var(--drv-accent)' }}
+                            className={`h-full rounded-full transition-all${progress.pct === null ? ' animate-pulse' : ''}`}
+                            style={{
+                                width: progress.pct === null ? '100%' : `${progress.pct}%`,
+                                background: 'var(--drv-accent)'
+                            }}
                         />
                     </div>
                 </div>
