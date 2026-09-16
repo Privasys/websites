@@ -163,3 +163,24 @@ body {
 }
 .drv-markdown img { max-width: 100%; border-radius: 8px; }
 .drv-markdown hr { border: none; border-top: 1px solid var(--drv-border); margin: 1.4em 0; }
+
+/* Work that cannot report a percentage: a sliver that travels the track,
+   rather than a full bar, which reads as "finished" the moment it appears.
+   Deleting a folder is the case that needs this: one call the enclave
+   answers only once it has reclaimed every file beneath it. */
+@keyframes drv-travel {
+    from { transform: translateX(-100%); }
+    to { transform: translateX(400%); }
+}
+@keyframes drv-breathe {
+    0%, 100% { opacity: 0.35; }
+    50% { opacity: 0.9; }
+}
+.drv-indeterminate {
+    width: 25%;
+    animation: drv-travel 1.4s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+    /* Still visibly alive, without anything moving across the screen. */
+    .drv-indeterminate { animation: drv-breathe 2s ease-in-out infinite; }
+}

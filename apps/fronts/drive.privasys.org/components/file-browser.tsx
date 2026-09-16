@@ -99,6 +99,10 @@ export function FileBrowser({
     const [pageDrag, setPageDrag] = useState(false);
     const [dropTarget, setDropTarget] = useState<string | null>(null);
     const [progress, setProgress] = useState<TaskProgress | null>(null);
+    // A step that cannot report a percentage shows how long it has been
+    // running instead. A number that visibly moves is what separates "still
+    // working" from "stuck", which is the whole question during a long wait.
+    const [elapsed, setElapsed] = useState(0);
     // Semantic search: the input value, the submitted query, its hits.
     const [searchQ, setSearchQ] = useState('');
     const [activeSearch, setActiveSearch] = useState('');
@@ -106,6 +110,17 @@ export function FileBrowser({
     const [searching, setSearching] = useState(false);
     const dragDepth = useRef(0);
     const fileInput = useRef<HTMLInputElement>(null);
+
+    // Restart the count whenever the step changes, so each item in a batch
+    // is timed on its own rather than the clock running across the lot.
+    const opaqueStep = progress && progress.pct === null ? progressLabel(progress) : null;
+    useEffect(() => {
+        setElapsed(0);
+        if (!opaqueStep) return;
+        const started = Date.now();
+        const id = setInterval(() => setElapsed(Math.round((Date.now() - started) / 1000)), 1000);
+        return () => clearInterval(id);
+    }, [opaqueStep]);
 
     const current = path[path.length - 1];
     const byId = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes]);
@@ -716,19 +731,32 @@ export function FileBrowser({
                         <span className="truncate" style={{ color: 'var(--drv-text-muted)' }}>
                             {progressLabel(progress)}
                         </span>
-                        {progress.pct !== null && (
+                        {progress.pct !== null ? (
                             <span className="ml-2 shrink-0 font-medium" style={{ color: 'var(--drv-accent)' }}>
                                 {progress.pct}%
                             </span>
+                        ) : (
+                            elapsed > 0 && (
+                                <span
+                                    className="ml-2 shrink-0 font-medium tabular-nums"
+                                    style={{ color: 'var(--drv-text-muted)' }}
+                                >
+                                    {elapsed}s
+                                </span>
+                            )
                         )}
                     </div>
                     <div className="h-1.5 overflow-hidden rounded-full" style={{ background: 'var(--drv-surface-2)' }}>
-                        {/* Work that cannot measure itself pulses rather than
-                            claiming a percentage it does not know. */}
+                        {/* Work that cannot measure itself sends a sliver across
+                            the track. A filled bar would read as finished. */}
                         <div
-                            className={`h-full rounded-full transition-all${progress.pct === null ? ' animate-pulse' : ''}`}
+                            className={
+                                progress.pct === null
+                                    ? 'drv-indeterminate h-full rounded-full'
+                                    : 'h-full rounded-full transition-all'
+                            }
                             style={{
-                                width: progress.pct === null ? '100%' : `${progress.pct}%`,
+                                ...(progress.pct === null ? {} : { width: `${progress.pct}%` }),
                                 background: 'var(--drv-accent)'
                             }}
                         />
