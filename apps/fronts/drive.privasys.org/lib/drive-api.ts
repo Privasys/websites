@@ -263,6 +263,27 @@ export async function deleteNode(
     if (!ok(res)) throw decodeError(res);
 }
 
+/** What a node holds, the node itself included: a file is one file. */
+export interface SubtreeStats {
+    files: number;
+    folders: number;
+    bytes: number;
+}
+
+/**
+ * Ask what a node holds before acting on it. Used to say how big a delete
+ * is before starting it, the file count being what predicts the wait: the
+ * service reclaims a sealed blob per file, so a thousand small files take
+ * far longer than one large one.
+ */
+export function subtreeStats(
+    session: SealedSession,
+    tenantID: string,
+    nodeID: string
+): Promise<SubtreeStats> {
+    return json<SubtreeStats>(session, 'GET', `/v1/tenants/${tenantID}/nodes/${nodeID}/subtree`);
+}
+
 // ---- Semantic search ---------------------------------------------------
 
 export interface SearchHit {

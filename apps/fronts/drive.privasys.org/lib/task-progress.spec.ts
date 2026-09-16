@@ -1,4 +1,19 @@
-import { progressLabel } from './task-progress';
+import { fileCount, progressLabel } from './task-progress';
+
+describe('fileCount', () => {
+    it('agrees with itself about singulars', () => {
+        expect(fileCount(1)).toBe('1 file');
+        expect(fileCount(2)).toBe('2 files');
+    });
+
+    it('groups the digits of a big number', () => {
+        expect(fileCount(1240)).toBe(`${(1240).toLocaleString()} files`);
+    });
+
+    it('says an empty folder is empty rather than "0 files"', () => {
+        expect(fileCount(0)).toBe('no files');
+    });
+});
 
 describe('progressLabel', () => {
     it('names the single item being worked on', () => {

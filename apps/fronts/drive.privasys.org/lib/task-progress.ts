@@ -18,6 +18,12 @@ export interface TaskProgress {
     step?: { index: number; total: number };
 }
 
+/** "240 files", "1 file", "no files": how big the thing being done is. */
+export function fileCount(n: number): string {
+    if (n <= 0) return 'no files';
+    return `${n.toLocaleString()} file${n === 1 ? '' : 's'}`;
+}
+
 /**
  * "Deleting 3 of 12: notes.md", or "Uploading photo.png". The count appears
  * only for a real batch, so a single item does not read as "1 of 1".
