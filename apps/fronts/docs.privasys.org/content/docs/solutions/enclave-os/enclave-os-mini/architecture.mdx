@@ -18,7 +18,7 @@ Enclave OS (Mini) is a lightweight SGX enclave runtime that exposes an RA-TLS HT
 ## What the Enclave Provides
 
 1. **RA-TLS Ingress.** Accept incoming TCP connections authenticated via RA-TLS (TLS 1.3 with enclave-issued X.509 certificates; the SGX quote is served on the connection by the evidence exchange).
-2. **HTTPS Egress.** Make outbound HTTPS requests from inside the enclave (TLS termination inside the enclave, network I/O via host RPC).
+2. **HTTPS Egress.** Make outbound HTTPS requests from inside the enclave (TLS termination inside the enclave, sockets owned by the host). A request waiting on the network is suspended and the enclave keeps serving the others (see [Coroutines](/solutions/enclave-os/enclave-os-mini/coroutines)).
 3. **Sealed Key-Value Store.** Encrypted KV database stored on the host, with both keys and values encrypted using a master key sealed to MRENCLAVE.
 4. **Authenticated Merkle Store.** A versioned sparse Merkle tree over the same host storage: reads verified against an in-enclave root, inclusion/absence proofs, pruning, and the state root embedded in every RA-TLS certificate.
 5. **WASM Runtime.** Execute WebAssembly bytecode inside SGX with WASI support (random, sockets, KV).
@@ -148,7 +148,7 @@ The **enclave** runs inside SGX-protected memory. It:
 2. **Generates the RA-TLS certificate.** An ECDSA P-256 key pair is generated inside the enclave and wrapped in an X.509 certificate signed by the intermediary CA. The SGX quote that binds the key to the enclave (via `report_data`) is served on demand by the [evidence exchange](/solutions/enclave-os/attestation/ra-tls#the-evidence-exchange), not embedded in the certificate.
 3. **Runs the TLS 1.3 server.** Raw TCP bytes arrive from the host; the enclave performs the TLS handshake, decrypts HTTPS requests, and dispatches them to registered modules.
 4. **Manages the WASM runtime.** Loads wasmtime Component Model modules, enforcing per-app namespace isolation for KV storage and filesystem access.
-5. **Makes HTTPS egress requests.** Modules can call out to external services; TLS termination happens inside the enclave with network I/O proxied through the host RPC layer.
+5. **Makes HTTPS egress requests.** Modules can call out to external services; TLS termination happens inside the enclave, and the host only carries the encrypted bytes over sockets it owns.
 6. **Maintains the Merkle tree.** All configuration (CA cert, egress CA bundle, WASM app hashes, module config) is captured in a Merkle tree whose root is embedded in the RA-TLS certificate.
 
 ## Certificate Trust Chain
@@ -194,7 +194,7 @@ Here's how a client HTTPS request flows through the system:
 2. **TCP Proxy** reads raw TCP bytes from the socket and writes `TcpData` frames to the Data Channel.
 3. **Enclave** reads the data frames, performs the **TLS 1.3 handshake** (sending the RA-TLS certificate), and decrypts the HTTP request.
 4. **Enclave** dispatches the request to registered **modules** (e.g., WASM, vault, egress).
-5. **Module** processes the request. If it needs KV or egress, it sends requests over the **RPC Channel**, independently of the data plane.
+5. **Module** processes the request. KV operations go over the **RPC Channel**. An outbound HTTPS call goes over a host-owned connection on the Data Channel, and while it waits the request is suspended so the enclave can serve other connections (see [Coroutines](/solutions/enclave-os/enclave-os-mini/coroutines)).
 6. **Enclave** encrypts the HTTP response under TLS and writes the ciphertext back to the Data Channel.
 7. **TCP Proxy** reads the enclave's TLS output from the Data Channel and writes it to the client socket.
 

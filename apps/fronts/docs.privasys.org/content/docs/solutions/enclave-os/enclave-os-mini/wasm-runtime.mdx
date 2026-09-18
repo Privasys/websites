@@ -128,6 +128,10 @@ This means AI agents can discover and call your enclave functions through the st
 
 See [MCP Tools](/solutions/enclave-os/enclave-os-mini/mcp-tools) for the full protocol reference, manifest structure, and WIT-to-JSON-Schema mapping.
 
+## Waiting Without Blocking
+
+A guest's outbound HTTPS call looks blocking to the guest, but the enclave does not block: every guest call runs on a wasmtime fiber, so the runtime suspends the guest while its request waits on the network and serves other applications meanwhile. Long computations yield in the same way every million units of fuel. See [Coroutines](/solutions/enclave-os/enclave-os-mini/coroutines) for how this works and what it measures.
+
 ## wasmtime Inside SGX: Challenges
 
 Running wasmtime inside an SGX enclave required solving several challenges:
@@ -136,5 +140,6 @@ Running wasmtime inside an SGX enclave required solving several challenges:
 |-----------|----------|
 | **No `mmap` inside SGX** | wasmtime's memory allocation was patched to use the enclave's heap allocator instead of `mmap`. |
 | **No signals** | SGX doesn't support POSIX signals. wasmtime's bounds-checking and stack overflow detection use explicit checks instead of signal handlers. |
-| **Limited stack size** | Enclave stack is configured in `enclave.config.xml`. wasmtime's fuel metering prevents stack overflow from runaway WASM code. |
+| **Limited stack size** | Enclave stack is configured in `enclave.config.xml`. wasmtime bounds the guest's own stack depth, and fuel metering ends runaway WASM code. |
+| **No threads to spare** | The enclave serves every app from one thread. Guest calls run on fibers with heap-allocated stacks, registered with the SGX runtime so that its exception handling accepts them, which lets a waiting call step aside (see [Coroutines](/solutions/enclave-os/enclave-os-mini/coroutines)). |
 | **No JIT** | SGX doesn't allow dynamic code generation (W^X). wasmtime uses **ahead-of-time (AOT) compilation**: WASM modules are compiled to native code before loading into the enclave. |
