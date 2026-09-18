@@ -67,6 +67,7 @@ Configuration of one workload, including the app-defined sub-arc.
 | `5.2` | Workload Configuration Hash | 32 bytes, runtime-stamped hash of the workload configuration | yes | yes | 3.5 |
 | `5.3` | Reserved | reserved | no | no | new |
 | `5.4.<n>` | App-Defined Extensions | Sub-arc for workload-supplied extensions, installed at runtime via the SDK (`set-attestation-extension`) or pinned at deploy time (for example attested environment variables). Open-ended by design; the root `5.4` never carries a value. | yes | yes | 3.5.\<n\> |
+| `5.4.3` | Clock Key Digest | app-defined, 32 bytes, SHA-256 of the platform monitor's Ed25519 clock key; published only by the instance that runs the platform clock (see [Trusted Time](/solutions/enclave-os/trusted-time#the-monitors-key)) | no | yes | new |
 | `5.4.5` | Model Digest | app-defined, 32 bytes (Confidential AI) | no | yes | 3.5.5 |
 | `5.4.7` | Tools Digest | app-defined, 32 bytes (Confidential AI) | no | yes | 3.5.7 |
 
@@ -148,6 +149,7 @@ A GPU workload answers with `tee: "tdx-gpu"`: a TDX quote plus a `gpu_evidence` 
 |   +-- 5.2                          Workload configuration hash
 |   +-- 5.3                          Reserved
 |   +-- 5.4                          App-defined sub-arc (root carries no value)
+|       +-- 5.4.3                    Clock key digest (platform monitor)
 |       +-- 5.4.5                    Model digest (Confidential AI)
 |       +-- 5.4.7                    Tools digest (Confidential AI)
 +-- 6.*                              Workload keys and state

@@ -90,7 +90,7 @@ Outside a task, `https_fetch` keeps the blocking RPC sockets (`ocall::net_*`): n
 
 ## Trusted time
 
-The trusted clock serialises its operations on a single owner, identified per task (a thread-level flag would let another task on the same thread pass as a nested read). An operation started by the clock's own routes (`POST /clock/poll`, `PUT /clock/config`) holds no lock and may suspend: its NTS quorum (NTS-KE over TCP, NTP over `UdpOpen`) and its incident report use `netchan` sockets. While it is suspended:
+The [trusted clock](/solutions/enclave-os/trusted-time) serialises its operations on a single owner, identified per task (a thread-level flag would let another task on the same thread pass as a nested read). An operation started by the clock's own routes (`POST /clock/poll`, `PUT /clock/config`) holds no lock and may suspend: its NTS quorum (NTS-KE over TCP, NTP over `UdpOpen`) and its incident report use `netchan` sockets. While it is suspended:
 
 - another clock route waits for it;
 - a time read gets the state as of the last completed operation: `NO_TRUSTED_TIME` while trusted time is failing closed, otherwise the frozen time (the last read or the floor).

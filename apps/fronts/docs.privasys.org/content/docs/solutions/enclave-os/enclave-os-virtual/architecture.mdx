@@ -60,6 +60,8 @@ Three components run inside the Confidential VM:
 
 7. **Health and metrics.** The management API exposes `/healthz`, `/readyz`, `/api/v1/status`, and Prometheus `/metrics` over RA-TLS at `manager.<machine-name>.<hostname>`.
 
+8. **Trusted time.** The manager never reads the guest's host-steered clock for a security decision. Token and voucher windows, quote freshness, certificate validity and peer verdicts read a [trusted time](/solutions/enclave-os/trusted-time), confirmed against the platform monitor's signed polls and NTS servers. Caddy's RA-TLS module takes its issuing time from the manager over a root-only local socket.
+
 ## RA-TLS via Caddy
 
 The RA-TLS module is a Caddy `tls.issuance` module that generates RA-TLS certificates inside the Confidential VM. It serves the same [deterministic and challenge](/solutions/enclave-os/attestation/ra-tls#deterministic-vs-challenge-mode) evidence exchange as Enclave OS Mini.
@@ -126,3 +128,4 @@ The platform-level certificate (served for the management hostname) carries the 
 - [Containers and Workload Manifest](/solutions/enclave-os/enclave-os-virtual/containers): How containers are loaded, configured, and managed
 - [Hardened Guest Images](/solutions/enclave-os/enclave-os-virtual/hardened-images): The dm-verity base image and trust chain from silicon to userland
 - [Disk Encryption](/solutions/enclave-os/enclave-os-virtual/disk-encryption): LUKS2+AEAD encryption for the OS data partition and per-container volumes
+- [Trusted Time](/solutions/enclave-os/trusted-time): How the manager checks the host's clock before any verification decision
