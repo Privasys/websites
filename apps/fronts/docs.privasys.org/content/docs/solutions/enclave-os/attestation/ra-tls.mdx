@@ -434,6 +434,7 @@ The Privasys [verification libraries](/solutions/platform/verification-libraries
 | **Code identity** | MRENCLAVE (SGX) or MRTD + RTMRs (TDX) prove the exact code running | Both |
 | **Config identity** | Merkle roots prove all operator-chosen and module or container-contributed inputs | Both |
 | **Freshness** | A fresh `context` per attestation in challenge mode; `quote_time` bounded to 24 hours in deterministic mode | Both |
+| **Trusted time** | The runtime stamps `quote_time` and leaf validity, and judges the peers it verifies, on its [trusted time](/solutions/enclave-os/trusted-time), never on the host clock alone | Both |
 | **Standard TLS** | The handshake is unmodified; SDKs build on upstream TLS libraries | Both |
 | **CA isolation** | The CA private key is sealed to MRENCLAVE (Mini) or stored on LUKS2-encrypted disk (Virtual) | Both |
 | **No suppression** | The TEE is an honest reporter and cannot hide its configuration | Both |

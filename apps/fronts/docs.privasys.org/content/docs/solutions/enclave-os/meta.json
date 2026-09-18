@@ -5,6 +5,7 @@
         "presentation",
         "enclave-os-mini",
         "enclave-os-virtual",
-        "attestation"
+        "attestation",
+        "trusted-time"
     ]
 }

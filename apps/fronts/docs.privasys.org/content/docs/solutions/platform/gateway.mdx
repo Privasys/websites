@@ -45,6 +45,12 @@ If-None-Match: "sha256:abc123..."
 
 The platform returns a list of `(sni, upstream)` pairs derived from all currently deployed applications. Routes are updated atomically in memory. The gateway uses **ETag-based polling**, so unchanged route tables return `304 Not Modified` with no body.
 
+A route may also carry a `state`. A route without one is active; `"state": "quarantined"` marks an application whose enclave is paused (see [Quarantined applications](#quarantined-applications)):
+
+```json
+{ "sni": "myapp.apps.privasys.org", "upstream": "203.0.113.10:8445", "state": "quarantined" }
+```
+
 When an application is deployed or undeployed through the [Developer Platform](/solutions/platform/developer-platform), the routing table updates automatically. No manual DNS or gateway configuration is needed.
 
 ## Multi-region availability
@@ -59,6 +65,22 @@ Multiple gateway instances run across geographically distributed regions. DNS re
 ## Unknown hostnames
 
 If a client connects with an SNI hostname that does not match any deployed application, the gateway completes a TLS handshake using an ephemeral self-signed certificate and returns an **HTTP 404** response. This provides a clear signal to the client rather than silently dropping the connection.
+
+## Quarantined applications
+
+Every enclave keeps a [trusted time](/solutions/enclave-os/trusted-time) that it checks against the platform monitor and NTS servers. When the monitor finds an enclave whose host clock is wrong, or one it cannot check, it asks the platform to quarantine that enclave. Every application route on the enclave is then marked `quarantined`, and each gateway applies it on its next route sync, within about 5 seconds. Because the gateways run on their own machines, the enclave's host cannot bypass the quarantine for traffic that comes through them.
+
+A quarantined route is never dialled. Clients get a clear refusal instead of the 404 of an unknown hostname:
+
+- **HTTPS clients the gateway serves directly** (browsers, and SDKs using the [sealed session](/technology/sealed-session)) receive `503 Service Unavailable` with `Retry-After: 300` and `Cache-Control: no-store`. API clients get a JSON body, and browsers loading a page get a short HTML page with the same message. CORS preflights are still answered, so a cross-origin SDK can read the refusal.
+
+  ```json
+  {"error":"enclave_quarantined","message":"This application is temporarily unavailable while its enclave's clock is checked."}
+  ```
+
+- **RA-TLS clients** (those advertising the `privasys-ratls/1` ALPN, whose TLS session belongs to the enclave) receive a fatal TLS `handshake_failure` alert, and the connection closes.
+
+Connections already open when the quarantine arrives are closed, including streamed responses and WebSockets, so a long-lived session does not keep talking to a paused enclave. The enclave itself keeps running, and its manager hostname stays routed so the monitor can keep checking it. When a poll comes back clean, the monitor releases the quarantine and the next route sync serves the application again.
 
 ## Application hostnames
 

@@ -52,6 +52,7 @@ Regardless of which target you choose, every deployment gets:
 2. **RA-TLS certificates** that embed a hardware-signed attestation quote, so any client can verify the deployment over a standard HTTPS connection.
 3. **Built-in verification** through an [interactive attestation panel](/solutions/platform/developer-platform/attestation) in the dashboard.
 4. **Reproducible builds** (WASM) so the deployed binary hash is auditable against the source.
+5. **Trusted time** for every verification decision the runtime makes. A platform monitor checks each enclave's clock every 5 minutes, NTS servers settle any disagreement, and an enclave whose host clock is wrong is paused at the gateways until it is fixed (see [Trusted Time](/solutions/enclave-os/trusted-time)).
 
 ## Platform Components
 
