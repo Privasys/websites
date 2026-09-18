@@ -8,6 +8,7 @@
         "sealing-and-kv-store",
         "merkle-store",
         "wasm-runtime",
+        "coroutines",
         "mcp-tools",
         "guides"
     ]
