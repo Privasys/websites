@@ -99,6 +99,11 @@ interface DriveContextValue {
      * wallet ceremony required).
      */
     reconnect: () => Promise<void>;
+    /**
+     * The holder's own IdP token, for the calls Drive makes on their behalf
+     * to other apps (app folders): the sealed session asserts only the sub.
+     */
+    holderToken: string | undefined;
 }
 
 const DriveContext = createContext<DriveContextValue>({
@@ -116,7 +121,8 @@ const DriveContext = createContext<DriveContextValue>({
     signInInto: async () => {},
     connectInto: async () => 'error' as const,
     signOut: () => {},
-    reconnect: async () => {}
+    reconnect: async () => {},
+    holderToken: undefined
 });
 
 export function useDrive(): DriveContextValue {
@@ -372,7 +378,8 @@ export function DriveProvider({ children }: { children: ReactNode }) {
                 signInInto,
                 connectInto,
                 signOut,
-                reconnect
+                reconnect,
+                holderToken: auth.session?.accessToken
             }}
         >
             {children}
