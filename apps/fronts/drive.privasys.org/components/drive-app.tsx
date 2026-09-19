@@ -14,14 +14,15 @@ import { SecurityView } from './security-view';
 import { TrustFooter } from './trust-footer';
 import { StorageGauge } from './storage-gauge';
 import { AppsView } from './apps-view';
+import { AppFoldersView } from './app-folders-view';
 import { AppsIcon, ChartIcon, FolderIcon, GraphIcon, HomeIcon, InboxIcon, PeopleIcon, PlusIcon, ShieldCheck } from './icons';
 
-type View = 'files' | 'shared' | 'requests' | 'members' | 'insights' | 'graph' | 'security' | 'apps';
+type View = 'files' | 'shared' | 'requests' | 'members' | 'insights' | 'graph' | 'security' | 'apps' | 'app-folders';
 
 const FOOTER_LINKS = [{ label: 'Legal', href: 'https://privasys.org/legal/', external: true }];
 
 export function DriveApp() {
-    const { me, name, tenant, tenants, switchTenant, newWorkspace, session, signOut } = useDrive();
+    const { me, name, tenant, tenants, switchTenant, newWorkspace, session, signOut, holderToken } = useDrive();
     const [view, setView] = useState<View>('files');
     // Where the Security view returns to (the view it was opened from).
     const [prevView, setPrevView] = useState<View>('files');
@@ -120,6 +121,12 @@ export function DriveApp() {
                             icon={<AppsIcon width={18} height={18} />}
                             label="Apps with access"
                         />
+                        <SidebarItem
+                            active={view === 'app-folders'}
+                            onClick={() => setView('app-folders')}
+                            icon={<FolderIcon width={18} height={18} />}
+                            label="App folders"
+                        />
                         {canSeeInsights && (
                             <SidebarItem
                                 active={view === 'insights'}
@@ -217,6 +224,8 @@ export function DriveApp() {
                         <GraphView key={tenant.id} session={session} tenant={tenant} />
                     ) : view === 'apps' ? (
                         <AppsView key={tenant.id} session={session} tenant={tenant} />
+                    ) : view === 'app-folders' ? (
+                        <AppFoldersView key={tenant.id} session={session} token={holderToken} />
                     ) : view === 'security' ? (
                         <SecurityView onBack={() => setView(prevView)} />
                     ) : (

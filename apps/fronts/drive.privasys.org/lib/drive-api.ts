@@ -907,3 +907,102 @@ export async function exportWorkspaceZip(
     if (!ok(res)) throw decodeError(res);
     return res.body ?? new Uint8Array(0);
 }
+
+// ---- App folders --------------------------------------------------------
+// The holder's window onto the working files an app keeps for them in its
+// own storage (the enclave OS's holder folders). Nothing is copied into
+// Drive: each call forwards the holder's own token to the app, which
+// authenticates it exactly as it does the wallet's. The token travels in
+// X-Holder-Token because the sealed envelope keeps Authorization for the
+// session itself; Drive verifies it and binds it to the session's subject
+// before forwarding.
+
+export interface AppFolder {
+    app_id: string;
+    name: string;
+    display_name: string;
+    hostname: string;
+    label: string;
+    used_bytes: number;
+}
+
+export interface AppFolderEntry {
+    name: string;
+    dir: boolean;
+    size: number;
+    modified: string;
+}
+
+export interface AppFolderListing {
+    label: string;
+    path: string;
+    entries: AppFolderEntry[];
+    used_bytes: number;
+}
+
+function holderHeaders(token: string): RequestInit {
+    return { headers: { 'X-Holder-Token': token } };
+}
+
+export async function listAppFolders(session: SealedSession, token: string): Promise<AppFolder[]> {
+    const res = await json<{ app_folders: AppFolder[] }>(
+        session,
+        'GET',
+        '/v1/app-folders',
+        undefined,
+        TRANSFER_TIMEOUT_MS,
+        holderHeaders(token)
+    );
+    return res.app_folders ?? [];
+}
+
+export function listAppFolder(
+    session: SealedSession,
+    token: string,
+    appID: string,
+    path: string
+): Promise<AppFolderListing> {
+    return json<AppFolderListing>(
+        session,
+        'GET',
+        `/v1/app-folders/${encodeURIComponent(appID)}/files?path=${encodeURIComponent(path)}`,
+        undefined,
+        REQUEST_TIMEOUT_MS,
+        holderHeaders(token)
+    );
+}
+
+export async function downloadAppFolderFile(
+    session: SealedSession,
+    token: string,
+    appID: string,
+    path: string
+): Promise<Uint8Array> {
+    const res = await timed(
+        session,
+        'GET',
+        `/v1/app-folders/${encodeURIComponent(appID)}/files?path=${encodeURIComponent(path)}`,
+        undefined,
+        TRANSFER_TIMEOUT_MS,
+        holderHeaders(token)
+    );
+    if (!ok(res)) throw decodeError(res);
+    return res.body ?? new Uint8Array(0);
+}
+
+export async function deleteAppFolderPath(
+    session: SealedSession,
+    token: string,
+    appID: string,
+    path: string
+): Promise<void> {
+    const res = await timed(
+        session,
+        'DELETE',
+        `/v1/app-folders/${encodeURIComponent(appID)}/files?path=${encodeURIComponent(path)}`,
+        undefined,
+        TRANSFER_TIMEOUT_MS,
+        holderHeaders(token)
+    );
+    if (!ok(res)) throw decodeError(res);
+}
