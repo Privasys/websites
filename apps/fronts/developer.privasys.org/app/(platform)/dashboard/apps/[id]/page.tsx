@@ -17,6 +17,7 @@ import { versionLabel, versionSemverStr, isStrictlyNewer } from '~/lib/version';
 import { displayNameError } from '~/lib/appName';
 import type { AppSchema, ConfigureSection, FunctionSchema, JsonSchemaProp, ActionProgress, WitType, McpManifest, AppTeam, AppCommit, DeployLocation, Instance, PriceRule } from '~/lib/api';
 import { useSSE } from '~/lib/sse-context';
+import { AppDomains } from '~/components/app-domains';
 import { useBalance } from '~/lib/use-balance';
 import { getApiBaseUrl } from '~/lib/api-base-url';
 import type { App, BuildJob, AppVersion, AppDeployment, Enclave, CachedImage } from '~/lib/types';
@@ -3186,6 +3187,12 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                         )}
                     </div>
                 </section>
+            )}
+
+            {/* A custom domain in front of the app's UI. Container apps only:
+                a wasm app serves no interface to put a hostname in front of. */}
+            {app.app_type === 'container' && (
+                <AppDomains token={token} appId={app.id} />
             )}
 
             {/* Previous deployments (compact) */}

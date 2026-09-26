@@ -1481,6 +1481,60 @@ export function deleteVolume(token: string, id: string): Promise<{ status: strin
     });
 }
 
+// --- Custom domains in front of an app's UI ---
+
+export interface AppUIDomain {
+    id: string;
+    app_id: string;
+    hostname: string;
+    status: 'pending' | 'live' | 'suspended';
+    verified_at?: string;
+    checked_at?: string;
+    last_error?: string;
+    created_at: string;
+    updated_at: string;
+    dns: {
+        txt_name: string;
+        txt_value: string;
+        cname_name: string;
+        cname_target: string;
+    };
+}
+
+export interface AppUIDomains {
+    domains: AppUIDomain[];
+    cname_target: string;
+    max_per_app: number;
+    platform_host: string;
+}
+
+export function listAppDomains(token: string, appId: string): Promise<AppUIDomains> {
+    return request<AppUIDomains>(`/api/v1/apps/${encodeURIComponent(appId)}/domains`, token);
+}
+
+export function addAppDomain(token: string, appId: string, hostname: string): Promise<AppUIDomain> {
+    return request<AppUIDomain>(`/api/v1/apps/${encodeURIComponent(appId)}/domains`, token, {
+        method: 'POST',
+        body: JSON.stringify({ hostname })
+    });
+}
+
+// verifyAppDomain reads the ownership TXT record now, rather than waiting for
+// the control plane's own sweep.
+export function verifyAppDomain(token: string, appId: string, domainId: string): Promise<AppUIDomain> {
+    return request<AppUIDomain>(
+        `/api/v1/apps/${encodeURIComponent(appId)}/domains/${encodeURIComponent(domainId)}/verify`, token,
+        { method: 'POST' }
+    );
+}
+
+export function deleteAppDomain(token: string, appId: string, domainId: string): Promise<void> {
+    return request<void>(
+        `/api/v1/apps/${encodeURIComponent(appId)}/domains/${encodeURIComponent(domainId)}`, token,
+        { method: 'DELETE' }
+    );
+}
+
 // --- Volumes across owners (platform operators) ---
 
 export interface AdminVolume {
