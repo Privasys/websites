@@ -25,7 +25,7 @@ const NAV_ITEMS = [
                 label: 'Privasys AI',
                 href: '/solutions/ai/',
                 eyebrow: 'Inference & agents',
-                description: 'Confidential inference, retrieval, and agents on your private data, with hardware attestation from the client to the model endpoint.'
+                description: 'Attested inference, agents in an attested harness, and connectors to your mail, calendar and files that keep no credential at rest.'
             },
             {
                 label: 'Privasys Platform',
