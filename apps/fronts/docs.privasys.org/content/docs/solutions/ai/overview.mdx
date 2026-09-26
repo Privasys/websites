@@ -12,6 +12,7 @@ This solution page is the product orientation. The runtime, the attestation surf
 - **Attested inference.** Models run in Intel TDX confidential VMs with NVIDIA H100 in confidential-compute mode. A client verifies the environment before sending a prompt, so the answer provably came from the model and weights you expected. See [Attestation](/technology/confidential-ai/attestation).
 - **A memory you own.** Your files, conversations, and notes live in Privasys Drive, sealed to an enclave only you can unlock. The assistant reaches them as an attested tool under a scope you set, so its memory is private, portable, and deletable by you. See [Memory for Chat](/solutions/drive/memory-for-chat).
 - **Agents inside the boundary.** Agents call tools and reach external services while the model and your data stay inside the attested environment, over the [Attested MCP](/technology/confidential-ai/attested-mcp) channel.
+- **Your accounts, without handing over a password.** Agents reach your mail, calendar, files and meetings through [Connectors](/solutions/ai/connectors): attested apps that keep no credential at rest and act only under a capability you approve on your wallet.
 
 ## When to use it
 
@@ -21,6 +22,7 @@ Privasys AI is for work where the value is in the private data and the risk is i
 
 - The [Confidential AI](/technology/confidential-ai/overview) runtime serves the model and produces the attestation.
 - [Privasys Drive](/solutions/drive/overview) holds the data and serves it as an attested, scoped memory.
+- [Connectors](/solutions/ai/connectors) reach the accounts you already have, one attested app per kind of account.
 - [Privasys Chat](https://chat.privasys.org) is the reference client that ties them together for people, with the same guarantees available to any application through the API.
 
 The [Chat and agents](/solutions/ai/chat-and-agents) page walks through the product experience end to end.
