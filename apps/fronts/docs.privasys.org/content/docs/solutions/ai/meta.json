@@ -3,6 +3,7 @@
     "defaultOpen": false,
     "pages": [
         "overview",
-        "chat-and-agents"
+        "chat-and-agents",
+        "connectors"
     ]
 }

@@ -22,6 +22,8 @@ Memory is served as an enumerable tree, so the assistant sees everything it know
 
 Agentic workflows call tools and reach external services. Privasys AI keeps the model and your data inside the attested environment while the agent works, and the tools it calls are themselves attested over [Attested MCP](/technology/confidential-ai/attested-mcp): the caller proves its measured identity to the tool, and the tool proves its own to the caller, so neither is a password an operator could copy.
 
+When an agent needs one of your accounts, a mailbox, a calendar, a drive or a meeting service, it reaches it through a [connector](/solutions/ai/connectors): an attested app that holds the credential in memory only, under a capability you approve on your wallet, and that you can revoke at any time.
+
 Because the assistant's reach is a grant you set, one Drive gives you two shapes of agent:
 
 - A **personal** assistant scoped to your whole Drive, carrying your history across conversations.
