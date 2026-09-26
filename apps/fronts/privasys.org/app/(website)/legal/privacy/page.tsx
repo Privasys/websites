@@ -7,12 +7,12 @@ export default function PrivacyPolicy() {
         <PageShell activePage='legal'>
 
             <article className='mt-24 lg:mt-40 prose-legal'>
-                <p className='text-sm text-[#1d1d1f]/50 dark:text-[#f5f5f7]/50 mb-4'>Last updated: March 2026</p>
+                <p className='text-sm text-[#1d1d1f]/50 dark:text-[#f5f5f7]/50 mb-4'>Last updated: September 2026</p>
                 <h1 className='text-4xl lg:text-5xl'>Privacy Policy</h1>
 
                 <p className='mt-8'>
                     Your privacy is our primary concern. This policy explains how your personal information is collected and used when you interact with Privasys websites and services.
-                    This Privacy Policy applies to all Privasys services available through privasys.org, developer.privasys.org, and docs.privasys.org.
+                    This Privacy Policy applies to all Privasys services available through privasys.org, developer.privasys.org, docs.privasys.org, privasys.id, and the applications we run on apps.privasys.org.
                     By accessing or using Privasys services, you agree to this Privacy Policy.
                 </p>
 
@@ -51,6 +51,60 @@ export default function PrivacyPolicy() {
                 </p>
                 <p className='mt-4'>
                     We keep basic information about visitors, usage data, and technical data that is tracked for routine administration and maintenance purposes only.
+                </p>
+
+                <h2 className='text-2xl mt-12 mb-4'>Accounts you connect, and the data in them</h2>
+                <p>
+                    A Privasys application can connect an account you already have, such as a mailbox, a calendar, a cloud drive or a meeting service, so that an assistant acting for you can work with what is in it.
+                    This section explains what happens to that data, including data we receive from Google APIs, and it applies in addition to everything above.
+                </p>
+
+                <h3 className='text-xl mt-8 mb-3'>What we access, and why</h3>
+                <p>
+                    You choose which account to connect, what it is for, and how far the access goes. The boundary is the capability you approve on your own device, not a promise on this page:
+                    an assistant can only do what that capability allows, and an assistant may of course be built to do less.
+                </p>
+                <ul className='mt-4 list-disc pl-6 space-y-2'>
+                    <li><strong>Mail</strong> (Gmail and other IMAP mailboxes): read the messages in the mailbox you connect, write drafts, apply labels, and send a message where you have granted that.</li>
+                    <li><strong>Calendar</strong>: read your events and when you are busy, propose events for you to confirm, and create events and send invitations where you have granted that.</li>
+                    <li><strong>Files</strong> (Google Drive, OneDrive, SharePoint): read the documents you point it at, and write files where you have allowed it to write.</li>
+                    <li><strong>Meetings</strong>: read the transcripts of meetings you hosted, and write them into your own Privasys Drive.</li>
+                </ul>
+
+                <h3 className='text-xl mt-8 mb-3'>How it is accessed</h3>
+                <p>
+                    Every connector runs inside a confidential computing enclave whose code you can verify by attestation before you trust it.
+                    Before any access happens, you approve a capability on your own device that names the account and the purpose, and you can withdraw it at any time.
+                    The credential that opens your account is held in the memory of that enclave and on your own device. It is not written to our disks and does not appear in our logs.
+                </p>
+
+                <h3 className='text-xl mt-8 mb-3'>How it is used</h3>
+                <p>
+                    Data from a connected account is used only to produce the result you asked for, in your own session: a triage, a draft, a summary, an answer.
+                    It is never used to train or improve any model, generalised or otherwise. It is never used for advertising, profiling or analytics.
+                    No Privasys employee can read it: it lives inside the enclave, and running the platform gives us no path to that memory.
+                </p>
+
+                <h3 className='text-xl mt-8 mb-3'>How it is stored and shared</h3>
+                <p>
+                    We do not store the content of your mail, your calendar, your files or your transcripts. Connectors read on demand and keep nothing at rest.
+                    The one exception is the one you asked for: a meeting transcript is written into your own Privasys Drive, encrypted for you, because a transcript has no other durable home.
+                    We do not transfer this data to any third party, and we do not sell it.
+                </p>
+
+                <h3 className='text-xl mt-8 mb-3'>Limited Use</h3>
+                <p>
+                    Privasys&apos;s use and transfer of information received from Google APIs to any other app will adhere to the{' '}
+                    <a href='https://developers.google.com/terms/api-services-user-data-policy' target='_blank' rel='noopener noreferrer' className='underline'>Google API Services User Data Policy</a>, including the Limited Use requirements.
+                </p>
+
+                <h3 className='text-xl mt-8 mb-3'>Withdrawing access</h3>
+                <p>
+                    You can disconnect an account at any time in your Privasys wallet, which withdraws the capability and forgets the credential immediately.
+                    You can also remove our access at the provider: Google at{' '}
+                    <a href='https://myaccount.google.com/permissions' target='_blank' rel='noopener noreferrer' className='underline'>myaccount.google.com/permissions</a>, Microsoft at{' '}
+                    <a href='https://myapps.microsoft.com' target='_blank' rel='noopener noreferrer' className='underline'>myapps.microsoft.com</a>, and Zoom in the Zoom App Marketplace.
+                    Anything the assistant has already left in your own account, such as a draft, a label, a proposal or a transcript in your Drive, remains yours to keep or delete.
                 </p>
 
                 <h2 className='text-2xl mt-12 mb-4'>Your data protection rights</h2>
