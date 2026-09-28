@@ -75,6 +75,13 @@ export interface DriveNode {
     /** Set on a folder that holds a workspace snapshot (`.workspace.json`
      *  beside `.blobs/`): the manifest file id. Rendered as one item. */
     workspace_manifest_id?: string;
+    /**
+     * Somebody else can currently reach this node: an active grant sits on
+     * it (a share link, a named recipient, an app). Counts grants on the
+     * node ITSELF, so the mark says "this is the thing that was shared"
+     * rather than "something above this was".
+     */
+    shared?: boolean;
 }
 
 export type TenantKind = 'user' | 'enterprise';
