@@ -10,6 +10,10 @@ const DOCS = 'https://docs.privasys.org';
  * assistants (Claude, ChatGPT, Gemini, Perplexity, …). The technical
  * documentation lives on docs.privasys.org, which serves its own llms.txt
  * plus the full docs as a single markdown file.
+ *
+ * Only the Blog section is generated. The summary, key facts and Solutions
+ * list are written here by hand: when a solution page is added, renamed or
+ * repositioned, update this file in the same commit.
  */
 export function GET(): Response {
     const posts = getAllPosts();
@@ -21,9 +25,10 @@ export function GET(): Response {
         '> hardware-attested enclaves (Intel SGX, Intel TDX, AMD SEV-SNP) so that',
         '> neither Privasys nor the cloud provider can see user data. Products',
         '> include Enclave OS (WASM and container apps in enclaves), Enclave Vaults',
-        '> (attested key management), Confidential AI (private inference and chat),',
-        '> Privasys Drive (encrypted file storage), the developer platform, and a',
-        '> privacy-preserving identity wallet.',
+        '> (attested key management), Privasys AI (attested inference, the Privasys',
+        '> Harness agent runtime, and Privasys Connectors to mail, calendar, files and',
+        '> meetings), Privasys Drive (encrypted file storage), the developer platform,',
+        '> and a privacy-preserving identity wallet.',
         '',
         '## Key facts',
         '',
@@ -53,7 +58,8 @@ export function GET(): Response {
         '',
         `- [Enclave OS](${BASE}/solutions/enclave-os/): run WASM and container applications inside hardware enclaves`,
         `- [Enclave Vaults](${BASE}/solutions/enclave-vaults/): attested key management (vHSM) across an enclave constellation`,
-        `- [Confidential AI](${BASE}/solutions/ai/): private LLM inference and chat inside TDX + H100 enclaves`,
+        `- [Privasys AI](${BASE}/solutions/ai/): AI and agents you can verify. Open-weight models run in Intel TDX with the NVIDIA H100 in confidential-compute mode, and every reply carries a hardware-signed receipt of the code, weights and configuration that produced it. Privasys Harness runs the agent loop in its own attested enclave, and every call it makes leaves through a gate that admits only the attested services approved in the user's wallet`,
+        `- [Privasys Connectors](${BASE}/solutions/ai/#connectors): separately attested enclaves that reach mail (any IMAP mailbox, Google, Microsoft), calendars (Google, Microsoft 365, CalDAV), files (Google Drive, OneDrive, SharePoint) and meeting transcripts (Zoom, Microsoft Teams). No credential is kept at rest, and each account has one Revoke. Agents currently leave drafts and proposals for the user to send or confirm`,
         `- [Developer Platform](${BASE}/solutions/platform/): deploy, attest and manage confidential apps`,
         `- [Wallet](${BASE}/solutions/wallet/): privacy-preserving identity wallet with verified attributes`,
         `- [Privasys Drive](${BASE}/solutions/drive/): end-to-end encrypted file storage with confidential search and AI`,
