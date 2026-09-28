@@ -12,9 +12,10 @@
 // polls until the owner decides. The link secret rides in the URL fragment
 // and never reaches a server log.
 
-import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Navbar, Footer } from '@privasys/ui';
 import { useDrive } from '~/lib/use-drive';
+import { claimString, decodeTokenClaims } from '~/lib/token-claims';
 import {
     DriveError,
     downloadFile,
@@ -52,7 +53,7 @@ export default function LinkPage() {
 }
 
 function LinkLanding() {
-    const { status, session, name, profile, signInInto } = useDrive();
+    const { status, session, signInInto, holderToken } = useDrive();
     const [params] = useState(readParams);
     const [resolved, setResolved] = useState<ResolvedLink | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -128,12 +129,27 @@ function LinkLanding() {
 
     // The attributes the visitor already consented to share at sign-in,
     // matched against what the link requires.
+    // What the visitor's own token says they have disclosed. This is the only
+    // sound source for answering a restricted link, and it used to be their
+    // stored profile from the control plane: that answers whether the platform
+    // knows a name and email for the account, which is true whether or not
+    // they ever agreed to give either to this sharer, and true even for the
+    // minimal sign-in that opens a link and deliberately asks for neither.
+    // Reading it satisfied the link without asking anybody, so a visitor
+    // approved a connection and watched their details go out with it, while
+    // the sharer was told attributes had been presented.
+    //
+    // A claim is in the token because a sign-in asked for that disclosure and
+    // the wallet put it to the holder; absent means they were never asked,
+    // which is reported missing and runs the step-up that does ask.
+    const disclosed = useMemo(() => decodeTokenClaims(holderToken), [holderToken]);
+
     const presentedAttributes = useCallback(
         (r: ResolvedLink): Record<string, string> | undefined => {
             if (r.mode !== 'restricted') return undefined;
             const available: Record<string, string | undefined> = {
-                name: profile?.name || profile?.display_name || name,
-                email: profile?.email || profile?.display_email
+                name: claimString(disclosed, 'name'),
+                email: claimString(disclosed, 'email')
             };
             const out: Record<string, string> = {};
             for (const key of r.required_attributes ?? []) {
@@ -142,7 +158,7 @@ function LinkLanding() {
             }
             return out;
         },
-        [profile, name]
+        [disclosed]
     );
 
     // Resolve, then redeem in the same breath: authenticating with the
