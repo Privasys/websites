@@ -31,6 +31,7 @@ import { ConflictDialog } from './conflict-dialog';
 import { FileViewer, canPreview } from './file-viewer';
 import { FileEditor } from './file-editor';
 import { WorkspaceView } from './workspace-view';
+import { FolderMenu } from './folder-menu';
 import {
     ChevronRight,
     DownloadIcon,
@@ -45,6 +46,7 @@ import {
     SearchIcon,
     SearchOffIcon,
     ShareIcon,
+    SharedFolderIcon,
     TrashIcon,
     UploadIcon,
     EyeIcon,
@@ -55,6 +57,13 @@ import {
 interface Crumb {
     id: string | null;
     name: string;
+    /**
+     * The folder this crumb stands for, kept so the trail can act on the
+     * folder you are inside without going back out to select it. Absent on
+     * the root, which is the tenant rather than a node, and so has nothing
+     * to share.
+     */
+    node?: DriveNode;
 }
 
 // Custom drag type carrying the ids being moved within the drive.
@@ -233,7 +242,7 @@ export function FileBrowser({
             // A workspace snapshot is one item: browsed read-only, never as a tree of nodes.
             setWsNode(n);
         } else if (n.kind === 'folder') {
-            setPath((p) => [...p, { id: n.id, name: n.name }]);
+            setPath((p) => [...p, { id: n.id, name: n.name, node: n }]);
         } else if (canPreview(n)) {
             setViewNode(n);
         } else {
@@ -266,20 +275,20 @@ export function FileBrowser({
 
     // One file downloads as itself; a folder, or several items, come back
     // as a ZIP the enclave assembles (the browser cannot write a tree).
-    const downloadSelected = async () => {
-        if (selectedNodes.length === 0) return;
-        if (selectedNodes.length === 1 && selectedNodes[0].kind === 'file') {
-            await download(selectedNodes[0]);
+    const downloadNodes = async (items: DriveNode[]) => {
+        if (items.length === 0) return;
+        if (items.length === 1 && items[0].kind === 'file') {
+            await download(items[0]);
             return;
         }
-        const name = selectedNodes.length === 1 ? selectedNodes[0].name : 'drive-download';
+        const name = items.length === 1 ? items[0].name : 'drive-download';
         setBusy(true);
         setError(null);
         try {
             const bytes = await downloadZip(
                 session,
                 tenant.id,
-                selectedNodes.map((n) => n.id),
+                items.map((n) => n.id),
                 name
             );
             saveBytes(bytes, `${name}.zip`, 'application/zip');
@@ -289,6 +298,8 @@ export function FileBrowser({
             setBusy(false);
         }
     };
+
+    const downloadSelected = () => downloadNodes(selectedNodes);
 
     /** Put the question to the user and wait for the answer. */
     const askConflict = (name: string, remaining: number) =>
@@ -683,6 +694,15 @@ export function FileBrowser({
                                     >
                                         {c.name}
                                     </button>
+                                    {/* The folder you are in can be acted on where
+                                        you are, rather than back out in its parent. */}
+                                    {i === path.length - 1 && c.node && (
+                                        <FolderMenu
+                                            name={c.name}
+                                            onShare={() => setShareNode(c.node!)}
+                                            onDownload={() => void downloadNodes([c.node!])}
+                                        />
+                                    )}
                                 </span>
                             ))}
                         </nav>
@@ -990,11 +1010,21 @@ function NodeIcon({ node }: { node: DriveNode }) {
     if (node.kind === 'folder' && node.workspace_manifest_id) {
         return <WorkspaceIcon width={22} height={22} style={{ color: 'var(--drv-accent)' }} />;
     }
-    return node.kind === 'folder' ? (
-        <FolderIcon width={22} height={22} style={{ color: 'var(--drv-accent)' }} />
-    ) : (
-        <FileIcon width={22} height={22} style={{ color: 'var(--drv-text-muted)' }} />
-    );
+    if (node.kind === 'folder') {
+        // A folder somebody else can reach says so on its own icon, so an
+        // owner can see what has left the drive by looking down the list
+        // rather than opening each folder's sharing panel in turn.
+        const Icon = node.shared ? SharedFolderIcon : FolderIcon;
+        return (
+            <Icon
+                width={22}
+                height={22}
+                style={{ color: 'var(--drv-accent)' }}
+                aria-label={node.shared ? 'Shared folder' : undefined}
+            />
+        );
+    }
+    return <FileIcon width={22} height={22} style={{ color: 'var(--drv-text-muted)' }} />;
 }
 
 interface RowExtra {
@@ -1219,7 +1249,16 @@ function GridLayout({
                     >
                         <div className="mb-3 flex h-20 items-center justify-center rounded-lg" style={{ background: 'var(--drv-surface-2)' }}>
                             {n.kind === 'folder' ? (
-                                <FolderIcon width={40} height={40} style={{ color: 'var(--drv-accent)' }} />
+                                n.shared ? (
+                                    <SharedFolderIcon
+                                        width={40}
+                                        height={40}
+                                        style={{ color: 'var(--drv-accent)' }}
+                                        aria-label="Shared folder"
+                                    />
+                                ) : (
+                                    <FolderIcon width={40} height={40} style={{ color: 'var(--drv-accent)' }} />
+                                )
                             ) : (
                                 <FileIcon width={36} height={36} style={{ color: 'var(--drv-text-muted)' }} />
                             )}

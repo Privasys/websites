@@ -22,6 +22,26 @@ export const FolderIcon = (p: P) => (
     </svg>
 );
 
+// A folder somebody else can reach. The person is knocked out of the
+// folder rather than drawn over it (fill-rule evenodd makes the enclosed
+// subpaths holes), so the mark reads the same on a row, on hover and on
+// the selected-row tint without carrying a background colour of its own.
+export const SharedFolderIcon = (p: P) => (
+    <svg {...base(p)} fill="currentColor" stroke="none">
+        <path
+            fillRule="evenodd"
+            clipRule="evenodd"
+            d="M10 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-2-2Zm2 6.1a2.15 2.15 0 1 1 0 4.3 2.15 2.15 0 0 1 0-4.3ZM8.1 18.4c0-1.75 1.75-3.05 3.9-3.05s3.9 1.3 3.9 3.05v.25H8.1v-.25Z"
+        />
+    </svg>
+);
+
+export const ChevronDown = (p: P) => (
+    <svg {...base(p)}>
+        <path d="m6 9 6 6 6-6" />
+    </svg>
+);
+
 export const FileIcon = (p: P) => (
     <svg {...base(p)}>
         <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5Z" />
