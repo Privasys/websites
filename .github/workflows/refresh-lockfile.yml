@@ -1,0 +1,65 @@
+name: Refresh lockfile
+
+# Moves a dependency (typically an @privasys package from GitHub Packages) and
+# regenerates yarn.lock with CI's own registry access, handing the two changed
+# files back as an artifact rather than committing them.
+#
+# Every other workflow installs with --immutable, so a version bump needs its
+# lockfile entry (tarball URL and checksum) committed first, and only something
+# that can read the registry can write that entry. CI already can; a laptop
+# would need a packages token of its own. The commit stays with a person,
+# signed, like every other commit here:
+#
+#   gh workflow run refresh-lockfile.yml -f spec=@privasys/auth@^0.13.0 -f ref=<branch>
+#   gh run download <run-id> -n lockfile
+
+on:
+  workflow_dispatch:
+    inputs:
+      spec:
+        description: 'What to move, as for yarn up (e.g. @privasys/auth@^0.13.0)'
+        required: true
+        type: string
+      ref:
+        description: 'Branch to resolve against'
+        required: false
+        type: string
+        default: 'main'
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.x
+          cache: yarn
+
+      # The spec reaches the shell through the environment, never spliced into
+      # the script, so an input cannot become a command.
+      - name: Move the dependency and regenerate the lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          YARN_ENABLE_IMMUTABLE_INSTALLS: 'false'
+          SPEC: ${{ inputs.spec }}
+        run: yarn up "$SPEC"
+
+      - name: Show what changed
+        run: git diff --stat -- package.json yarn.lock
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: lockfile
+          path: |
+            package.json
+            yarn.lock
+          retention-days: 7
