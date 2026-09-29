@@ -16,6 +16,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { Navbar, Footer } from '@privasys/ui';
 import { useDrive } from '~/lib/use-drive';
 import { claimString, decodeTokenClaims } from '~/lib/token-claims';
+import { parseLinkURL, type LinkParams } from '~/lib/share-link-url';
 import {
     DriveError,
     downloadFile,
@@ -37,11 +38,9 @@ import { FileIcon, FolderIcon, DownloadIcon, LockIcon, ShieldCheck } from '~/com
 
 const FOOTER_LINKS = [{ label: 'Legal', href: 'https://privasys.org/legal/', external: true }];
 
-function readParams(): { id: string; secret: string } {
-    if (typeof window === 'undefined') return { id: '', secret: '' };
-    const id = new URLSearchParams(window.location.search).get('id') ?? '';
-    const secret = window.location.hash.replace(/^#/, '');
-    return { id, secret };
+function readParams(): LinkParams {
+    if (typeof window === 'undefined') return { id: '', secret: '', attrs: [] };
+    return parseLinkURL(window.location.search, window.location.hash);
 }
 
 export default function LinkPage() {
@@ -82,9 +81,15 @@ function LinkLanding() {
         };
     }, []);
 
-    // Mount the sign-in ceremony when signed out. Redeeming a link is a
-    // minimal identity flow (a wallet sub, no PII): we request NO attributes,
-    // so an open link never prompts the visitor for their name or email.
+    // Mount the sign-in ceremony when signed out. An open link is a minimal
+    // identity flow (a wallet sub, no PII) and asks for nothing, so it never
+    // prompts the visitor for their name or email. A restricted link's address
+    // names what it requires, and the ceremony asks for exactly that, so the
+    // visitor approves the connection and the disclosure on one screen instead
+    // of approving a bare connection and then being sent round again. An
+    // address without the hint (made before it existed, or trimmed on the way)
+    // falls through to the step-up below, which is what the enclave's own
+    // check would demand anyway.
     // A ceremony can die without completing (the wallet went through an
     // install or attribute-import detour and the session expired, the
     // network dropped): surface a retry instead of a dead blank frame.
@@ -92,11 +97,11 @@ function LinkLanding() {
     useEffect(() => {
         if (status !== 'signed-out' || ceremonyError || started.current || !ceremonyRef.current) return;
         started.current = true;
-        signInInto(ceremonyRef.current).catch(() => {
+        signInInto(ceremonyRef.current, params.attrs.length > 0 ? params.attrs : undefined).catch(() => {
             started.current = false;
             setCeremonyError('The sign-in did not complete. Scan the code again to open the link.');
         });
-    }, [status, signInInto, ceremonyError]);
+    }, [status, signInInto, ceremonyError, params.attrs]);
 
     // Restricted-link step-up: re-run the ceremony requesting exactly the
     // attributes the link requires, then resolve + redeem again.
