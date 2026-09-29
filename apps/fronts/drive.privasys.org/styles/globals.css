@@ -184,3 +184,17 @@ body {
     /* Still visibly alive, without anything moving across the screen. */
     .drv-indeterminate { animation: drv-breathe 2s ease-in-out infinite; }
 }
+
+/* The SDK's attribute picker renders in a closed shadow root, which no
+   stylesheet reaches; custom properties are the one thing that passes in. Hand
+   it Drive's palette so it sits in the share dialog like everything else there,
+   including under the dark theme, while its trust markers stay the SDK's own. */
+.drv-attribute-picker {
+    --privasys-accent: var(--drv-accent);
+    --privasys-accent-weak: var(--drv-accent-weak);
+    --privasys-text: var(--drv-text);
+    --privasys-muted: var(--drv-text-muted);
+    --privasys-border: var(--drv-border);
+    --privasys-hover: var(--drv-hover);
+    --privasys-surface: transparent;
+}

@@ -16,18 +16,33 @@ import {
     type TenantKind
 } from '~/lib/drive-api';
 import { avatarColor, granteeLabel, initials } from '~/lib/format';
-import { PrivasysAttributeBadge } from '@privasys/auth/react';
+import { fetchAttributePrices, type AttributeSectionCopy, type AttributeSectionId, type CanonicalAttribute } from '@privasys/auth';
+import { PrivasysAttributePicker } from '@privasys/auth/react';
 import {
-    assuranceLabel,
-    attributeLabel,
+    loadReferential,
     loadShareAttributes,
     requestKeyFor,
     type ShareAttribute
 } from '~/lib/share-attributes';
 import { buildLinkURL } from '~/lib/share-link-url';
-import { fetchAttributePrices, formatCredits, perVisitorCost, priceOf } from '~/lib/attribute-prices';
+import { API_BASE_URL } from '~/lib/me-api';
 import { useDrive } from '~/lib/use-drive';
 import { CloseIcon, FolderIcon, FileIcon, LinkIcon, LockIcon, TrashIcon } from './icons';
+
+// Drive's wording for the shared picker's sections. The holder here is the
+// visitor opening the link, and a paid attribute is charged each time one
+// presents it. The copy stops short of naming who is billed until the sharer is
+// the one who genuinely is.
+const PICKER_COPY: Partial<Record<AttributeSectionId, AttributeSectionCopy>> = {
+    holder: { title: 'Provided by the visitor' },
+    gov: { title: 'Verified from their government ID' },
+    paid: {
+        title: 'Paid attributes',
+        hint:
+            'Certified from the visitor’s government ID, so each one is charged every time a visitor ' +
+            'presents it. Prices are per visitor.'
+    }
+};
 
 // Tenant member roles an enterprise folder ACL can narrow to.
 const ROLE_OPTIONS = ['owner', 'admin', 'contributor', 'reader'] as const;
@@ -101,11 +116,25 @@ export function ShareDialog({
     useEffect(() => {
         if (!holderToken) return;
         const ctrl = new AbortController();
-        fetchAttributePrices(holderToken, ctrl.signal)
+        fetchAttributePrices(API_BASE_URL, holderToken, ctrl.signal)
             .then(setPrices)
             .catch(() => undefined);
         return () => ctrl.abort();
     }, [holderToken]);
+
+    // The live referential, as the picker takes it. Null while it loads; an
+    // empty list means the IdP could not be reached, and the dialog says so
+    // rather than offering keys the wallet might no longer honour.
+    const [referential, setReferential] = useState<CanonicalAttribute[] | null>(null);
+    useEffect(() => {
+        let live = true;
+        loadReferential()
+            .then((a) => live && setReferential(a))
+            .catch(() => live && setReferential([]));
+        return () => {
+            live = false;
+        };
+    }, []);
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -159,53 +188,6 @@ export function ShareDialog({
         } catch {
             /* clipboard blocked; the fallback field stays selectable */
         }
-    };
-
-    const toggleAttr = (k: string) =>
-        setReqAttrs((cur) => (cur.includes(k) ? cur.filter((x) => x !== k) : [...cur, k]));
-
-    // Paid attributes get a section of their own. Mixed into one list, a run
-    // of "Paid" chips read as a label rather than as a charge that recurs
-    // with every visitor, which is the thing a sharer most needs to notice.
-    const freeAttrs = (shareAttrs ?? []).filter((a) => !a.billable);
-    const paidAttrs = (shareAttrs ?? []).filter((a) => a.billable);
-    const chosenCost = perVisitorCost(prices, shareAttrs ?? [], reqAttrs);
-
-    const attrChip = (a: ShareAttribute) => {
-        const on = reqAttrs.includes(a.key);
-        const price = a.billable ? priceOf(prices, a) : undefined;
-        return (
-            <button
-                key={a.key}
-                onClick={() => toggleAttr(a.key)}
-                title={
-                    a.selfKey
-                        ? `${assuranceLabel(a.assurance)} attribute — "${attributeLabel(shareAttrs ?? [], a.selfKey)}" asks the same question without a document`
-                        : `${assuranceLabel(a.assurance)} attribute`
-                }
-                className="flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs"
-                style={{
-                    borderColor: on ? 'var(--drv-accent)' : 'var(--drv-border)',
-                    background: on ? 'var(--drv-accent-weak)' : 'transparent',
-                    color: on ? 'var(--drv-accent)' : 'var(--drv-text)'
-                }}
-            >
-                {a.label}
-                {/* The SDK's own badge, so a sharer sees the same
-                    government-ID marker here as in the wallet
-                    consent screen the visitor will meet. Its "Paid"
-                    marker is replaced by the price where one is known. */}
-                <PrivasysAttributeBadge attribute={a.key} showPaid={a.billable && price === undefined} />
-                {price !== undefined && (
-                    <span
-                        className="rounded-full px-1.5 py-0.5 font-medium tabular-nums"
-                        style={{ background: 'rgba(217, 119, 6, 0.12)', color: 'rgb(180, 83, 9)' }}
-                    >
-                        {formatCredits(price)}
-                    </span>
-                )}
-            </button>
-        );
     };
 
     const activeGrants = (perms?.grants ?? []).filter(
@@ -302,41 +284,29 @@ export function ShareDialog({
 
                         {mode === 'restricted' && (
                             <div className="mt-3">
-                                <div className="mb-1.5 text-xs font-medium" style={{ color: 'var(--drv-text-muted)' }}>
+                                <div className="mb-2 text-xs font-medium" style={{ color: 'var(--drv-text-muted)' }}>
                                     Require the visitor to present
                                 </div>
-                                {shareAttrs !== null && shareAttrs.length === 0 && (
+                                {referential !== null && referential.length === 0 && (
                                     <div className="text-xs" style={{ color: 'var(--drv-text-muted)' }}>
                                         Could not reach the attribute referential. Reopen this dialog to retry.
                                     </div>
                                 )}
-                                <div className="flex flex-wrap gap-2">
-                                    {freeAttrs.map((a) => attrChip(a))}
-                                </div>
-
-                                {paidAttrs.length > 0 && (
-                                    <div className="mt-4">
-                                        <div className="text-xs font-medium" style={{ color: 'var(--drv-text-muted)' }}>
-                                            Paid attributes
-                                        </div>
-                                        {/* True today whoever the charge lands on: the price
-                                            is incurred each time a visitor presents one. Who
-                                            is billed is the next change, and this copy moves
-                                            with it. */}
-                                        <p className="mb-2 mt-1 text-xs" style={{ color: 'var(--drv-text-muted)' }}>
-                                            These are certified from the visitor&apos;s government ID, so each one is
-                                            charged every time a visitor presents it. Prices are per visitor.
-                                        </p>
-                                        <div className="flex flex-wrap gap-2">
-                                            {paidAttrs.map((a) => attrChip(a))}
-                                        </div>
-                                        {chosenCost !== undefined && chosenCost > 0 && (
-                                            <p className="mt-2 text-xs font-medium" style={{ color: 'var(--drv-text)' }}>
-                                                Each visitor who presents what you have chosen costs{' '}
-                                                {formatCredits(chosenCost)}.
-                                            </p>
-                                        )}
-                                    </div>
+                                {/* The SDK's picker, the one every Privasys surface uses, so
+                                    a sharer meets the same sections and trust markers here
+                                    as a developer registering an app. Drive only words its
+                                    sections for a visitor and hands it Drive's colours. */}
+                                {referential !== null && referential.length > 0 && (
+                                    <PrivasysAttributePicker
+                                        className="drv-attribute-picker"
+                                        layout="chips"
+                                        attributes={referential}
+                                        selected={reqAttrs}
+                                        onChange={setReqAttrs}
+                                        prices={prices}
+                                        copy={PICKER_COPY}
+                                        totalTemplate="Each visitor who presents what you have chosen costs {price}."
+                                    />
                                 )}
                             </div>
                         )}
