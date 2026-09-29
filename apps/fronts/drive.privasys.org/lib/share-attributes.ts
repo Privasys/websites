@@ -20,7 +20,6 @@
 
 import {
     fetchAttributeReferential,
-    isBillable,
     isGovVerified,
     marketplaceKeyOf,
     requestableAttributes,
@@ -33,12 +32,6 @@ export interface ShareAttribute {
     key: string;
     label: string;
     assurance: Assurance;
-    /**
-     * Requiring it carries a charge per visitor who presents it: the
-     * marketplace sells it, rather than merely naming it. Decides which
-     * section of the picker it sits in.
-     */
-    billable: boolean;
     /**
      * The `<namespace>:<name>` form the marketplace prices this attribute
      * under, when it sells one at all. The picker looks the displayed price up
@@ -65,7 +58,6 @@ function toShareAttribute(a: CanonicalAttribute, govToSelf: Map<string, string>)
         key: a.key,
         label: a.label,
         assurance,
-        billable: isBillable(a),
         marketplaceKey: marketplaceKeyOf(a),
         selfKey: govToSelf.get(a.key),
         govKey: a.govKey
@@ -76,32 +68,36 @@ function toShareAttribute(a: CanonicalAttribute, govToSelf: Map<string, string>)
 // and sends `Cache-Control: public, max-age=3600`, so the browser cache absorbs
 // repeat visits; there is nothing to gain from a copy in local storage that
 // would only reintroduce the staleness this module exists to avoid.
-let pending: Promise<ShareAttribute[]> | null = null;
+let raw: Promise<CanonicalAttribute[]> | null = null;
 
 /**
- * The attributes a link can require, from the referential the IdP is serving
- * right now rather than the copy bundled with whichever SDK version this build
- * pinned. A share link outlives a deploy, and offering an attribute the IdP has
- * since renamed is a link nobody can open.
+ * The referential the IdP is serving right now, rather than the copy bundled
+ * with whichever SDK version this build pinned. A share link outlives a deploy,
+ * and offering an attribute the IdP has since renamed or re-priced is a link
+ * nobody can open. The SDK's picker takes it as it comes; the labels and key
+ * mappings below are derived from the same fetch.
  */
-export function loadShareAttributes(): Promise<ShareAttribute[]> {
-    if (!pending) {
-        pending = fetchAttributeReferential()
-            .then((attrs) => {
-                // The referential points from a self-asserted key to its
-                // government-backed twin; the picker needs the other direction.
-                const govToSelf = new Map<string, string>();
-                for (const a of attrs) if (a.govKey) govToSelf.set(a.govKey, a.key);
-                return requestableAttributes(attrs).map((a) => toShareAttribute(a, govToSelf));
-            })
-            .catch((e: unknown) => {
-                // Let the next caller retry rather than caching the failure for
-                // the life of the tab.
-                pending = null;
-                throw e;
-            });
+export function loadReferential(): Promise<CanonicalAttribute[]> {
+    if (!raw) {
+        raw = fetchAttributeReferential().catch((e: unknown) => {
+            // Let the next caller retry rather than caching the failure for the
+            // life of the tab.
+            raw = null;
+            throw e;
+        });
     }
-    return pending;
+    return raw;
+}
+
+/** The attributes a link can require, in the shape this module's helpers use. */
+export function loadShareAttributes(): Promise<ShareAttribute[]> {
+    return loadReferential().then((attrs) => {
+        // The referential points from a self-asserted key to its
+        // government-backed twin; the helpers need the other direction.
+        const govToSelf = new Map<string, string>();
+        for (const a of attrs) if (a.govKey) govToSelf.set(a.govKey, a.key);
+        return requestableAttributes(attrs).map((a) => toShareAttribute(a, govToSelf));
+    });
 }
 
 export function assuranceLabel(a: Assurance): string {
