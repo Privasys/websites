@@ -20,6 +20,7 @@
 
 import {
     fetchAttributeReferential,
+    isBillable,
     isGovVerified,
     marketplaceKeyOf,
     requestableAttributes,
@@ -33,10 +34,16 @@ export interface ShareAttribute {
     label: string;
     assurance: Assurance;
     /**
+     * Requiring it carries a charge per visitor who presents it: the
+     * marketplace sells it, rather than merely naming it. Decides which
+     * section of the picker it sits in.
+     */
+    billable: boolean;
+    /**
      * The `<namespace>:<name>` form the marketplace prices this attribute
-     * under, when it sells one at all. Present means requiring it costs the
-     * sharer credits; the service resolves the charge against the live
-     * catalogue, so this is for labelling the choice, not for pricing it.
+     * under, when it sells one at all. The picker looks the displayed price up
+     * by it; the service resolves the actual charge against the live
+     * catalogue, so what is shown is the price, never the bill of record.
      */
     marketplaceKey?: string;
     /**
@@ -58,6 +65,7 @@ function toShareAttribute(a: CanonicalAttribute, govToSelf: Map<string, string>)
         key: a.key,
         label: a.label,
         assurance,
+        billable: isBillable(a),
         marketplaceKey: marketplaceKeyOf(a),
         selfKey: govToSelf.get(a.key),
         govKey: a.govKey
