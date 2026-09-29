@@ -17,7 +17,14 @@ import {
 } from '~/lib/drive-api';
 import { avatarColor, granteeLabel, initials } from '~/lib/format';
 import { PrivasysAttributeBadge } from '@privasys/auth/react';
-import { assuranceLabel, attributeLabel, loadShareAttributes, type ShareAttribute } from '~/lib/share-attributes';
+import {
+    assuranceLabel,
+    attributeLabel,
+    loadShareAttributes,
+    requestKeyFor,
+    type ShareAttribute
+} from '~/lib/share-attributes';
+import { buildLinkURL } from '~/lib/share-link-url';
 import { fetchAttributePrices, formatCredits, perVisitorCost, priceOf } from '~/lib/attribute-prices';
 import { useDrive } from '~/lib/use-drive';
 import { CloseIcon, FolderIcon, FileIcon, LinkIcon, LockIcon, TrashIcon } from './icons';
@@ -25,9 +32,21 @@ import { CloseIcon, FolderIcon, FileIcon, LinkIcon, LockIcon, TrashIcon } from '
 // Tenant member roles an enterprise folder ACL can narrow to.
 const ROLE_OPTIONS = ['owner', 'admin', 'contributor', 'reader'] as const;
 
-function linkURL(id: string, secret: string): string {
+// The address a visitor opens. A restricted link names what it requires, as
+// the key the wallet must be asked for rather than the marketplace spelling it
+// is stored under, so the visitor's first approval already shows it. See
+// lib/share-link-url for why this is a hint the enclave does not rely on.
+function linkURL(
+    link: { id: string; mode: LinkMode; required_attributes?: string[] },
+    secret: string,
+    attrs: ShareAttribute[]
+): string {
     const origin = typeof window !== 'undefined' ? window.location.origin : 'https://drive.privasys.org';
-    return `${origin}/l?id=${id}#${secret}`;
+    const ask =
+        link.mode === 'restricted'
+            ? (link.required_attributes ?? []).map((k) => requestKeyFor(attrs, k))
+            : undefined;
+    return buildLinkURL(origin, link.id, secret, ask);
 }
 
 export function ShareDialog({
@@ -122,7 +141,7 @@ export function ShareDialog({
                 requiredAttributes: mode === 'restricted' ? reqAttrs : undefined
             });
             setGenerated(created);
-            await copyLink(created.id, created.secret);
+            await copyLink(created, created.secret);
             await load();
         } catch (e) {
             setError(e instanceof Error ? e.message : 'Could not create the link.');
@@ -131,9 +150,10 @@ export function ShareDialog({
         }
     };
 
-    const copyLink = async (id: string, secret: string) => {
+    const copyLink = async (link: { id: string; mode: LinkMode; required_attributes?: string[] }, secret: string) => {
+        const id = link.id;
         try {
-            await navigator.clipboard.writeText(linkURL(id, secret));
+            await navigator.clipboard.writeText(linkURL(link, secret, shareAttrs ?? []));
             setCopied(id);
             setTimeout(() => setCopied((cur) => (cur === id ? null : cur)), 5000);
         } catch {
@@ -342,7 +362,7 @@ export function ShareDialog({
                             // selectable field so the link is not lost.
                             <input
                                 readOnly
-                                value={linkURL(generated.id, generated.secret)}
+                                value={linkURL(generated, generated.secret, shareAttrs ?? [])}
                                 onFocus={(e) => e.currentTarget.select()}
                                 className="mt-3 w-full rounded-lg border px-3 py-2 text-xs outline-none"
                                 style={{ borderColor: 'var(--drv-border)', background: 'var(--drv-surface)' }}
@@ -365,7 +385,7 @@ export function ShareDialog({
                                             </span>
                                             {l.secret && (
                                                 <button
-                                                    onClick={() => void copyLink(l.id, l.secret!)}
+                                                    onClick={() => void copyLink(l, l.secret!)}
                                                     disabled={busy}
                                                     className="rounded-full border px-2.5 py-1 text-xs font-medium hover:bg-[var(--drv-hover)]"
                                                     style={{ borderColor: 'var(--drv-border)', color: 'var(--drv-text)' }}
