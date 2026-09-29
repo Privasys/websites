@@ -18,6 +18,8 @@ import {
 import { avatarColor, granteeLabel, initials } from '~/lib/format';
 import { PrivasysAttributeBadge } from '@privasys/auth/react';
 import { assuranceLabel, attributeLabel, loadShareAttributes, type ShareAttribute } from '~/lib/share-attributes';
+import { fetchAttributePrices, formatCredits, perVisitorCost, priceOf } from '~/lib/attribute-prices';
+import { useDrive } from '~/lib/use-drive';
 import { CloseIcon, FolderIcon, FileIcon, LinkIcon, LockIcon, TrashIcon } from './icons';
 
 // Tenant member roles an enterprise folder ACL can narrow to.
@@ -70,6 +72,21 @@ export function ShareDialog({
             live = false;
         };
     }, []);
+
+    // What each paid attribute costs, from the marketplace catalogue. The
+    // catalogue needs the holder's platform token; without one, or if it
+    // cannot be reached, the chips fall back to saying "Paid" rather than
+    // showing a price nobody confirmed.
+    const { holderToken } = useDrive();
+    const [prices, setPrices] = useState<Map<string, number> | null>(null);
+    useEffect(() => {
+        if (!holderToken) return;
+        const ctrl = new AbortController();
+        fetchAttributePrices(holderToken, ctrl.signal)
+            .then(setPrices)
+            .catch(() => undefined);
+        return () => ctrl.abort();
+    }, [holderToken]);
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -126,6 +143,50 @@ export function ShareDialog({
 
     const toggleAttr = (k: string) =>
         setReqAttrs((cur) => (cur.includes(k) ? cur.filter((x) => x !== k) : [...cur, k]));
+
+    // Paid attributes get a section of their own. Mixed into one list, a run
+    // of "Paid" chips read as a label rather than as a charge that recurs
+    // with every visitor, which is the thing a sharer most needs to notice.
+    const freeAttrs = (shareAttrs ?? []).filter((a) => !a.billable);
+    const paidAttrs = (shareAttrs ?? []).filter((a) => a.billable);
+    const chosenCost = perVisitorCost(prices, shareAttrs ?? [], reqAttrs);
+
+    const attrChip = (a: ShareAttribute) => {
+        const on = reqAttrs.includes(a.key);
+        const price = a.billable ? priceOf(prices, a) : undefined;
+        return (
+            <button
+                key={a.key}
+                onClick={() => toggleAttr(a.key)}
+                title={
+                    a.selfKey
+                        ? `${assuranceLabel(a.assurance)} attribute — "${attributeLabel(shareAttrs ?? [], a.selfKey)}" asks the same question without a document`
+                        : `${assuranceLabel(a.assurance)} attribute`
+                }
+                className="flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs"
+                style={{
+                    borderColor: on ? 'var(--drv-accent)' : 'var(--drv-border)',
+                    background: on ? 'var(--drv-accent-weak)' : 'transparent',
+                    color: on ? 'var(--drv-accent)' : 'var(--drv-text)'
+                }}
+            >
+                {a.label}
+                {/* The SDK's own badge, so a sharer sees the same
+                    government-ID marker here as in the wallet
+                    consent screen the visitor will meet. Its "Paid"
+                    marker is replaced by the price where one is known. */}
+                <PrivasysAttributeBadge attribute={a.key} showPaid={a.billable && price === undefined} />
+                {price !== undefined && (
+                    <span
+                        className="rounded-full px-1.5 py-0.5 font-medium tabular-nums"
+                        style={{ background: 'rgba(217, 119, 6, 0.12)', color: 'rgb(180, 83, 9)' }}
+                    >
+                        {formatCredits(price)}
+                    </span>
+                )}
+            </button>
+        );
+    };
 
     const activeGrants = (perms?.grants ?? []).filter(
         (g) => !g.revoked && g.subject.startsWith('subject:')
@@ -230,30 +291,33 @@ export function ShareDialog({
                                     </div>
                                 )}
                                 <div className="flex flex-wrap gap-2">
-                                    {(shareAttrs ?? []).map((a) => (
-                                        <button
-                                            key={a.key}
-                                            onClick={() => toggleAttr(a.key)}
-                                            title={
-                                                a.selfKey
-                                                    ? `${assuranceLabel(a.assurance)} attribute — "${attributeLabel(shareAttrs ?? [], a.selfKey)}" asks the same question without a document`
-                                                    : `${assuranceLabel(a.assurance)} attribute`
-                                            }
-                                            className="flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs"
-                                            style={{
-                                                borderColor: reqAttrs.includes(a.key) ? 'var(--drv-accent)' : 'var(--drv-border)',
-                                                background: reqAttrs.includes(a.key) ? 'var(--drv-accent-weak)' : 'transparent',
-                                                color: reqAttrs.includes(a.key) ? 'var(--drv-accent)' : 'var(--drv-text)'
-                                            }}
-                                        >
-                                            {a.label}
-                                            {/* The SDK's own badge, so a sharer sees the same
-                                                government-ID marker here as in the wallet
-                                                consent screen the visitor will meet. */}
-                                            <PrivasysAttributeBadge attribute={a.key} showPaid />
-                                        </button>
-                                    ))}
+                                    {freeAttrs.map((a) => attrChip(a))}
                                 </div>
+
+                                {paidAttrs.length > 0 && (
+                                    <div className="mt-4">
+                                        <div className="text-xs font-medium" style={{ color: 'var(--drv-text-muted)' }}>
+                                            Paid attributes
+                                        </div>
+                                        {/* True today whoever the charge lands on: the price
+                                            is incurred each time a visitor presents one. Who
+                                            is billed is the next change, and this copy moves
+                                            with it. */}
+                                        <p className="mb-2 mt-1 text-xs" style={{ color: 'var(--drv-text-muted)' }}>
+                                            These are certified from the visitor&apos;s government ID, so each one is
+                                            charged every time a visitor presents it. Prices are per visitor.
+                                        </p>
+                                        <div className="flex flex-wrap gap-2">
+                                            {paidAttrs.map((a) => attrChip(a))}
+                                        </div>
+                                        {chosenCost !== undefined && chosenCost > 0 && (
+                                            <p className="mt-2 text-xs font-medium" style={{ color: 'var(--drv-text)' }}>
+                                                Each visitor who presents what you have chosen costs{' '}
+                                                {formatCredits(chosenCost)}.
+                                            </p>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                         )}
 
