@@ -1230,9 +1230,25 @@ export function removeAccountMember(token: string, sub: string): Promise<{ membe
 
 export interface BillingBalance {
     account_id: string;
+    /** The general balance. Pot credits never count toward it. */
     balance: number;
     frozen: boolean;
     updated_at: string;
+    /** Unexpired credits spendable on one app only. */
+    pots?: CreditPot[];
+}
+
+/** Credits spendable only on what one app serves (inference by default), until expires_at. */
+export interface CreditPot {
+    id: string;
+    scope_app_id: string;
+    resource_prefix: string;
+    granted: number;
+    balance: number;
+    expires_at: string;
+    reason?: string;
+    app_name?: string;
+    app_host?: string;
 }
 
 export interface BillingUsageResource {
@@ -1357,6 +1373,9 @@ export interface RedeemResponse {
     credits: number;
     already_redeemed: boolean;
     balance: BillingBalance;
+    /** Set when the code funded a pot for one app. */
+    pot?: { credits: number; app_id: string; app_name?: string; app_host?: string; expires_at: string };
+    platform_credits?: number;
 }
 
 /** Redeem a promo code (e.g. WELCOME-JUNE-2026) for free platform credits. */
@@ -1364,6 +1383,50 @@ export async function redeemPromoCode(token: string, code: string): Promise<Rede
     return request<RedeemResponse>('/api/v1/billing/redeem', token, {
         method: 'POST',
         body: JSON.stringify({ code })
+    });
+}
+
+/**
+ * A credit code. With scope_app_id its credits fund a pot spendable only on
+ * what that app serves (inference by default) until credits_expire_at, and
+ * platform_credits go to the general balance beside it.
+ */
+export interface PromoCode {
+    code: string;
+    credits: number;
+    description: string;
+    active: boolean;
+    expires_at: string | null;
+    max_redemptions: number | null;
+    redemption_count: number;
+    created_by: string;
+    created_at: string;
+    scope_app_id?: string;
+    resource_prefix?: string;
+    credits_expire_at?: string;
+    platform_credits: number;
+}
+
+export interface NewPromoCode {
+    code: string;
+    credits: number;
+    description?: string;
+    expires_at?: string;
+    max_redemptions?: number;
+    scope_app_id?: string;
+    credits_expire_at?: string;
+    platform_credits?: number;
+}
+
+export async function adminListPromoCodes(token: string): Promise<PromoCode[]> {
+    const res = await request<{ codes: PromoCode[] }>('/api/v1/admin/promo-codes', token);
+    return res.codes ?? [];
+}
+
+export function adminCreatePromoCode(token: string, body: NewPromoCode): Promise<{ code: string }> {
+    return request<{ code: string }>('/api/v1/admin/promo-codes', token, {
+        method: 'POST',
+        body: JSON.stringify(body)
     });
 }
 
