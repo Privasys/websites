@@ -155,11 +155,18 @@ export default function BillingPage() {
         setError('');
         try {
             const res = await redeemPromoCode(session.accessToken, promoCode.trim());
-            setPromoMsg(
-                res.already_redeemed
-                    ? `You have already redeemed ${res.code}.`
-                    : `${res.code} redeemed — ${fmtCredits(res.credits)} credits (${gbp(res.credits)}) added.`
-            );
+            let msg: string;
+            if (res.already_redeemed) {
+                msg = `You have already redeemed ${res.code}.`;
+            } else if (res.pot) {
+                const app = res.pot.app_name || res.pot.app_host || 'one app';
+                const until = new Date(res.pot.expires_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long' });
+                msg = `${res.code} redeemed: ${gbp(res.pot.credits)} for ${app}, usable until ${until}.`;
+                if (res.platform_credits && res.platform_credits > 0) msg += ` Plus ${gbp(res.platform_credits)} of general credits.`;
+            } else {
+                msg = `${res.code} redeemed: ${fmtCredits(res.credits)} credits (${gbp(res.credits)}) added.`;
+            }
+            setPromoMsg(msg);
             setPromoCode('');
             await load();
             notifyBalanceChanged();
@@ -226,6 +233,23 @@ export default function BillingPage() {
                             <div className="mt-1 text-sm text-black/50 dark:text-white/50">
                                 ≈ {gbp(balance?.balance ?? 0)} remaining
                             </div>
+                            {(balance?.pots ?? []).length > 0 && (
+                                <div className="mt-5 pt-4 border-t border-black/10 dark:border-white/10 space-y-3">
+                                    <span className="text-xs font-medium uppercase tracking-wide text-black/50 dark:text-white/50">
+                                        For one app only
+                                    </span>
+                                    {(balance?.pots ?? []).map((p) => (
+                                        <div key={p.id} className="flex items-baseline justify-between gap-4 text-sm">
+                                            <span>
+                                                {gbp(p.balance)} of {gbp(p.granted)} for {p.app_name || p.app_host || p.scope_app_id.slice(0, 8)}
+                                            </span>
+                                            <span className="text-black/50 dark:text-white/50 whitespace-nowrap">
+                                                until {new Date(p.expires_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     </section>
 
