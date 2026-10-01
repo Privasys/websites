@@ -41,11 +41,11 @@ jobs:
             echo "env_file=~/chat.env"                          >> "$GITHUB_OUTPUT"
             # Production chat is backed by the prod inference fleet on the
             # prod management-service (api.developer.privasys.org): fleet
-            # "demo" -> prod confidential-ai enclave on m2-tdx-gpu. Staging
-            # (chat.test.privasys.org) now points at the same prod fleet,
-            # since the dev inference VM no longer exists.
+            # "imperial" -> cai-imperial on the Imperial College London
+            # enclave (the GCP fleet stopped on 2026-09-30). Staging
+            # (chat.test.privasys.org) points at the same prod fleet.
             echo "api_url=https://api.developer.privasys.org" >> "$GITHUB_OUTPUT"
-            echo "default_instance=demo"                        >> "$GITHUB_OUTPUT"
+            echo "default_instance=imperial"                    >> "$GITHUB_OUTPUT"
             # No dedicated chat-service back-end in prod yet: leave the
             # chat-service URL empty so BYO-MCP stays fully dormant there.
             echo "chat_service_url="                            >> "$GITHUB_OUTPUT"
@@ -71,12 +71,10 @@ jobs:
             # There is no dev inference fleet any more
             # (confidential-ai.apps-test no longer resolves), so
             # chat.test.privasys.org is backed by the PROD management-service,
-            # whose "demo" alias is the prod fleet (canonical confidential-ai
-            # on m4-tdx-gpu since the 2026-08-27 cutover). The "staging"
-            # alias (cai-probe2, same enclave) exists for validating engine
-            # rolls before they reach canonical.
+            # whose "imperial" alias is the prod fleet (cai-imperial on the
+            # Imperial College London enclave since 2026-10-01).
             echo "api_url=https://api.developer.privasys.org"      >> "$GITHUB_OUTPUT"
-            echo "default_instance=demo"                           >> "$GITHUB_OUTPUT"
+            echo "default_instance=imperial"                       >> "$GITHUB_OUTPUT"
             # BYO-MCP stays dormant here: the dev chat-service enclave is down,
             # and a grant it minted would carry an audience the prod instance
             # rejects, so an empty URL is the honest wiring.
