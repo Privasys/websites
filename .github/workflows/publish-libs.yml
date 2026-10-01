@@ -1,0 +1,52 @@
+name: Publish libs
+
+# Publishes a shared front-end lib to GitHub Packages, so an app that lives
+# outside this monorepo (Drive builds its UI into its own measured image) can
+# pin an exact version instead of reaching into libs/ by path.
+#
+# Tag <lib>-v<version> at a commit whose libs/<lib>/package.json carries that
+# version, e.g. ui-v0.1.0 or attestation-view-v0.1.0. The libs ship as
+# TypeScript source; consumers list them in next.config transpilePackages.
+
+on:
+  push:
+    tags:
+      - 'ui-v*'
+      - 'attestation-view-v*'
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.x
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@privasys'
+
+      - name: Resolve the lib and its version
+        id: lib
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          LIB="${TAG%-v*}"
+          VERSION="${TAG##*-v}"
+          test -f "libs/${LIB}/package.json" || { echo "::error::No libs/${LIB}"; exit 1; }
+          HAVE=$(node -p "require('./libs/${LIB}/package.json').version")
+          if [ "$HAVE" != "$VERSION" ]; then
+            echo "::error::Tag says ${VERSION} but libs/${LIB}/package.json says ${HAVE}"
+            exit 1
+          fi
+          echo "dir=libs/${LIB}" >> "$GITHUB_OUTPUT"
+
+      - name: Publish
+        working-directory: ${{ steps.lib.outputs.dir }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm publish
