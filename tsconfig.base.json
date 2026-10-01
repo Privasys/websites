@@ -25,8 +25,6 @@
             "@privasys/app-call/*": ["libs/app-call/src/*"],
             "@privasys/attestation-view": ["libs/attestation-view/src/index.ts"],
             "@privasys/attestation-view/*": ["libs/attestation-view/src/*"],
-            "@privasys/drive-client": ["libs/drive-client/src/index.ts"],
-            "@privasys/drive-client/*": ["libs/drive-client/src/*"],
             "@privasys/cli-window": ["libs/cli-window/src/index.ts"],
             "@privasys/cli-window/*": ["libs/cli-window/src/*"]
         },
