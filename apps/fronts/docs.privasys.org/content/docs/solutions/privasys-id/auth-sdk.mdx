@@ -97,9 +97,13 @@ A sealed session reports its state and survives its own recovery. Keep using the
 
 ```ts
 session.onState((s) => {
-  if (s.status === 'reapproval-required' || s.status === 'signed-out') void frame.connect();
+  if (s.status === 'reapproval-required' || s.status === 'signed-out') {
+    void frame.connect({ container: gateElement }); // the gate you just mounted
+  }
 });
 ```
+
+A sealed WebSocket refused because the enclave forgot the session is re-opened by the SDK on the recovered session, queued sends intact. Create one `AuthFrame` per page and per enclave host (`sessionRelay.appHost` is fixed at construction); the SDK warns when a second one for the same host is alive.
 
 ## SSO across sites
 

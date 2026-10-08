@@ -233,7 +233,9 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
     // approval (e.g. the enclave's platform was upgraded and the user must
     // re-approve the new measurement on their phone). Drives the
     // "approve on your phone" hint on the reconnect banner.
-    const [sealedApprovalPending, setSealedApprovalPending] = useState(false);
+    // The SDK gate now renders the "approve on your phone" state itself; kept
+    // on the context so consumers need no change.
+    const sealedApprovalPending = false;
     const frameRef = useRef<AuthFrame | null>(null);
     // In-flight one-shot inline sign-in frame (signInInto); lets
     // cancelSignIn abort the ceremony when the user navigates away.
@@ -250,6 +252,20 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
     // session; this map keeps one frame + session per appHost.
     const sealedByHost = useRef<Map<string, { frame: AuthFrame; session: SealedSession }>>(new Map());
     const sealedByHostInFlight = useRef<Map<string, Promise<SealedSession | null>>>(new Map());
+    // Live mirror of the primary sealed session for callbacks that must not
+    // re-create on every change.
+    const sealedSessionRef = useRef<SealedSession | null>(null);
+    useEffect(() => { sealedSessionRef.current = sealedSession; }, [sealedSession]);
+
+    // Follow the primary session's liveness: a refused voucher names what
+    // changed (the stale banner shows it), and a recovered session clears it.
+    useEffect(() => {
+        if (!sealedSession) return;
+        return sealedSession.onState((s) => {
+            if (s.status === 'reapproval-required') setStaleReason(parseStaleReason(`rejected:${s.reason ?? ''}`));
+            else if (s.status === 'ok') setStaleReason(null);
+        });
+    }, [sealedSession]);
 
     const getFrame = useCallback(() => {
         if (!frameRef.current) {
@@ -404,30 +420,40 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
                 methods?: readonly ('wallet' | 'passkey' | 'social')[];
             }
         ): Promise<void> => {
-            const frame = new AuthFrame({
-                ...config,
-                container,
-                presentation: 'page',
-                ...(opts?.pitch ? { pitch: opts.pitch } : {}),
-                ...(opts?.app ? { app: opts.app } : {}),
-                ...(opts?.methods ? { methods: opts.methods } : {}),
-                ...(opts?.appHost
-                    ? {
-                        sessionRelay: {
-                            appHost: opts.appHost,
-                            ...(opts.extraAppHosts?.length ? { extraAppHosts: opts.extraAppHosts } : {})
+            // Recovery on the SAME frame: when the primary sealed frame for
+            // this host already exists, connect() on it runs the one-tap
+            // approval or the sign-in in the new container and re-points
+            // the session object the shell already holds. A frame is only
+            // built when there is none for the host (or the host changed).
+            const reuse = !!opts?.appHost && sealedFrameRef.current !== null && sealedHostRef.current === opts.appHost;
+            if (!reuse && opts?.appHost && sealedFrameRef.current) {
+                sealedFrameRef.current.destroy();
+                sealedFrameRef.current = null;
+                sealedHostRef.current = null;
+            }
+            const frame = reuse
+                ? sealedFrameRef.current!
+                : new AuthFrame({
+                    ...config,
+                    container,
+                    presentation: 'page',
+                    ...(opts?.pitch ? { pitch: opts.pitch } : {}),
+                    ...(opts?.app ? { app: opts.app } : {}),
+                    ...(opts?.methods ? { methods: opts.methods } : {}),
+                    ...(opts?.appHost
+                        ? {
+                            sessionRelay: {
+                                appHost: opts.appHost,
+                                ...(opts.extraAppHosts?.length ? { extraAppHosts: opts.extraAppHosts } : {})
+                            }
                         }
-                    }
-                    : {})
-            });
+                        : {})
+                });
             inlineFrameRef.current = frame;
             try {
-                const res = await frame.connect();
+                const res = await frame.connect({ container });
                 acceptResultToken(res.accessToken);
                 if (opts?.appHost && res.session) {
-                    // Adopt as the primary sealed transport, retiring any
-                    // stale pre-redeploy frame.
-                    if (sealedFrameRef.current) sealedFrameRef.current.destroy();
                     sealedFrameRef.current = frame;
                     sealedHostRef.current = opts.appHost;
                     setSealedSession(res.session);
@@ -486,12 +512,38 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
     // "reconnecting" vs. a hard "the back-end changed, sign in again" prompt.
     const reestablishSealed = useCallback(
         async (appHost: string): Promise<SealedResumeOutcome> => {
-            setSealedSession(null);
-            sealedFrameRef.current?.destroy();
+            // A live primary session recovers ITSELF: the SDK rebinds a
+            // forgotten session from the voucher (requests and sockets alike)
+            // and reports where it stands. Read that instead of tearing the
+            // frame down and rebuilding it, which is what used to lose the
+            // shared refresh token mid-renewal and sign every site out.
+            const live = sealedFrameRef.current && sealedHostRef.current === appHost ? sealedSessionRef.current : null;
+            if (live) {
+                const st = live.state;
+                switch (st.status) {
+                    case 'ok':
+                        return 'ok';
+                    case 'recovering':
+                        return 'unavailable';
+                    case 'reapproval-required':
+                        // The gate's connectInto() runs the one-tap approval
+                        // on this same frame; keep the reason for the banner.
+                        setStaleReason(parseStaleReason(`rejected:${st.reason ?? ''}`));
+                        return st.reason === 'no-voucher' ? 'no-voucher' : 'rejected';
+                    case 'signed-out':
+                        return 'no-voucher';
+                }
+            }
+            // No primary session yet (cold reload): resume from the voucher
+            // on this host's frame, building it once.
             sealedResumeInFlight.current = null;
-            const frame = new AuthFrame({ ...config, sessionRelay: { appHost } });
-            sealedFrameRef.current = frame;
-            sealedHostRef.current = appHost;
+            let frame = sealedFrameRef.current;
+            if (!frame || sealedHostRef.current !== appHost) {
+                frame?.destroy();
+                frame = new AuthFrame({ ...config, sessionRelay: { appHost } });
+                sealedFrameRef.current = frame;
+                sealedHostRef.current = appHost;
+            }
             try {
                 // Bound the rebind: the voucher ceremony runs in the privasys.id
                 // iframe and can hang (enclave rebind endpoint stalls, iframe
@@ -518,35 +570,11 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
                 // a platform roll from a stranded "Reconnect" into a one-tap
                 // re-approval — no sign-out, no wallet forget/re-add. A hung
                 // silent resume (timeout) is NOT recoverable this way.
-                const recoverable =
-                    !msg.includes('sealed-resume-timeout') &&
-                    (msg.includes('no-voucher') || msg.includes('rejected'));
-                if (recoverable) {
-                    try {
-                        console.warn(`[chat-auth] sealed ${appHost} ${msg} — requesting wallet re-approval`);
-                        setSealedApprovalPending(true);
-                        // Mount this frame's session iframe so the voucher RPC
-                        // has a live channel, then push + resume. requestAppVoucher
-                        // resolves only once a NEW voucher lands (human-scale
-                        // deadline inside the SDK), so it is NOT wrapped in the
-                        // short silent-resume timeout.
-                        await frame.getSession();
-                        await frame.requestAppVoucher(appHost);
-                        const s = await withTimeout(frame.resumeSession(), 15_000, 'sealed-resume-timeout');
-                        setSealedSession(s);
-                        setStaleReason(null);
-                        return 'ok';
-                    } catch (e2) {
-                        // Push declined, timed out, wallet too old, or the enclave
-                        // still refuses → fall through to the stale prompt below.
-                        console.warn(`[chat-auth] wallet re-approval for ${appHost} did not complete:`, (e2 as Error).message);
-                    } finally {
-                        setSealedApprovalPending(false);
-                    }
-                }
-
-                try { frame.destroy(); } catch { /* frame already torn down */ }
-                // Recovery exhausted. Keep the enclave's reason
+                // A refused or missing voucher is answered by the gate: its
+                // connectInto() runs the SDK's one-tap approval on this frame
+                // (the wallet re-attests and mints a fresh voucher), so no
+                // push is hand-rolled here and the frame is kept.
+                // Keep the enclave's reason
                 // (`rejected:workload-changed` / `rejected:enc-changed`) so the
                 // stale banner says WHAT changed instead of a generic prompt.
                 if (msg.includes('rejected')) {
