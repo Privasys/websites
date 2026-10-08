@@ -157,7 +157,9 @@ session.onState((s) => {
 });
 ```
 
-Calling `connect()` again on the same frame renders the approval (or the sign-in) in your container and, when it completes, points the **same** `session` object at the new carrier. Your transport, your open views, your in-memory state all survive. Show the gate over the app while this happens; do not unmount the app.
+Calling `connect()` again on the same frame renders the approval (or the sign-in) in your container and, when it completes, points the **same** `session` object at the new carrier. Your transport, your open views, your in-memory state all survive. Show the gate over the app while this happens; do not unmount the app. If your gate container is mounted fresh for the occasion (a React gate usually is), pass it: `connect({ container })`.
+
+Sealed WebSockets are covered too: a socket the enclave refuses because it forgot the session is re-opened by the SDK on the recovered session, with anything you sent in the meantime delivered in order. Your reconnect-with-backoff logic is for the enclave being down, not for this.
 
 ## A complete provider
 
@@ -201,7 +203,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       recovering.current = true;
       setGateShown(true);
       try {
-        await frame().connect();
+        // The gate container was unmounted after sign-in; hand the frame
+        // the freshly mounted one to render the approval into.
+        await frame().connect({ container: gateRef.current! });
         setMe(await fetchMe(session));
         setGateShown(false);
       } catch (e) {
