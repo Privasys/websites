@@ -3,6 +3,7 @@
     "defaultOpen": false,
     "pages": [
         "index",
+        "integrate-auth-sdk",
         "enclave-upgrade",
         "age-verification"
     ]

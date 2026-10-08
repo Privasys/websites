@@ -1,88 +1,120 @@
 ---
 title: Auth SDK
-description: The browser SDK that adds Privasys ID sign-in and sealed transport to any web app.
+description: The browser SDK that adds Privasys ID sign-in and a sealed channel to an attested enclave app, in one call.
 ---
 
-`@privasys/auth` is the browser SDK that any web app can drop in to get Privasys ID sign-in. It is hosted as an iframe under `privasys.id/auth/`, and the parent page interacts with it via a small `postMessage`-based RPC. There is no server-side dependency on the embedder's domain.
+`@privasys/auth` is the browser SDK a web app drops in to sign people in with Privasys ID and, when the app runs in an attested enclave, to talk to it over a sealed channel. The sign-in surface and the session key live in an iframe on `privasys.id`; the page talks to that iframe over a small typed `postMessage` interface and never sees a key. There is no server-side dependency on the embedding domain.
+
+For a step-by-step integration, read the [tutorial](/tutorials/integrate-auth-sdk).
 
 ## What the SDK does
 
-- Renders a QR code (or sends a push to a paired wallet) that initiates a FIDO2 ceremony.
-- Coordinates the wallet ↔ IdP handshake through the broker (an opaque WebSocket relay).
-- Caches the resulting OIDC tokens in iframe storage on `privasys.id` for cross-site SSO.
-- Surfaces an attribute-consent screen when the relying party requests profile data.
-- Falls back to federated sign-in (Google, Apple) when the user does not yet have a wallet.
-- For session-relay flows, exposes a `PrivasysSession` class for sealed end-to-end transport to attested enclaves.
+- Signs the user in: wallet ceremony by QR code or push to a paired wallet, with passkey and federated sign-in as configurable alternatives.
+- Keeps the user signed in: tokens are held in the iframe on `privasys.id`, renewed silently, and shared across every site that loads the SDK (cross-site SSO).
+- Asks for attributes the app declares, with the user's consent in the wallet.
+- When the app runs in an enclave, establishes a **sealed session**: AES-256-GCM end to end from the iframe to the enclave, through a gateway that only ever carries ciphertext, with requests, server-sent streams and WebSockets all sealed.
+- Keeps that sealed session alive without the user: when the enclave forgets it (idle, restart) the SDK re-establishes it from a voucher the wallet issued at sign-in, and only involves the user again when the enclave's measurement changed.
 
-## Embedding
+## Loading it
+
+Either install the package or load the hosted client bundle. Both expose the same `AuthFrame` class.
 
 ```html
-<script src="https://privasys.id/auth/iife.js" defer></script>
-
+<script src="https://privasys.id/auth/privasys-auth-client.iife.js"></script>
 <script>
-  PrivasysAuth.init({
-    appId: "my-app.example.com",
-    relayUrl: "wss://relay.privasys.org/relay",
-  }).then((auth) => {
-    document.getElementById("sign-in").addEventListener("click", () => auth.signIn());
-  });
+  const { AuthFrame } = window.Privasys;
 </script>
 ```
 
-`PrivasysAuth.init({...})` returns an `Auth` handle whose `signIn()`, `signOut()`, `currentUser()`, and `session()` methods are all asynchronous. Sign-in resolves when the user has completed the wallet ceremony and the iframe holds a valid OIDC session.
+```ts
+import { AuthFrame } from '@privasys/auth';
+```
 
-For React / Next.js apps the typical pattern is to call `init({...})` once in a top-level effect and store the handle in a context.
+The package is published to GitHub Packages. Apps that want one reviewed file in their image can vendor the hosted bundle instead: it holds no keys, and the part of the SDK that runs on `privasys.id` is served by Privasys and updated independently.
 
-## SSO across Privasys-ecosystem sites
+## One frame, one call
 
-Every site that loads the SDK from `privasys.id/auth/` shares the same iframe origin, so the iframe's IndexedDB session is visible to all of them. Signing in once on `chat.privasys.org` automatically signs the user in on `developer.privasys.org`, the [docs site](https://docs.privasys.org), and any third-party adopter using the same SDK build. Sign-out propagates the same way.
+Create **one** `AuthFrame` for the life of the page and call `connect()`:
 
-This is true cross-site SSO with no server coordination — the broker is opaque, the IdP is stateless about who is signed in where, and the only shared state lives in the iframe's local storage on `privasys.id`.
+```ts
+const frame = new AuthFrame({
+  apiBase: 'https://api.privasys.org',
+  authOrigin: 'https://privasys.id',
+  rpId: 'privasys.id',
+  clientId: 'my-app',                       // from your relying-party registration
+  appName: 'My App',
+  brokerUrl: 'wss://relay.privasys.org/relay',
+  scope: ['openid', 'offline_access'],
+  sessionRelay: { appHost: 'my-app.apps.privasys.org' },  // your enclave app
+  container: document.getElementById('gate'),
+  presentation: 'page',
+  methods: ['wallet'],
+  pitch: { title: 'Your data, sealed.', bullets: ['Nothing leaves the enclave in the clear.'] },
+  app: { displayName: 'My App', logoUrl: 'https://my-app.example/logo.svg' }
+});
+
+const { accessToken, session } = await frame.connect();
+```
+
+`connect()` does whichever of these the situation needs, in order, and resolves once the app has what it asked for:
+
+1. **Silent restore.** An existing Privasys ID session (SSO) and, with `sessionRelay`, the sealed session re-established from the stored voucher. No UI.
+2. **One-tap re-approval.** The session exists but the enclave refused the voucher because its measurement changed (the app was updated, or the platform under it). The gate asks for one approval in the wallet and explains what changed.
+3. **Sign-in.** The full ceremony, rendered in `container` per `presentation`.
+
+It rejects with a `ConnectError` whose `code` is `cancelled`, `timeout` or `failed`. To retry, call `connect()` again on the same frame.
+
+| Option | Meaning |
+| --- | --- |
+| `sessionRelay.appHost` | The enclave app's platform hostname. Always the platform name, never a custom domain the page may be served from. |
+| `scope`, `attributes` | What the sign-in asks for. Ask for the minimum: an attribute the user must first add to their wallet turns a returning visit into an onboarding. |
+| `presentation` | `page` renders the whole gate in your container; `inline` a compact column; `modal` an overlay. |
+| `methods` | Restrict to `wallet`, `passkey` or `social`. A sealed session needs the wallet, so enclave apps set `['wallet']`. |
+| `pitch`, `app` | Plain strings and an https logo, rendered by the SDK in its own styling. |
+
+## The sealed session
+
+With `sessionRelay` set, `connect()` resolves with a `SealedSession`. The session the app gets carries the user's identity: the enclave asserts it to the app as the `X-Privasys-Sub` header on every request, so the app never handles a token on this path.
+
+```ts
+const r = await session.request('GET', '/api/v1/me');      // { status, headers, body: Uint8Array, sealed }
+const s = await session.stream('POST', '/v1/chat', body);  // ReadableStream of plaintext bytes (SSE etc.)
+const ws = session.openWebSocket('/api/v1/events');        // sealed both ways; ready, send, onMessage, onClose
+```
+
+Every body leaves the browser as ciphertext in `application/privasys-sealed+cbor`. The HTTP status in `request()` is the app's own status, carried inside the sealed envelope. An **unsealed** 401 is different: it means the enclave no longer knows the session, and the SDK handles it itself (next section).
+
+### Liveness
+
+A sealed session reports its state and survives its own recovery. Keep using the same object; never rebuild your transport on an error.
+
+| `session.state.status` | What it means | What the app does |
+| --- | --- | --- |
+| `ok` | Requests flow. | Nothing. |
+| `recovering` | The enclave forgot the session (idle timeout, restart) and the SDK is re-establishing it from the voucher. `reason` names a transient obstacle (`unavailable`, `rate-limited`). | Show "reconnecting" if you like. A request made meanwhile may fail; the next one retries. |
+| `reapproval-required` | The enclave refused the voucher. `reason` says why: `workload-changed` (the app was updated), `enc-changed` (the platform changed), `voucher-expired`, `voucher-invalid`, `no-voucher`. | Call `frame.connect()` again. The gate runs the one-tap approval; the session object keeps working afterwards. |
+| `signed-out` | The Privasys ID session ended. | Call `frame.connect()` again; it signs the user in. |
+
+```ts
+session.onState((s) => {
+  if (s.status === 'reapproval-required' || s.status === 'signed-out') void frame.connect();
+});
+```
+
+## SSO across sites
+
+Every site that loads the SDK shares the iframe origin `privasys.id`, so the session held there is visible to all of them: signing in once signs the user in everywhere, and `frame.clearSession()` signs them out everywhere. There is no server coordination: the broker is opaque, the IdP is stateless about who is signed in where, and the only shared state lives in the iframe's storage.
+
+Because that session is shared, its renewal is coordinated across documents by the SDK. Create one `AuthFrame` per page; the SDK warns when a second is alive, because frames created and destroyed around each other are how a renewal is lost.
 
 ## Attribute consent
 
-When the relying party declares a list of attributes it wants (e.g. `["email", "name"]`), the iframe surfaces a consent screen during the sign-in flow. The user can pick which to provide. Granted attributes flow into the JWT for that sign-in only; refreshing the token does **not** re-include them (transient by design — see the [IdP page](/solutions/privasys-id/idp#refresh-tokens)).
-
-## `PrivasysSession` — sealed transport for browser-only consumers
-
-For apps whose backend runs in an attested enclave that the browser cannot RA-TLS-verify directly, the SDK additionally exports a `PrivasysSession` class. The class:
-
-1. Generates an ephemeral P-256 keypair in the iframe (WebCrypto, non-extractable private key).
-2. Receives the IdP-issued JWT carrying `session.enc_pub` and `att_quote_hash`.
-3. Derives `K = HKDF(ECDH(sdk_priv, enc_pub), salt = session_id, info = "privasys-session/v1")`.
-4. Validates `att_quote_hash` and `att_oids` against an app-supplied `attestationPolicy`.
-5. Exposes `request(method, path, body)` and `json(method, path, body)` methods that AES-256-GCM-seal request bodies and unseal responses, transparently to the parent.
-
-```js
-const session = await auth.session({
-  endpoint: "https://my-confidential-app.apps.privasys.org",
-  attestationPolicy: {
-    quoteHash: "abc123...",   // pinned at build time
-    oids: { "3.2": "def456..." },
-  },
-});
-
-const result = await session.json("POST", "/v1/messages", { text: "hello" });
-```
-
-The bytes that leave the browser are AES-GCM ciphertext in `application/privasys-sealed+cbor`. The platform gateway terminates the public TLS in front of the enclave — but the request body is sealed end-to-end; the gateway sees only ciphertext.
-
-See [Technology > Sealed Session](/technology/sealed-session) for the full protocol and trust argument.
-
-## Failure modes
-
-| Failure | SDK behaviour |
-| --- | --- |
-| JWT `aud` / `iss` / `exp` invalid | Sign-out, surface "auth failed" |
-| `sdk_pub_bind` mismatch | Sign-out (treated as JWT-replay attempt) |
-| `att_quote_hash` mismatch with `attestationPolicy` | Reject session creation; surface "enclave not approved" |
-| Counter rewind from server (sealed transport) | Destroy session, force re-auth |
-| AEAD failure | Destroy session, force re-auth |
+When the app declares attributes, the wallet shows a consent screen during sign-in and the user chooses what to share. Granted attributes flow into the JWT for that sign-in; refreshing the token does not re-include them. See the [IdP page](/solutions/privasys-id/idp#refresh-tokens) and the [attribute marketplace](/solutions/privasys-id/attribute-marketplace) for government-verified claims.
 
 ## Trust scope of the iframe
 
-The iframe lives on `privasys.id`. The parent page cannot read its IndexedDB, its WebCrypto keys, or its session table — same-origin policy applies. The parent talks to the iframe only via `postMessage`, with a small typed RPC. For session-relay specifically, this means `K` and `sdk_priv` never cross the iframe boundary; the parent submits *plaintext* via `postMessage` and receives plaintext responses.
+The iframe lives on `privasys.id`. The page cannot read its storage, its WebCrypto keys or its session table; it talks to the iframe only over `postMessage`. The sealed session's key and the SDK's ephemeral private key never cross that boundary: the page submits plaintext and receives plaintext, and sealing happens inside. The trust argument, including why the gateway can terminate TLS without seeing anything, is on [Technology > Sealed Session](/technology/sealed-session).
 
 ## Source
 
-`@privasys/auth` is part of [github.com/Privasys/identity-platform](https://github.com/Privasys/identity-platform), in `sdk/`. Published as an npm package and as an IIFE bundle hosted at `https://privasys.id/auth/iife.js`. AGPL-3.0.
+`@privasys/auth` is part of [github.com/Privasys/identity-platform](https://github.com/Privasys/identity-platform), in `sdk/`, AGPL-3.0. The hosted bundles are served from `https://privasys.id/auth/`.
