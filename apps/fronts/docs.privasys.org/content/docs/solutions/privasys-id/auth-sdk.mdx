@@ -74,7 +74,7 @@ It rejects with a `ConnectError` whose `code` is `cancelled`, `timeout` or `fail
 
 ## The sealed session
 
-With `sessionRelay` set, `connect()` resolves with a `SealedSession`. The session the app gets carries the user's identity: the enclave asserts it to the app as the `X-Privasys-Sub` header on every request, so the app never handles a token on this path.
+With `sessionRelay` set, `connect()` resolves with a `SealedSession`. The session the app gets carries the user's identity: the enclave asserts it to the app as the `X-Privasys-Sub` header on every request, so the app never handles a token on this path. The subject is your client's own for that person (see [Subjects: one per application](/solutions/privasys-id/idp#subjects-one-per-application)): stable for you, and meaningless to any other application.
 
 ```ts
 const r = await session.request('GET', '/api/v1/me');      // { status, headers, body: Uint8Array, sealed }
@@ -107,7 +107,7 @@ A sealed WebSocket refused because the enclave forgot the session is re-opened b
 
 ## SSO across sites
 
-Every site that loads the SDK shares the iframe origin `privasys.id`, so the session held there is visible to all of them: signing in once signs the user in everywhere, and `frame.clearSession()` signs them out everywhere. There is no server coordination: the broker is opaque, the IdP is stateless about who is signed in where, and the only shared state lives in the iframe's storage.
+Every site that loads the SDK shares the iframe origin `privasys.id`, so the session held there is visible to all of them: signing in once signs the user in everywhere, and `frame.clearSession()` signs them out everywhere. The shared state lives in the iframe's storage. The IdP takes no part in deciding who is signed in where; while a session is open it holds that session's renewal token, which it deletes at sign-out.
 
 Because that session is shared, its renewal is coordinated across documents by the SDK. Create one `AuthFrame` per page; the SDK warns when a second is alive, because frames created and destroyed around each other are how a renewal is lost.
 
