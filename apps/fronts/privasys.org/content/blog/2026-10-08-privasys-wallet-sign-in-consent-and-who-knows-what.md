@@ -56,7 +56,7 @@ Everything you have granted is listed on the wallet's Access tab: open sessions,
 
 The wallet keeps your details on your phone, in its encrypted storage. Your keys live in the phone's secure hardware and never leave it. Each application you sign in to, our own included, knows you by its own identifier that no other application sees, so two applications cannot match their records to find you. When one application needs something another holds for you, such as an AI assistant reading the files you made available to it in your Drive, it does not get there through a shared identifier: it asks, and you grant that access from the wallet. Your identities are derived from your recovery secret, so they come back after a recovery. The wallet can also live on up to five of your phones: each holds its own keys, a change made on one reaches the others sealed end to end, and any of them can remove another.
 
-This is what self-sovereign means in practice. There is no central account holding your profile for us to lose, sell or hand over, and no master record of where you have been. The phone matters, so the wallet is built to be replaced: [getting everything back on a new phone](/blog/account-recovery-in-privasys-wallet-everything-back-on-a-new-phone) has a post of its own.
+This is what self-sovereign means in practice. There is no central account holding your profile for us to lose, sell or hand over, and no master record of where you have been. The phone matters, so the wallet is built to be replaced: [adding, moving and recovering it](/blog/privasys-wallet-across-your-phones-adding-moving-and-recovering) has a post of its own.
 
 ## Who knows what
 
