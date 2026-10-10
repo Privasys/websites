@@ -49,6 +49,12 @@ The granted folder is reachable through Drive's [filesystem API](/solutions/driv
 
 For a working tree (a repository, a build, a data directory) the app keeps the files on its own volume and saves **workspace snapshots** to the folder: a manifest beside content-addressed blobs, stored as one item. The format is on the same page.
 
+## An assistant reading what you made available to AI
+
+A second kind of grant, `files.ai`, lets an attested app such as an AI assistant **read and search** the part of the user's Drive they made available to AI: the folders they enabled for AI, and their Memory. It is approved on the wallet like any other grant, in the wallet's own words, lasts ninety days, and can be revoked from the same settings view. It cannot change, delete or share anything, and it reaches nothing outside the AI scope.
+
+The assistant presents the grant instead of naming the user: each application sees the user under its own subject (see [Subjects: one per application](/solutions/privasys-id/idp#subjects-one-per-application)), so a grant, bound to the assistant's key and attested identity, is how one application reaches what another holds for the same person.
+
 ## What the user sees
 
 The user's mental model is a drive, and the app is a folder in it.

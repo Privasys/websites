@@ -60,6 +60,24 @@ Push notifications from cloud enclaves are encrypted with AES-256-GCM before the
 
 The notification payload (title, body, metadata) is never visible to Apple Push Notification service, Google Firebase Cloud Messaging, or any intermediary.
 
+### One wallet on several phones
+
+The same wallet can run on up to five phones. Each phone holds its own keys in its own secure hardware, and all of them sign in as the user, receive their notifications and open their data; a change to the user's details on one reaches the others through a relay that keeps nothing, sealed under a key only those phones hold.
+
+A phone is added from one the user already has: the new phone shows a QR code, the existing phone scans it and, after a biometric check, sends the wallet sealed to the new phone's key, and both phones show the same six digits so the user can see nothing came between them. No recovery phrase is involved. Settings shows a **Devices** section once there is more than one phone, from which any phone can remove another at any time; a removed phone loses its passkeys, its notifications and the keys that prove the user's identities.
+
+The wallet's secrets stay on the phone they were made on (`WHEN_UNLOCKED_THIS_DEVICE_ONLY` on iOS, excluded from Android backups): a platform transfer or a backup restore does not carry them, because it could not carry the passkeys held in the old phone's secure hardware either.
+
+### Recovery and backup
+
+The user keeps the way back, because the platform cannot read their data and so cannot return it. Any one of these is enough:
+
+- **The recovery phrase.** 24 words made on the phone. It unseals the wallet's data root and identity seed, kept at the IdP as ciphertext only the phrase opens. On a new phone, every identity comes back at once and every other phone is removed from all of them; the new phone then makes the next phrase.
+- **Another phone** with the wallet: remove the lost one from Devices.
+- **Guardians**: people the user trusts, added by QR code or an invitation link, who approve a recovery from their own wallet.
+
+Each identity the wallet presents to a service is derived from the seed, so it comes back after a recovery, and proves itself with its own recovery key, so no request names more than one identity. The user's details travel separately, in an encrypted backup file carried by the phone's own backup (iCloud Backup, Android app backup), which the user can also save anywhere, keep in their Privasys Drive, restore from a file, or export readable after a biometric check. The design is in [Identity Provider](/solutions/privasys-id/idp).
+
 ## Authentication flow
 
 A typical FIDO2 registration and authentication flow works as follows:

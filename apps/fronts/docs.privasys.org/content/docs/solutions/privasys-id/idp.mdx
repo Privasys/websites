@@ -14,7 +14,23 @@ The Privasys IdP runs at `https://privasys.id`. It is a standard OpenID Connect 
 | `https://privasys.id/oidc/authorize` | Authorization endpoint |
 | `https://privasys.id/oidc/token` | Token endpoint (authorization-code, refresh-token, JWT-bearer for service accounts) |
 
-Audience: relying-party apps register a client and pick their own `aud`. The platform's first-party audience is `privasys-platform`.
+Audience: a relying-party app's tokens are addressed to its own client id. The platform audience, `privasys-platform`, is reserved for the platform's own clients (the developer portal and the CLI); a third-party client cannot obtain it.
+
+## Subjects: one per application
+
+Every client sees a person under its own subject, which no other client sees:
+
+```text
+sub = base64url( HMAC-SHA256( K, "privasys-subject/v1" ‖ 0 ‖ client_id ‖ 0 ‖ account ) )
+```
+
+`K` is derived from the IdP's own secret, so a subject cannot be computed, or linked to another, by anyone else. Two applications therefore cannot match their records to find a person, and discovery advertises `"subject_types_supported": ["public", "pairwise"]`.
+
+- **Stable for your client.** The same person always arrives under the same `sub`, across sign-ins, refreshes and API keys minted for your client.
+- **Cross-application access is a grant, never a shared identifier.** When one application needs something another holds for the user (an assistant reading their Drive, for example), it asks, and the user approves a capability on their wallet. See [Apps and the wallet](/solutions/drive/apps-and-wallet).
+- **The platform still knows the account.** Billing, ownership and notifications are keyed by the account. Tokens for the platform audience carry it as `privasys_account`, and the control plane resolves any application's subject to its account through the IdP, server side.
+
+The platform's own first-party clients keep the account as their subject until each has moved its data to its own subject; every newly registered client gets its own from the start.
 
 Tokens are signed with **ES256** (P-256). Keys rotate on a fixed schedule with overlap; clients should always honour the JWKS rather than caching keys by ID.
 
@@ -39,7 +55,8 @@ Two endpoints:
 
 Every token carries the standard OIDC set: `sub`, `aud`, `iss`, `iat`, `exp`, `nonce`, `nbf`. Plus:
 
-- `roles` — array of strings; the IdP is the source of truth for role assignments. Apps validate offline against the JWKS; no role-lookup round trip.
+- `roles` — array of strings, on tokens for the platform audience; the IdP is the source of truth for role assignments. Apps validate offline against the JWKS; no role-lookup round trip.
+- `privasys_account` — on platform-audience tokens only: the account the platform keys everything by, whatever subject the client sees.
 - `email`, `name` — present **only on freshly issued tokens** from a flow that captured them (wallet-supplied or social-IdP-federated). Refresh tokens do **not** carry them — they were transient. Apps that need the user's email after refresh should persist it themselves on first auth.
 
 ## Session-relay claims
@@ -71,6 +88,21 @@ expected = SHA-256(
 …from the `binding_challenge` it stored at `/begin` and from the query-string inputs at `/complete`. It then `subtle.ConstantTimeCompare`s `expected` against the value the wallet stored *and* against `clientDataJSON.challenge`. Any mismatch returns 400 with no side effect — no row written, no JWT minted.
 
 Without this check, the JWT would not constitute proof of attestation verification — see [Technology > Sealed Session](/technology/sealed-session) for the full trust argument.
+
+## Several phones, and recovery
+
+A person's wallet can run on up to five phones. Each phone registers its own passkey on each of the person's identities, marked with a **device tag**: an HMAC, under a secret only that person's phones hold, of the identity's user id. Tags of one phone on two identities are unrelated values, so the IdP can tell which phone holds a passkey without learning which identities belong together. Push targets are kept per identity and per phone, and a notification goes to every phone.
+
+| Endpoint | Purpose |
+| --- | --- |
+| `POST /devices/pair`, `PUT`/`GET /devices/pair/{slot}` | A one-time slot (ten minutes, in memory, read once) that carries the wallet from an existing phone to a new one, sealed to the new phone's key. |
+| `POST /devices/enrol-ticket`, `POST /devices/enrol` | An existing phone lets a new one register a passkey on the main account, keeping the other phones' passkeys. |
+| `POST /recovery/identity/begin`, `/enrol`, `/complete` | Each identity proves itself with its own recovery key: `enrol` adds a phone, `complete` (a lost phone) removes every other passkey. |
+| `POST /recovery/identity/revoke-device` | Removes one phone from one identity and, in the same request, replaces the identity's recovery key. |
+| `POST /devices/revoke` | Removes one phone from the main account. |
+| `POST`/`GET /devices/relay` | Sealed updates between a person's phones: memory only, fifteen minutes, read once. |
+
+An identity's recovery key derives from the wallet's seed and a **recovery epoch** secret. Removing a phone moves every identity to a new epoch the removed phone never receives, so the copy of the seed it still holds opens nothing. A phrase recovery restores the seed and the data root from a backup sealed under the phrase, reads the epochs and the list of identities and phones from an encrypted registry kept on the main account, then removes every other phone from every identity at once. For recovery the IdP stores only a fingerprint of the phrase, ciphertext it cannot open (the sealed backup and the registry, each versioned so an older phone cannot overwrite a newer write), and one public key per identity.
 
 ## Service-account authentication
 

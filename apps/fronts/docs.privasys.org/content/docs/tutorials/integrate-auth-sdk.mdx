@@ -118,7 +118,7 @@ if (res.status === 200) {
 On the server, inside the enclave, authentication is one header:
 
 ```go
-sub := r.Header.Get("X-Privasys-Sub")   // asserted by the relay, stripped from anything inbound
+sub := r.Header.Get("X-Privasys-Sub")   // asserted by the relay, stripped from anything inbound; your client's own subject for this person
 if sub == "" { writeError(w, 401, "sign in required"); return }
 ```
 
