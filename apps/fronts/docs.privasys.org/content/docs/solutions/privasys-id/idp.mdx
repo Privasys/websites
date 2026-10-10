@@ -30,7 +30,7 @@ sub = base64url( HMAC-SHA256( K, "privasys-subject/v1" ‖ 0 ‖ client_id ‖ 0
 - **Cross-application access is a grant, never a shared identifier.** When one application needs something another holds for the user (an assistant reading their Drive, for example), it asks, and the user approves a capability on their wallet. See [Apps and the wallet](/solutions/drive/apps-and-wallet).
 - **The platform still knows the account.** Billing, ownership and notifications are keyed by the account. Tokens for the platform audience carry it as `privasys_account`, and the control plane resolves any application's subject to its account through the IdP, server side.
 
-The platform's own first-party clients keep the account as their subject until each has moved its data to its own subject; every newly registered client gets its own from the start.
+Every client registered from October 2026 gets its own subject from the start. Clients registered before, the platform's own included, keep the account as their subject until each moves its data to its own: moving changes every `sub` the client holds, so it is done with the client's owner.
 
 Tokens are signed with **ES256** (P-256). Keys rotate on a fixed schedule with overlap; clients should always honour the JWKS rather than caching keys by ID.
 
