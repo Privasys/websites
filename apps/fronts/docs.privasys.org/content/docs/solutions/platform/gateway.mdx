@@ -1,11 +1,20 @@
 ---
 title: Gateway
-description: An SNI-based L4 gateway that routes traffic to confidential applications without terminating TLS. The gateway never sees your data.
+description: The platform gateway routes traffic to confidential applications over two legs. An RA-TLS leg it cannot read, and a browser-facing leg that carries sealed bodies by default and clear traffic only for the surfaces an application declares.
 ---
 
-Every application deployed on the Privasys Platform receives its own hostname under `*.apps.privasys.org`. Traffic reaches the correct enclave through a transparent **L4 gateway** that inspects only the TLS handshake header to determine the destination. TLS terminates inside the hardware enclave itself — the gateway never sees plaintext.
+Every application deployed on the Privasys Platform receives its own hostname under `*.apps.privasys.org`. Traffic reaches the right enclave through the **platform gateway**, a small routing layer that runs on its own machines, outside any enclave. The gateway is operated by Privasys and is not attested, so the design keeps it out of the data wherever a client can verify the enclave itself, and makes the remaining cases explicit: declared by the application, measured, and visible to anyone who checks the attestation.
 
-## How it works
+A connection reaches an application over one of two legs. The client chooses which:
+
+| Leg | TLS ends at | What the gateway sees | Who uses it |
+| --- | --- | --- | --- |
+| **RA-TLS splice** | the enclave | the SNI hostname only | the wallet, the CLI, services built on the [verification libraries](/solutions/platform/verification-libraries), other enclaves over mutual RA-TLS |
+| **Gateway-terminated** | the gateway, with a publicly trusted certificate | TLS metadata and the path; bodies stay sealed unless the route is a declared surface | browsers through the [auth SDK](/solutions/privasys-id/auth-sdk) (sealed session), and anyone with plain HTTPS on a declared public or static surface |
+
+The splice leg is the one to use whenever the client can verify an RA-TLS certificate. Browsers and third-party machines cannot: they refuse the enclave's attestation-bearing certificate, and only a publicly trusted certificate gives them a padlock. The terminated leg exists for them.
+
+## The RA-TLS splice leg
 
 ```
 Client ──TLS ClientHello──► Gateway (L4) ──TCP──► Enclave Machine
@@ -22,16 +31,34 @@ Client ──TLS ClientHello──► Gateway (L4) ──TCP──► Enclave Ma
 5. The gateway opens a TCP connection to the enclave and **splices** the two connections together, forwarding raw encrypted bytes in both directions.
 6. The TLS handshake completes end-to-end between the client and the enclave. The gateway is never part of the TLS session.
 
-The gateway adds approximately one round trip of latency (~1–5 ms intra-region) for the initial connection. Once established, the stream splice has zero per-byte overhead.
+On this leg the gateway adds approximately one round trip of latency (1 to 5 ms within a region) for the initial connection. Once established, the stream splice has zero per-byte overhead, and the gateway holds nothing it could read.
+
+## The gateway-terminated leg
+
+```
+Browser ──public TLS──► Gateway ──RA-TLS, policy-checked──► Enclave
+                          │
+            sealed bodies pass through opaque;
+            declared surfaces pass through in the clear
+```
+
+1. The gateway terminates the public TLS handshake with a publicly trusted certificate for `*.apps.privasys.org`.
+2. On its internal leg it opens an RA-TLS connection to the enclave and verifies the enclave's certificate against the control plane's attestation policy for that route. A mismatch aborts the connection. A client on this leg therefore knows that the gateway refused to forward to an enclave that did not match the policy. We call this **gateway-vouched** attestation: it is trust in Privasys operations, the same tier as a non-wallet sign-in, and it is never the same as verifying the hardware yourself.
+3. Requests are reverse-proxied across the internal leg. By default the body is opaque to the gateway: a [sealed session](/technology/sealed-session) encrypts it under a key the gateway never sees, and the enclave refuses application requests that arrive in the clear on this leg with `403 sealed-transport-required`. A front-end regression cannot silently downgrade the data plane.
+4. The exception is an application's **declared surfaces**: a static shell (GET and HEAD on declared prefixes) and explicit public routes, declared in the application's measured manifest. On those routes the gateway reads the request and the response in full. The enclave runtime serves them anonymous by construction: it drops every credential and identity header before the application sees the request, never asserts an identity, and refuses to load an image that declares a priced endpoint public. Because the declaration is part of the measured image, the application's attestation tab and its store listing show exactly which routes are served in the clear. See [Surfaces](/solutions/platform/developer-platform/deploy-container#surfaces-private-static-and-public) for the declaration and the rules.
+
+**What the gateway logs.** On both legs the gateway logs TLS metadata and route outcomes only: a failed handshake with the client address and the SNI, an upstream that could not be reached, a quarantine refusal. It never logs a header, a query string or a body, and it keeps no copy of anything that passed through it. Traffic on a declared surface transits the gateway and nothing more.
 
 ## What the gateway does not do
 
 The gateway is deliberately minimal:
 
-- **No TLS termination.** It never holds a private key for your application and never decrypts any traffic.
-- **No HTTP parsing.** It operates at TCP level. It does not inspect headers, rewrite URLs, or inject middleware.
+- **No key for your application.** The enclave holds its own RA-TLS key. The gateway holds only the public wildcard certificate for the terminated leg, which cannot impersonate the enclave on the splice leg.
+- **No reading of private traffic.** On the splice leg it forwards encrypted bytes. On the terminated leg it forwards sealed bodies. It reads traffic only on the surfaces an application declared in the clear.
+- **No notion of your application's paths.** On the splice leg it does not parse HTTP at all. On the terminated leg it reverse-proxies without a route table of its own: it learns that a response was public from the enclave runtime, which is the only party that knows the manifest.
+- **No caching, no rate limiting.** Public routes are rate-limited per client inside the enclave runtime, and nothing of ours caches a response.
 - **No session state.** Every gateway instance is stateless and interchangeable. There is no sticky routing.
-- **No authentication at the gateway layer.** Authentication and authorization happen inside the enclave, enforced by RA-TLS and OIDC.
+- **No authentication at the gateway layer.** Authentication and authorisation happen inside the enclave, enforced by RA-TLS, the sealed session and OIDC.
 
 ## Route synchronisation
 
@@ -55,7 +82,7 @@ When an application is deployed or undeployed through the [Developer Platform](/
 
 ## Multi-region availability
 
-Multiple gateway instances run across geographically distributed regions. DNS resolves `*.apps.privasys.org` to all available gateways using round-robin A records. Because every instance is stateless and syncs the same routing table, failover is automatic — if one gateway becomes unavailable, DNS health checks route traffic to the remaining instances.
+Multiple gateway instances run across geographically distributed regions. DNS resolves `*.apps.privasys.org` to all available gateways using round-robin A records. Because every instance is stateless and syncs the same routing table, failover is automatic: if one gateway becomes unavailable, DNS health checks route traffic to the remaining instances.
 
 | Region | Location |
 |--------|----------|
@@ -94,7 +121,9 @@ This hostname is usable immediately after deployment. No DNS configuration is re
 
 ## Connecting to your application
 
-Because the gateway is a transparent L4 proxy, the TLS session is end-to-end between the client and the enclave. Clients must use an [RA-TLS client library](/solutions/platform/verification-libraries) to verify the attestation during the handshake:
+Which leg a client lands on depends on what it can verify, and on the route.
+
+**Attested clients** use an [RA-TLS client library](/solutions/platform/verification-libraries) and verify the attestation during the handshake. The gateway splices the connection and sees only the SNI:
 
 ```python
 from ratls_client import RaTlsClient
@@ -103,10 +132,41 @@ client = RaTlsClient("myapp.apps.privasys.org", 443)
 response = client.get("/api/hello")
 ```
 
-Standard TLS clients like `curl` or web browsers cannot complete the handshake because the enclave presents an RA-TLS certificate with hardware attestation extensions rather than a certificate signed by a public CA.
+**Browsers** reach private routes through the [auth SDK](/solutions/privasys-id/auth-sdk), which opens a [sealed session](/technology/sealed-session) over the terminated leg. The page gets a normal padlock; the bodies stay sealed to the enclave.
+
+**Plain HTTPS clients** such as `curl`, a webhook sender or an OAuth redirect can reach the routes an application declared as public or static. The response says which leg served it:
+
+```sh
+curl -i https://myapp.apps.privasys.org/api/v1/public/status
+```
+
+```text
+HTTP/2 200
+content-type: application/json
+x-privasys-transport: public
+
+{"status":"ok"}
+```
+
+Every other route refuses a request that arrives in the clear:
+
+```sh
+curl -i https://myapp.apps.privasys.org/api/v1/me
+```
+
+```text
+HTTP/2 403
+content-type: text/plain; charset=utf-8
+
+sealed-transport-required
+```
+
+A plain TLS client cannot complete the handshake on the splice leg, because the enclave presents an RA-TLS certificate with hardware attestation extensions rather than a certificate signed by a public CA. That is why public and static surfaces are served on the terminated leg.
 
 ## Next steps
 
-- [Getting started](/solutions/platform/developer-platform/getting-started) — deploy your first application
-- [Verification libraries](/solutions/platform/verification-libraries) — connect to your application with RA-TLS
-- [Attestation](/solutions/platform/developer-platform/attestation) — inspect certificates and hardware quotes
+- [Surfaces: private, static and public](/solutions/platform/developer-platform/deploy-container#surfaces-private-static-and-public), how an application declares what it serves in the clear
+- [Serve a web app from an enclave](/tutorials/web-app-surfaces), the tutorial with the four curls
+- [Getting started](/solutions/platform/developer-platform/getting-started), deploy your first application
+- [Verification libraries](/solutions/platform/verification-libraries), connect to your application with RA-TLS
+- [Attestation](/solutions/platform/developer-platform/attestation), inspect certificates and hardware quotes

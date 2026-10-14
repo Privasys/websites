@@ -73,6 +73,8 @@ You can submit new versions of an existing application:
 
 Each version retains its build hash and commit reference. Previous versions are visible in the Builds tab for audit purposes.
 
+A change to a container's [surfaces](/solutions/platform/developer-platform/deploy-container#surfaces-private-static-and-public), the routes it serves in the clear, is a change to its measured manifest, so it changes the image digest and the owner re-approves the upgrade exactly as for any other measurement change. On top of that, when a version adds a static prefix or a public route beyond the set an owner last confirmed, the platform refuses to deploy or stage it until an owner confirms, once per version, that the new clear routes carry no personal data. The confirmation is recorded with the version (who, when, which routes) and shown next to it.
+
 ## Status indicators
 
 The dashboard shows status badges for each application:

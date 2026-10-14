@@ -102,17 +102,20 @@ The embedding page submits plaintext to the iframe over `postMessage` and receiv
 
 ## What Each Party Sees
 
-The [platform gateway](/solutions/platform/gateway) terminates a public Let's Encrypt certificate for `*.apps.privasys.org` so browsers see a normal padlock, then forwards the still-sealed bodies to the enclave over an internal RA-TLS leg. On this gateway-terminated leg the enclave *refuses* plaintext application bodies (`403 sealed-transport-required`), so a front-end regression cannot silently downgrade the data plane.
+The [platform gateway](/solutions/platform/gateway) terminates a public Let's Encrypt certificate for `*.apps.privasys.org` so browsers see a normal padlock, then forwards the still-sealed bodies to the enclave over an internal RA-TLS leg. On this gateway-terminated leg the enclave *refuses* application requests that arrive in the clear (`403 sealed-transport-required`) on every route the app did not declare as a surface, so a front-end regression cannot silently downgrade the data plane.
 
 | Component | Sees | Cannot do |
 | --- | --- | --- |
 | Browser parent frame | Plaintext request/response (its own data) | Hold `K` or `sdk_priv` (those live in the iframe scope) |
 | `privasys.id` auth iframe | `K`, `sdk_priv`, plaintext bodies for that tab | Exfiltrate: same-origin and postMessage-gated |
 | Broker (the wallet-SDK relay) | Encrypted WebSocket frames between wallet and SDK, IdP-signed JWT in transit | Derive `K`, forge the JWT |
-| Platform gateway | TLS metadata, AEAD ciphertext bodies | Read sealed bodies; bypass enclave RA-TLS (it is itself an RA-TLS client and aborts on policy mismatch) |
+| Platform gateway, sealed leg | TLS metadata, AEAD ciphertext bodies | Read sealed bodies; bypass enclave RA-TLS (it is itself an RA-TLS client and aborts on policy mismatch) |
+| Platform gateway, clear leg (a declared static or public surface) | The request and the response in full | Act on an identity: the runtime strips every credential before the app sees the request and asserts none, so the route is anonymous by construction |
 | IdP | Wallet-supplied `quote_hash`, `att_oids`, `sdk_pub`, `enc_pub`, `session_id` | Verify the quote itself: values are pass-through and signed; a policy mismatch is rejected by the SDK |
 | Wallet | The enclave's RA-TLS leaf and attestation extensions; `enc_pub` from bootstrap | Derive `K` (it never holds `sdk_priv`) |
 | Enclave | `sdk_pub`, plaintext bodies after unsealing | Learn the user's biometric, the FIDO2 private key, or any other tab's `K` |
+
+The clear leg is opt-in and visible. An app's public and static surfaces (its page shell, public reads, inbound webhooks) are declared in its measured manifest, so they are part of the attested image digest, and they are shown on the app's attestation tab and its store listing as the routes served in the clear. See [Surfaces: private, static and public](/solutions/platform/developer-platform/deploy-container#surfaces-private-static-and-public).
 
 ## Staying Signed In: Silent Rebind
 

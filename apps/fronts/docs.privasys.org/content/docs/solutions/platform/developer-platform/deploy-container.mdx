@@ -75,8 +75,111 @@ Data persists across container restarts on the same enclave but is inaccessible 
 
 Traffic to and from the container flows through the RA-TLS proxy:
 
-- **Inbound:** Clients connect over HTTPS. The proxy terminates TLS using the RA-TLS certificate (which embeds the TDX attestation quote). Requests are forwarded to your container on the configured port.
+- **Inbound:** Clients connect over HTTPS. The proxy terminates TLS using the RA-TLS certificate (which embeds the TDX attestation quote). Requests are forwarded to your container on the configured port. Browsers and plain HTTPS clients, which cannot verify an RA-TLS certificate, reach the container through the [platform gateway](/solutions/platform/gateway)'s terminated leg instead, under the rules of the next section.
 - **Outbound:** The container can make outbound connections. DNS resolution and egress work normally.
+
+## Surfaces: private, static and public
+
+Everything a container serves is **private** unless the application declares otherwise in its measured manifest. Private routes are reached over RA-TLS by attested clients, or over a [sealed session](/technology/sealed-session) by browsers; on both, nothing between the client and the enclave reads the traffic. A web application also needs two things a sealed session cannot give it: a page that loads before any session exists, and routes that third-party machines (a webhook sender, an OAuth redirect, a plain `curl`) can reach with ordinary HTTPS. Those are served **in the clear** on the [platform gateway](/solutions/platform/gateway)'s terminated leg, where the gateway, a Privasys-operated machine outside any enclave, reads the traffic. The standard is therefore:
+
+> What an application declares public is served in the clear, visible to verifiers, and anonymous by construction. Everything else is private.
+
+### Which surface each audience gets
+
+| Audience | Needs | Surface | Attestation | Identity the app may trust |
+| --- | --- | --- | --- | --- |
+| Attested client (wallet, CLI, service, another enclave) | private data | **private**, over RA-TLS | verified by the client | bearer, mutual RA-TLS identity, spend token |
+| Browser user who signed in | private data | **private**, over a sealed session | verified by the wallet, inherited by the SDK | `X-Privasys-Sub` asserted by the runtime, or the inner bearer |
+| Browser visitor, not signed in | the page, public reads | **static** (the shell) and **public** (reads), in the clear | gateway-vouched only | none |
+| Third-party machine (webhook sender, OAuth redirect, federation peer, plain `curl`) | public reads, inbound events | **public**, in the clear | gateway-vouched only | none; the payload carries its own proof (a webhook signature, an OAuth `state`) |
+
+"Gateway-vouched" is exact: on its internal leg the gateway verifies the enclave's RA-TLS certificate against the control plane's policy for the route and refuses to forward on a mismatch. A clear caller trusts Privasys operations for that check, the same tier as a non-wallet sign-in, and does not verify the hardware itself.
+
+### The three surfaces
+
+| Surface | Reached over | Methods | Who sees the traffic | Identity the app may trust | What is on it |
+| --- | --- | --- | --- | --- | --- |
+| **private** | RA-TLS, or a sealed session on the terminated leg | any | the client and the enclave only | `X-Privasys-Sub`, the inner bearer, `X-Privasys-App-*`, the payer headers | everything not declared |
+| **static** | in the clear, terminated leg | GET, HEAD | the gateway | none | the declared prefixes |
+| **public** | in the clear, terminated leg | GET, HEAD, POST, PUT, PATCH, DELETE as declared; OPTIONS answered by the runtime | the gateway | none | the declared method and path pairs |
+
+### The declaration
+
+Surfaces are declared in the `surfaces` block of `privasys.json`, which rides the `org.privasys.manifest` image label next to the tools (see [the app store page](/solutions/platform/app-store) for the label). The label is inside the digest-pinned image configuration that the enclave verifies at load, so the surfaces are **measured**: a verifier reads off the image exactly what the application serves in the clear, and changing them changes the image digest.
+
+```jsonc
+{
+  "tools": [ /* your API, as on the MCP tool discovery section below */ ],
+  "surfaces": {
+    // Path prefixes served in the clear for GET and HEAD: the browser shell
+    // (measured code, no user data). An entry of exactly "/" is the root
+    // document only. Nothing under /api can be static.
+    "static": ["/", "/assets/", "/favicon.svg", "/manifest.webmanifest"],
+
+    // Explicit routes served in the clear. A path ending in "/" is a prefix,
+    // any other path is exact. A route is one method: a public GET on a
+    // prefix never implies POST. "/" itself cannot be a public route.
+    "public": [
+      { "method": "GET",  "path": "/api/v1/public/" },
+      // "headers" lists the request headers this route needs beyond the
+      // default allow-list, typically a webhook sender's signature header.
+      // Authorization and Cookie can never be declared.
+      { "method": "POST", "path": "/api/v1/webhooks/stripe", "headers": ["Stripe-Signature"] },
+      { "method": "GET",  "path": "/.well-known/openid-federation" }
+    ],
+
+    // "*": public routes answer any origin, with no credentials, and the
+    // runtime answers OPTIONS preflights itself. "same-origin" (the default)
+    // sends no cross-origin headers at all; your own page needs none.
+    "cors": "*",
+
+    // Per-client rate limit on the clear leg. Defaults: 10 requests per
+    // second with a burst of 50.
+    "limits": { "rps": 10, "burst": 50 }
+  }
+}
+```
+
+Applications built before the `surfaces` block existed declared their shell through the `org.privasys.static-unsealed-prefixes` image label, a comma-separated list of prefixes. The label still works as an alias for `surfaces.static` (the runtime takes the union of both). New applications declare the manifest.
+
+### What the runtime enforces on a static or public request
+
+These rules are enforced by the enclave runtime, so a mistake in application code cannot turn a public route into a channel for account data.
+
+1. **Anonymous by construction.** Before the application sees the request, the runtime keeps only an allow-list of request headers (`Accept`, `Accept-Encoding`, `Accept-Language`, `Cache-Control`, `Content-Type`, `Content-Length`, `If-None-Match`, `If-Modified-Since`, `Range`, `User-Agent`, `Origin`, `X-Forwarded-Proto`, `X-Forwarded-Host`, and the route's declared headers) and deletes every other one. `Authorization`, `Cookie` and every `X-Privasys-*` header are gone, the runtime never asserts `X-Privasys-Sub` or a payer, and nothing on the request identifies an account. A credential that still arrives (a bearer your page attached to a public fetch) is dropped and **counted**: the application's attestation tab shows that credentials reached the gateway on a public route, so you learn on dev, before production.
+2. **Nothing for the browser to send.** On the response the runtime keeps only `Content-Type`, `Content-Length`, `Content-Encoding`, `Content-Disposition`, `Content-Range`, `Accept-Ranges`, `Cache-Control`, `Expires`, `ETag`, `Last-Modified`, `Location`, `Retry-After`, `Vary` and `Date`, plus its own CORS headers. `Set-Cookie` never passes, so no cookie is ever set on the application origin and a browser has none to send past the gateway. An application header such as `X-User-Id` is dropped. Static responses carry `Referrer-Policy: same-origin`.
+3. **The application can tell.** Every request carries `X-Privasys-Transport`, set by the runtime and never by a client: `public` on the clear leg, `sealed` from a sealed session, `attested` when TLS ended at the enclave. A private handler refuses `public`.
+4. **No payer, no price.** A route that carries an `x-privasys.price` cannot be static or public. The platform refuses the version, and the runtime refuses to load the image, with a clear message. The configure endpoint can never be public either.
+5. **Bounded.** A per-client token bucket (keyed by the client address the gateway forwards) applies to every clear request, with defaults of 10 requests per second and a burst of 50, overridable in `surfaces.limits`. A full bucket answers `429` with `Retry-After`. Private routes are bounded by the session and spend machinery instead.
+6. **Preflight.** When `cors` is `"*"`, the runtime answers `OPTIONS` on a public path itself: `204`, `Access-Control-Allow-Origin: *`, the declared methods and headers, no credentials. Otherwise a preflight is refused.
+7. **No upgrade.** A WebSocket, or any `Upgrade`, on a public route is `403`. The sealed WebSocket is the only browser socket.
+8. **Everything else is private.** An undeclared path on the terminated leg answers `403 sealed-transport-required`.
+
+### The confirmation at deploy
+
+Public routes run inside the enclave, so anyone can verify from the code that they leak nothing. The remaining exposure is a developer putting personal data on a route the gateway reads. The platform makes that a deliberate, recorded act: when a version's manifest adds a static prefix or a public route beyond the set an owner last confirmed, deploying or staging that version is refused until an owner **confirms that those routes carry no personal data**. The confirmation names the exact routes and stays with the version, who and when, next to the attestation that records the routes themselves.
+
+The CLI asks during `privasys apps deploy` and `privasys apps versions stage`, and `--confirm-surfaces` answers it for scripts. The confirmation also exists as its own verb, and `privasys apps describe` prints what a version serves in the clear:
+
+```sh
+privasys apps versions confirm-surfaces my-app [version]
+privasys apps describe my-app
+```
+
+The confirmation is asked once per version and only when something new goes into the clear. A version that declares nothing, or adds nothing beyond the last confirmed set, ships without a question. Because the surfaces are measured, a change to them also changes the image digest, so the owner approves the upgrade as for any measurement change (see [Application lifecycle](/solutions/platform/developer-platform/app-lifecycle#versioning)).
+
+The gateway logs TLS metadata and route outcomes only, never a header, a query string or a body, and keeps nothing that transits it. The data you place on a declared surface is your responsibility; Privasys forwards it and retains none of it. The application's store listing and attestation tab show the routes served in the clear, so a user choosing an application sees your declaration before trusting it.
+
+### What you must never do
+
+- **Serve account data on a public route.** The runtime strips every identity, so a public handler has nothing to look up a user with; do not add your own.
+- **Trust a header on a public route.** Only the allow-list and your declared headers arrive, and an anonymous caller set them. A webhook is authenticated by its signature over the body, never by a header value alone.
+- **Price a public route.** A public caller cannot pay. The version is refused.
+- **Put a secret in a path or a query string.** URLs are visible to the gateway on every terminated-leg request, sealed ones included. Keep page state in the hash.
+- **Attach a credential to a public fetch.** Call public URLs with `credentials: 'omit'` and no `Authorization`; anything else has crossed the gateway before the runtime drops it.
+- **Point a vanity domain at anything but a redirect to the enclave host.** A proxy in front of the enclave would read every route.
+
+The [`container-app-web`](https://github.com/Privasys/container-app-web) template is a small service with all three surfaces declared and a public handler kept in its own router, with the four `curl` checks as its smoke test. The [tutorial](/tutorials/web-app-surfaces) walks it end to end.
 
 ## MCP tool discovery
 

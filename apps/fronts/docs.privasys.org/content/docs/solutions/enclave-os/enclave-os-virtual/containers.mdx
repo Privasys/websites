@@ -90,6 +90,21 @@ containers:
 | `health_check.http` | No | HTTP endpoint for health checks |
 | `health_check.tcp` | No | TCP address for health checks (connection test) |
 
+**Surfaces (from the image's `privasys.json`):**
+
+A container's `surfaces` block is read from the image itself, not from the workload manifest: it is the `surfaces` object of `privasys.json`, carried by the `org.privasys.manifest` image label, so it is measured with the image digest. It declares which routes the runtime may serve in the clear on the [platform gateway](/solutions/platform/gateway)'s terminated leg; every undeclared route on that leg answers `403 sealed-transport-required`. See [Surfaces: private, static and public](/solutions/platform/developer-platform/deploy-container#surfaces-private-static-and-public) for the rules the runtime enforces on such a request.
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `surfaces.static` | No | Path prefixes served in the clear for `GET` and `HEAD`. An entry of exactly `/` matches the root document only. `/api` and anything under it is refused at load. |
+| `surfaces.public[].method` | No | One of `GET`, `HEAD`, `POST`, `PUT`, `PATCH`, `DELETE`. A route is one method; declare each method you serve. |
+| `surfaces.public[].path` | No | Absolute path. Exact, unless it ends in `/`, which makes it a prefix. `/` itself cannot be a public route. |
+| `surfaces.public[].headers` | No | Extra request headers the route needs beyond the runtime's allow-list (a webhook signature header, for example). `Authorization` and `Cookie` can never be declared. |
+| `surfaces.cors` | No | `"*"` (public routes answer any origin, no credentials, preflights answered by the runtime) or `"same-origin"` (default: no cross-origin headers). |
+| `surfaces.limits.rps` / `surfaces.limits.burst` | No | Per-client token bucket on the clear leg. Defaults: 10 requests per second, burst of 50. |
+
+The image refuses to load when a declared surface covers a priced tool (`x-privasys.price`) or the configure endpoint. The older `org.privasys.static-unsealed-prefixes` image label (a comma-separated list of prefixes) is deprecated and still honoured as an alias for `surfaces.static`; the runtime takes the union of both.
+
 ### Hostname Derivation
 
 Hostnames are derived automatically from the machine name and base hostname:

@@ -5,6 +5,7 @@
         "index",
         "integrate-auth-sdk",
         "enclave-upgrade",
-        "age-verification"
+        "age-verification",
+        "web-app-surfaces"
     ]
 }
