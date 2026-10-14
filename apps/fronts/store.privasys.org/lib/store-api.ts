@@ -40,6 +40,16 @@ export interface StoreAppDetail extends StoreAppSummary {
     support_email?: string;
     hostname?: string;
     reproducibility: StoreReproducibility;
+    // The routes the app serves in the clear (its static shell and public
+    // routes), declared in its measured manifest. Absent when everything the
+    // app serves is sealed end to end.
+    surfaces?: StoreSurfaces;
+}
+
+export interface StoreSurfaces {
+    static?: string[];
+    public?: { method: string; path: string; headers?: string[] }[];
+    cors?: string;
 }
 
 // Resolve a possibly-relative icon URL (e.g. /api/v1/identicon/<id>) against the

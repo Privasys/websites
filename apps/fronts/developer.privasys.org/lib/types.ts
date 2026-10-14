@@ -320,6 +320,21 @@ export interface AppVersion {
     build_id?: string;
     created_at: string;
     updated_at: string;
+    // What this version declared it serves in the clear on the gateway-terminated
+    // leg (its static shell and public routes), and the owner who confirmed
+    // those routes carry no personal data. Absent when everything is sealed.
+    surfaces?: AppSurfaces;
+    surfaces_confirmed_by?: string;
+    surfaces_confirmed_at?: string;
+}
+
+// The "surfaces" block of a container app's manifest: the routes it serves in
+// the clear. Everything undeclared stays sealed.
+export interface AppSurfaces {
+    static?: string[];
+    public?: { method: string; path: string; headers?: string[] }[];
+    cors?: string;
+    limits?: { rps?: number; burst?: number };
 }
 
 export type VersionStatus = 'submitted' | 'approved' | 'building' | 'ready' | 'failed';

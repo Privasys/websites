@@ -107,14 +107,14 @@ privasys apps deploy web-surfaces --watch --test
 The version serves four routes in the clear and no owner has confirmed them yet, so the platform refuses to ship it until you do. The CLI shows the routes and asks:
 
 ```text
-This version serves 4 routes in the clear. The platform gateway reads
-traffic on these routes; the enclave serves them anonymous.
-  static /
-  static /assets/
-  GET    /api/v1/public/status
-  POST   /api/v1/webhooks/demo
+This version serves 4 routes in the clear (4 new since the last confirmation).
+The platform gateway reads traffic on these routes; the enclave serves them anonymously.
+  static /  (new)
+  static /assets/  (new)
+  GET /api/v1/public/status  (new)
+  POST /api/v1/webhooks/demo  (new)
 Confirm these routes carry no personal data? [y/N] y
-✓ surfaces confirmed for v0.1.0
+✓ surfaces confirmed
 ⠹ pulling image → starting container → active
 ✓ active, routable (6s)
 ```
@@ -131,7 +131,7 @@ privasys apps versions confirm-surfaces web-surfaces --test           # confirm 
 Note the hostname the deploy prints; the rest of the tutorial uses it as `$HOST`.
 
 ```sh
-HOST=web-surfaces.apps-test.privasys.org
+HOST=web-surfaces.apps.test.privasys.org
 ```
 
 ## Step 5: Verify the three surfaces with curl
@@ -147,7 +147,7 @@ curl -i https://$HOST/api/v1/public/status
 ```text
 HTTP/2 200
 content-type: application/json
-cache-control: public, max-age=30
+cache-control: public, max-age=10
 access-control-allow-origin: *
 x-privasys-transport: public
 
@@ -218,7 +218,7 @@ There is no `Access-Control-Allow-Credentials` and there never will be on a publ
 The webhook route is public because its sender cannot run our transport. Its authentication is the signature over the body, which the route declared as `X-Demo-Signature`; the template verifies an HMAC-SHA256 under a shared secret (its README says where the secret is configured). Sign a body with `openssl` and post it:
 
 ```sh
-SECRET=demo-secret
+SECRET=demo   # the template default; set DEMO_WEBHOOK_SECRET in the deployment to change it
 BODY='{"event":"order.paid","id":"ord_42"}'
 SIG=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "$SECRET" | awk '{print $2}')
 
@@ -233,7 +233,7 @@ HTTP/2 202
 content-type: application/json
 x-privasys-transport: public
 
-{"accepted":true}
+{"accepted":true,"id":"evt_…"}
 ```
 
 Change one character of the body and post it again with the same signature: the handler answers `401`. The header reached the handler because the route declared it. A header the route did not declare, such as an `X-Api-Key` the sender invented, is dropped by the runtime before the handler runs, so the handler cannot be written to trust it.
@@ -264,13 +264,12 @@ privasys apps describe web-surfaces --test
 FIELD                VALUE
 name                 web-surfaces
 status               active
-hostname             web-surfaces.apps-test.privasys.org
+hostname             web-surfaces.apps.test.privasys.org
 version              v0.1.0
-surfaces             static /, static /assets/, GET /api/v1/public/status, POST /api/v1/webhooks/demo
-surfaces confirmed   2026-10-14T10:21:07Z by <your sub>
+served_in_the_clear  static /, /assets/; GET /api/v1/public/status; POST /api/v1/webhooks/demo
 ```
 
-The routes are read off the measured image; the confirmation is the platform's record of who vouched for them. An attestation check closes the loop between the two:
+The routes are read off the measured image; the confirmation is the platform's record of who vouched for them, kept with each version (`privasys apps versions web-surfaces --test` lists them, with `surfaces_confirmed_by` and `surfaces_confirmed_at`). An attestation check closes the loop between the two:
 
 ```sh
 privasys attest web-surfaces --test
@@ -311,14 +310,15 @@ privasys apps deploy web-surfaces --watch --test
 Two things happen, in this order. The platform compares the new version's surfaces with the set you confirmed in step 4 and finds one route it has not seen, so it asks again, for this version:
 
 ```text
-This version serves 5 routes in the clear, 1 of them new since the last confirmation.
+This version serves 5 routes in the clear (1 new since the last confirmation).
+The platform gateway reads traffic on these routes; the enclave serves them anonymously.
+  GET /api/v1/public/feed  (new)
+  GET /api/v1/public/status
+  POST /api/v1/webhooks/demo
   static /
   static /assets/
-  GET    /api/v1/public/feed        (new)
-  GET    /api/v1/public/status
-  POST   /api/v1/webhooks/demo
 Confirm these routes carry no personal data? [y/N] y
-✓ surfaces confirmed for v0.1.1
+✓ surfaces confirmed
 ```
 
 Then the deploy proceeds with a new image digest. Run `privasys attest web-surfaces --test` again and the `workload code` line has changed, because the manifest label is inside the measured image configuration. Anyone checking the attestation sees a different digest, and the Attestation tab now lists five routes. If you had created the app with `--storage`, this is also where the [upgrade gate](/tutorials/enclave-upgrade) would ask you to approve the new measurement before the data key unlocks for it; the surfaces confirmation and the measurement approval are two separate records of two separate decisions.

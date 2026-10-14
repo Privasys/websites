@@ -20,7 +20,7 @@ import { useSSE } from '~/lib/sse-context';
 import { AppDomains } from '~/components/app-domains';
 import { useBalance } from '~/lib/use-balance';
 import { getApiBaseUrl } from '~/lib/api-base-url';
-import type { App, BuildJob, AppVersion, AppDeployment, Enclave, CachedImage } from '~/lib/types';
+import type { App, AppSurfaces, BuildJob, AppVersion, AppDeployment, Enclave, CachedImage } from '~/lib/types';
 import { DEPLOYMENT_STATUS_LABELS, DEPLOYMENT_STATUS_COLORS, CONTAINER_STATE_LABELS, CONTAINER_STATE_COLORS } from '~/lib/types';
 import { fetchInstanceSizes, FALLBACK_INSTANCE_SIZES, monthlyGBP } from '~/lib/instance-sizes';
 import type { InstanceSize } from '~/lib/instance-sizes';
@@ -344,7 +344,7 @@ export default function AppDetailPage() {
                     <AppStoreTab app={app} token={session.accessToken} deployed={hasActiveDeployment} hostname={activeDeployments[0]?.hostname} onSave={(updated) => setApp(updated)} deleting={deleting} onDelete={handleDelete} />
                 )}
                 {tab === 'attestation' && session?.accessToken && (
-                    <AttestationTab appId={app.id} token={session.accessToken} deployments={activeDeployments} versions={versions} />
+                    <AttestationTab appId={app.id} app={app} token={session.accessToken} deployments={activeDeployments} versions={versions} />
                 )}
                 {tab === 'api' && session?.accessToken && (
                     <ApiTestingTab appId={app.id} token={session.accessToken} deployments={activeDeployments} versions={versions} />
@@ -422,8 +422,64 @@ function DangerZone({ app, deleting, onDelete }: { app: App; deleting: boolean; 
     );
 }
 
+// ------- Served in the clear (surfaces) -------
+// What the app declared it serves in the clear on the gateway-terminated leg:
+// its static browser shell and its public routes. Everything else is sealed
+// end to end. The declaration rides the measured manifest, so it is part of
+// what the attestation below covers; the confirmation names the owner who
+// vouched that those routes carry no personal data.
+function SurfacesPanel({ surfaces, versions }: { surfaces?: AppSurfaces; versions: AppVersion[] }) {
+    const statics = surfaces?.static ?? [];
+    const publics = surfaces?.public ?? [];
+    const declared = statics.length > 0 || publics.length > 0;
+    const confirmed = versions.filter(v => v.surfaces_confirmed_at).sort((a, b) => b.version_number - a.version_number);
+    const unconfirmed = versions.filter(v => v.surfaces && !v.surfaces_confirmed_at && v.status === 'ready');
+    return (
+        <section className="rounded-xl border border-black/10 dark:border-white/10 p-4 space-y-3">
+            <div>
+                <h3 className="text-sm font-semibold">Served in the clear</h3>
+                <p className="text-xs text-black/50 dark:text-white/50 mt-0.5">
+                    Routes the platform gateway reads, because the app declared them public in its measured manifest. Everything else reaches the enclave sealed end to end.
+                </p>
+            </div>
+            {!declared ? (
+                <p className="text-xs text-emerald-700 dark:text-emerald-400">Nothing. Every route of this app is sealed or attested.</p>
+            ) : (
+                <div className="grid gap-3 sm:grid-cols-2">
+                    <div>
+                        <div className="text-[11px] uppercase tracking-wide text-black/40 dark:text-white/40 mb-1">Static shell (GET, HEAD)</div>
+                        {statics.length === 0 ? <div className="text-xs text-black/40 dark:text-white/40">none</div> : (
+                            <ul className="text-xs font-mono space-y-0.5">{statics.map(p => <li key={p}>{p}</li>)}</ul>
+                        )}
+                    </div>
+                    <div>
+                        <div className="text-[11px] uppercase tracking-wide text-black/40 dark:text-white/40 mb-1">Public routes{surfaces?.cors === '*' ? ' · any origin' : ''}</div>
+                        {publics.length === 0 ? <div className="text-xs text-black/40 dark:text-white/40">none</div> : (
+                            <ul className="text-xs font-mono space-y-0.5">
+                                {publics.map(r => <li key={r.method + r.path}>{r.method.toUpperCase()} {r.path}{r.headers?.length ? <span className="text-black/40 dark:text-white/40"> + {r.headers.join(', ')}</span> : null}</li>)}
+                            </ul>
+                        )}
+                    </div>
+                </div>
+            )}
+            {declared && (
+                <div className="text-xs text-black/50 dark:text-white/50">
+                    {confirmed.length > 0 ? (
+                        <span>Confirmed to carry no personal data by <span className="font-mono">{confirmed[0].surfaces_confirmed_by}</span> on {new Date(confirmed[0].surfaces_confirmed_at as string).toLocaleString()} (v{confirmed[0].version_number}).</span>
+                    ) : (
+                        <span>No owner has confirmed these routes yet.</span>
+                    )}
+                    {unconfirmed.length > 0 && (
+                        <span className="ml-1 text-amber-700 dark:text-amber-400">v{unconfirmed.map(v => v.version_number).join(', v')} adds routes in the clear and waits for an owner&apos;s confirmation at deploy.</span>
+                    )}
+                </div>
+            )}
+        </section>
+    );
+}
+
 // ------- Attestation Tab -------
-function AttestationTab({ appId, token, deployments, versions }: { appId: string; token: string; deployments: AppDeployment[]; versions: AppVersion[] }) {
+function AttestationTab({ appId, app, token, deployments, versions }: { appId: string; app: App; token: string; deployments: AppDeployment[]; versions: AppVersion[] }) {
     const versionMap = Object.fromEntries(versions.map(v => [v.id, v]));
     const [selectedDeploymentId, setSelectedDeploymentId] = useState<string>(deployments[0]?.id ?? '');
     const selectedDeployment = deployments.find(d => d.id === selectedDeploymentId);
@@ -455,6 +511,9 @@ function AttestationTab({ appId, token, deployments, versions }: { appId: string
 
     return (
         <div className="space-y-6">
+            {app.app_type === 'container' && (
+                <SurfacesPanel surfaces={(app.container_mcp as { surfaces?: AppSurfaces } | undefined)?.surfaces} versions={versions} />
+            )}
             {deployments.length > 1 && (
                 <section className="flex items-center gap-3">
                     <label className="text-xs font-medium text-black/50 dark:text-white/50 shrink-0">Target deployment</label>

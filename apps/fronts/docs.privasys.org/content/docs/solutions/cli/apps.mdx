@@ -99,6 +99,13 @@ privasys apps versions promote my-app [version] [--pending 0]
 privasys apps versions revoke  my-app [version] [--pending 0]
 ```
 
+A container version that adds routes served in the clear (the manifest's `surfaces` block, see [Surfaces](/solutions/platform/developer-platform/deploy-container#surfaces-private-static-and-public)) ships only once an owner confirms those routes carry no personal data. `apps deploy` and `apps versions stage` show the routes and ask; `--confirm-surfaces` answers without a prompt (for CI, after you have reviewed the diff), and the confirmation can be recorded ahead of time:
+
+```sh
+privasys apps versions confirm-surfaces my-app [version]
+privasys apps describe my-app          # the served_in_the_clear row
+```
+
 <Callout type="info">
 If `apps deploy --watch` reports a vault-backed app failing to start right after a version or enclave change, the data key is locked pending approval. Run `privasys apps upgrade <app>` to review and promote the new measurement.
 </Callout>

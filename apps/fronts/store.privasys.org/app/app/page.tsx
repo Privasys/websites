@@ -24,6 +24,44 @@ function ReproRow({ label, children }: { label: string; children: React.ReactNod
     );
 }
 
+// What the app declared it serves in the clear: the routes the platform gateway
+// reads with its public certificate. Everything else reaches the enclave sealed
+// end to end. The declaration is part of the measured image, so it is covered
+// by the attestation below, and a user sees it before trusting the app.
+function ServedInTheClear({ app }: { app: StoreAppDetail }) {
+    if (app.target !== 'container') return null;
+    const statics = app.surfaces?.static ?? [];
+    const publics = app.surfaces?.public ?? [];
+    const declared = statics.length > 0 || publics.length > 0;
+    return (
+        <section className='p-5 rounded-2xl border border-black/10 dark:border-white/10'>
+            <h2 className='text-sm font-semibold mb-1'>Served in the clear</h2>
+            <p className='text-xs text-black/45 dark:text-white/45 mb-3'>
+                Routes the platform gateway can read because the app declared them public. Every other route is sealed between you and the enclave.
+            </p>
+            {!declared ? (
+                <p className='text-sm text-emerald-700 dark:text-emerald-400'>Nothing. Every route of this app is sealed end to end.</p>
+            ) : (
+                <>
+                    {statics.length > 0 && (
+                        <ReproRow label='Static shell (the page and its scripts, GET only)'>
+                            <code className='text-xs'>{statics.join('  ')}</code>
+                        </ReproRow>
+                    )}
+                    {publics.length > 0 && (
+                        <ReproRow label={`Public routes${app.surfaces?.cors === '*' ? ' (open to any origin)' : ''}`}>
+                            <ul className='space-y-0.5'>
+                                {publics.map(r => <li key={r.method + r.path}><code className='text-xs'>{r.method.toUpperCase()} {r.path}</code></li>)}
+                            </ul>
+                        </ReproRow>
+                    )}
+                    <p className='mt-2 text-xs text-black/45 dark:text-white/45'>Public routes are served anonymously: the enclave accepts no credential on them, so nothing you are signed in as can leak through them.</p>
+                </>
+            )}
+        </section>
+    );
+}
+
 function Reproducibility({ app }: { app: StoreAppDetail }) {
     const r = app.reproducibility;
     return (
@@ -136,6 +174,8 @@ function AppDetail() {
             )}
 
             <Reproducibility app={app} />
+
+            <ServedInTheClear app={app} />
 
             <LiveAttestation app={app} />
 
