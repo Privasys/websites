@@ -40,7 +40,7 @@ function ServedInTheClear({ app }: { app: StoreAppDetail }) {
                 Routes the platform gateway can read because the app declared them public. Every other route is sealed between you and the enclave.
             </p>
             {!declared ? (
-                <p className='text-sm text-emerald-700 dark:text-emerald-400'>Nothing. Every route of this app is sealed end to end.</p>
+                <p className='text-sm text-black/60 dark:text-white/60'>No public route is declared. Everything the app's manifest covers reaches the enclave sealed end to end.</p>
             ) : (
                 <>
                     {statics.length > 0 && (

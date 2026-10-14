@@ -443,7 +443,7 @@ function SurfacesPanel({ surfaces, versions }: { surfaces?: AppSurfaces; version
                 </p>
             </div>
             {!declared ? (
-                <p className="text-xs text-emerald-700 dark:text-emerald-400">Nothing. Every route of this app is sealed or attested.</p>
+                <p className="text-xs text-black/60 dark:text-white/60">No public route is declared in the manifest. Everything the manifest covers reaches the enclave sealed or attested; an image built before the manifest carried surfaces may still declare a static shell through the <code className="font-mono">org.privasys.static-unsealed-prefixes</code> label, which the attestation below covers.</p>
             ) : (
                 <div className="grid gap-3 sm:grid-cols-2">
                     <div>
