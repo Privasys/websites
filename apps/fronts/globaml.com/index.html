@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>GlobAML</title>
+<meta name="description" content="GlobAML: cross-border transaction analytics that identify suspicious actors while each bank's customer data stays private.">
+<link rel="canonical" href="https://globaml.com/">
+<meta name="theme-color" content="#0B1622">
+<meta name="color-scheme" content="dark">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="GlobAML">
+<meta property="og:url" content="https://globaml.com/">
+<meta property="og:title" content="GlobAML: see the whole network behind financial crime">
+<meta property="og:description" content="GlobAML: cross-border transaction analytics that identify suspicious actors while each bank's customer data stays private.">
+<meta property="og:image" content="https://globaml.com/icon-512.png">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<link rel="preload" href="/fonts/Archivo.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/PublicSans.woff2" as="font" type="font/woff2" crossorigin>
+<style>
+/* Fonts served from this site (latin subsets, variable). */
+@font-face { font-family: "Archivo"; font-style: normal; font-weight: 400 700; font-stretch: 100% 112%; font-display: swap; src: url(/fonts/Archivo.woff2) format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Public Sans"; font-style: normal; font-weight: 400 500; font-display: swap; src: url(/fonts/PublicSans.woff2) format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "JetBrains Mono"; font-style: normal; font-weight: 400 500; font-display: swap; src: url(/fonts/JetBrainsMono.woff2) format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+html, body { margin: 0; }
+</style>
+<script defer data-domain="globaml.com" data-api="/pa/event" src="/pa/script.js"></script>
+</head>
+<body>
+<style>
+/* Layout: a full-bleed transaction network is the page; the thesis sits on it,
+   five principles follow as a plain definition list, then the legal footer. */
+:root {
+  --ink: #0B1622;        /* deep navy ground, from the product's header */
+  --ink-2: #0E1C29;
+  --line: #22354A;       /* hairlines on the ground */
+  --text: #E8EEF6;
+  --muted: #93A3B8;
+  --accent: #7B97F7;     /* GlobAML blue, lifted for the dark ground */
+  --flag: #EF5B4F;       /* flagged */
+  --review: #EBA83A;     /* under review */
+  --font-display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --font-body: "Public Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Consolas, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { background: var(--ink); }
+body { background: var(--ink); color: var(--text); font: 400 16px/1.6 var(--font-body); -webkit-font-smoothing: antialiased; }
+a { color: inherit; }
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 2px; }
+
+.hero { position: relative; overflow: hidden; min-height: clamp(600px, 92vh, 980px); display: flex; flex-direction: column; isolation: isolate; }
+.stage { position: absolute; inset: 0; z-index: -2; }
+.stage .drift { position: absolute; inset: -4%; transform-origin: 62% 50%; animation: drift 48s ease-in-out infinite alternate; }
+.stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.scrim { position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  background:
+    linear-gradient(90deg, rgba(11,22,34,.94) 0%, rgba(11,22,34,.78) 30%, rgba(11,22,34,.18) 62%, rgba(11,22,34,0) 80%),
+    linear-gradient(0deg, var(--ink) 0%, rgba(11,22,34,0) 26%),
+    linear-gradient(180deg, rgba(11,22,34,.7) 0%, rgba(11,22,34,0) 18%); }
+@keyframes drift { from { transform: scale(1) translate3d(0,0,0); } to { transform: scale(1.06) translate3d(-1.2%, .8%, 0); } }
+
+.wrap { width: 100%; max-width: 1240px; margin: 0 auto; padding-inline: clamp(16px, 4vw, 48px); }
+header.top { padding-block: 28px; }
+header.top svg { height: 34px; width: auto; display: block; }
+
+.thesis { margin-top: auto; padding-block: 48px 72px; }
+.eyebrow { font: 500 12px/1.4 var(--font-mono); letter-spacing: .14em; text-transform: uppercase; color: var(--accent); margin: 0 0 22px; }
+h1 { font: 700 clamp(40px, 7.2vw, 92px)/.98 var(--font-display); font-stretch: 112%; letter-spacing: -.025em; margin: 0; max-width: 13ch; text-wrap: balance; }
+h1 em { font-style: normal; color: var(--accent); }
+.lede { max-width: 54ch; margin: 28px 0 0; font-size: clamp(17px, 1.6vw, 19px); line-height: 1.6; color: #C9D4E2; }
+
+.legend { position: absolute; right: clamp(16px, 4vw, 48px); bottom: 28px; display: flex; flex-wrap: wrap; gap: 8px 18px; justify-content: flex-end; max-width: min(520px, calc(100% - 32px));
+  font: 400 11.5px/1.4 var(--font-mono); color: var(--muted); letter-spacing: .02em; }
+.legend span { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
+.legend i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.legend .note { flex-basis: 100%; text-align: right; color: #6F8199; }
+
+.principles { border-top: 1px solid var(--line); padding-block: clamp(56px, 8vw, 96px); }
+.principles h2 { font: 600 13px/1.4 var(--font-mono); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); margin: 0 0 28px; }
+dl.list { margin: 0; display: grid; }
+dl.list > div { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 12px 48px; padding-block: 26px; border-top: 1px solid var(--line); }
+dl.list > div:last-child { border-bottom: 1px solid var(--line); }
+dl.list dt { font: 600 clamp(22px, 2.6vw, 30px)/1.15 var(--font-display); font-stretch: 112%; letter-spacing: -.01em; text-wrap: balance; }
+dl.list dd { margin: 0; color: #C9D4E2; max-width: 60ch; min-width: 0; }
+
+.status { padding-block: 0 clamp(56px, 8vw, 96px); display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 16px 40px; }
+.status p { margin: 0; max-width: 60ch; color: #C9D4E2; }
+.status .mail { font: 500 15px/1.4 var(--font-mono); color: var(--text); text-decoration: none; border-bottom: 1px solid var(--accent); padding-bottom: 2px; user-select: all; }
+
+footer { border-top: 1px solid var(--line); background: var(--ink-2); padding-block: 28px; font-size: 13.5px; color: var(--muted); }
+footer .wrap { display: flex; flex-wrap: wrap; gap: 14px 32px; justify-content: space-between; align-items: center; }
+footer nav { display: flex; flex-wrap: wrap; gap: 8px 22px; }
+footer a { text-decoration: none; }
+footer a:hover { color: var(--text); text-decoration: underline; text-underline-offset: 3px; }
+
+@media (max-width: 760px) {
+  dl.list > div { grid-template-columns: minmax(0, 1fr); }
+  /* On phones the network is a band under the logo, fading out above the
+     text, which reads on the plain ground below it. */
+  .hero { min-height: 0; }
+  .stage { bottom: auto; height: calc(clamp(220px, 44vh, 420px) + 150px);
+    -webkit-mask-image: linear-gradient(180deg, #000 62%, transparent 100%); mask-image: linear-gradient(180deg, #000 62%, transparent 100%); }
+  .scrim { background: linear-gradient(180deg, rgba(11,22,34,.75) 0, rgba(11,22,34,0) 110px); }
+  .thesis { margin-top: clamp(220px, 44vh, 420px); }
+  .legend { position: static; justify-content: flex-start; padding: 0 16px 28px; max-width: none; }
+  .legend .note { text-align: left; }
+  .thesis { padding-block: 0 28px; }
+}
+@media (prefers-reduced-motion: reduce) { .stage .drift { animation: none; } }
+/* Live stage: hover traces an account's transfers */
+.hero .thesis, .hero .legend, header.top { pointer-events: none; }
+.hero a { pointer-events: auto; }
+#graph canvas { position: absolute; inset: 0; }
+#graph .net-fx { pointer-events: none; }
+</style>
+
+<section class="hero" aria-labelledby="thesis">
+  <div class="stage" id="graph" role="img" aria-label="An illustrative network of bank accounts and transfers, with flagged and under-review accounts. Hover an account to trace its transfers."></div>
+  <div class="scrim"></div>
+  <header class="top"><div class="wrap"><a href="https://globaml.com" aria-label="GlobAML"><svg xmlns="http://www.w3.org/2000/svg" viewBox="3.67 0 396.32 84.33" role="img" focusable="false" aria-label="GlobAML"><title>GlobAML</title><g transform="scale(1.83)"><circle cx="24" cy="24" r="18" fill="none" stroke="#FFFFFF" stroke-width="2.5"></circle><path d="M24 6 39.6 33H8.4Z" fill="none" stroke="#587BF2" stroke-width="1.5" stroke-linejoin="round"></path><circle cx="24" cy="6" r="3.5" fill="#587BF2"></circle><circle cx="39.6" cy="33" r="3.5" fill="#587BF2"></circle><circle cx="8.4" cy="33" r="3.5" fill="#587BF2"></circle></g><g transform="translate(99.29 71.35)"><path fill="#FFFFFF" d="M29.00-21.59L29.00-26.93L46.97-26.93L46.97-2.00Q42.93-0.63 38.65 0.04Q34.38 0.70 29.11 0.70L29.11 0.70Q21.09 0.70 15.59-2.50Q10.09-5.70 7.24-11.62Q4.39-17.54 4.39-25.70L4.39-25.70Q4.39-33.68 7.54-39.62Q10.69-45.56 16.65-48.85Q22.61-52.14 30.97-52.14L30.97-52.14Q35.26-52.14 39.11-51.35Q42.96-50.55 46.27-49.11L46.27-49.11L43.98-43.91Q41.13-45.14 37.71-46.02Q34.28-46.90 30.62-46.90L30.62-46.90Q24.33-46.90 19.85-44.30Q15.36-41.70 12.99-36.95Q10.62-32.20 10.62-25.70L10.62-25.70Q10.62-19.27 12.69-14.50Q14.77-9.74 19.16-7.10Q23.55-4.46 30.48-4.46L30.48-4.46Q33.96-4.46 36.46-4.87Q38.95-5.27 40.99-5.84L40.99-5.84L40.99-21.59L29.00-21.59ZM62.21-54.70L62.21 0L56.34 0L56.34-54.70L62.21-54.70ZM105.58-19.34L105.58-19.34Q105.58-14.59 104.35-10.86Q103.12-7.14 100.80-4.57Q98.48-2.00 95.19-0.65Q91.90 0.70 87.75 0.70L87.75 0.70Q83.89 0.70 80.67-0.65Q77.45-2.00 75.12-4.57Q72.78-7.14 71.49-10.86Q70.21-14.59 70.21-19.34L70.21-19.34Q70.21-25.66 72.36-30.11Q74.50-34.56 78.49-36.90Q82.48-39.23 88.00-39.23L88.00-39.23Q93.27-39.23 97.23-36.88Q101.18-34.52 103.38-30.08Q105.58-25.63 105.58-19.34ZM76.26-19.34L76.26-19.34Q76.26-14.70 77.49-11.29Q78.72-7.88 81.29-6.01Q83.85-4.15 87.89-4.15L87.89-4.15Q91.90-4.15 94.49-6.01Q97.07-7.88 98.30-11.29Q99.53-14.70 99.53-19.34L99.53-19.34Q99.53-23.94 98.30-27.30Q97.07-30.66 94.50-32.48Q91.94-34.31 87.86-34.31L87.86-34.31Q81.85-34.31 79.05-30.34Q76.26-26.37 76.26-19.34ZM113.51-54.70L119.34-54.70L119.34-41.03Q119.34-38.67 119.22-36.46Q119.10-34.24 119.03-33.01L119.03-33.01L119.34-33.01Q120.93-35.61 123.91-37.41Q126.90-39.20 131.54-39.20L131.54-39.20Q138.79-39.20 143.09-34.19Q147.40-29.18 147.40-19.30L147.40-19.30Q147.40-12.80 145.43-8.33Q143.46-3.87 139.88-1.58Q136.29 0.70 131.40 0.70L131.40 0.70Q126.83 0.70 123.90-1.00Q120.96-2.71 119.38-5.17L119.38-5.17L118.92-5.17L117.73 0L113.51 0L113.51-54.70ZM130.59-34.31L130.59-34.31Q126.41-34.31 123.95-32.68Q121.49-31.04 120.42-27.76Q119.34-24.47 119.34-19.44L119.34-19.44L119.34-19.13Q119.34-11.85 121.77-8.00Q124.20-4.15 130.59-4.15L130.59-4.15Q135.97-4.15 138.66-8.09Q141.35-12.02 141.35-19.34L141.35-19.34Q141.35-26.79 138.70-30.55Q136.04-34.31 130.59-34.31Z"></path><path fill="#587BF2" d="M198.92 0L187.18 0L183.45-12.23L164.72-12.23L160.99 0L149.25 0L167.39-51.61L180.71-51.61L198.92 0ZM167.46-21.38L180.85-21.38L177.13-33.33Q176.77-34.52 176.19-36.40Q175.61-38.29 175.03-40.24Q174.45-42.19 174.10-43.63L174.10-43.63Q173.75-42.19 173.14-40.06Q172.52-37.93 171.96-36.04Q171.40-34.14 171.15-33.33L171.15-33.33L167.46-21.38ZM234.98 0L224.99 0L212.62-40.32L212.30-40.32Q212.37-38.88 212.53-35.98Q212.69-33.08 212.83-29.81Q212.97-26.54 212.97-23.91L212.97-23.91L212.97 0L203.23 0L203.23-51.40L218.07-51.40L230.23-12.09L230.44-12.09L243.34-51.40L258.18-51.40L258.18 0L248.02 0L248.02-24.33Q248.02-26.75 248.11-29.92Q248.20-33.08 248.34-35.95Q248.48-38.81 248.55-40.25L248.55-40.25L248.23-40.25L234.98 0ZM300.70 0L268.96 0L268.96-51.40L279.86-51.40L279.86-9L300.70-9L300.70 0Z"></path></g></svg></a></div></header>
+  <div class="thesis wrap">
+    <p class="eyebrow">Cross-border financial crime analytics</p>
+    <h1 id="thesis">See the <em>whole network</em> behind financial crime.</h1>
+    <p class="lede">GlobAML lets financial institutions analyse their transactions together to identify suspicious actors across banks and borders, while each bank’s customer data stays private to that bank.</p>
+  </div>
+  <div class="legend" aria-label="Network legend">
+    <span><i style="background:#587BF2"></i>Bank accounts</span>
+    <span><i style="background:var(--flag);box-shadow:0 0 0 3px rgba(239,91,79,.25)"></i>Flagged</span>
+    <span><i style="background:var(--review)"></i>Under review</span>
+    <span class="note" id="counts">Illustrative network. No real accounts.</span>
+  </div>
+</section>
+
+<main>
+  <section class="principles wrap" aria-labelledby="what">
+    <h2 id="what">What GlobAML does</h2>
+    <dl class="list">
+      <div><dt>Identifies suspicious actors</dt><dd>Graph analytics over many institutions’ transactions reveals layering chains, round-tripping and mule networks that span banks, and alerts each bank to its own accounts in them.</dd></div>
+      <div><dt>Keeps data private</dt><dd>Each bank runs its own instance inside attested confidential-computing hardware. A bank’s customer data stays readable to that bank alone, through the whole analysis.</dd></div>
+      <div><dt>Shares the minimum</dt><dd>Transactions are de-identified before anything leaves the bank. Details are shared case by case, in secure rooms between the institutions involved.</dd></div>
+      <div><dt>Works across borders</dt><dd>Institutions in different jurisdictions contribute to one analysis, and jurisdiction rules set which of them can meet in a secure room.</dd></div>
+      <div><dt>Builds on frontier technology</dt><dd>Confidential computing, remote attestation and large-scale graph analysis, combined so that cooperation rests on verifiable code rather than on any single party.</dd></div>
+    </dl>
+  </section>
+
+  <section class="status wrap" aria-label="Contact">
+    <p>GlobAML is being rolled out to leading financial institutions. It is built by <a href="https://privasys.org">Privasys</a> and integrates with <a href="https://futureflow.org">FutureFlow</a> analytics.</p>
+    <a class="mail" href="mailto:contact@privasys.org">contact@privasys.org</a>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>© 2026 Privasys Ltd. Registered Company UK-16866500.</span>
+    <nav aria-label="Legal">
+      <a href="https://privasys.org/legal/privacy/">Privacy</a>
+      <a href="https://privasys.org/legal/terms/">Terms</a>
+      <a href="https://privasys.org/legal/modern-slavery">Modern slavery statement</a>
+      <a href="https://privasys.org/legal/">Legal</a>
+    </nav>
+  </div>
+</footer>
+
+<script>
+// Network structure only: positions, edges and a colour class per node.
+const NET = {"n":663,"scale":10,"w":2304.3,"h":2399.1,"xy":"5hBOAQIKoP9ICBr6GgUSFdD9XgnY/lUKthZgAWD+1wlq90zpXg9G9dX+uwcF/98KJfqb6jACKfgS+HH5Pv43CYr7sgdbJHDpjAee0cQJlPU2HKEQ1BN2//kLQPSzAMb5iP7ECyz/0Pc6/q8IEhPW7hMMmff1ABYKoP8yCV/4r/k9GRwL9QsS8joJaP4RE/j40xAXBMAWlA89HhMCgBRyCFr72At4EW/lRQCU/sLyOv1LGoICMPnW6pbfV/itCrILtRTLBM4Z6Q4iEu0Ffv0TCvAj/+haBnECM/tMC1MUXO3ABvH5ZfPQ+LYLyQdMGUzzahSdCrsFoQOMDZMDIQtZ+xITYgR2Dcv8lOZN+Cn+DfA7/6EH/9I97YTievMSHIoOFOjv+/4IAAWa/XsK5gzJBOoULwUw9oQMoRByEW8pux2RGAgB1gtmCMcH4/ki9hoGovY9+G8EZuwQ8iQLIRWKBbXoePbTK7cmxvSiBFHcj/AdFmcX1xEfB8P9neavEgsWGgAB/yYJyvzDERMqnSBgAlT77g4nGDkBthBc7O3x9wSf2fDtcRe9Iaj3mw+6ByUKlgLb/xQBCOyy68/zsQ7eFOUIk/fWEnki0BTZCioYvgAHBCUV/fzsCJzyKP+l+xsAvh+6FMoasRF874EL1yJ56n0Esf32BgwEyQBf88QUivdE/V4ItfNCA5b4NPm2CQH9T/b0+0USZAX/4BbxmABB/koO7PsgDPP8Wf04CcsSnQrL+GENRgln/XP+fwoe/NIAABd7CtYC9BZx/rf9ChA8D9/6vgr9DBjwzRth/0QiIdw3EED/hhTiAC0VqOCL/ugK7/xvCZkZpw/UDf8FAPN6DxQIFB0yB5z5nwQ0FR/9VwrkDk0MnhzCAG4IcP83DHcGkAp/+ZsYTBBlFgwU0vhDA8UIjPw5C+IAzhqtEsD5ORF5DDMFMg5ECgwPkgf1BSXRJ/kWCvkGjeWtEKgIIPgY/MMVkQz1/vX5Ai0GIQ38yAwqH+7tMOGU8JX8u+7oEzvi2AqtA0wPvAJ36yz0Nv9U9a7rafPZDu/logX10kkJR/TQAZn/1gr8ACj/dQvf8vUPkPwfDZD4mAzSBNYZlREGKKQMJ/KTCcvsSxBUEmQJWQQSFDYYYAN+FPQE3u6MBwURcP+PCrkLtfv+GMwAfgxsFKALefdG8W30bgMuF78kohSXB5EDmf0HCAcMKwXwB2IDF+hw8RUHnftMGVYQXv3MCugIGAYeGHQFFf4xCpISzeNP75r6Zf2jCYr/rPyzB5gfmfQe+/T/6QqL+LUCDvCE+lb0wPu0EMUYPAaW1HIZAOidDvH3qv0iCyID7twtC8EQLwqjCSL9Wu7cA+4ZIgqv+YQASPcD/oUL+RRhBHMSWv4PDKYDoxndAX3//Ap/BNEPtwqo8zQV2QQD/eMJNhOS/a8Y/RDsEX0TJQ/QE1Qc7wW5Gl7mOdtL7boOdhKJEdwT6AKY+eMlNgNaDeIEyAVw93wcfw+LC/gEaP2KAc4F6v4mDX/jEPOF8rgH2w6BEWAJQxGx/pwU6ANv/Qrui/v1D2P7+AMjF/4OSQTYFFALOQbyFlMDawar+fb88uYh9KP+0gIJHCLzNAQtEMEhhht/D4kRVxTu4Cje6AtR/pb6VQ+aA+MUdwSr8+wHpP7mEh4FcA1nD3nyAfuV/8IDZhiMAeAZcwWP/28LkQ7IA1AItvmk9RID+/ebCvHjswWoByMMSAYO/5cNm/3bGZoSg/IU+v0OQviUFJr22fnTDiEKHPWj+nUD3Q5g6D0PXABzGHEAAfK3+20DIRKVAGgK3/3PCRQN3vnUCgb+qPQv9DPwC/m1C1DgdQ/3D/7/WwsmKzUt7BeZAsz+TgsMBR4RmQLBGf79nwp1DI0NthaiHzAJoAFICs78uRMJCBfsNfNpFQgOCg1I8vUDr/7fEND+ogVO1C8GTQhqFKsGUAXg1bEAdvtq3qjstw/eBX4USASR4E7cQgq4DWntrvRXEPUEKP2EDUMY//+zK9QfH/WjDh8G//NoAAkLMQjc/DoNmwIRDDX8zg0u/SwgDt4mJP/8fQdW+aoKpv2XDrAGRvb4F+wHdvk445nnZCtyKgUkPyHeCS3z8gvTCOQFefX9DRkITgaRCsf95gj1/t0LuvxL7rEGQtPkD4fmxfyc5KT5IxM78zAQrhY8DyUI/Qvd9+b5dAxKDrkKgP6UIo3YzxAgCicAhgp5D8AM0Q1qBB8RDRRS5zX63Qqd9PACQ/xMELoAv9ez7gnqnfIdCr8LCxnnDuUFiQXEAWcZbQyzAwUKifbrD60U8gxMED30Sfvp8ej6xRCEGm4NcgT9EK3xhyPWAvcNJ/ehEUcbA+9c+vYMWuUf6NrtpwWD+fQR7hPuE2cJOf9JAgIg//6sEF0U3Qme/K4E3RJDAALx7hdAABMRhhSz99MVhCIDIA34ugsg9n7/EPvfENgBlANx+YT/reF78kYVYAsaK0MlivuI7KsD6ANuCi4BtxcWA7gbohHSBwv+Nh1AFNvmUfnaBSz9zAQ3F4scjf+9/igIxw34A8AIQBdP+RQOlv/c6sHh9+FNA2IZ6QOOFN8NXgOUEHjpvQl5C6IjFtseDM0JYf29CGEAgwvz+J8LtgS4FGv/5Aud8nYPnAxgDBgFo/6iCPj8lw0R+twHOv0FBdUGkge7/vbzJv/2F7wVsgen/Q4Aev9RCYzq+AEZBOoElvPZBmX5Bg6xAbroM/2ECyL1PQpI/eURcBZlFET9rAo0/UwWh/v+/dIHRgQY9Cf+Bv9z5sjqX/5bC98Xt//1EjYJrupPAb//0QdNDAnioBe4AwcFzPq9/Nv22RZN6+L/yQsqDv3ntB3nHOASYfhH/jAI/R5kADQj39ge8VQDzfsV/xDjkfH6AJMKD/4GC9z6BQqbDMcROwr49d/3iQb8+bgN8ww8BRIOeRc2/3v+wfnZ+mjqiPS1FKcFBAGbCXATbwgkIifaMwPG3iT1agGqK/grwxLaGIr2kwykHUj/+wU1AKT24vK4CKACEB/kAAILVgsHDZcIdhlLDj7+wvh+BxP4OQRWBgUY3RDqDoUOOQozEP8FwgtZGAT6ygZnBtL9ZQjH9K72RBIyIIkKEvsl+wP1qQTvABkQnhNX+fMQq+UT6TQNlettFrICDAuHBJoWRxL9BE7UZv6iB6T7HOWv5SbvMxYBAcD7RgxcD4Lr5ircLoYPYwGECvoHTBLpKbzhpfglBEEX4gfl51gHv/uTDfQCTfUB/0jklfIhFNf8VQttAAUc/+P7GZEXaQl0/LECsRtq77D7TfyQ/Nj3Tg9GBbUUyxxuCEPmEfOQBa3xcvyj/f3ituzMAAQLPgYg+vsG3gDW5VoE6BiWD4wTAhmm9K/6QReCDtgXbyH0ClL23BF5AD0O6wpECGn9uRs4GQwRQO7WIaz9rgqcBbEDq/1IBwL6e98+8tMIlurn91T6+Pvi/moMUflTDOHxd+aa9kYbjxCo1KftSiS6IMkfi/7L/0v6GA7K+mIKYAuoDyUW1PcF6bTv9vL09nn1","c":"AQcDBAEBBAECAQEAAgcFAQEDAwUEBAUCAQIBAwIABgUFBQYDAgQHBAECAQUEAgADBAQDAQMHAQMDBQADAwEDAAIDAAcBBAAEBQMBAwQBAgUFBQMBBQEBBAEFAwMEBwICAQIFAwEFAwMFBQEFBQECAwMDAgUFAQIBAwQAAwcDAgABAgUCBQMBAQICAQEBAAEBBQEBAgEFAAAHBAEBAQQBAAEDAAEFBwIABwQEBwIHBAEDBwcBAAECAQMFBQEDBQIAAwECAgICAQIGBwEAAQECBQUBBwcFAQEBAQIEAwIFAAUCAQMHAgIEAQIFAQIFAQUEBQEBAAUBAQACAQQHAwIDAgIBBAcGBAECBQQBAgQCAAAEBQMFAQQDBwQDBAcCAgcDBwQCAQMEAgMEAwIBBQEFBAQDBwECAgIEBAUDBQUBAgMBAQUFAQcEAAADAQMHAgAFBQMBAQICAgUCAwEABAECAQEHAQICAwIEBQAEAAIFAAcFAgQCAwIHAQUFAAEBAgMAAwIAAwIDAQMEBQUDBwIBBwEAAgACAgEBBAUFBwIAAwECAwMAAAEHAgIDBAcBBwcDAAUFAQMDAQAEBQIFAgMDAAQCAgYCBQQBBAEBAQMBAgEFAgMHBAQCAAUCBQQBAwcBAgAHAwMFAwIEAQEBAQEFBwcCAgIBAgEEAgEBAAIDBwMCAgQDAgABAgEFAAUCBQECBQIFBQECAAMBBQQFAQABAQEDAwEBAwUBBQUEAQMAAAEFAQEHBwEDBQMCBAUHBwQBAwIBAgEFAgcFAgMBAAIEAwEFAQIABgEFAQcDBQUBAQYDAAQDBwQEAgQFAQEFBQABAQUBAwEABAQFBAIABwICBAMDBwcDAwEFAQIFAQQEAgQHAQMFAgUB","e":"AADBAAEABAEBAF8CAgBfAgMAwwEFAB4ABgCZAAcAHgAIAC0ACQC3AQwA0QENACIADQBfAg4AKAIPAB4AEAAeABEAewATAF8CFACdABUAfAIWAFUCFgAoAhcAgwIZABcAGwC1ARwAqAAeANgAHgAKAB4AXQEeAC8CHgAUAh4AjgAeAOoAHgAGAR4AGgAeAGABHgBEAB4AmwAeAAsAHgCRAR4ABgIeAB0AHgDKAB4ABAAeAFMBHgB6AR4AkAEeABgAHgDpAR4AigAeAAEBHgAnAh4A7QAfACgCIACQACEAFgAiAB4AIwAEASQArQElAGcBJgBVAicANwEnAGcBKAAeACkATQIqAMgAKwAoAiwA1AEtAEMALgBcAi8A/AAwADcBMQBnATIAdgEzAB4ANAB7ADUAIgA1APwANQDIADYAHgA3ABsAOABfAjkAKAI5AIQAOgD8ADoABAE7ACMAPABdAD0AqwE9AMgAPgAEAT8AIgBAACQAQQAyAUIAowFDACIARgBbAEcAOgJIAP8BSQCrAUkABAFKAB4ASwAEAUwANwFNAOsBTgCTAE8A0AFQAFUCUQCnAFIAXwJTACMCVAAoAlUA1gBWALQAVwA3AVgAVAJYAIsCWABGAFkA0AFaACQBWwCnAVwA0gBdAPwAXQBVAl0ABAFeAOABXwDSAGAAyABhACIAYgDPAGMAJgBkAB4AZQBVAmYAgAJnAFoAaAARAWkAYgFqACQCawCbAWsAbABsACgCbAAiAG0ALgJuAHUBbwASAXAAXwJxAEYCcgAMAnMAVQJ0AMMBdQAeAHYAYQJ3AKsBdwCEAHgA1wF5AKkAegBWAHsAvAB8ACIAfADIAH0ABAF9ADoBfgANAH8AIwCAAB4AgQCrAIIAKAKDACIAhAAeAIUAdgGGAB0ChwDIAIgAiQCJACIAiwCOAYwAKACNAAQBjwDIAJAA6QCQAPsAkAA8AZEAwwGSAMgAkwB9ApQAHgCVABYAlQATAJYAVQKXAIEBmABVApgAIgCZAKYBmgC/AJwAHgCdAGcBngAEAaAA3gGhAF8CogDDAaMAHgCkALEApQBVAqYAIgCnAAQBqABfAqgAIgCpAGcBqgDSAKoAZwGrAMMBqwAoAqsAhACsACIArQAiAK0ABAGuAAwBrwBkALAABAGxAAQBsgDIALIAZwG0AB4AtQBeArYAsgC3AEwBuAA8ALkAbwG6AHkBuwAeALwAOwC9AB0CvgBDAL8AKQDAAAQBwQAnAMEAdALCAHUBwwAAAcQAdQHFABUCxgCzAMcArgHIAB4AyQAiAMkABAHMAB4AzQA2AM4A2gHPAC4B0AAWANEARQHSAB4A0wAiANMA/ADUAF8A1QDDAdYAewHXAB4B2QAiANoATgLbACEC3ACoAN0AKALeAMMB3wBtAt8ATwDgACIA4QAeAOIABAHjAMgA4wD8AOMABAHjACIA5ACoAeUAIgDmAGcB5wAeAOgA0wDpAFUC6wApAOwAsgHuAIQA7gAiAO8AoADwAIQA8QAeAPIATAHzADkB9ACEAPUADgH3ABMC+ABUAfkAHgD7AB4B+wDDAfwAHgD9AEMA/gBdAv8AIgAAARECAAGQAgIBNwEDAasBAwEEAQMBVQIEAR4ABQEoAQcBjwEIAXsCCQE3AQoBHgALASABDAFnAQ0B0gAOAfwADgFnAQ4BHgEPATwBEAH3ABEBcAESAe8BEgG+ARIBrwESAd4BEwHSABQByAAVAbYBFgEEARcBIgAXAV8CGAExABkBBAEaAb8BGwEiABwBugEdAVYBHgEeAB8BZwEfAQQBIAEiACABVQIhATcBIgFDACMBdwEkAdIBJQFnASYBwwEnAQQBKAE3ASkBXwIqAeABKwHKASwB4gEtAUABLgEmAi8BqgEwAdIAMQFzATIBBAEyAV8CMgEiADMBzAA0AcMBNQGNATYBIgA3AR4AOAFhATkBhAA6ASQBOwFVAjwBVQI9AR4APgGtAT8BXwJAAY8AQQEgAkIBdQJDAWsARAE0AkUBIgBFAWcBRgE+AkcBhABIAVQBSQEXAkoBuwBLAXAATAEeAE0BTQJOASIATgE3AU8BVQJQAYQAUQEHAVIBHgBUASIAVQEiAFYBDQBWAXUBVwFHAVgBDwJZAUoCWQGxAFoBHgBbAYkBXAE3AV4BwwFfAd4AYQHDAWEBNwFiAXcCYwHTAWQBIgBlAV0AZgF1AWcBHgBoARYAaQEbAWoBTgFsAUMCbQEQAm0BsgBuAcYAbgH2AG4BUQJuAWsBbgGTAW8BIgBvASgCcAFxAnEBZAJxAVkCcQGMAXIBNwF0AfwAdQGEAHUBKAJ2AQQBdwEeAHgBVQJ5AU8AegGfAHoBlwF6AcsAegHuAXsBRQF7ARQBfAEeAH0BIgB+AQQBfwEiAIABMgGBAWUCggGBAoMBXwKEASIAhQEEAYYBxwGHAV8CiAHhAYkB0AGKAcgBiwEiAowBHgGMAQQBjQGuAY0BjQCOAT0AjgGeAI8BIgCPAcMBkgFDAJMBEgCUAU0BlQFeAJYBywGYAWcBmQFrAJoBKAKbATcBmwHSAJsBBAGbAfwAmwHDAZwBIgCeAYUBngEfAZ8BHgCgAX0CoQEEAaIB0gCjAUgApAH/AKQBFgClAXwApgEiAKYBVQKmAQQBpwGNAqgBdQGpAfwAqgFnAasBHgCsAZEArQEiAK0B/ACuASIArwHSALABmwGxAYQAsgGEALMBDgG0AQQBtQEjALUBrgG2ASYAtwGEALcBVQK4AfUAuQGEALoBTQK7Ad0AvAHlAL0B0gC+AVUCvwEIAr8BPQLAATMCwQHSAMIBIgDDAR4AxAF+AMUBVQLGAdIAxwHLAcgBFgLJAZQAygGIAsoBqwDLAR4AzAHSAc0BdwDOAW4CzwGLANEBQwDSAQQB0wEiANMBBAHUATcB1AFVAtUB5gDWASIA1wFQAtgBuQHZAfUB2gHDAdsBXAHbATMC3AEeAN0BBAHeAcMB3wFWAuABFwHhATEB4gHDAeMBwwHkAQQB5QFXAuYB/ADnAZcA6AE6AOoBHgDrAR4A7AHDAe0BHgDvAQQB7wH8APAByADwASIA8QEiAPIB2QDzASIA9AGrAfUBZAL2AcoB9wGqAPgBIgD5AcgA+gHRAPsB0gH8AY0B/QFfAv4BIgD+AQQB/gE3AQACIgABAiIAAgLSAAMCAwEEAiIABQIDAQcCjQEIAsgACQK7AQoCHgALAlUCDAJxAQ0CKwAOAh4ADwK6ARACVQIRAiIAEgKQAhMCtwEVAk0CFgJcABcCAwEXArcBGAIeABkCpQAaAi0CGwKBABwCyAAdAikCHgIeAB8CHgAgAh4AIQLvASICRwIjAhAAJAIeACUCBAEmApsBJwJtACgCHgApAjkAKQJ1ASoCNwErAh4ALAJdAC0CnQEtAoEBLgL6AC4CbgEvAlgAMAKJATECAgIyAusBMwJVAjQCXwI0AqsBNQKWAjYC/AA2Al8CNwKlADgC/AA5AtIAOQIiADoCZwE7ApACPAIiADwCyAA9AsMBPQKrAT0CXwI+AmcBPwKrAT8C0gBAAnQBQQLgAEECXgFCAgUCQwLjAEQCHgBFAlQARgKzAUcCIgBHAgQBRwJfAkgCEgJJAhsBSQI1AEoC0gBLAmQATAIJAk0CPAJNAgACTgI3AU8CBAFQAj8CUgIeAFMCKgFUAogBVQIeAFYCHgBXApUAWAJbAVkCBAFZAiIAWQJVAloCJwFbAs8AXALYAV0CwwFeAtEAXwIeAGACBAFhAhwCYgJuAmMCAwFkAiIAZQITAmYCqgBnAiIAaALiAWkCUAFqApIAawIkAmwCwwFtAlUCbgJ1AW8CewFwAggCcQK7AXICHgBzAl8CdALIAHUCDQJ2AmcBdwLSAHgChAB5AmcBegJiAXsCRwJ8AjcBfAJVAnwCIgB9AiIAfQLSAH4CIgB/AmYCgAK1AYEClgCCAtIAggIiAIIC/ACCAl8CgwIEAYMCIgCDAigChAJfAoUCzgGGAtEAhwIoAogCyACJAj8AigIWAIsCQgCMAnYCjQJFAI4CyAGPAjMCkAIoApACIgCQAsgAkQJ/AZIC/ACTAg4BlAItAJUC3QCWArcA"};
+// The network is drawn once on a base canvas (again only on resize). An
+// overlay canvas carries what moves: particles along the transfers, pulses on
+// flagged and under-review accounts, and the hovered account with its
+// transfers. A passive pointer listener does the hover; nothing listens to the
+// wheel or to touch, so the page scrolls freely. The overlay stops while the
+// network is off-screen.
+(() => {
+  const dec = (s, T) => { const b = atob(s), u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return new T(u.buffer); };
+  const xy0 = dec(NET.xy, Int16Array), cls = dec(NET.c, Uint8Array), ed = dec(NET.e, Uint16Array);
+  const n = NET.n, m = ed.length / 2;
+  // Institutions 0-5 (0 is the viewing bank), then flagged (6) and under review (7).
+  const COL = ['#587BF2', '#5FB3C9', '#3E9A73', '#8C9BB5', '#A58BE0', '#6C86C8', '#EF5B4F', '#EBA83A'];
+  const RPX = [2.6, 2.4, 2.4, 2.4, 2.4, 2.4, 3.8, 2.9]; // radius in px
+  const sus = (c) => c >= 6;
+
+  const X = new Float32Array(n), Y = new Float32Array(n);
+  for (let i = 0; i < n; i++) { X[i] = xy0[2 * i] / NET.scale; Y[i] = xy0[2 * i + 1] / NET.scale; }
+  const near = Array.from({ length: n }, () => []);
+  const linksOf = Array.from({ length: n }, () => []);
+  for (let k = 0; k < m; k++) {
+    const a = ed[2 * k], b = ed[2 * k + 1];
+    near[a].push(b); near[b].push(a); linksOf[a].push(k); linksOf[b].push(k);
+  }
+  const marked = []; for (let i = 0; i < n; i++) if (sus(cls[i])) marked.push(i);
+  const red = marked.filter((i) => cls[i] === 6);
+  // Where the activity is: the flagged accounts' centre.
+  const FX = red.reduce((s, i) => s + X[i], 0) / (red.length || 1), FY = red.reduce((s, i) => s + Y[i], 0) / (red.length || 1);
+
+  // Particles: one on every transfer, two on transfers between marked
+  // accounts, each with its own pace and starting point.
+  let seed = 11; const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32);
+  const parts = [];
+  for (let k = 0; k < m; k++) {
+    const hot = sus(cls[ed[2 * k]]) && sus(cls[ed[2 * k + 1]]);
+    for (let q = 0; q < (hot ? 2 : 1); q++) parts.push({ k, hot, off: rnd(), dur: (hot ? 2200 : 3200) + rnd() * 2600 });
+  }
+
+  const counts = document.getElementById('counts');
+  if (counts) counts.textContent = `Illustrative network: ${n.toLocaleString('en-GB')} accounts, ${m.toLocaleString('en-GB')} transfers. No real accounts.`;
+
+  const stage = document.getElementById('graph');
+  const hero = stage.closest('.hero');
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const base = document.createElement('canvas'), fx = document.createElement('canvas');
+  base.className = 'net-base'; fx.className = 'net-fx';
+  stage.append(base, fx);
+
+  let W = 0, H = 0, dpr = 1;
+  const SX = new Float32Array(n), SY = new Float32Array(n);
+  // The view: on wide screens the network fills the hero, its activity right
+  // of the text; on phones it fills the band above the text.
+  function place() {
+    const narrow = W < 760;
+    // On phones the stage is only the band above the text.
+    const k = narrow ? Math.max(W / NET.w * 1.25, H / NET.h * 0.95) : Math.max(W / NET.w * 1.12, H / NET.h * 1.08);
+    const ax = narrow ? 0.5 * W : 0.64 * W, ay = narrow ? 0.5 * H : 0.5 * H;
+    for (let i = 0; i < n; i++) { SX[i] = ax + (X[i] - FX) * k; SY[i] = ay + (Y[i] - FY) * k; }
+  }
+
+  function size() {
+    const r = stage.getBoundingClientRect();
+    W = r.width; H = r.height; dpr = Math.min(devicePixelRatio || 1, 2);
+    for (const c of [base, fx]) { c.width = Math.round(W * dpr); c.height = Math.round(H * dpr); }
+    place();
+    drawBase();
+    if (reduce) drawOverlay(0);
+  }
+
+  function drawBase() {
+    const c = base.getContext('2d');
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    c.clearRect(0, 0, W, H);
+    for (const hot of [false, true]) {
+      c.strokeStyle = hot ? 'rgba(239,91,79,0.5)' : 'rgba(150,170,200,0.22)';
+      c.lineWidth = hot ? 1.1 : 0.7;
+      c.beginPath();
+      for (let k = 0; k < m; k++) {
+        const a = ed[2 * k], b = ed[2 * k + 1];
+        if ((sus(cls[a]) && sus(cls[b])) !== hot) continue;
+        c.moveTo(SX[a], SY[a]); c.lineTo(SX[b], SY[b]);
+      }
+      c.stroke();
+    }
+    c.fillStyle = 'rgba(239,91,79,0.18)';
+    c.beginPath();
+    for (const i of red) { c.moveTo(SX[i] + 9, SY[i]); c.arc(SX[i], SY[i], 9, 0, Math.PI * 2); }
+    c.fill();
+    for (let col = 0; col < 8; col++) {
+      c.fillStyle = COL[col];
+      c.beginPath();
+      for (let i = 0; i < n; i++) {
+        if (cls[i] !== col) continue;
+        const r = RPX[col];
+        c.moveTo(SX[i] + r, SY[i]); c.arc(SX[i], SY[i], r, 0, Math.PI * 2);
+      }
+      c.fill();
+    }
+  }
+
+  // Hover: the account gets a ring, its transfers light up and carry
+  // brighter particles, its counterparties get a thin ring. Nothing else
+  // changes, so moving across the network does not flash.
+  let hover = -1;
+  const lit = (p) => hover >= 0 && (ed[2 * p.k] === hover || ed[2 * p.k + 1] === hover);
+  const inView = (x, y, pad) => x > -pad && y > -pad && x < W + pad && y < H + pad;
+  function drawOverlay(t) {
+    const c = fx.getContext('2d');
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    c.clearRect(0, 0, W, H);
+    if (hover >= 0) {
+      c.strokeStyle = 'rgba(232,238,246,0.85)';
+      c.lineWidth = 1.5;
+      c.beginPath();
+      for (const k of linksOf[hover]) { const a = ed[2 * k], b = ed[2 * k + 1]; c.moveTo(SX[a], SY[a]); c.lineTo(SX[b], SY[b]); }
+      c.stroke();
+      c.strokeStyle = 'rgba(232,238,246,0.55)';
+      c.lineWidth = 1;
+      c.beginPath();
+      for (const j of near[hover]) { const r = RPX[cls[j]] + 2.5; c.moveTo(SX[j] + r, SY[j]); c.arc(SX[j], SY[j], r, 0, Math.PI * 2); }
+      c.stroke();
+    }
+    if (!reduce) {
+      // Particles, batched by colour.
+      const groups = [
+        ['rgba(123,151,247,0.85)', 1.3, (p) => !p.hot && !lit(p)],
+        ['rgba(255,138,128,0.95)', 1.6, (p) => p.hot && !lit(p)],
+        ['#FFFFFF', 2, lit]
+      ];
+      for (const [style, r, pick] of groups) {
+        c.fillStyle = style;
+        c.beginPath();
+        for (const p of parts) {
+          if (!pick(p)) continue;
+          const a = ed[2 * p.k], b = ed[2 * p.k + 1];
+          const f = ((t / p.dur) + p.off) % 1;
+          const x = SX[a] + (SX[b] - SX[a]) * f, y = SY[a] + (SY[b] - SY[a]) * f;
+          if (!inView(x, y, 4)) continue;
+          c.moveTo(x + r, y); c.arc(x, y, r, 0, Math.PI * 2);
+        }
+        c.fill();
+      }
+      // Pulses: flagged accounts every 2.6 s, those under review slower and softer.
+      c.lineWidth = 1.2;
+      for (let j = 0; j < marked.length; j++) {
+        const i = marked[j];
+        if (!inView(SX[i], SY[i], 40)) continue;
+        const isRed = cls[i] === 6;
+        const p = ((t / (isRed ? 2600 : 4200)) + j * 0.37) % 1;
+        c.strokeStyle = isRed ? `rgba(239,91,79,${(0.6 * (1 - p)).toFixed(3)})` : `rgba(235,168,58,${(0.4 * (1 - p)).toFixed(3)})`;
+        c.beginPath();
+        c.arc(SX[i], SY[i], RPX[cls[i]] + p * (isRed ? 20 : 12), 0, Math.PI * 2);
+        c.stroke();
+      }
+    }
+    if (hover >= 0) {
+      const r = RPX[cls[hover]] * 1.6;
+      c.fillStyle = COL[cls[hover]];
+      c.beginPath(); c.arc(SX[hover], SY[hover], r, 0, Math.PI * 2); c.fill();
+      c.strokeStyle = '#FFFFFF'; c.lineWidth = 1.6;
+      c.beginPath(); c.arc(SX[hover], SY[hover], r + 3, 0, Math.PI * 2); c.stroke();
+    }
+  }
+
+  // The account under the pointer, keeping the current one until the pointer
+  // is clearly elsewhere.
+  function nodeAt(px, py) {
+    if (hover >= 0) { const dx = SX[hover] - px, dy = SY[hover] - py; if (dx * dx + dy * dy < 20 * 20) return hover; }
+    let best = -1, bd = 12 * 12;
+    for (let i = 0; i < n; i++) { const dx = SX[i] - px, dy = SY[i] - py, d = dx * dx + dy * dy; if (d < bd) { bd = d; best = i; } }
+    return best;
+  }
+  let pending = 0, last = null;
+  hero.addEventListener('pointermove', (e) => {
+    if (e.pointerType === 'touch') return;
+    last = e;
+    if (pending) return;
+    pending = requestAnimationFrame(() => {
+      pending = 0;
+      const r = stage.getBoundingClientRect();
+      const h = nodeAt(last.clientX - r.left, last.clientY - r.top);
+      if (h !== hover) { hover = h; if (reduce) drawOverlay(0); }
+    });
+  }, { passive: true });
+  hero.addEventListener('pointerleave', () => { if (hover >= 0) { hover = -1; if (reduce) drawOverlay(0); } }, { passive: true });
+
+  // The overlay runs only while the network is in view.
+  let visible = true, frame = 0;
+  function loop(t) { frame = 0; if (!visible) return; drawOverlay(t); frame = requestAnimationFrame(loop); }
+  const start = () => { if (!frame && visible && !reduce) frame = requestAnimationFrame(loop); };
+  new IntersectionObserver(([en]) => { visible = en.isIntersecting && document.visibilityState === 'visible'; start(); }).observe(hero);
+  document.addEventListener('visibilitychange', () => { visible = document.visibilityState === 'visible'; start(); });
+
+  size();
+  start();
+  let rt; addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(size, 120); });
+})();
+</script>
+</body>
+</html>
