@@ -401,7 +401,7 @@ export function ApiTestingTab({ connection, fido2, fido2Actions }: { connection:
             {authNeeded && fido2.status !== 'complete' && (
                 <section className='rounded-xl border border-amber-500/30 bg-amber-500/5 dark:bg-amber-400/10 p-5'>
                     <p className='text-sm text-amber-800 dark:text-amber-300'>This API requires authentication.</p>
-                    <div ref={inlineAuthRef} className='mt-3' />
+                    <div ref={inlineAuthRef} className={fido2.signingIn ? 'mt-3 min-h-[560px]' : 'mt-3'} />
                     {!fido2.signingIn && (
                         <button
                             type='button'
