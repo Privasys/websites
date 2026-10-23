@@ -91,7 +91,7 @@ export function AuthenticateTab({ connection, fido2, actions }: { connection: Co
 
     return (
         <section className='rounded-xl border border-black/10 dark:border-white/10 p-5'>
-            <div ref={containerRef} className={fido2.signingIn ? 'h-[560px]' : 'min-h-[320px]'} />
+            <div ref={containerRef} className='min-h-[320px]' />
             {/* Hidden while a ceremony runs in the frame — a second click would
                 start a concurrent ceremony and orphan the in-flight one. */}
             {fido2.sessionChecked && !fido2.signingIn && (
