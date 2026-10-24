@@ -7,7 +7,7 @@ export default function PrivacyPolicy() {
         <PageShell activePage='legal'>
 
             <article className='mt-24 lg:mt-40 prose-legal'>
-                <p className='text-sm text-[#1d1d1f]/50 dark:text-[#f5f5f7]/50 mb-4'>Last updated: September 2026</p>
+                <p className='text-sm text-[#1d1d1f]/50 dark:text-[#f5f5f7]/50 mb-4'>Last updated: October 2026</p>
                 <h1 className='text-4xl lg:text-5xl'>Privacy Policy</h1>
 
                 <p className='mt-8'>
@@ -106,6 +106,18 @@ export default function PrivacyPolicy() {
                     <a href='https://myapps.microsoft.com' target='_blank' rel='noopener noreferrer' className='underline'>myapps.microsoft.com</a>, and Zoom in the Zoom App Marketplace.
                     Anything the assistant has already left in your own account, such as a draft, a label, a proposal or a transcript in your Drive, remains yours to keep or delete.
                 </p>
+
+                <h2 className='text-2xl mt-12 mb-4'>Share links in Privasys Drive</h2>
+                <p>
+                    A Privasys Drive user can share a file or folder with a link, and can restrict it to people they approve.
+                    A restricted link asks the visitor to present details the sharer chose, such as a name, an email address, or a fact certified from a government ID (for example, that they are 18 or older).
+                </p>
+                <ul className='mt-4 list-disc pl-6 space-y-2'>
+                    <li><strong>What is shared, and with whom.</strong> The visitor approves each detail in their Privasys Wallet before it is sent. The details go to the sharer, so they can decide whether to grant access, and to no one else.</li>
+                    <li><strong>How long it is kept.</strong> Privasys Drive keeps the visitor&apos;s details, encrypted inside the Drive enclave, only while the request waits for the sharer&apos;s decision. They are deleted as soon as the sharer approves or declines, and after 7 days at the latest if no decision is made. The sharer&apos;s Privasys Wallet also receives them in a notification, on the sharer&apos;s own device.</li>
+                    <li><strong>Government-certified facts.</strong> A fact certified from a government ID is a signed statement from the Privasys identity verifier, which Privasys Drive checks before showing it. The visitor&apos;s document itself is never shared. The sharer pays for each certified fact a visitor presents.</li>
+                    <li><strong>The sharer.</strong> Visitors are not shown the sharer&apos;s name or account identifier; a link reads as shared with them, or names the workspace it comes from.</li>
+                </ul>
 
                 <h2 className='text-2xl mt-12 mb-4'>Your data protection rights</h2>
                 <p>Under data protection law, you have the following rights:</p>
