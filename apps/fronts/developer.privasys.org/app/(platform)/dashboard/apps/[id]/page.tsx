@@ -3251,7 +3251,7 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
             {/* A custom domain in front of the app's UI. Container apps only:
                 a wasm app serves no interface to put a hostname in front of. */}
             {app.app_type === 'container' && (
-                <AppDomains token={token} appId={app.id} />
+                <AppDomains token={token} appId={app.id} appName={app.name} />
             )}
 
             {/* Previous deployments (compact) */}

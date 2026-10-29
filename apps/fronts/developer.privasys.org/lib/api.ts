@@ -1562,6 +1562,28 @@ export interface AppUIDomain {
         cname_name: string;
         cname_target: string;
     };
+    // Where the hostname's TLS ends: at the gateway (alias), or in the
+    // enclave with a certificate it obtains itself (direct). direct-pending
+    // is the step between, while the enclave obtains that certificate.
+    mode?: AppDomainMode;
+    // Set on a direct hostname whose CAA record no longer pins the
+    // enclave's ACME account.
+    direct_warning?: string;
+    // What direct mode needs and has, read from the running enclave.
+    direct?: AppDomainDirect;
+}
+
+export type AppDomainMode = 'alias' | 'direct-pending' | 'direct';
+
+export interface AppDomainDirect {
+    supported: boolean;
+    in_policy: boolean;
+    account_uri?: string;
+    caa_record?: string;
+    issued: boolean;
+    not_after?: string;
+    spki_sha256?: string;
+    unavailable?: string;
 }
 
 export interface AppUIDomains {
@@ -1588,6 +1610,16 @@ export function verifyAppDomain(token: string, appId: string, domainId: string):
     return request<AppUIDomain>(
         `/api/v1/apps/${encodeURIComponent(appId)}/domains/${encodeURIComponent(domainId)}/verify`, token,
         { method: 'POST' }
+    );
+}
+
+// setAppDomainMode switches where a hostname's TLS ends. Switching to direct
+// is refused with the reason (and, for CAA, the exact record to publish) until
+// every requirement holds.
+export function setAppDomainMode(token: string, appId: string, domainId: string, mode: 'direct' | 'alias'): Promise<AppUIDomain> {
+    return request<AppUIDomain>(
+        `/api/v1/apps/${encodeURIComponent(appId)}/domains/${encodeURIComponent(domainId)}`, token,
+        { method: 'PATCH', body: JSON.stringify({ mode }) }
     );
 }
 

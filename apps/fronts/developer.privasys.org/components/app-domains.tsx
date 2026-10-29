@@ -7,10 +7,16 @@
 // enclave. Only what a browser displays moves. The owner adds a hostname,
 // creates two DNS records, and the control plane serves it once the ownership
 // record proves out.
+//
+// In direct mode the gateway passes the hostname's connections through
+// untouched and the enclave presents its own certificate, obtained inside it
+// under the app's ACME account. The owner pins that account with a CAA record,
+// so only the app's approved code can obtain a certificate for the name.
 
 import { useCallback, useEffect, useState } from 'react';
-import { listAppDomains, addAppDomain, verifyAppDomain, deleteAppDomain } from '~/lib/api';
-import type { AppUIDomain } from '~/lib/api';
+import type { ReactNode } from 'react';
+import { listAppDomains, addAppDomain, verifyAppDomain, deleteAppDomain, setAppDomainMode } from '~/lib/api';
+import type { AppUIDomain, AppDomainMode } from '~/lib/api';
 
 const STATUS_LABEL: Record<AppUIDomain['status'], string> = {
     pending: 'Waiting for DNS',
@@ -24,6 +30,81 @@ const STATUS_CLS: Record<AppUIDomain['status'], string> = {
     suspended: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300'
 };
 
+const MODE_LABEL: Record<AppDomainMode, string> = {
+    'alias': 'TLS at the gateway',
+    'direct-pending': 'Obtaining certificate',
+    'direct': 'TLS in the enclave'
+};
+
+const MODE_CLS: Record<AppDomainMode, string> = {
+    'alias': 'bg-black/5 text-black/60 dark:bg-white/10 dark:text-white/60',
+    'direct-pending': 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300',
+    'direct': 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300'
+};
+
+function CopyButton({ text }: { text: string }) {
+    const [copied, setCopied] = useState(false);
+    return (
+        <button type="button"
+            onClick={() => { navigator.clipboard.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); }); }}
+            className="shrink-0 px-2 py-0.5 text-[11px] font-medium rounded-md border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5">
+            {copied ? 'Copied' : 'Copy'}
+        </button>
+    );
+}
+
+function Fact({ label, children }: { label: string; children: ReactNode }) {
+    return (
+        <div className="grid grid-cols-[7rem_1fr] gap-2 items-start">
+            <div className="text-[11px] font-medium text-black/40 dark:text-white/40 pt-0.5">{label}</div>
+            <div className="min-w-0 text-[11px] break-all">{children}</div>
+        </div>
+    );
+}
+
+// DirectPanel shows what direct mode needs and has for one hostname.
+function DirectPanel({ d, appName }: { d: AppUIDomain; appName: string }) {
+    const x = d.direct;
+    if (!x) return null;
+    const mode = d.mode ?? 'alias';
+    const state = (ok: boolean, good: string, todo: ReactNode) => ok
+        ? <span className="text-emerald-700 dark:text-emerald-400">{good}</span>
+        : <span className="text-amber-700 dark:text-amber-400">{todo}</span>;
+    return (
+        <div className="rounded-lg bg-black/[0.03] dark:bg-white/[0.03] p-3 space-y-2">
+            <div className="text-[11px] text-black/50 dark:text-white/50">
+                {mode === 'direct'
+                    ? 'The gateway passes this hostname through untouched: TLS ends in the enclave, with a certificate whose key was born there.'
+                    : 'Direct mode ends TLS in the enclave, with a certificate it obtains itself, so only the app’s code sees the traffic.'}
+            </div>
+            {x.unavailable && <div className="text-[11px] text-amber-700 dark:text-amber-400">{x.unavailable}</div>}
+            <Fact label="Runtime">{state(x.supported, 'Supports direct mode', 'Needs a newer runtime')}</Fact>
+            <Fact label="Signed policy">
+                {state(x.in_policy, 'Lists this hostname', <>Approve it: <code>privasys apps policy approve {appName} --domains {d.hostname}</code></>)}
+            </Fact>
+            {x.account_uri && <Fact label="ACME account"><code>{x.account_uri}</code></Fact>}
+            {x.caa_record && (
+                <Fact label="CAA record">
+                    <div className="flex items-start gap-2">
+                        <code className="flex-1">{x.caa_record}</code>
+                        <CopyButton text={x.caa_record} />
+                    </div>
+                    <div className="mt-1 text-black/40 dark:text-white/40">
+                        Publish it on the hostname itself, and point the hostname with an A record: a CAA record cannot sit beside a CNAME.
+                    </div>
+                </Fact>
+            )}
+            {x.issued && (
+                <>
+                    <Fact label="Certificate">Valid until {x.not_after ? new Date(x.not_after).toLocaleDateString() : 'unknown'}</Fact>
+                    {x.spki_sha256 && <Fact label="Key (SHA-256)"><code>{x.spki_sha256}</code></Fact>}
+                </>
+            )}
+            {d.direct_warning && <div className="text-[11px] text-red-600 dark:text-red-400">{d.direct_warning}</div>}
+        </div>
+    );
+}
+
 function RecordRow({ label, name, value }: { label: string; name: string; value: string }) {
     return (
         <div className="grid grid-cols-[4rem_1fr] gap-2 items-start">
@@ -36,7 +117,7 @@ function RecordRow({ label, name, value }: { label: string; name: string; value:
     );
 }
 
-export function AppDomains({ token, appId }: { token: string; appId: string }) {
+export function AppDomains({ token, appId, appName }: { token: string; appId: string; appName?: string }) {
     const [data, setData] = useState<{ domains: AppUIDomain[]; cnameTarget: string; maxPerApp: number; platformHost: string } | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [hostname, setHostname] = useState('');
@@ -90,6 +171,20 @@ export function AppDomains({ token, appId }: { token: string; appId: string }) {
         }
     }
 
+    async function handleMode(d: AppUIDomain, mode: 'direct' | 'alias') {
+        setBusy(d.id);
+        setError(null);
+        try {
+            await setAppDomainMode(token, appId, d.id, mode);
+            await load();
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'The switch was refused');
+            await load();
+        } finally {
+            setBusy(null);
+        }
+    }
+
     async function handleRemove(d: AppUIDomain) {
         if (!confirm(`Remove ${d.hostname}? The app stays reachable at its platform hostname, and the gateways stop serving this one within a minute.`)) return;
         setBusy(d.id);
@@ -131,8 +226,25 @@ export function AppDomains({ token, appId }: { token: string; appId: string }) {
                                 <span className={`inline-block px-2 py-0.5 text-[11px] font-medium rounded-full ${STATUS_CLS[d.status]}`}>
                                     {STATUS_LABEL[d.status]}
                                 </span>
+                                {d.mode && (
+                                    <span className={`inline-block px-2 py-0.5 text-[11px] font-medium rounded-full ${MODE_CLS[d.mode]}`}>
+                                        {MODE_LABEL[d.mode]}
+                                    </span>
+                                )}
                             </div>
                             <div className="flex items-center gap-2">
+                                {d.status === 'live' && d.mode === 'alias' && d.direct?.supported && (
+                                    <button onClick={() => handleMode(d, 'direct')} disabled={busy === d.id}
+                                        className="px-2.5 py-1 text-xs font-medium rounded-lg border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-40">
+                                        {busy === d.id ? 'Checking…' : 'Switch to direct'}
+                                    </button>
+                                )}
+                                {(d.mode === 'direct' || d.mode === 'direct-pending') && (
+                                    <button onClick={() => handleMode(d, 'alias')} disabled={busy === d.id}
+                                        className="px-2.5 py-1 text-xs font-medium rounded-lg border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-40">
+                                        Back to gateway TLS
+                                    </button>
+                                )}
                                 {d.status !== 'live' && (
                                     <button onClick={() => handleVerify(d)} disabled={busy === d.id}
                                         className="px-2.5 py-1 text-xs font-medium rounded-lg border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-40">
@@ -159,6 +271,8 @@ export function AppDomains({ token, appId }: { token: string; appId: string }) {
                                 )}
                             </div>
                         )}
+
+                        {d.status === 'live' && d.direct && <DirectPanel d={d} appName={appName ?? appId} />}
 
                         {d.status === 'suspended' && (
                             <div className="text-[11px] text-red-600 dark:text-red-400">
