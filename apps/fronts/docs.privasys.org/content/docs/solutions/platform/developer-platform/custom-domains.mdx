@@ -1,0 +1,145 @@
+---
+title: Your own domain
+description: Serve your app on your own hostname with TLS that ends inside the attested enclave. The enclave obtains its own publicly trusted certificate, your DNS pins who may issue it, and the platform carries only ciphertext.
+---
+
+Every app has its platform hostname, `<app>.apps.privasys.org`. You can also serve it on a hostname you own, such as `app.example.com`. On your own domain the browser's TLS connection ends **inside the enclave**: the enclave obtains a publicly trusted certificate for the name itself, with a key generated in the TEE, and the platform gateway forwards the encrypted connection without being able to read it. This is called a **direct domain**.
+
+What your users get:
+
+- **A normal padlock**, from Let's Encrypt, on your name.
+- **Traffic only the enclave reads.** The gateway sees the hostname and encrypted bytes, nothing else.
+- **The page code straight from measured code.** Your static UI is served by the enclave over that same connection, so nobody between the browser and the enclave can change it.
+
+Your platform hostname stays exactly as it is. It remains the attested address that the wallet, the CLI and the [verification libraries](/solutions/platform/verification-libraries) use.
+
+<Callout type="info">
+Direct domains need an app with encrypted, vault-backed storage (`--storage` at create). The enclave's certificate account is derived from that key, which is what lets your DNS pin issuance to approved code.
+</Callout>
+
+## How the trust works
+
+A browser cannot check an attestation: page JavaScript never sees the server certificate. So instead of a check on every connection, a direct domain secures **who can obtain a certificate for your name**:
+
+1. **Your DNS pins issuance.** A CAA record (RFC 8657) names the one Let's Encrypt account allowed to issue for the hostname.
+2. **Only approved code holds that account.** The account key is derived inside the enclave from your app's vault-held key, which the vaults release only to measurements you approved. It stays the same across upgrades, so your CAA record never needs editing on a deploy.
+3. **The certificate key is born in the enclave** and never leaves it.
+4. **The attestation names the key.** The app's RA-TLS certificate carries OID `1.3.6.1.4.1.65230.7.4`, one line per direct domain with the SHA-256 of its certificate's public key. Anyone who attests the platform hostname can compare it with the certificate your domain presents.
+5. **Certificate Transparency is watched.** The enclave searches the public logs for your name and reports any certificate whose key it did not create.
+
+Your DNS stays yours: you can repoint the name or change the CAA record at any time, and Certificate Transparency makes any change visible to everyone.
+
+## Set it up
+
+You need the [CLI](/solutions/cli) v0.48.0 or later. Each step is also available in the portal, on the app's **Domains** card.
+
+### Step 1: Claim the hostname
+
+```bash
+privasys apps domains add <app> app.example.com
+```
+
+Publish the TXT record it prints, then confirm it:
+
+```
+_privasys.app.example.com.  TXT  "<token>"
+```
+
+```bash
+privasys apps domains verify <app> app.example.com
+```
+
+### Step 2: Approve the domain in your app's policy
+
+The hostnames an enclave may obtain certificates for are part of your app's owner-signed policy, approved in your wallet:
+
+```bash
+privasys apps policy approve <app> --domains app.example.com
+```
+
+The enclave accepts the policy immediately and registers its certificate account. The first signed policy also makes your signature the only way to change the app's policy from then on (its allowed callers, dependencies and domains), each change approved in your wallet and applied without a redeploy.
+
+### Step 3: Publish the CAA record
+
+`privasys apps domains list <app>` now prints the exact record, with your enclave's account:
+
+```
+app.example.com.  CAA  0 issue "letsencrypt.org; accounturi=https://acme-v02.api.letsencrypt.org/acme/acct/<id>; validationmethods=tls-alpn-01"
+```
+
+### Step 4: Point the name at the platform
+
+Use an **A record** to the platform gateway (the address of the host shown as `a_target` in `apps domains list`). A CNAME will not work here: a CAA record cannot sit beside a CNAME on the same name.
+
+### Step 5: Switch to direct
+
+```bash
+privasys apps domains mode <app> app.example.com direct
+```
+
+The platform checks that the claim is proven, that the name is in your signed policy and that the CAA record pins your enclave's account. The gateway then passes the certificate challenge through to the enclave, the enclave obtains its certificate, and within a few minutes the name serves directly. `apps domains list` shows the mode, the certificate's expiry and its key hash.
+
+<Callout type="info">
+Do steps 3 to 5 close together. Every certificate order placed before the gateway passes the challenge through fails, and the certificate authority allows only a few failed attempts per hour for a name.
+</Callout>
+
+## What your app sees
+
+The runtime tells your app how each request arrived, in `X-Privasys-Transport`:
+
+| Value | Meaning |
+| --- | --- |
+| `attested` | TLS ended in the enclave with its RA-TLS certificate (wallet, CLI, other enclaves) |
+| `sealed` | the body came over a sealed session from a browser |
+| `public` | plaintext through the gateway, on a route you declared public or static |
+| `direct` | TLS ended in the enclave on your own domain, with the public certificate |
+
+By default a direct domain serves what a browser gets through the gateway: your declared static and public routes, plus sealed sessions. Private routes stay sealed.
+
+### RA-TLS on your domain
+
+A client that asks for RA-TLS (it offers the `privasys-ratls/1` ALPN) on your domain gets the full attested certificate, with your hostname in it and the same attestation extensions as the platform hostname.
+
+### Private routes for signed-in users
+
+To serve your private routes directly on your domain, to users who signed in with the wallet, a passkey or a social login, declare it in your measured manifest:
+
+```json
+{
+  "surfaces": {
+    "static": ["/", "/assets/"],
+    "direct": "private"
+  }
+}
+```
+
+The page then sends an access token for **your app** with each request. With the [auth SDK](/solutions/privasys-id/auth-sdk):
+
+```ts
+const token = await authFrame.getTokenForAudience('app:<app id hex>');
+fetch('/api/v1/me', { headers: { Authorization: `Bearer ${token}` } });
+```
+
+The runtime verifies the token, removes it, and gives your app:
+
+| Header | Value |
+| --- | --- |
+| `X-Privasys-Sub` | the user's subject for your app, the same header a sealed session carries |
+| `X-Privasys-Attestation-Level` | `verified` when the user signed in with the wallet, `unverified` otherwise |
+
+Keep your most sensitive routes for `verified` users if they should require the wallet. A request without a token is anonymous, and a token that does not verify is refused. Paid routes need a wallet account: a user signed in another way gets `402` on them.
+
+## Check it yourself
+
+Anyone can confirm that the key behind your domain lives in your enclave:
+
+```bash
+# the key your domain serves to browsers
+openssl s_client -connect app.example.com:443 -servername app.example.com </dev/null 2>/dev/null \
+  | openssl x509 -noout -pubkey | openssl pkey -pubin -outform DER | sha256sum
+
+# what the attested enclave says it holds (OID 7.4 on its RA-TLS certificate)
+privasys attest <app> --extensions
+```
+
+The two hashes match. The attestation proves the enclave runs the measured code you approved, and OID 7.4 shows that this code holds the key your users' browsers connect to.

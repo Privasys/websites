@@ -12,6 +12,8 @@ A connection reaches an application over one of two legs. The client chooses whi
 | **RA-TLS splice** | the enclave | the SNI hostname only | the wallet, the CLI, services built on the [verification libraries](/solutions/platform/verification-libraries), other enclaves over mutual RA-TLS |
 | **Gateway-terminated** | the gateway, with a publicly trusted certificate | TLS metadata and the path; bodies stay sealed unless the route is a declared surface | browsers through the [auth SDK](/solutions/privasys-id/auth-sdk) (sealed session), and anyone with plain HTTPS on a declared public or static surface |
 
+An application served on its **own domain** uses a third path: the gateway splices that hostname to the enclave for every client, and the enclave answers browsers with a publicly trusted certificate it obtained itself. The gateway sees the hostname only. See [your own domain](/solutions/platform/developer-platform/custom-domains).
+
 The splice leg is the one to use whenever the client can verify an RA-TLS certificate. Browsers and third-party machines cannot: they refuse the enclave's attestation-bearing certificate, and only a publicly trusted certificate gives them a padlock. The terminated leg exists for them.
 
 ## The RA-TLS splice leg

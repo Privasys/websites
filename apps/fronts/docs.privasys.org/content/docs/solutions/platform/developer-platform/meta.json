@@ -9,6 +9,7 @@
         "configure-and-attest",
         "attestation",
         "app-lifecycle",
+        "custom-domains",
         "spend-tokens"
     ]
 }
