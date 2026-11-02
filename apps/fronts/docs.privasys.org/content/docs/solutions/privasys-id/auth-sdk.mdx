@@ -70,6 +70,7 @@ It rejects with a `ConnectError` whose `code` is `cancelled`, `timeout` or `fail
 | `scope`, `attributes` | What the sign-in asks for. Ask for the minimum: an attribute the user must first add to their wallet turns a returning visit into an onboarding. |
 | `presentation` | `page` renders the whole gate in your container; `inline` a compact column; `modal` an overlay. |
 | `methods` | Restrict to `wallet`, `passkey` or `social`. A sealed session needs the wallet, so enclave apps set `['wallet']`. |
+| `providers` | Narrow the `social` list to some of `github`, `google`, `microsoft`, `linkedin`, in that order. `methods: ['social'], providers: ['microsoft']` shows a single "Sign in with Microsoft" button and no chooser. It only narrows the list the identity provider publishes; a name it does not have is left out, and a list that matches nothing falls back to the published one. |
 | `pitch`, `app` | Plain strings and an https logo, rendered by the SDK in its own styling. |
 
 ## The sealed session
