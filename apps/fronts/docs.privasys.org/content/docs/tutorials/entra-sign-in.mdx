@@ -35,7 +35,7 @@ Note the **Application (client) ID** and the **Directory (tenant) ID** from the 
 
 ## 2. Register the federation and get the certificate
 
-The preferred credential is a certificate. Privasys ID generates the key pair inside its host's key management service, where the private key stays; each sign-in's token request is signed there, and nothing is shared with you or with anyone else.
+The preferred credential is a certificate. Privasys ID generates the key pair and keeps the private key; each sign-in's token request is signed with it, and only the public certificate is ever shared.
 
 ```bash
 privasys oauth-clients federation set <sign-in-client-id> microsoft \
@@ -68,6 +68,8 @@ It is encrypted before it is stored, decrypted only inside a token exchange, and
 ## 4. Grant the API permissions
 
 Under **API permissions**, add these Microsoft Graph **delegated** permissions: `openid`, `email`, `profile` and `User.Read`. Then choose **Grant admin consent for your organisation**, so your staff never see a consent prompt.
+
+For a multi-tenant registration, also open **Token configuration > Add optional claim**, choose token type **ID**, and add `xms_edov` (if it is not listed, set it in the **Manifest** under `optionalClaims.idToken`). It tells Privasys ID the address is on a domain the person's tenant has verified.
 
 ## 5. Check it works
 
@@ -110,7 +112,7 @@ This holds for members of your tenant, and for anyone signing in to a multi-tena
 
 ## What Privasys ID receives
 
-A single-tenant registration answers for its own directory, so apps receive the address your directory holds as verified. A multi-tenant registration cannot, since another tenant's administrator can set any address; apps then receive no email header and ask the person.
+A single-tenant registration answers for its own directory, so apps receive the address your directory holds as verified. A multi-tenant registration cannot, since another tenant's administrator can set any address, so apps receive one only when Microsoft's `xms_edov` claim says its domain is verified; otherwise they ask the person.
 
 Your staff authenticate with you. Privasys ID receives their directory id, name and email from Microsoft Graph to complete the sign-in, passes what the app has registered as required in the sign-in token, and keeps none of it: the identity provider stores no user profile.
 
