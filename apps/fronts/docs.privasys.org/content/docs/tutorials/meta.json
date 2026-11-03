@@ -6,6 +6,7 @@
         "integrate-auth-sdk",
         "enclave-upgrade",
         "age-verification",
-        "web-app-surfaces"
+        "web-app-surfaces",
+        "entra-sign-in"
     ]
 }

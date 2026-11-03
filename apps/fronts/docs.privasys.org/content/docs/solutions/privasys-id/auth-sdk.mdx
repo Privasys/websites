@@ -71,6 +71,9 @@ It rejects with a `ConnectError` whose `code` is `cancelled`, `timeout` or `fail
 | `presentation` | `page` renders the whole gate in your container; `inline` a compact column; `modal` an overlay. |
 | `methods` | Restrict to `wallet`, `passkey` or `social`. A sealed session needs the wallet, so enclave apps set `['wallet']`. |
 | `providers` | Narrow the `social` list to some of `github`, `google`, `microsoft`, `linkedin`, in that order. `methods: ['social'], providers: ['microsoft']` shows a single "Sign in with Microsoft" button and no chooser. It only narrows the list the identity provider publishes; a name it does not have is left out, and a list that matches nothing falls back to the published one. |
+| `theme` | Style the gate within a closed set of tokens: `preset` (`'govuk'` follows the GOV.UK Design System's buttons, focus state and links), `font` (a font stack), `colours` (hex only: `text`, `background`, `border`, `focus`, `focusText`, `primary`, `primaryText`, `secondary`, `secondaryText`, `link`), `radius` (0 to 24). A value outside its rule is dropped. The "Secured by Privasys ID" seal stays in every theme. |
+| `legal` | `false` hides the terms line in `inline` and `page` presentations, for a page that carries its own terms. A modal keeps it. |
+| `audience` | The audience of the access token issued at sign-in, for an app that authorises on it. A direct name passes its hostname. This first token is the only one that can carry the person's name and email, and `getTokenForAudience()` returns it while it is valid; see [the profile headers](#the-persons-name-and-email). |
 | `pitch`, `app` | Plain strings and an https logo, rendered by the SDK in its own styling. |
 
 ## The sealed session
@@ -105,6 +108,20 @@ session.onState((s) => {
 ```
 
 A sealed WebSocket refused because the enclave forgot the session is re-opened by the SDK on the recovered session, queued sends intact. Create one `AuthFrame` per page and per enclave host (`sessionRelay.appHost` is fixed at construction); the SDK warns when a second one for the same host is alive.
+
+## The person's name and email
+
+When a client has registered `email` and `name` as required attributes, the enclave asserts them to the app beside the subject, on a direct name and on a sealed session:
+
+| Header | Value |
+| --- | --- |
+| `X-Privasys-Sub` | the user's subject for your app |
+| `X-Privasys-Email` | the token's `email` claim |
+| `X-Privasys-Name` | the token's `name` claim, percent-encoded UTF-8: decode it before use |
+
+The runtime strips these from every inbound request, so only it can set them.
+
+The identity provider stores no user profile, so only the token from the sign-in itself carries these claims. A token renewed by refresh names the subject alone. **Store them the first time you see them, keyed by the subject.** An app that missed them (a session restored from storage, say) sees no headers and asks the person to sign in again when it needs the profile.
 
 ## SSO across sites
 
