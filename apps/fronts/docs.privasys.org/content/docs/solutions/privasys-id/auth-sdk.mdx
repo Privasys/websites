@@ -116,12 +116,14 @@ When a client has registered `email` and `name` as required attributes, the encl
 | Header | Value |
 | --- | --- |
 | `X-Privasys-Sub` | the user's subject for your app |
-| `X-Privasys-Email` | the token's `email` claim |
+| `X-Privasys-Email` | the token's `email` claim, only when the address was proved |
 | `X-Privasys-Name` | the token's `name` claim, percent-encoded UTF-8: decode it before use |
 
 The runtime strips these from every inbound request, so only it can set them.
 
 The identity provider stores no user profile, so only the token from the sign-in itself carries these claims. A token renewed by refresh names the subject alone. **Store them the first time you see them, keyed by the subject.** An app that missed them (a session restored from storage, say) sees no headers and asks the person to sign in again when it needs the profile.
+
+An address is proved when the identity provider mailed a code to it, when the provider says so (Google's `email_verified`, GitHub's primary address), or when it comes through an organisation's [own Entra registration](/tutorials/entra-sign-in) on a named tenant. Microsoft Graph says nothing about an address, so a sign-in through a multi-tenant registration sends no email header: ask the person, and check the address yourself.
 
 ## SSO across sites
 

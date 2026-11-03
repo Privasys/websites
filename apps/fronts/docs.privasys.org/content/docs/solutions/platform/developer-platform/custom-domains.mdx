@@ -125,7 +125,7 @@ The runtime verifies the token, removes it, and gives your app:
 | Header | Value |
 | --- | --- |
 | `X-Privasys-Sub` | the user's subject for your app, the same header a sealed session carries |
-| `X-Privasys-Email`, `X-Privasys-Name` | the token's `email` and `name` claims, when it has them; the name is percent-encoded UTF-8. Only a token from the sign-in itself carries them, so store them on first sight |
+| `X-Privasys-Email`, `X-Privasys-Name` | the token's `name` claim and its `email` claim when the address was proved; the name is percent-encoded UTF-8. Only a token from the sign-in itself carries them, so store them on first sight |
 | `X-Privasys-Attestation-Level` | `verified` when the user signed in with the wallet, `unverified` otherwise |
 
 Keep your most sensitive routes for `verified` users if they should require the wallet. A request without a token is anonymous, and a token that does not verify is refused. Paid routes need a wallet account: a user signed in another way gets `402` on them.

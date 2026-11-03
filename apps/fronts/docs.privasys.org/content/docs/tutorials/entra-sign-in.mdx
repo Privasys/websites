@@ -110,6 +110,8 @@ This holds for members of your tenant, and for anyone signing in to a multi-tena
 
 ## What Privasys ID receives
 
+A single-tenant registration answers for its own directory, so apps receive the address your directory holds as verified. A multi-tenant registration cannot, since another tenant's administrator can set any address; apps then receive no email header and ask the person.
+
 Your staff authenticate with you. Privasys ID receives their directory id, name and email from Microsoft Graph to complete the sign-in, passes what the app has registered as required in the sign-in token, and keeps none of it: the identity provider stores no user profile.
 
 <Cards>
