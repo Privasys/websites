@@ -47,6 +47,8 @@ privasys oauth-clients federation set <sign-in-client-id> microsoft \
 
 The command prints the public certificate and its expiry. Save the certificate as `privasys-id.pem`.
 
+The certificate can come before the registration: run the command with `--certificate` and `--display-name` only, upload the certificate when you create the registration, and run `set` again with `--client-id` and `--tenant` once you have them. The key stays, so the certificate already uploaded keeps working; sign-ins go through the Privasys registration until the ids are set. A later change of `--display-name` or `--icon-url` keeps the key too, and a field left out keeps its value.
+
 `--display-name` is the name on the sign-in button: "Sign in with Your Organisation".
 
 `--icon-url` (optional) is an https address of your organisation's icon, drawn on the button in place of the Microsoft logo. Use it when the button is labelled with your organisation rather than with Microsoft, for example a government crest. Anything but an https address is refused.
@@ -88,6 +90,22 @@ Your sign-in logs in Entra show the application by the name you gave it. To go b
 ```bash
 privasys oauth-clients federation remove <sign-in-client-id> microsoft
 ```
+
+## Renewing the certificate
+
+The certificate lasts two years, and `federation show` says when it expires. Renewal needs no outage, because Entra accepts several certificates on one registration:
+
+```bash
+privasys oauth-clients federation set <sign-in-client-id> microsoft --certificate --rotate
+```
+
+prints a new certificate while the old key keeps signing. Upload it beside the old one, then
+
+```bash
+privasys oauth-clients federation confirm-rotation <sign-in-client-id> microsoft
+```
+
+switches to the new key and destroys the old one. Delete the old certificate in Entra afterwards.
 
 ## Entra controls that work unchanged
 
