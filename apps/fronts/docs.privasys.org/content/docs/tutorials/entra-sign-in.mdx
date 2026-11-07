@@ -53,6 +53,10 @@ The certificate can come before the registration: run the command with `--certif
 
 `--icon-url` (optional) is an https address of your organisation's icon, drawn on the button in place of the Microsoft logo. Use it when the button is labelled with your organisation rather than with Microsoft, for example a government crest. Anything but an https address is refused.
 
+### Your registration beside the platform's, or in its place
+
+By default your registration takes the place of the platform's Microsoft button for every user of the sign-in client: one button, under your name. When only some of your users belong to your tenant (your staff) and the others bring Microsoft accounts of their own, add `--mode beside`: your registration becomes a button of its own, first on the gate, with your name and icon, and the platform's Microsoft button stays for everyone else. Switch at any time with another `set`; the key is kept.
+
 ## 3. Upload the certificate
 
 In your app registration, open **Certificates & secrets > Certificates > Upload certificate** and choose `privasys-id.pem`.
