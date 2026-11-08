@@ -71,10 +71,43 @@ It rejects with a `ConnectError` whose `code` is `cancelled`, `timeout` or `fail
 | `presentation` | `page` renders the whole gate in your container; `inline` a compact column; `modal` an overlay. |
 | `methods` | Restrict to `wallet`, `passkey` or `social`. A sealed session needs the wallet, so enclave apps set `['wallet']`. |
 | `providers` | Narrow the `social` list to some of `github`, `google`, `microsoft`, `linkedin`, in that order. `methods: ['social'], providers: ['microsoft']` shows a single "Sign in with Microsoft" button and no chooser. It only narrows the list the identity provider publishes; a name it does not have is left out, and a list that matches nothing falls back to the published one. |
-| `theme` | Style the gate within a closed set of tokens: `preset` (`'govuk'` follows the GOV.UK Design System's buttons, focus state and links), `font` (a font stack), `colours` (hex only: `text`, `background`, `border`, `focus`, `focusText`, `primary`, `primaryText`, `secondary`, `secondaryText`, `link`), `radius` (0 to 24). A value outside its rule is dropped. The "Secured by Privasys ID" seal stays in every theme. |
+| `theme` | Style the gate within a closed set of tokens: `font` (a font stack), `colours` (hex only: `text`, `background`, `border`, `focus`, `focusText`, `primary`, `primaryText`, `secondary`, `secondaryText`, `link`), `radius` (0 to 24). A value outside its rule is dropped. The "Secured by Privasys ID" seal stays in every theme. |
 | `legal` | `false` hides the terms line in `inline` and `page` presentations, for a page that carries its own terms. A modal keeps it. |
 | `audience` | The audience of the access token issued at sign-in, for an app that authorises on it. A direct name passes `app:<app id>` (32 hex characters), which the identity provider grants a client registered for that app. This first token is the only one that can carry the person's name and email, and `getTokenForAudience()` returns it while it is valid; see [the profile headers](#the-persons-name-and-email). |
 | `pitch`, `app` | Plain strings and an https logo, rendered by the SDK in its own styling. |
+| `headless` | Draw the gate yourself; see [a headless gate](#your-own-design-a-headless-gate). |
+
+## Your own design: a headless gate
+
+A page built on a design system of its own can draw the sign-in buttons itself. Pass `headless` and the frame stays invisible: it still holds every credential and runs every flow, and the page draws the options, starts the one the person picks, and narrates its progress.
+
+```ts
+const frame = new AuthFrame({
+  apiBase: 'https://api.privasys.org',
+  clientId: 'my-app',
+  appName: 'My App',
+  scope: ['openid', 'email', 'profile', 'offline_access'],
+  headless: {
+    onOptions: (options, gate) => drawButtons(options, (choice) => gate.start(choice)),
+    onState: (s) => narrate(s),
+  },
+});
+
+const { accessToken } = await frame.connect();
+```
+
+| Callback | What it receives |
+| --- | --- |
+| `onOptions(options, gate)` | What the client offers: `own` (the client's [own registrations](/tutorials/entra-sign-in), such as an organisation's staff sign-in, each with its display name), `providers` (the platform's, each with `id`, `name` and a brand `icon`), `wallet` (Privasys ID is offered) and `push` (this device can be notified). Called again for every new attempt. `gate.start(choice)` starts `{ method: 'social', provider, own? }` or `{ method: 'wallet', qr? }`; the frame starts only a choice it offered. `gate.cancel()` stops the attempt. |
+| `onState(state)` | Where the attempt is: `authenticating`, `push-waiting` (while a push waits, `start({ method: 'wallet', qr: true })` switches to the QR code), `qr-scanning` with the code as `qrSvg`, `success`, and `error` with `error`. |
+
+A social sign-in opens its popup on `privasys.id`, at the address the frame names, from the click on your page; the SDK does this for you. Set every label as text and show `qrSvg` as an image, never as markup. Passkeys are not offered headless, because a passkey ceremony needs the click inside the frame: use the visible gate where passkeys matter. With `headless`, `container`, `presentation`, `pitch`, `theme` and `legal` have no effect.
+
+A complete page in the style of the GOV.UK Design System is in the repository: [`sdk/examples/headless`](https://github.com/Privasys/identity-platform/tree/main/sdk/examples/headless).
+
+## The page's origin
+
+The result of a sign-in goes to the page that runs it, so the identity provider checks that page's origin against your client: the origin of one of its redirect URIs, or one of its registered page origins (`PUT /api/v1/oauth-clients/{client_id}/origins`, for the client's owner). Register every origin your pages are served from, including a custom domain.
 
 ## The sealed session
 
