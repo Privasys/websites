@@ -5,9 +5,11 @@
 import type { Place } from '~/lib/types';
 
 // mapsUrl opens the place in Google Maps, in satellite view (data=!3m1!1e3).
+// Google treats short coordinates as a search and snaps to the nearest
+// landmark, so they are written to 14 decimals to pin the exact point.
 export function mapsUrl(place: Place): string | null {
     if (place.latitude == null || place.longitude == null) return null;
-    return `https://www.google.com/maps/place/${place.latitude},${place.longitude}/data=!3m1!1e3`;
+    return `https://www.google.com/maps/place/${place.latitude.toFixed(14)},${place.longitude.toFixed(14)}/data=!3m1!1e3`;
 }
 
 export function PlaceLabel({ place, fallback }: { place?: Place | null; fallback?: string }) {
