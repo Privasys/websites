@@ -15,10 +15,15 @@ import type { Enclave } from '~/lib/types';
 import { useConfirm } from '~/components/confirm-dialog';
 import { PlaceLabel, Datacentre } from '~/components/place';
 
+// A control plane older than the per-volume rate sends none: quote the flat
+// Google Cloud rate it billed every volume at, as this page always did.
+const LEGACY_RATE = { billed: true, gbp_per_gb_month: 0.2 };
+
 // monthlyGBP is what the volume costs a month at its own rate; null when it
 // is not billed or its rate is unknown.
 function monthlyGBP(v: AdminVolume): number | null {
-    return v.rate?.billed && v.rate.gbp_per_gb_month != null ? v.size_gb * v.rate.gbp_per_gb_month : null;
+    const rate = v.rate ?? LEGACY_RATE;
+    return rate.billed && rate.gbp_per_gb_month != null ? v.size_gb * rate.gbp_per_gb_month : null;
 }
 
 function volumeState(v: AdminVolume): { label: string; cls: string } {

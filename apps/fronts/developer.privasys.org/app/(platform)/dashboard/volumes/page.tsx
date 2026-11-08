@@ -13,11 +13,16 @@ import type { Volume } from '~/lib/api';
 import { useConfirm } from '~/components/confirm-dialog';
 import { PlaceLabel, Datacentre } from '~/components/place';
 
+// A control plane older than the per-volume rate sends none: quote the flat
+// Google Cloud rate it billed every volume at, as this page always did.
+const LEGACY_RATE = { billed: true, gbp_per_gb_month: 0.2 };
+
 // monthlyCost is what sizeGB costs a month at the volume's own rate.
 function monthlyCost(v: Volume, sizeGB: number) {
-    if (v.rate && !v.rate.billed) return 'Not billed';
-    if (v.rate?.gbp_per_gb_month == null) return 'Unknown';
-    return `£${(sizeGB * v.rate.gbp_per_gb_month).toFixed(2)}`;
+    const rate = v.rate ?? LEGACY_RATE;
+    if (!rate.billed) return 'Not billed';
+    if (rate.gbp_per_gb_month == null) return 'Unknown';
+    return `£${(sizeGB * rate.gbp_per_gb_month).toFixed(2)}`;
 }
 
 function usageBar(v: Volume) {
@@ -203,7 +208,7 @@ export default function VolumesPage() {
                                 onChange={e => setNewSize(e.target.value)}
                                 className="w-32 px-3 py-2 text-sm rounded-lg border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/20"
                             />
-                            <span className="text-sm text-black/50 dark:text-white/50">GB · {monthlyCost(resizing, Number(newSize) || 0)}{resizing.rate?.gbp_per_gb_month != null ? '/month' : ''}</span>
+                            <span className="text-sm text-black/50 dark:text-white/50">GB · {monthlyCost(resizing, Number(newSize) || 0)}{(resizing.rate ?? LEGACY_RATE).gbp_per_gb_month != null ? '/month' : ''}</span>
                         </div>
                         <div className="flex justify-end gap-2">
                             <button onClick={() => setResizing(null)} disabled={busy !== null} className="px-3 py-1.5 text-sm rounded-lg border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5">Cancel</button>
