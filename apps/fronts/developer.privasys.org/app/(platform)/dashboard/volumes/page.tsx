@@ -5,12 +5,20 @@
 // GB-hour at its provider/region storage rate (attached or not), survives app
 // deletion, and exists until deleted here. Resize is online and grow-only.
 
+import Link from 'next/link';
 import { useAuth } from '~/lib/privasys-auth';
 import { useEffect, useState, useCallback } from 'react';
 import { listVolumes, getVolume, resizeVolume, deleteVolume } from '~/lib/api';
 import type { Volume } from '~/lib/api';
+import { useConfirm } from '~/components/confirm-dialog';
+import { PlaceLabel, Datacentre } from '~/components/place';
 
-const STORAGE_GBP_PER_GB_MONTH = 0.2; // 278 credits/GB/hour × 720h ≈ £0.20
+// monthlyCost is what sizeGB costs a month at the volume's own rate.
+function monthlyCost(v: Volume, sizeGB: number) {
+    if (v.rate && !v.rate.billed) return 'Not billed';
+    if (v.rate?.gbp_per_gb_month == null) return 'Unknown';
+    return `£${(sizeGB * v.rate.gbp_per_gb_month).toFixed(2)}`;
+}
 
 function usageBar(v: Volume) {
     if (v.used_mb == null || v.avail_mb == null) return null;
@@ -30,6 +38,7 @@ function usageBar(v: Volume) {
 
 export default function VolumesPage() {
     const { session } = useAuth();
+    const confirm = useConfirm();
     const [volumes, setVolumes] = useState<Volume[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -83,7 +92,11 @@ export default function VolumesPage() {
 
     async function handleDelete(v: Volume) {
         if (!session?.accessToken) return;
-        if (!confirm(`Delete volume "${v.name}" (${v.size_gb} GB)? Its encrypted data is DESTROYED and cannot be recovered — export the app's key first if you want the data. Billing stops immediately.`)) return;
+        if (!(await confirm({
+            title: `Delete volume ${v.name}?`,
+            body: `Its ${v.size_gb} GB of encrypted data is destroyed and cannot be recovered. Export the app's key first if you want the data. Billing stops immediately.`,
+            confirmLabel: 'Delete volume', danger: true, typeToConfirm: v.name
+        }))) return;
         setBusy(v.id);
         setError(null);
         try {
@@ -97,13 +110,12 @@ export default function VolumesPage() {
     }
 
     return (
-        <div className="max-w-5xl space-y-6">
+        <div className="space-y-6">
             <div>
                 <h1 className="text-xl font-semibold">Volumes</h1>
-                <p className="mt-1 text-sm text-black/50 dark:text-white/50">
-                    Your encrypted storage, independent of your apps. Volumes bill per GB-hour at the host
-                    region&apos;s storage rate (≈ £{STORAGE_GBP_PER_GB_MONTH.toFixed(2)}/GB/month) — attached or not —
-                    until you delete them. Deleting an app keeps its volume; delete it here when you are done with the data.
+                <p className="mt-1 max-w-3xl text-sm text-black/50 dark:text-white/50">
+                    Your encrypted storage, independent of your apps. Volumes bill per GB-hour at the storage
+                    rate of the region they are in, attached or not, until you delete them. Deleting an app keeps its volume; delete it here when you are done with the data.
                 </p>
             </div>
 
@@ -120,11 +132,11 @@ export default function VolumesPage() {
                     <table className="w-full text-sm">
                         <thead>
                             <tr className="text-left text-xs text-black/40 dark:text-white/40 border-b border-black/5 dark:border-white/5">
-                                <th className="px-4 py-2 font-medium">Volume</th>
+                                <th className="px-4 py-2 font-medium">App</th>
                                 <th className="px-4 py-2 font-medium">Size</th>
                                 <th className="px-4 py-2 font-medium">Usage</th>
                                 <th className="px-4 py-2 font-medium">Location</th>
-                                <th className="px-4 py-2 font-medium">App</th>
+                                <th className="px-4 py-2 font-medium">Datacentre</th>
                                 <th className="px-4 py-2 font-medium text-right">≈ £/month</th>
                                 <th className="px-4 py-2" />
                             </tr>
@@ -133,20 +145,27 @@ export default function VolumesPage() {
                             {volumes.map(v => (
                                 <tr key={v.id} className="border-b border-black/5 dark:border-white/5 last:border-0">
                                     <td className="px-4 py-3">
-                                        <div className="font-medium">{v.name}</div>
+                                        <div className="font-medium">
+                                            {v.app_id && v.app_name
+                                                ? <Link href={`/dashboard/apps/${v.app_id}`} className="hover:underline">{v.app_name}</Link>
+                                                : v.name}
+                                        </div>
+                                        {v.app_name && v.app_name !== v.name && (
+                                            <div className="text-[11px] text-black/40 dark:text-white/40">volume {v.name}</div>
+                                        )}
                                         <div className="text-[11px] text-black/40 dark:text-white/40">
                                             {v.attached
                                                 ? <span className="text-emerald-600 dark:text-emerald-400">attached</span>
                                                 : v.app_id
                                                     ? 'detached (app stopped)'
-                                                    : <span className="text-amber-600 dark:text-amber-400">orphaned (app deleted — still billing)</span>}
+                                                    : <span className="text-amber-600 dark:text-amber-400">orphaned (app deleted, still billing)</span>}
                                         </div>
                                     </td>
                                     <td className="px-4 py-3 whitespace-nowrap">{v.size_gb} GB</td>
                                     <td className="px-4 py-3">{usageBar(v) ?? <span className="text-[11px] text-black/30 dark:text-white/30">{v.attached ? 'loading…' : 'unknown while detached'}</span>}</td>
-                                    <td className="px-4 py-3 whitespace-nowrap text-black/60 dark:text-white/60">{v.provider}/{v.region}</td>
-                                    <td className="px-4 py-3 whitespace-nowrap">{v.app_name || <span className="text-black/30 dark:text-white/30">—</span>}</td>
-                                    <td className="px-4 py-3 text-right whitespace-nowrap">£{(v.size_gb * STORAGE_GBP_PER_GB_MONTH).toFixed(2)}</td>
+                                    <td className="px-4 py-3 whitespace-nowrap"><PlaceLabel place={v.place} fallback={v.region} /></td>
+                                    <td className="px-4 py-3 whitespace-nowrap text-black/60 dark:text-white/60"><Datacentre place={v.place} fallback={v.provider} /></td>
+                                    <td className="px-4 py-3 text-right whitespace-nowrap">{monthlyCost(v, v.size_gb)}</td>
                                     <td className="px-4 py-3 text-right whitespace-nowrap">
                                         <button
                                             onClick={() => { setResizing(v); setNewSize(String(v.size_gb * 2)); }}
@@ -184,7 +203,7 @@ export default function VolumesPage() {
                                 onChange={e => setNewSize(e.target.value)}
                                 className="w-32 px-3 py-2 text-sm rounded-lg border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/20"
                             />
-                            <span className="text-sm text-black/50 dark:text-white/50">GB · ≈ £{((Number(newSize) || 0) * STORAGE_GBP_PER_GB_MONTH).toFixed(2)}/month</span>
+                            <span className="text-sm text-black/50 dark:text-white/50">GB · {monthlyCost(resizing, Number(newSize) || 0)}{resizing.rate?.gbp_per_gb_month != null ? '/month' : ''}</span>
                         </div>
                         <div className="flex justify-end gap-2">
                             <button onClick={() => setResizing(null)} disabled={busy !== null} className="px-3 py-1.5 text-sm rounded-lg border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5">Cancel</button>

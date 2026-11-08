@@ -59,10 +59,10 @@ export default function AdminProvidersPage() {
     }
 
     return (
-        <div className="p-8 max-w-5xl mx-auto space-y-6">
+        <div className="space-y-6">
             <header>
                 <h1 className="text-2xl font-semibold">Attribute providers</h1>
-                <p className="mt-1 text-black/60 dark:text-white/60">
+                <p className="max-w-3xl mt-1 text-black/60 dark:text-white/60">
                     Review who may publish attested attributes. Approve to make a provider&apos;s
                     attributes consumable; suspend to withdraw them.
                 </p>

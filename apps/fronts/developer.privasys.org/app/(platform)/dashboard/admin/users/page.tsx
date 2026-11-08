@@ -3,6 +3,7 @@
 import { useAuth, hasAdminRole } from '~/lib/privasys-auth';
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { adminListUsers, adminDeleteUser, adminGrantUserCredits, type AdminUser } from '~/lib/api';
+import { useConfirm } from '~/components/confirm-dialog';
 
 // Ledger unit: 1,000,000 credits = £1 (matches the included monthly allowance).
 const CREDITS_PER_GBP = 1_000_000;
@@ -54,6 +55,7 @@ function CopyButton({ value, label }: { value: string; label: string }) {
 
 export default function AdminUsersPage() {
     const { session } = useAuth();
+    const confirm = useConfirm();
     const [users, setUsers] = useState<UserRow[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -167,9 +169,11 @@ export default function AdminUsersPage() {
         setActionError(null);
         if (!session?.accessToken) return;
         const label = user.display_name || user.name || user.email || user.sub;
-        if (!window.confirm(
-            `Delete user "${label}"?\n\nuser_id: ${user.sub}\n\nThis cannot be undone.`
-        )) return;
+        if (!(await confirm({
+            title: `Delete user ${label}?`,
+            body: <><p className="font-mono text-xs">user_id: {user.sub}</p><p>This cannot be undone.</p></>,
+            confirmLabel: 'Delete user', danger: true
+        }))) return;
         setDeleting(user.sub);
         try {
             await adminDeleteUser(session.accessToken, user.sub);
@@ -190,7 +194,7 @@ export default function AdminUsersPage() {
 
     if (!isAdmin) {
         return (
-            <div className="max-w-6xl">
+            <div>
                 <p className="text-sm text-red-600 dark:text-red-400 mt-8">Access denied. Admin role required.</p>
             </div>
         );
@@ -206,7 +210,7 @@ export default function AdminUsersPage() {
 
     if (error) {
         return (
-            <div className="max-w-6xl">
+            <div>
                 <div className="mt-6 p-4 rounded-lg bg-red-50 dark:bg-red-900/20 text-sm text-red-700 dark:text-red-300">
                     {error}
                 </div>
@@ -218,7 +222,7 @@ export default function AdminUsersPage() {
     }
 
     return (
-        <div className="max-w-6xl">
+        <div>
             <div className="flex items-center justify-between mb-6">
                 <h1 className="text-2xl font-semibold">Users</h1>
                 <span className="text-sm text-black/50 dark:text-white/50">

@@ -11,6 +11,7 @@ import {
     adminDeleteFleetTool,
 } from '~/lib/api';
 import type { AITool, CreateAIToolBody } from '~/lib/types';
+import { useConfirm } from '~/components/confirm-dialog';
 
 const TOOL_NAME_RE = /^[a-zA-Z0-9_]+$/;
 
@@ -75,7 +76,7 @@ export default function AdminFleetToolsPage() {
     }
 
     return (
-        <div className="max-w-5xl">
+        <div>
             <div className="flex items-center gap-2 text-sm text-black/60 dark:text-white/60">
                 <Link href="/dashboard/admin/fleets" className="underline">Fleets</Link>
                 <span>/</span>
@@ -86,7 +87,7 @@ export default function AdminFleetToolsPage() {
             <div className="mt-2 flex items-end justify-between">
                 <div>
                     <h1 className="text-2xl font-semibold">AI tools</h1>
-                    <p className="mt-2 text-sm text-black/60 dark:text-white/60">
+                    <p className="max-w-3xl mt-2 text-sm text-black/60 dark:text-white/60">
                         Tools listed here are offered to chat users connecting to
                         this fleet. Enabled-by-default tools are pushed to the
                         AI inference container automatically as MCP_SERVERS
@@ -197,6 +198,7 @@ function ToolEditor({
     onClose: () => void;
     onSaved: () => void;
 }) {
+    const confirm = useConfirm();
     const [body, setBody] = useState<CreateAIToolBody>(() => {
         if (!initial) return EMPTY;
         return {
@@ -247,7 +249,7 @@ function ToolEditor({
 
     async function destroy() {
         if (!initial) return;
-        if (!confirm(`Delete tool "${initial.name}"? This cannot be undone.`)) return;
+        if (!(await confirm({ title: `Delete tool ${initial.name}?`, body: 'This cannot be undone.', confirmLabel: 'Delete tool', danger: true }))) return;
         setSaving(true);
         setErr(null);
         try {

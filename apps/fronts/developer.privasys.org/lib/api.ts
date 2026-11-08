@@ -1,4 +1,4 @@
-import type { App, CreateAppRequest, ReviewRequest, DeploymentLog, BuildJob, Enclave, EnclaveApp, CreateEnclaveRequest, EnclaveMeasurements, AppVersion, AppDeployment, AttestationResult, TeeType, CachedImage, CloudProvider, CloudRegion, CloudRegionsMeta } from './types';
+import type { App, CreateAppRequest, ReviewRequest, DeploymentLog, BuildJob, Enclave, EnclaveApp, CreateEnclaveRequest, EnclaveMeasurements, AppVersion, AppDeployment, AttestationResult, TeeType, CachedImage, CloudProvider, CloudRegion, CloudRegionsMeta, Place, StorageRate } from './types';
 import { getApiBaseUrl } from './api-base-url';
 import { callApp, AppCallError, type AppManifest } from '@privasys/app-call';
 import { getEnclaveSealedSession, dropEnclaveAuthFrame } from './enclave-session';
@@ -1518,6 +1518,8 @@ export interface Volume {
     used_mb?: number;
     avail_mb?: number;
     usage_error?: string;
+    place?: Place;
+    rate?: StorageRate;
     created_at: string;
     updated_at: string;
 }
@@ -1652,6 +1654,8 @@ export interface AdminVolume {
     enclave_status?: string;
     // The bound app runs on this volume's host.
     attached: boolean;
+    place?: Place;
+    rate?: StorageRate;
 }
 
 export async function adminListVolumes(token: string, enclaveId?: string): Promise<AdminVolume[]> {

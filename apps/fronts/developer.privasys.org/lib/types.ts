@@ -180,6 +180,23 @@ export const STATUS_COLORS: Record<AppStatus, string> = {
 // Enclave instance
 export type TeeType = 'sgx' | 'tdx';
 
+// Place is where something runs, as the control plane resolves it from the
+// enclave and the cloud-regions dataset.
+export interface Place {
+    label: string;        // "Paris, France"
+    code?: string;        // cloud region code, e.g. "europe-west9"
+    datacentre?: string;  // who runs the datacentre: "Google Cloud", "OVHcloud"…
+    latitude?: number;
+    longitude?: number;
+}
+
+// StorageRate is what a volume costs where it is. billed=false: the location
+// has no storage price.
+export interface StorageRate {
+    billed: boolean;
+    gbp_per_gb_month?: number;
+}
+
 export interface Enclave {
     id: string;
     name: string;
@@ -198,6 +215,7 @@ export interface Enclave {
     country_code: string;
     continent: string;
     cloud_region_code: string;
+    place?: Place;
     status: 'active' | 'maintenance' | 'retired';
     max_apps: number;
     // Apps placed on the enclave: its deploying, starting and active deployments.

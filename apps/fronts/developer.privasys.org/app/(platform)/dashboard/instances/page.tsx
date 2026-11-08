@@ -10,6 +10,7 @@ import {
     deleteInstance
 } from '~/lib/api';
 import type { Instance } from '~/lib/api';
+import { useConfirm } from '~/components/confirm-dialog';
 
 // Dedicated instances are billed for the MACHINE per started hour (§5.6). The
 // apps you run on one add no compute charge. Rates mirror the size the shape
@@ -41,6 +42,7 @@ const TRANSITIONAL = new Set(['provisioning', 'starting', 'deleting']);
 
 export default function InstancesPage() {
     const { session } = useAuth();
+    const confirm = useConfirm();
     const token = session?.accessToken;
 
     const [instances, setInstances] = useState<Instance[]>([]);
@@ -115,19 +117,23 @@ export default function InstancesPage() {
 
     const handleStop = (i: Instance) => act(i.id, () => stopInstance(token!, i.id));
     const handleStart = (i: Instance) => act(i.id, () => startInstance(token!, i.id));
-    const handleDelete = (i: Instance) => {
+    const handleDelete = async (i: Instance) => {
         const force = i.app_count > 0;
-        const msg = force
-            ? `Delete instance "${i.name}"? ${i.app_count} app(s) are deployed on it — they will stop. The VM is removed; disks are retained.`
-            : `Delete instance "${i.name}"? The VM is removed; disks are retained.`;
-        if (!window.confirm(msg)) return;
+        const ok = await confirm({
+            title: `Delete instance ${i.name}?`,
+            body: force
+                ? `${i.app_count} app${i.app_count === 1 ? ' is' : 's are'} deployed on it and will stop. The machine is removed; its disks are kept.`
+                : 'The machine is removed; its disks are kept.',
+            confirmLabel: 'Delete instance', danger: true, typeToConfirm: i.name
+        });
+        if (!ok) return;
         act(i.id, () => deleteInstance(token!, i.id, force));
     };
 
     const rate = (shape: string) => SHAPE[shape];
 
     return (
-        <div className="max-w-5xl mx-auto px-4 py-8">
+        <div>
             <div className="flex items-start justify-between gap-4 mb-2">
                 <div>
                     <h1 className="text-2xl font-semibold">Dedicated instances</h1>

@@ -85,10 +85,10 @@ export default function AttributesPage() {
     }, {});
 
     return (
-        <div className="p-8 max-w-5xl mx-auto space-y-10">
+        <div className="space-y-10">
             <header>
                 <h1 className="text-2xl font-semibold">Attributes</h1>
-                <p className="mt-1 text-black/60 dark:text-white/60">
+                <p className="max-w-3xl mt-1 text-black/60 dark:text-white/60">
                     Attested, priced insights any confidential app can provide and any relying
                     party can consume. Consumers pay per disclosure; providers earn a revenue
                     share. Identity is never revealed to the platform.

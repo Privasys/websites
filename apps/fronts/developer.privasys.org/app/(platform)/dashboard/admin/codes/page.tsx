@@ -132,9 +132,9 @@ export default function AdminCodesPage() {
     }
 
     return (
-        <div className="max-w-4xl">
+        <div>
             <h1 className="text-2xl font-semibold">Credit codes</h1>
-            <p className="mt-1 text-sm text-black/50 dark:text-white/50">
+            <p className="max-w-3xl mt-1 text-sm text-black/50 dark:text-white/50">
                 Codes anyone signed in can redeem, on privasys.id/account or on the billing page. Each account can redeem a code once.
             </p>
 

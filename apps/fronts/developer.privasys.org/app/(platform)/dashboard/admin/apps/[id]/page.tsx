@@ -18,6 +18,7 @@ import {
 import { useSSE } from '~/lib/sse-context';
 import type { App, BuildJob, AppVersion, AppDeployment, Enclave } from '~/lib/types';
 import { STATUS_LABELS, STATUS_COLORS, VERSION_STATUS_LABELS, VERSION_STATUS_COLORS, DEPLOYMENT_STATUS_LABELS, DEPLOYMENT_STATUS_COLORS, CONTAINER_STATE_LABELS, CONTAINER_STATE_COLORS } from '~/lib/types';
+import { useConfirm } from '~/components/confirm-dialog';
 
 function StatusBadge({ status, labels, colors }: { status: string; labels: Record<string, string>; colors: Record<string, string> }) {
     return (
@@ -81,6 +82,7 @@ export default function AdminAppDetailPage() {
     const searchParams = useSearchParams();
     const router = useRouter();
     const { session } = useAuth();
+    const confirm = useConfirm();
     const [app, setApp] = useState<App | null>(null);
     const [builds, setBuilds] = useState<BuildJob[]>([]);
     const [versions, setVersions] = useState<AppVersion[]>([]);
@@ -154,8 +156,8 @@ export default function AdminAppDetailPage() {
 
     async function handleStopDeployment(deploymentId: string, force = false) {
         if (!session?.accessToken || !id) return;
-        const label = force ? 'Force-remove this deployment? This contacts the enclave even if the deployment is recorded as stopped or failed.' : null;
-        if (force && !window.confirm(label!)) return;
+        const label = 'This contacts the enclave even if the deployment is recorded as stopped or failed.';
+        if (force && !(await confirm({ title: 'Force-remove this deployment?', body: label, confirmLabel: 'Force-remove', danger: true }))) return;
         setActionLoading(`stop-${deploymentId}`);
         setError(null);
         try {
@@ -167,8 +169,11 @@ export default function AdminAppDetailPage() {
 
     async function handleDeleteApp() {
         if (!session?.accessToken || !id || !app) return;
-        const msg = `Delete app "${app.name}" permanently?\n\nThis undeploys any active deployments and removes all rows (versions, builds, deployments). Cannot be undone.`;
-        if (!window.confirm(msg)) return;
+        if (!(await confirm({
+            title: `Delete ${app.name} permanently?`,
+            body: 'This undeploys any active deployment and removes its versions, builds and deployments. It cannot be undone.',
+            confirmLabel: 'Delete app', danger: true, typeToConfirm: app.name
+        }))) return;
         setActionLoading('delete-app');
         setError(null);
         try {

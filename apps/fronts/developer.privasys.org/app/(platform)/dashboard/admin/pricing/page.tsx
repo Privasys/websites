@@ -159,11 +159,11 @@ export default function AdminPricingPage() {
     }
 
     return (
-        <div className="max-w-5xl space-y-6">
+        <div className="space-y-6">
             <div className="flex items-end justify-between flex-wrap gap-3">
                 <div>
                     <h1 className="text-xl font-semibold">Pricing</h1>
-                    <p className="mt-1 text-sm text-black/50 dark:text-white/50">
+                    <p className="max-w-3xl mt-1 text-sm text-black/50 dark:text-white/50">
                         The platform price book (1 credit = £0.000001). Edits publish a <span className="font-medium">new version</span> — past usage keeps the version that priced it.
                         {book && <span className="ml-2 inline-block px-2 py-0.5 text-xs rounded-full bg-black/5 dark:bg-white/10">current: v{book.current_version}</span>}
                     </p>

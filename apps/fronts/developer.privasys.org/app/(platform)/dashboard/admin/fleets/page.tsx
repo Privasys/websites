@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth, hasManagerRole } from '~/lib/privasys-auth';
+import { useConfirm } from '~/components/confirm-dialog';
 import {
     listFleets,
     adminCreateFleet,
@@ -151,6 +152,7 @@ function buildUpdateBody(f: FleetForm): UpdateFleetBody | string {
 
 export default function AdminFleetsPage() {
     const { session } = useAuth();
+    const confirm = useConfirm();
     const [fleets, setFleets] = useState<Fleet[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -183,11 +185,11 @@ export default function AdminFleetsPage() {
     }
 
     return (
-        <div className="max-w-5xl">
+        <div>
             <div className="flex items-center justify-between">
                 <div>
                     <h1 className="text-2xl font-semibold">AI fleets</h1>
-                    <p className="mt-2 text-sm text-black/60 dark:text-white/60">
+                    <p className="max-w-3xl mt-2 text-sm text-black/60 dark:text-white/60">
                         Fleets group GPU enclaves that share a model menu, quota,
                         and orchestrator endpoint. Pick a fleet to manage its AI
                         tools (MCP catalogue) shown to chat users.
@@ -256,7 +258,7 @@ export default function AdminFleetsPage() {
                                             type="button"
                                             onClick={async () => {
                                                 if (!session?.accessToken) return;
-                                                if (!confirm(`Delete fleet "${f.name}"? Enclaves will be unassigned and per-fleet AI tools removed.`)) return;
+                                                if (!(await confirm({ title: `Delete fleet ${f.name}?`, body: 'Its enclaves are unassigned and its AI tools are removed.', confirmLabel: 'Delete fleet', danger: true, typeToConfirm: f.name }))) return;
                                                 try {
                                                     await adminDeleteFleet(session.accessToken, f.id);
                                                     reload();

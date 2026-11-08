@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useMemo, useState, useEffect } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import { useAuth, hasManagerRole } from '~/lib/privasys-auth';
+import { useConfirm } from '~/components/confirm-dialog';
 import {
     listVaultConstellations,
     adminCreateConstellation,
@@ -88,6 +89,7 @@ function buildUpdate(f: ConstellationForm): UpdateConstellationBody | string {
 
 export default function AdminVaultsPage() {
     const { session } = useAuth();
+    const confirm = useConfirm();
     const [cons, setCons] = useState<VaultConstellation[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -122,7 +124,7 @@ export default function AdminVaultsPage() {
 
     async function activate(c: VaultConstellation) {
         if (!session?.accessToken) return;
-        if (!confirm(`Activate "${c.name}"? It becomes the live ${c.environment} constellation; any other active ${c.environment} constellation is deactivated.`)) return;
+        if (!(await confirm({ title: `Activate ${c.name}?`, body: `It becomes the live ${c.environment} constellation, and any other active ${c.environment} constellation is deactivated.`, confirmLabel: 'Activate' }))) return;
         setBusy(c.id);
         try {
             await adminActivateConstellation(session.accessToken, c.id);
@@ -135,11 +137,11 @@ export default function AdminVaultsPage() {
     }
 
     return (
-        <div className="max-w-5xl">
+        <div>
             <div className="flex items-center justify-between">
                 <div>
                     <h1 className="text-2xl font-semibold">Vault constellations</h1>
-                    <p className="mt-2 text-sm text-black/60 dark:text-white/60">
+                    <p className="max-w-3xl mt-2 text-sm text-black/60 dark:text-white/60">
                         A constellation is a versioned set of SGX vaults sharing one MRENCLAVE,
                         attestation server, and OIDC config. A new vault build is a new
                         constellation: register its vaults, then <strong>activate</strong> it.
@@ -227,7 +229,7 @@ export default function AdminVaultsPage() {
                                                 onClick={async () => {
                                                     if (!session?.accessToken) return;
                                                     const dep = !c.deprecated_at;
-                                                    if (dep && !confirm(`Deprecate "${c.name}"? It keeps serving existing keys but refuses activation, new members, and new key generations.`)) return;
+                                                    if (dep && !(await confirm({ title: `Deprecate ${c.name}?`, body: 'It keeps serving existing keys but refuses activation, new members and new key generations.', confirmLabel: 'Deprecate' }))) return;
                                                     try {
                                                         await adminUpdateConstellation(session.accessToken, c.id, { deprecated: dep });
                                                         reload();
@@ -246,7 +248,7 @@ export default function AdminVaultsPage() {
                                             type="button"
                                             onClick={async () => {
                                                 if (!session?.accessToken) return;
-                                                if (!confirm(`Delete constellation "${c.name}" and all its vaults?`)) return;
+                                                if (!(await confirm({ title: `Delete constellation ${c.name} and all its vaults?`, body: 'This cannot be undone.', confirmLabel: 'Delete constellation', danger: true, typeToConfirm: c.name }))) return;
                                                 try {
                                                     await adminDeleteConstellation(session.accessToken, c.id);
                                                     reload();

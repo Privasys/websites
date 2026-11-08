@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { use, useMemo, useState, useEffect } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import { useAuth, hasManagerRole } from '~/lib/privasys-auth';
+import { useConfirm } from '~/components/confirm-dialog';
 import {
     getVaultConstellation,
     listVaults,
@@ -47,6 +48,7 @@ function toForm(v: Vault): VaultForm {
 export default function AdminConstellationVaultsPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = use(params);
     const { session } = useAuth();
+    const confirm = useConfirm();
     const [con, setCon] = useState<VaultConstellation | null>(null);
     const [vaults, setVaults] = useState<Vault[]>([]);
     const [loading, setLoading] = useState(true);
@@ -116,7 +118,7 @@ export default function AdminConstellationVaultsPage({ params }: { params: Promi
     }
 
     return (
-        <div className="max-w-5xl">
+        <div>
             <Link href="/dashboard/admin/vaults" className="text-sm text-black/50 dark:text-white/50 hover:underline">
                 ← Vault constellations
             </Link>
@@ -226,7 +228,7 @@ export default function AdminConstellationVaultsPage({ params }: { params: Promi
                                             type="button"
                                             onClick={async () => {
                                                 if (!session?.accessToken) return;
-                                                if (!confirm(`Remove vault ${v.host}:${v.port}?`)) return;
+                                                if (!(await confirm({ title: `Remove vault ${v.host}:${v.port}?`, confirmLabel: 'Remove vault', danger: true }))) return;
                                                 try {
                                                     await adminDeleteVault(session.accessToken, id, v.id);
                                                     setVaults((rows) => rows.filter((r) => r.id !== v.id));

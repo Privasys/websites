@@ -27,6 +27,8 @@ import type { InstanceSize } from '~/lib/instance-sizes';
 import { isBinaryField, acceptFor, fileToBase64, formatBytes, base64Bytes } from '@privasys/app-call';
 import { RtmrVerifier } from '~/components/rtmr-verifier';
 import { AttestationConnect, AttestationResultView, useAttestation } from '@privasys/attestation-view';
+import { useConfirm } from '~/components/confirm-dialog';
+import { PlaceLabel, Datacentre } from '~/components/place';
 
 function StatusBadge({ status, labels, colors }: { status: string; labels: Record<string, string>; colors: Record<string, string> }) {
     return (
@@ -2313,7 +2315,7 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
     })();
 
     const selectCls = 'w-full px-3 py-2 text-sm rounded-lg border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/20';
-    const enclaveLabel = (e: Enclave) => `${e.name} — ${e.region || e.country || 'Unknown'}${e.provider ? ` (${e.provider})` : ''}${e.tee_type ? ` [${e.tee_type.toUpperCase()}]` : ''}`;
+    const enclaveLabel = (e: Enclave) => `${e.name}${e.tee_type ? ` [${e.tee_type.toUpperCase()}]` : ''}`;
     // Adopter-facing deploy-location label: place + provider, tagged with the TEE.
     const locationLabel = (l: DeployLocation) => `${l.label}${l.provider ? ` (${l.provider})` : ''}${l.tee_type ? ` [${l.tee_type.toUpperCase()}]` : ''}`;
 
@@ -2987,7 +2989,15 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                                 <div className="grid grid-cols-3 gap-3 text-xs text-black/50 dark:text-white/50">
                                     <div>
                                         <div className="text-[10px] uppercase tracking-wider text-black/30 dark:text-white/30">Location</div>
-                                        <div className="mt-0.5">{enclave ? enclaveLabel(enclave) : `${dep.enclave_host}:${dep.enclave_port}`}</div>
+                                        <div className="mt-0.5">
+                                            {enclave ? (
+                                                <>
+                                                    <PlaceLabel place={enclave.place} fallback={enclave.region || enclave.country} />
+                                                    {' · '}<Datacentre place={enclave.place} fallback={enclave.provider} />
+                                                    <div className="text-black/35 dark:text-white/35">{enclaveLabel(enclave)}</div>
+                                                </>
+                                            ) : `${dep.enclave_host}:${dep.enclave_port}`}
+                                        </div>
                                     </div>
                                     {version && (
                                         <div>
@@ -3267,7 +3277,7 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                                     <div className="flex items-center gap-3">
                                         <span className="w-2 h-2 rounded-full bg-gray-400" />
                                         <span className="font-medium text-black/70 dark:text-white/70">
-                                            {enclave ? (enclave.region || enclave.name) : `${dep.enclave_host}:${dep.enclave_port}`}
+                                            {enclave ? <PlaceLabel place={enclave.place} fallback={enclave.region || enclave.name} /> : `${dep.enclave_host}:${dep.enclave_port}`}
                                         </span>
                                         {version && <span className="text-black/40 dark:text-white/40">{versionLabel(version, cloudDigestForVersion(version))}</span>}
                                     </div>
@@ -3891,6 +3901,7 @@ function ActionRunner({ fn, appId, token }: { fn: FunctionSchema; appId: string;
 
 // ------- Team Tab -------
 function TeamTab({ appId, token }: { appId: string; token: string }) {
+    const confirm = useConfirm();
     const [data, setData] = useState<AppTeam | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -3937,7 +3948,7 @@ function TeamTab({ appId, token }: { appId: string; token: string }) {
     }
 
     async function handleRemove(sub: string, label: string) {
-        if (!confirm(`Remove ${label} from the owners team?`)) return;
+        if (!(await confirm({ title: `Remove ${label} from the owners team?`, confirmLabel: 'Remove owner', danger: true }))) return;
         setBusy(true);
         setError(null);
         try {

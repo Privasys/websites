@@ -9,6 +9,8 @@ import { COUNTRIES, regionForCountry, displayCountryName } from '~/lib/countries
 import { Badge } from '@privasys/attestation-view';
 import type { Enclave, EnclaveApp, CreateEnclaveRequest, TeeType, EnclaveMeasurements, CloudProvider, CloudRegion, CloudRegionsMeta } from '~/lib/types';
 import { CONTAINER_STATE_LABELS, CONTAINER_STATE_COLORS } from '~/lib/types';
+import { useConfirm } from '~/components/confirm-dialog';
+import { PlaceLabel, Datacentre } from '~/components/place';
 
 const EMPTY_FORM: CreateEnclaveRequest = {
     name: '', port: 8445, gateway_host: '', tee_type: 'sgx', mr_enclave: '', country: '', region: '', zone: '', provider: '', owner: '',
@@ -54,6 +56,7 @@ const INPUT_CLS = 'w-full px-3 py-2 text-sm rounded-lg border border-black/10 da
 
 export default function AdminEnclavePage() {
     const { session } = useAuth();
+    const confirm = useConfirm();
     const [enclaves, setEnclaves] = useState<Enclave[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -390,7 +393,7 @@ export default function AdminEnclavePage() {
         const name = enclaves.find(e => e.id === id)?.name ?? 'this enclave';
         // Removes the record only. The server refuses while apps or open volumes
         // are still on the enclave, and names them in the error banner.
-        if (!confirm(`Remove ${name} from the enclave list? This does not touch any machine. It is refused while apps or open volumes are still on it.`)) return;
+        if (!(await confirm({ title: `Remove ${name} from the enclave list?`, body: 'This does not touch any machine. It is refused while apps or open volumes are still on it.', confirmLabel: 'Remove from list' }))) return;
         setBlockedDeleteId(null);
         try {
             await adminDeleteEnclave(session.accessToken, id);
@@ -407,11 +410,11 @@ export default function AdminEnclavePage() {
     }
 
     return (
-        <div className="max-w-6xl">
+        <div>
             <div className="flex items-center justify-between">
                 <div>
                     <h1 className="text-2xl font-semibold">Enclave management</h1>
-                    <p className="mt-1 text-sm text-black/50 dark:text-white/50">
+                    <p className="max-w-3xl mt-1 text-sm text-black/50 dark:text-white/50">
                         {enclaves.length} enclave{enclaves.length !== 1 ? 's' : ''} registered
                         {filtered.length !== enclaves.length && ` · ${filtered.length} shown`}
                     </p>
@@ -698,7 +701,7 @@ export default function AdminEnclavePage() {
                                     <th className="text-left px-4 py-3 font-medium">IP : Port</th>
                                     <th className="text-left px-4 py-3 font-medium">Location</th>
                                     <th className="text-left px-4 py-3 font-medium">Owner</th>
-                                    <th className="text-left px-4 py-3 font-medium">Provider</th>
+                                    <th className="text-left px-4 py-3 font-medium">Datacentre</th>
                                     <th className="text-left px-4 py-3 font-medium">Apps</th>
                                     <th className="text-left px-4 py-3 font-medium">Status</th>
                                     <th className="text-right px-4 py-3 font-medium">Actions</th>
@@ -724,13 +727,15 @@ export default function AdminEnclavePage() {
                                                 <code className="text-xs">{enc.gateway_host || '—'}:{enc.port}</code>
                                             </td>
                                             <td className="px-4 py-3 text-black/60 dark:text-white/60">
-                                                {enc.city ? `${enc.city}, ` : ''}{enc.country ? displayCountryName(enc.country) : '—'}{enc.region ? ` · ${enc.region}` : ''}
+                                                {enc.place
+                                                    ? <PlaceLabel place={enc.place} />
+                                                    : <>{enc.city ? `${enc.city}, ` : ''}{enc.country ? displayCountryName(enc.country) : 'Unknown'}</>}
                                             </td>
                                             <td className="px-4 py-3 text-black/60 dark:text-white/60">
                                                 {enc.owner || '—'}
                                             </td>
                                             <td className="px-4 py-3 text-black/60 dark:text-white/60">
-                                                {enc.provider || '—'}
+                                                <Datacentre place={enc.place} fallback={enc.provider} />
                                             </td>
                                             <td className="px-4 py-3">
                                                 <span className="text-xs" title="Apps placed on this enclave. Open the row to see them.">

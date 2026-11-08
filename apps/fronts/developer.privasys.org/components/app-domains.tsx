@@ -17,6 +17,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { listAppDomains, addAppDomain, verifyAppDomain, deleteAppDomain, setAppDomainMode } from '~/lib/api';
 import type { AppUIDomain, AppDomainMode } from '~/lib/api';
+import { useConfirm } from '~/components/confirm-dialog';
 
 const STATUS_LABEL: Record<AppUIDomain['status'], string> = {
     pending: 'Waiting for DNS',
@@ -118,6 +119,7 @@ function RecordRow({ label, name, value }: { label: string; name: string; value:
 }
 
 export function AppDomains({ token, appId, appName }: { token: string; appId: string; appName?: string }) {
+    const confirm = useConfirm();
     const [data, setData] = useState<{ domains: AppUIDomain[]; cnameTarget: string; maxPerApp: number; platformHost: string } | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [hostname, setHostname] = useState('');
@@ -186,7 +188,7 @@ export function AppDomains({ token, appId, appName }: { token: string; appId: st
     }
 
     async function handleRemove(d: AppUIDomain) {
-        if (!confirm(`Remove ${d.hostname}? The app stays reachable at its platform hostname, and the gateways stop serving this one within a minute.`)) return;
+        if (!(await confirm({ title: `Remove ${d.hostname}?`, body: 'The app stays reachable at its platform hostname, and the gateways stop serving this one within a minute.', confirmLabel: 'Remove domain', danger: true }))) return;
         setBusy(d.id);
         setError(null);
         try {

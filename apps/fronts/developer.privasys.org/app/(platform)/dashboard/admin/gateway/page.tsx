@@ -59,11 +59,11 @@ export default function GatewayAdminPage() {
     }
 
     return (
-        <div className="max-w-6xl">
+        <div>
             <div className="flex items-start justify-between gap-4">
                 <div>
                     <h1 className="text-2xl font-semibold">Gateway</h1>
-                    <p className="mt-2 text-sm text-black/60 dark:text-white/60">
+                    <p className="max-w-3xl mt-2 text-sm text-black/60 dark:text-white/60">
                         Read-only view of the L4 gateway route map. Gateways pull this list from
                         <code className="mx-1 px-1.5 py-0.5 bg-black/5 dark:bg-white/5 rounded text-xs">/internal/routes</code>
                         every few seconds and re-load Caddy when the version hash changes.
