@@ -4,22 +4,10 @@
 
 import type { Place } from '~/lib/types';
 
-// dms writes one coordinate as Google Maps' place form does: 48°51'23.8"N.
-function dms(value: number, pos: string, neg: string): string {
-    const abs = Math.abs(value);
-    let deg = Math.floor(abs);
-    let min = Math.floor((abs - deg) * 60);
-    let sec = Math.round(((abs - deg) * 60 - min) * 600) / 10;
-    if (sec >= 60) { sec = 0; min += 1; }
-    if (min >= 60) { min = 0; deg += 1; }
-    return `${deg}°${min}'${sec.toFixed(1)}"${value < 0 ? neg : pos}`;
-}
-
+// mapsUrl opens the place in Google Maps, in satellite view (data=!3m1!1e3).
 export function mapsUrl(place: Place): string | null {
     if (place.latitude == null || place.longitude == null) return null;
-    const lat = encodeURIComponent(dms(place.latitude, 'N', 'S'));
-    const lon = encodeURIComponent(dms(place.longitude, 'E', 'W'));
-    return `https://www.google.com/maps/place/${lat}+${lon}/`;
+    return `https://www.google.com/maps/place/${place.latitude},${place.longitude}/data=!3m1!1e3`;
 }
 
 export function PlaceLabel({ place, fallback }: { place?: Place | null; fallback?: string }) {
