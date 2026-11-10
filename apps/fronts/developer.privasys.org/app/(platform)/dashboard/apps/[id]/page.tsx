@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { useAuth } from '~/lib/privasys-auth';
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { getApp, listBuilds, listVersions, listDeployments, listCompatibleEnclaves, deleteApp, deployDirect, stopDeployment, getAppSchema, rpcCall, configComplete, updateStoreListing, publishApp, identiconUrl, getAppMcp, updateContainerMcp, detectContainerMcp, retryBuild, listAppOwners, addAppOwner, removeAppOwner, createVersion, stageProfile, promoteProfile, listPending, vaultExportTarget, pendingBinding, beginVaultApproval, pollVaultApproval, listRegistryTags, uploadAsset, listAppCommits, uploadVersionCwasm, getVersion, listCachedImages, listDeployLocations, listInstances, apiErrorCode, setAutoMigrate, getBackupOptions, listAppBackups, billableBackupGB } from '~/lib/api';
+import { getApp, listBuilds, listVersions, listDeployments, listCompatibleEnclaves, deleteApp, deployDirect, stopDeployment, getAppSchema, rpcCall, configComplete, updateStoreListing, publishApp, identiconUrl, getAppMcp, updateContainerMcp, detectContainerMcp, retryBuild, listAppOwners, addAppOwner, removeAppOwner, createVersion, stageProfile, promoteProfile, listPending, vaultExportTarget, pendingBinding, beginVaultApproval, pollVaultApproval, listRegistryTags, uploadAsset, listAppCommits, uploadVersionCwasm, getVersion, listCachedImages, listDeployLocations, listInstances, apiErrorCode, setAutoMigrate, getBackupOptions, listAppBackups, getBackupPolicy, backupMonthlyGBP } from '~/lib/api';
 
 // The IdP that runs the vault step-up approval ceremony.
 const IDP_ORIGIN = process.env.NEXT_PUBLIC_IDP_ORIGIN || 'https://privasys.id';
@@ -384,15 +384,14 @@ function DangerZone({ app, token, deleting, onDelete }: { app: App; token: strin
     const [deleteVolume, setDeleteVolume] = useState(false);
     const [deleteBackups, setDeleteBackups] = useState(false);
     // A BYOK app's backups outlive it unless deleted with it.
-    const [backups, setBackups] = useState<{ count: number; gbp: number } | null>(null);
+    const [backups, setBackups] = useState<{ count: number; gbp: number | null } | null>(null);
     useEffect(() => {
         if (app.key_provider !== 'byok') return;
         (async () => {
             const opts = await getBackupOptions(token);
             if (!opts.available) return;
-            const cat = await listAppBackups(token, app.id);
-            const rate = opts.redundancy[0]?.gbp_per_gb_month ?? 0;
-            if (cat.snapshots.length > 0) setBackups({ count: cat.snapshots.length, gbp: billableBackupGB(cat.stored_bytes) * rate });
+            const [cat, policy] = await Promise.all([listAppBackups(token, app.id), getBackupPolicy(token, app.id)]);
+            if (cat.snapshots.length > 0) setBackups({ count: cat.snapshots.length, gbp: backupMonthlyGBP(opts, policy.redundancy, cat.stored_bytes) });
         })().catch(() => setBackups(null));
     }, [app.id, app.key_provider, token]);
     const confirmed = confirmName === app.name;
@@ -433,7 +432,7 @@ function DangerZone({ app, token, deleting, onDelete }: { app: App; token: strin
                         />
                         <span>
                             Also delete its {backups.count} backup{backups.count === 1 ? '' : 's'}. {BACKUP_DELETION_COPY}{' '}
-                            If left unchecked, kept backups stay available and keep billing (≈ £{backups.gbp.toFixed(2)}/month) until you delete them from Backups.
+                            If left unchecked, kept backups stay available and keep billing{backups.gbp != null ? ` (≈ £${backups.gbp.toFixed(2)}/month)` : ''} until you delete them from Backups.
                         </span>
                     </label>
                 )}

@@ -7,7 +7,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
-import { getBackupOptions, getBackupPolicy, listAppBackups, setBackupPolicy, startBackup, restoreApp, listVolumes, billableBackupGB, apiErrorCode } from '~/lib/api';
+import { getBackupOptions, getBackupPolicy, listAppBackups, setBackupPolicy, startBackup, restoreApp, listVolumes, backupMonthlyGBP, apiErrorCode } from '~/lib/api';
 import type { BackupOptions, BackupPolicy, BackupCatalog, BackupSnapshot } from '~/lib/api';
 import type { App, AppDeployment, Enclave } from '~/lib/types';
 
@@ -155,8 +155,7 @@ export function BackupsTab({ app, token, deployments, enclaves, onRestoreStarted
     }
 
     const redundancy = options?.redundancy.find(r => r.id === policy?.redundancy) ?? options?.redundancy[0];
-    const gb = billableBackupGB(catalog?.stored_bytes);
-    const monthly = redundancy ? gb * redundancy.gbp_per_gb_month : null;
+    const monthly = options ? backupMonthlyGBP(options, policy?.redundancy, catalog?.stored_bytes) : null;
     const intervalLabel = options?.intervals.find(i => i.id === policy?.interval)?.label ?? policy?.interval;
     const retentionLabel = options?.retention.find(r => r.id === policy?.retention)?.label ?? policy?.retention;
     const job = policy?.job;

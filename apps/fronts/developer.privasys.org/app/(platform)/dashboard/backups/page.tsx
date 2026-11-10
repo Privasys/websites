@@ -7,8 +7,8 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '~/lib/privasys-auth';
-import { listBackupSets, getBackupSet, deleteBackupSet } from '~/lib/api';
-import type { BackupSet, BackupSnapshot } from '~/lib/api';
+import { listBackupSets, getBackupSet, deleteBackupSet, getBackupOptions, backupMonthlyGBP } from '~/lib/api';
+import type { BackupOptions, BackupSet, BackupSnapshot } from '~/lib/api';
 import { useConfirm } from '~/components/confirm-dialog';
 import { RestorePointsTable, BACKUP_DELETION_COPY, formatStored } from '~/components/backups';
 
@@ -21,12 +21,15 @@ export default function BackupsPage() {
     const [open, setOpen] = useState<string | null>(null); // deleted app whose restore points are shown
     const [points, setPoints] = useState<Record<string, BackupSnapshot[]>>({});
     const [busy, setBusy] = useState<string | null>(null);
+    const [options, setOptions] = useState<BackupOptions | null>(null);
 
     const load = useCallback(async () => {
         if (!session?.accessToken) return;
         setError(null);
         try {
-            setSets(await listBackupSets(session.accessToken));
+            const [list, opts] = await Promise.all([listBackupSets(session.accessToken), getBackupOptions(session.accessToken)]);
+            setSets(list);
+            setOptions(opts);
         } catch (e) {
             setError(e instanceof Error ? e.message : 'Failed to load backups');
         } finally {
@@ -96,12 +99,13 @@ export default function BackupsPage() {
                                 <th className="px-4 py-2 font-medium">Restore points</th>
                                 <th className="px-4 py-2 font-medium">Stored</th>
                                 <th className="px-4 py-2 font-medium">Last updated</th>
+                                <th className="px-4 py-2 font-medium text-right">≈ £/month</th>
                                 <th className="px-4 py-2" />
                             </tr>
                         </thead>
                         <tbody>
                             {sets.map(s => (
-                                <SetRow key={s.app_id} s={s} open={open === s.app_id} points={points[s.app_id]} busy={busy === s.app_id} onToggle={() => toggle(s)} onDelete={() => remove(s)} />
+                                <SetRow key={s.app_id} s={s} gbp={options && s.stored_bytes != null ? backupMonthlyGBP(options, s.redundancy, s.stored_bytes) : null} open={open === s.app_id} points={points[s.app_id]} busy={busy === s.app_id} onToggle={() => toggle(s)} onDelete={() => remove(s)} />
                             ))}
                         </tbody>
                     </table>
@@ -111,7 +115,7 @@ export default function BackupsPage() {
     );
 }
 
-function SetRow({ s, open, points, busy, onToggle, onDelete }: { s: BackupSet; open: boolean; points?: BackupSnapshot[]; busy: boolean; onToggle: () => void; onDelete: () => void }) {
+function SetRow({ s, gbp, open, points, busy, onToggle, onDelete }: { s: BackupSet; gbp: number | null; open: boolean; points?: BackupSnapshot[]; busy: boolean; onToggle: () => void; onDelete: () => void }) {
     const deleted = !!s.app_deleted_at;
     return (
         <>
@@ -129,6 +133,7 @@ function SetRow({ s, open, points, busy, onToggle, onDelete }: { s: BackupSet; o
                 <td className="px-4 py-3 whitespace-nowrap">{s.snapshots}</td>
                 <td className="px-4 py-3 whitespace-nowrap">{s.stored_bytes != null ? formatStored(s.stored_bytes) : <span className="text-black/30 dark:text-white/30">Unknown</span>}</td>
                 <td className="px-4 py-3 whitespace-nowrap text-black/60 dark:text-white/60">{new Date(s.updated_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</td>
+                <td className="px-4 py-3 text-right whitespace-nowrap">{gbp != null ? `£${gbp.toFixed(2)}` : <span className="text-black/30 dark:text-white/30">Unknown</span>}</td>
                 <td className="px-4 py-3 text-right whitespace-nowrap">
                     {deleted ? (
                         <>
@@ -148,7 +153,7 @@ function SetRow({ s, open, points, busy, onToggle, onDelete }: { s: BackupSet; o
             </tr>
             {open && (
                 <tr>
-                    <td colSpan={5} className="px-4 pb-4">
+                    <td colSpan={6} className="px-4 pb-4">
                         {points ? <RestorePointsTable snapshots={points} /> : <div className="text-sm text-black/40 dark:text-white/40">Loading restore points…</div>}
                         <p className="mt-2 text-xs text-black/50 dark:text-white/50">The app is deleted, so there is nothing to restore onto here. The restore points open only with the app key you hold.</p>
                     </td>

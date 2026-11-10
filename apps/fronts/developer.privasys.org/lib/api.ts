@@ -1619,12 +1619,20 @@ export interface BackupSet {
     app_deleted_at?: string;
     snapshots: number;
     stored_bytes?: number;
+    redundancy?: string; // region | zones: where it is stored
     updated_at: string;
 }
 
 // billableBackupGB is the stored size the backups bill on: whole GB, rounded up.
 export function billableBackupGB(storedBytes?: number): number {
     return storedBytes && storedBytes > 0 ? Math.ceil(storedBytes / 1e9) : 0;
+}
+
+// backupMonthlyGBP is what stored backups cost a month where they are stored;
+// null when that location has no price on this platform.
+export function backupMonthlyGBP(options: BackupOptions, redundancy: string | undefined, storedBytes?: number): number | null {
+    const r = options.redundancy.find(o => o.id === (redundancy || 'region'));
+    return r ? billableBackupGB(storedBytes) * r.gbp_per_gb_month : null;
 }
 
 let backupOptionsCache: Promise<BackupOptions> | null = null;
