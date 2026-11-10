@@ -8,7 +8,7 @@
 import Link from 'next/link';
 import { useAuth } from '~/lib/privasys-auth';
 import { useEffect, useState, useCallback } from 'react';
-import { listVolumes, getVolume, resizeVolume, deleteVolume } from '~/lib/api';
+import { listVolumes, getVolume, resizeVolume, deleteVolume, listBackupSets } from '~/lib/api';
 import type { Volume } from '~/lib/api';
 import { useConfirm } from '~/components/confirm-dialog';
 import { PlaceLabel, Datacentre } from '~/components/place';
@@ -50,6 +50,7 @@ export default function VolumesPage() {
     const [busy, setBusy] = useState<string | null>(null); // volume id being acted on
     const [resizing, setResizing] = useState<Volume | null>(null);
     const [newSize, setNewSize] = useState('');
+    const [backedUp, setBackedUp] = useState<Set<string>>(new Set()); // app ids with backups
 
     const load = useCallback(async () => {
         if (!session?.accessToken) return;
@@ -58,6 +59,10 @@ export default function VolumesPage() {
         try {
             const vols = await listVolumes(session.accessToken);
             setVolumes(vols);
+            // Apps with backups get a link to them; best-effort.
+            listBackupSets(session.accessToken)
+                .then(sets => setBackedUp(new Set(sets.filter(s => !s.app_deleted_at).map(s => s.app_id))))
+                .catch(() => setBackedUp(new Set()));
             // Enrich with live usage, best-effort, without blocking the list.
             vols.forEach(async v => {
                 try {
@@ -164,6 +169,9 @@ export default function VolumesPage() {
                                                 : v.app_id
                                                     ? 'detached (app stopped)'
                                                     : <span className="text-amber-600 dark:text-amber-400">orphaned (app deleted, still billing)</span>}
+                                            {v.app_id && backedUp.has(v.app_id) && (
+                                                <> · <Link href={`/dashboard/apps/${v.app_id}?tab=backups`} className="underline hover:text-black dark:hover:text-white">Backups</Link></>
+                                            )}
                                         </div>
                                     </td>
                                     <td className="px-4 py-3 whitespace-nowrap">{v.size_gb} GB</td>

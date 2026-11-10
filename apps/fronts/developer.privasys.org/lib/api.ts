@@ -93,12 +93,16 @@ export function detectAppType(token: string, commitUrl: string): Promise<{ app_t
     return request<{ app_type: string; owner_repo: string; commit_sha: string }>(`/api/v1/detect-app-type?commit_url=${encodeURIComponent(commitUrl)}`, token);
 }
 
-export function deleteApp(token: string, id: string, withVolume = false): Promise<void> {
+export function deleteApp(token: string, id: string, withVolume = false, withBackups = false): Promise<void> {
     // By default the app's encrypted volume SURVIVES deletion (and keeps
     // billing per GB-hour until deleted on the Volumes page); withVolume
-    // removes both in one step.
-    const qs = withVolume ? '?with_volume=true' : '';
-    return request<void>(`/api/v1/apps/${encodeURIComponent(id)}${qs}`, token, {
+    // removes both in one step. Its backups are kept the same way unless
+    // withBackups deletes them with it.
+    const qs = new URLSearchParams();
+    if (withVolume) qs.set('with_volume', 'true');
+    if (withBackups) qs.set('with_backups', 'true');
+    const q = qs.toString();
+    return request<void>(`/api/v1/apps/${encodeURIComponent(id)}${q ? `?${q}` : ''}`, token, {
         method: 'DELETE'
     });
 }
@@ -1544,6 +1548,138 @@ export function deleteVolume(token: string, id: string): Promise<{ status: strin
     return request<{ status: string }>(`/api/v1/volumes/${encodeURIComponent(id)}`, token, {
         method: 'DELETE'
     });
+}
+
+// --- Backups (BYOK container apps) ---
+// The enclave running the app backs its volume up to immutable object storage,
+// encrypted under the app key its owner holds. Errors carry a `code`
+// (byok_required, not_configured, not_running, moving, busy, app_exists,
+// snapshot_not_found, not_found): read it with apiErrorCode.
+
+export interface BackupOptions {
+    available: boolean;
+    access_available: boolean;
+    redundancy: { id: 'region' | 'zones'; label: string; location: string; credits_per_gb_hour: number; gbp_per_gb_month: number }[];
+    retention: { id: string; label: string; description: string }[];
+    intervals: { id: string; label: string }[];
+}
+
+export interface BackupSnapshot {
+    id: string;
+    start_time: string;
+    end_time: string;
+    size_bytes: number;
+    files: number;
+    retention?: string[];
+    description?: string; // scheduled | manual
+}
+
+export interface BackupCatalog {
+    snapshots: BackupSnapshot[];
+    stored_bytes?: number;
+    updated_at?: string;
+}
+
+export interface BackupJob {
+    id: string;
+    state: 'running' | 'succeeded' | 'failed';
+    started_at: string;
+    finished_at?: string;
+    error?: string;
+    snapshot?: { id?: string };
+}
+
+export interface BackupMove {
+    state: 'running' | 'succeeded' | 'failed';
+    from: string;
+    to: string;
+    copied_bytes: number;
+    total_bytes: number;
+    started_at: string;
+    finished_at?: string;
+    error?: string;
+}
+
+export interface BackupPolicy {
+    enabled: boolean;
+    interval: string;
+    interval_minutes: number;
+    retention: string;
+    redundancy: string;
+    updated_at?: string;
+    last_run_at?: string | null;
+    next_run_at?: string | null;
+    job?: BackupJob | null;
+    move?: BackupMove | null;
+}
+
+export interface BackupSet {
+    app_id: string;
+    app_name: string;
+    app_deleted_at?: string;
+    snapshots: number;
+    stored_bytes?: number;
+    updated_at: string;
+}
+
+// billableBackupGB is the stored size the backups bill on: whole GB, rounded up.
+export function billableBackupGB(storedBytes?: number): number {
+    return storedBytes && storedBytes > 0 ? Math.ceil(storedBytes / 1e9) : 0;
+}
+
+let backupOptionsCache: Promise<BackupOptions> | null = null;
+
+// getBackupOptions is fetched once per page load: it only changes when the
+// platform is reconfigured.
+export function getBackupOptions(token: string): Promise<BackupOptions> {
+    if (!backupOptionsCache) {
+        backupOptionsCache = request<BackupOptions>('/api/v1/backups/options', token).catch(e => {
+            backupOptionsCache = null;
+            throw e;
+        });
+    }
+    return backupOptionsCache;
+}
+
+export function listAppBackups(token: string, appId: string): Promise<BackupCatalog> {
+    return request<BackupCatalog>(`/api/v1/apps/${encodeURIComponent(appId)}/backups`, token);
+}
+
+export function getBackupPolicy(token: string, appId: string): Promise<BackupPolicy> {
+    return request<BackupPolicy>(`/api/v1/apps/${encodeURIComponent(appId)}/backups/policy`, token);
+}
+
+export function setBackupPolicy(token: string, appId: string, body: { interval: string; retention: string; redundancy: string }): Promise<BackupPolicy & { applied?: boolean; warning?: string }> {
+    return request(`/api/v1/apps/${encodeURIComponent(appId)}/backups/policy`, token, {
+        method: 'PUT',
+        body: JSON.stringify(body)
+    });
+}
+
+export function startBackup(token: string, appId: string): Promise<{ job: BackupJob }> {
+    return request(`/api/v1/apps/${encodeURIComponent(appId)}/backups`, token, { method: 'POST' });
+}
+
+// restoreApp redeploys the app onto a restore point, all on the server: it
+// stops the deployment and deletes the volume first when there is one.
+export function restoreApp(token: string, appId: string, body: { snapshot_id: string; enclave_id?: string; version_id?: string }): Promise<{ deployment: AppDeployment; snapshot_id: string }> {
+    return request(`/api/v1/apps/${encodeURIComponent(appId)}/restore`, token, {
+        method: 'POST',
+        body: JSON.stringify(body)
+    });
+}
+
+export async function listBackupSets(token: string): Promise<BackupSet[]> {
+    const res = await request<{ backups: BackupSet[] }>('/api/v1/backups', token);
+    return res.backups ?? [];
+}
+
+export function getBackupSet(token: string, appId: string): Promise<BackupCatalog & { app_id: string; app_name: string; app_deleted_at?: string }> {
+    return request(`/api/v1/backups/${encodeURIComponent(appId)}`, token);
+}
+
+export function deleteBackupSet(token: string, appId: string): Promise<{ status: string }> {
+    return request(`/api/v1/backups/${encodeURIComponent(appId)}`, token, { method: 'DELETE' });
 }
 
 // --- Custom domains in front of an app's UI ---

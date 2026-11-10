@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { useAuth } from '~/lib/privasys-auth';
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { getApp, listBuilds, listVersions, listDeployments, listCompatibleEnclaves, deleteApp, deployDirect, stopDeployment, getAppSchema, rpcCall, configComplete, updateStoreListing, publishApp, identiconUrl, getAppMcp, updateContainerMcp, detectContainerMcp, retryBuild, listAppOwners, addAppOwner, removeAppOwner, createVersion, stageProfile, promoteProfile, listPending, vaultExportTarget, pendingBinding, beginVaultApproval, pollVaultApproval, listRegistryTags, uploadAsset, listAppCommits, uploadVersionCwasm, getVersion, listCachedImages, listDeployLocations, listInstances, apiErrorCode, setAutoMigrate } from '~/lib/api';
+import { getApp, listBuilds, listVersions, listDeployments, listCompatibleEnclaves, deleteApp, deployDirect, stopDeployment, getAppSchema, rpcCall, configComplete, updateStoreListing, publishApp, identiconUrl, getAppMcp, updateContainerMcp, detectContainerMcp, retryBuild, listAppOwners, addAppOwner, removeAppOwner, createVersion, stageProfile, promoteProfile, listPending, vaultExportTarget, pendingBinding, beginVaultApproval, pollVaultApproval, listRegistryTags, uploadAsset, listAppCommits, uploadVersionCwasm, getVersion, listCachedImages, listDeployLocations, listInstances, apiErrorCode, setAutoMigrate, getBackupOptions, listAppBackups, billableBackupGB } from '~/lib/api';
 
 // The IdP that runs the vault step-up approval ceremony.
 const IDP_ORIGIN = process.env.NEXT_PUBLIC_IDP_ORIGIN || 'https://privasys.id';
@@ -29,6 +29,7 @@ import { RtmrVerifier } from '~/components/rtmr-verifier';
 import { AttestationConnect, AttestationResultView, useAttestation } from '@privasys/attestation-view';
 import { useConfirm } from '~/components/confirm-dialog';
 import { PlaceLabel, Datacentre } from '~/components/place';
+import { BackupsTab, BACKUP_DELETION_COPY } from '~/components/backups';
 
 function StatusBadge({ status, labels, colors }: { status: string; labels: Record<string, string>; colors: Record<string, string> }) {
     return (
@@ -82,7 +83,7 @@ function BuildStatusDot({ status }: { status: string }) {
     return <span className={`w-2 h-2 rounded-full inline-block ${color}`} />;
 }
 
-type Tab = 'deployments' | 'store' | 'attestation' | 'api' | 'mcp' | 'ui' | 'configure' | 'team';
+type Tab = 'deployments' | 'store' | 'attestation' | 'api' | 'mcp' | 'ui' | 'configure' | 'backups' | 'team';
 
 export default function AppDetailPage() {
     const { id } = useParams<{ id: string }>();
@@ -132,6 +133,13 @@ export default function AppDetailPage() {
     }, [session?.accessToken, id]);
 
     useEffect(() => { load(); }, [load]);
+
+    // The Backups tab shows only where the platform offers backups.
+    const [backupsOffered, setBackupsOffered] = useState(false);
+    useEffect(() => {
+        if (!session?.accessToken) return;
+        getBackupOptions(session.accessToken).then(o => setBackupsOffered(o.available)).catch(() => setBackupsOffered(false));
+    }, [session?.accessToken]);
 
     // Poll every 5s while app is in a transitional state (SSE fallback)
     useEffect(() => {
@@ -184,12 +192,12 @@ export default function AppDetailPage() {
     // comes from the danger-zone checkbox. No native confirm() dialogs. Volume
     // policy: by default the app's encrypted volume SURVIVES and keeps billing
     // per GB-hour until deleted on the Volumes page.
-    async function handleDelete(withVolume: boolean) {
+    async function handleDelete(withVolume: boolean, withBackups: boolean) {
         if (!session?.accessToken || !id || !app) return;
         const hasVolume = app.app_type === 'container' && !!app.container_storage;
         setDeleting(true);
         try {
-            await deleteApp(session.accessToken, id, withVolume);
+            await deleteApp(session.accessToken, id, withVolume, withBackups);
             window.dispatchEvent(new Event('apps:changed'));
             // Send the user to the surviving volume when they kept it, else home.
             router.push(hasVolume && !withVolume ? '/dashboard/volumes' : '/dashboard');
@@ -258,6 +266,7 @@ export default function AppDetailPage() {
             // Native Configure/Manage (role config/action) now lives inside the
             // Deployments tab, alongside the running instance — no separate tab.
         ] : []),
+        ...(backupsOffered && app.app_type === 'container' ? [{ key: 'backups' as Tab, label: 'Backups' }] : []),
         { key: 'team', label: 'Team' }
     ];
 
@@ -357,6 +366,9 @@ export default function AppDetailPage() {
                 {tab === 'ui' && session?.accessToken && containerUI?.url && (
                     <AppUITab appId={app.id} appName={app.name} hostname={activeDeployments[0]?.hostname} token={session.accessToken} containerMcp={app.container_mcp as Record<string, unknown>} onMcpUpdate={(updated) => setApp(updated)} />
                 )}
+                {tab === 'backups' && session?.accessToken && (
+                    <BackupsTab app={app} token={session.accessToken} deployments={deployments} enclaves={enclaves} onRestoreStarted={() => { load(); setTab('deployments'); }} />
+                )}
                 {tab === 'team' && session?.accessToken && (
                     <TeamTab appId={app.id} token={session.accessToken} />
                 )}
@@ -367,9 +379,22 @@ export default function AppDetailPage() {
 }
 
 // ------- Danger Zone -------
-function DangerZone({ app, deleting, onDelete }: { app: App; deleting: boolean; onDelete: (withVolume: boolean) => void }) {
+function DangerZone({ app, token, deleting, onDelete }: { app: App; token: string; deleting: boolean; onDelete: (withVolume: boolean, withBackups: boolean) => void }) {
     const [confirmName, setConfirmName] = useState('');
     const [deleteVolume, setDeleteVolume] = useState(false);
+    const [deleteBackups, setDeleteBackups] = useState(false);
+    // A BYOK app's backups outlive it unless deleted with it.
+    const [backups, setBackups] = useState<{ count: number; gbp: number } | null>(null);
+    useEffect(() => {
+        if (app.key_provider !== 'byok') return;
+        (async () => {
+            const opts = await getBackupOptions(token);
+            if (!opts.available) return;
+            const cat = await listAppBackups(token, app.id);
+            const rate = opts.redundancy[0]?.gbp_per_gb_month ?? 0;
+            if (cat.snapshots.length > 0) setBackups({ count: cat.snapshots.length, gbp: billableBackupGB(cat.stored_bytes) * rate });
+        })().catch(() => setBackups(null));
+    }, [app.id, app.key_provider, token]);
     const confirmed = confirmName === app.name;
     const hasVolume = app.app_type === 'container' && !!app.container_storage;
     const isDeployed = app.status === 'deployed' || app.status === 'deploying';
@@ -398,6 +423,21 @@ function DangerZone({ app, deleting, onDelete }: { app: App; deleting: boolean; 
                     </label>
                 )}
 
+                {backups && (
+                    <label className="mt-3 flex items-start gap-2 max-w-xl text-xs text-black/60 dark:text-white/60 cursor-pointer">
+                        <input
+                            type="checkbox"
+                            checked={deleteBackups}
+                            onChange={e => setDeleteBackups(e.target.checked)}
+                            className="mt-0.5 accent-red-600"
+                        />
+                        <span>
+                            Also delete its {backups.count} backup{backups.count === 1 ? '' : 's'}. {BACKUP_DELETION_COPY}{' '}
+                            If left unchecked, kept backups stay available and keep billing (≈ £{backups.gbp.toFixed(2)}/month) until you delete them from Backups.
+                        </span>
+                    </label>
+                )}
+
                 <div className="mt-3 flex items-end gap-3">
                     <div className="flex-1 max-w-xs">
                         <label className="text-xs text-black/50 dark:text-white/50 block mb-1.5">
@@ -412,7 +452,7 @@ function DangerZone({ app, deleting, onDelete }: { app: App; deleting: boolean; 
                         />
                     </div>
                     <button
-                        onClick={() => onDelete(hasVolume && deleteVolume)}
+                        onClick={() => onDelete(hasVolume && deleteVolume, !!backups && deleteBackups)}
                         disabled={!confirmed || deleting}
                         className="px-4 py-2 text-sm font-medium rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                     >
@@ -1337,7 +1377,7 @@ const STORE_CATEGORIES = [
 const ICON_DIMS = '512 x 512 px square';
 const SHOT_DIMS = '1280 x 800 px (16:10 landscape)';
 
-function AppStoreTab({ app, token, deployed, hostname, onSave, deleting, onDelete }: { app: App; token: string; deployed: boolean; hostname?: string; onSave: (updated: App) => void; deleting: boolean; onDelete: (withVolume: boolean) => void }) {
+function AppStoreTab({ app, token, deployed, hostname, onSave, deleting, onDelete }: { app: App; token: string; deployed: boolean; hostname?: string; onSave: (updated: App) => void; deleting: boolean; onDelete: (withVolume: boolean, withBackups: boolean) => void }) {
     const [saving, setSaving] = useState(false);
     const [saved, setSaved] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -1750,7 +1790,7 @@ function AppStoreTab({ app, token, deployed, hostname, onSave, deleting, onDelet
             )}
 
             {/* Danger zone (moved here from the removed Overview tab) */}
-            <DangerZone app={app} deleting={deleting} onDelete={onDelete} />
+            <DangerZone app={app} token={token} deleting={deleting} onDelete={onDelete} />
         </div>
     );
 }

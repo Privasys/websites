@@ -6,7 +6,7 @@ import type { ReactNode } from 'react';
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { Navbar, Footer } from '@privasys/ui';
 import { useAuth, hasAdminRole, hasManagerRole } from '~/lib/privasys-auth';
-import { listApps } from '~/lib/api';
+import { listApps, getBackupOptions } from '~/lib/api';
 import { SSEProvider, useSSE } from '~/lib/sse-context';
 import type { App } from '~/lib/types';
 import { UserMenu } from '~/components/user-menu';
@@ -49,6 +49,12 @@ function Sidebar() {
     const isManager = hasManagerRole(session?.roles);
     const isAdmin = hasAdminRole(session?.roles);
     const [apps, setApps] = useState<App[]>([]);
+    // Backups appear in the menu only where the platform offers them.
+    const [backupsOffered, setBackupsOffered] = useState(false);
+    useEffect(() => {
+        if (!session?.accessToken) return;
+        getBackupOptions(session.accessToken).then(o => setBackupsOffered(o.available)).catch(() => setBackupsOffered(false));
+    }, [session?.accessToken]);
     // Collapsible applications list: open by default with up to 5 apps,
     // collapsed beyond that; a click overrides either way. The active app
     // stays visible even when collapsed so context is never lost.
@@ -191,6 +197,24 @@ function Sidebar() {
                     </svg>
                     Volumes
                 </Link>
+
+                {/* Backups (restore points of BYOK apps, deleted apps included) */}
+                {backupsOffered && (
+                    <Link
+                        href="/dashboard/backups"
+                        className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
+                            pathname === '/dashboard/backups'
+                                ? 'bg-black/5 dark:bg-white/10 font-medium'
+                                : 'hover:bg-black/3 dark:hover:bg-white/5 text-black/60 dark:text-white/60'
+                        }`}
+                    >
+                        <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+                            <path d="M3 12a9 9 0 109-9 9.75 9.75 0 00-6.74 2.74L3 8" />
+                            <path d="M3 3v5h5M12 7v5l4 2" />
+                        </svg>
+                        Backups
+                    </Link>
+                )}
 
                 {/* Team */}
                 <Link
