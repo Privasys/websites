@@ -11,6 +11,7 @@ import { listBackupSets, getBackupSet, deleteBackupSet, getBackupOptions, backup
 import type { BackupOptions, BackupSet, BackupSnapshot } from '~/lib/api';
 import { useConfirm } from '~/components/confirm-dialog';
 import { RestorePointsTable, BACKUP_DELETION_COPY, formatStored } from '~/components/backups';
+import { BackupAccessSection } from '~/components/backup-access';
 
 export default function BackupsPage() {
     const { session } = useAuth();
@@ -105,7 +106,7 @@ export default function BackupsPage() {
                         </thead>
                         <tbody>
                             {sets.map(s => (
-                                <SetRow key={s.app_id} s={s} gbp={options && s.stored_bytes != null ? backupMonthlyGBP(options, s.redundancy, s.stored_bytes) : null} open={open === s.app_id} points={points[s.app_id]} busy={busy === s.app_id} onToggle={() => toggle(s)} onDelete={() => remove(s)} />
+                                <SetRow key={s.app_id} s={s} token={session!.accessToken!} accessAvailable={!!options?.access_available} gbp={options && s.stored_bytes != null ? backupMonthlyGBP(options, s.redundancy, s.stored_bytes) : null} open={open === s.app_id} points={points[s.app_id]} busy={busy === s.app_id} onToggle={() => toggle(s)} onDelete={() => remove(s)} />
                             ))}
                         </tbody>
                     </table>
@@ -115,7 +116,7 @@ export default function BackupsPage() {
     );
 }
 
-function SetRow({ s, gbp, open, points, busy, onToggle, onDelete }: { s: BackupSet; gbp: number | null; open: boolean; points?: BackupSnapshot[]; busy: boolean; onToggle: () => void; onDelete: () => void }) {
+function SetRow({ s, token, accessAvailable, gbp, open, points, busy, onToggle, onDelete }: { s: BackupSet; token: string; accessAvailable: boolean; gbp: number | null; open: boolean; points?: BackupSnapshot[]; busy: boolean; onToggle: () => void; onDelete: () => void }) {
     const deleted = !!s.app_deleted_at;
     return (
         <>
@@ -156,6 +157,7 @@ function SetRow({ s, gbp, open, points, busy, onToggle, onDelete }: { s: BackupS
                     <td colSpan={6} className="px-4 pb-4">
                         {points ? <RestorePointsTable snapshots={points} /> : <div className="text-sm text-black/40 dark:text-white/40">Loading restore points…</div>}
                         <p className="mt-2 text-xs text-black/50 dark:text-white/50">The app is deleted, so there is nothing to restore onto here. The restore points open only with the app key you hold.</p>
+                        {accessAvailable && <div className="mt-3"><BackupAccessSection token={token} scope="set" appId={s.app_id} appName={s.app_name} /></div>}
                     </td>
                 </tr>
             )}

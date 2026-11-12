@@ -10,6 +10,7 @@ import type { ReactNode } from 'react';
 import { getBackupOptions, getBackupPolicy, listAppBackups, setBackupPolicy, startBackup, restoreApp, listVolumes, backupMonthlyGBP, apiErrorCode } from '~/lib/api';
 import type { BackupOptions, BackupPolicy, BackupCatalog, BackupSnapshot } from '~/lib/api';
 import type { App, AppDeployment, Enclave } from '~/lib/types';
+import { BackupAccessSection } from '~/components/backup-access';
 
 export const BACKUP_DELETION_COPY =
     'Backups are deleted now and billing stops. The storage provider erases the remaining encrypted copies within 35 days; they can’t be read without your app key.';
@@ -239,6 +240,10 @@ export function BackupsTab({ app, token, deployments, enclaves, onRestoreStarted
                     Backups are encrypted under the app key you hold and kept in immutable storage. You pay for the size stored, which is usually well below the app&apos;s data size: it is deduplicated and compressed.
                 </p>
             </section>
+
+            {options?.access_available && snapshots.length > 0 && (
+                <BackupAccessSection token={token} scope="app" appId={app.id} appName={app.name} />
+            )}
 
             {scheduling && options && policy && (
                 <ScheduleDialog

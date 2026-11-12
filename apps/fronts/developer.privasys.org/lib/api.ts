@@ -1686,6 +1686,40 @@ export function getBackupSet(token: string, appId: string): Promise<BackupCatalo
     return request(`/api/v1/backups/${encodeURIComponent(appId)}`, token);
 }
 
+// Last-resort access: read-only S3 keys limited to the app's own backups, so
+// its owner can restore with stock kopia and the key they hold. The secret is
+// returned once, by create. `scope` picks the live-app route or the kept-set
+// route (a deleted app's backups).
+export interface BackupAccess {
+    exists: boolean;
+    access_key_id?: string;
+    secret_access_key?: string;
+    created_at?: string;
+    endpoint?: string;
+    region?: string;
+    bucket?: string;
+    prefix?: string;
+}
+
+export type BackupAccessScope = 'app' | 'set';
+
+function backupAccessPath(scope: BackupAccessScope, appId: string): string {
+    const id = encodeURIComponent(appId);
+    return scope === 'app' ? `/api/v1/apps/${id}/backups/access` : `/api/v1/backups/${id}/access`;
+}
+
+export function getBackupAccess(token: string, scope: BackupAccessScope, appId: string): Promise<BackupAccess> {
+    return request(backupAccessPath(scope, appId), token);
+}
+
+export function createBackupAccess(token: string, scope: BackupAccessScope, appId: string): Promise<BackupAccess> {
+    return request(backupAccessPath(scope, appId), token, { method: 'POST' });
+}
+
+export function revokeBackupAccess(token: string, scope: BackupAccessScope, appId: string): Promise<{ status: string }> {
+    return request(backupAccessPath(scope, appId), token, { method: 'DELETE' });
+}
+
 export function deleteBackupSet(token: string, appId: string): Promise<{ status: string }> {
     return request(`/api/v1/backups/${encodeURIComponent(appId)}`, token, { method: 'DELETE' });
 }
