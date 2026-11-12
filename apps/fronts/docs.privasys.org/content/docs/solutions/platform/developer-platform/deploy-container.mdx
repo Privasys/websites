@@ -71,6 +71,8 @@ When encrypted storage is enabled, the container receives a mounted volume that 
 
 Data persists across container restarts on the same enclave but is inaccessible outside that specific enclave instance.
 
+To keep restore points of the volume, encrypted under a key you hold and recoverable without Privasys, create the app with its own key and turn on [backups](/solutions/platform/developer-platform/backups).
+
 ## Networking
 
 Traffic to and from the container flows through the RA-TLS proxy:
