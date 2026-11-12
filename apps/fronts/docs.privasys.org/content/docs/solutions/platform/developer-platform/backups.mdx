@@ -54,16 +54,18 @@ privasys apps deploy my-app --version <version-id> --enclave <enclave-id>
 In the portal, open the app and its **Backups** tab, then **Schedule…**. Or with the CLI:
 
 ```bash
-privasys apps backup policy my-app --interval hourly --retention standard
+privasys apps backup policy my-app --interval hourly --retention standard --redundancy region
 ```
+
+Each flag changes only its own setting, so `privasys apps backup policy my-app --redundancy zones` moves the backups and keeps the schedule.
 
 | Setting | Options |
 |---|---|
-| **Interval** | Every hour, every 6 hours, every day, or off. |
-| **Retention** | **Standard**: hourly for 48 hours, daily for 35 days, weekly for 13 weeks and monthly for 13 months, plus the latest 3. Nothing older than 13 months is kept. **Minimal**: the latest 3 and 7 daily. |
-| **Location** | **1 region** (Gravelines, France) or **3 zones** (Paris, France, three availability zones, which survives the loss of a data centre). |
+| **Interval** (`--interval`) | Every hour, every 6 hours, every day, or off. |
+| **Retention** (`--retention`) | **Standard**: hourly for 48 hours, daily for 35 days, weekly for 13 weeks and monthly for 13 months, plus the latest 3. Nothing older than 13 months is kept. **Minimal**: the latest 3 and 7 daily. |
+| **Location** (`--redundancy`) | **1 region** (`region`: Gravelines, France) or **3 zones** (`zones`: Paris, France, three availability zones, which survives the loss of a data centre). |
 
-Changing the location of an app that already has backups moves its restore points: the enclave copies them to the new location and switches only once the copy has fully succeeded. Backups pause during the move, which takes seconds for small apps and a few minutes per GB.
+Changing the location of an app that already has backups moves its restore points: the enclave copies them to the new location and switches only once the copy has fully succeeded. The move needs the app running. Backups pause during the move, which takes seconds for small apps and a few minutes per GB.
 
 ### Step 3: Back up now, list, check
 
@@ -93,11 +95,21 @@ Restoring onto another enclave works the same way: the app's volume is absent th
 
 From the **Last-resort access** section of the Backups tab, create read-only keys for your app's backups. They can list and read your app's restore points and nothing else: they cannot write or delete, and they cannot see other apps. The secret is shown once; you can replace or revoke the keys at any time.
 
+With the CLI, `create` writes the keys to a file that only you can read and prints the kopia commands below with your bucket, endpoint, region and prefix filled in. The secret never appears on screen:
+
+```bash
+privasys apps backup access create my-app --out my-app-backup.env
+privasys apps backup access show my-app      # whether keys exist, and where the backups are
+privasys apps backup access revoke my-app
+```
+
+For a deleted app's kept backups, use `privasys backups access create <app-id> --out <file>` (and `show`, `revoke`) with the app's id.
+
 With those keys and your key file, any Linux or macOS machine restores your data with stock kopia:
 
 ```bash
 export KOPIA_PASSWORD=$(privasys apps key backup-password --from-file my-app.key)
-export AWS_ACCESS_KEY_ID=<access key id> AWS_SECRET_ACCESS_KEY=<secret>
+. my-app-backup.env   # or: export AWS_ACCESS_KEY_ID=<access key id> AWS_SECRET_ACCESS_KEY=<secret>
 kopia repository connect s3 --bucket=<bucket> --endpoint=<endpoint> --region=<region> \
   --prefix=apps/<app-id>/ --readonly --no-persist-credentials
 kopia snapshot list --all

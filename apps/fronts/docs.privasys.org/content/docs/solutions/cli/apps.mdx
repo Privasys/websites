@@ -121,6 +121,30 @@ privasys apps cosign my-app --enable     # require a second team approver on pro
 privasys apps migrate-constellation my-app   # move the key onto a new vault constellation, gracefully
 ```
 
+## Backups
+
+[Backups](/solutions/platform/developer-platform/backups/) are for apps created with `--storage --key-provider byok`: the enclave encrypts every restore point under an app key that you create and keep.
+
+```sh
+privasys apps key create my-app --version <version-id> --enclave <enclave-id> --out my-app.key
+privasys apps backup policy my-app --interval hourly --retention standard --redundancy region
+privasys apps backup run my-app
+privasys apps backup list my-app
+privasys apps deploy my-app --version <version-id> --enclave <enclave-id> --restore <snapshot-id|latest>
+```
+
+`apps backup policy` changes only the settings you pass. `--redundancy zones` keeps the backups in three zones instead of one region, at a higher rate; for an app that already has backups it moves them, which needs the app running.
+
+For a restore without Privasys, issue read-only keys to the app's backups. `create` writes them to a file only you can read and prints the kopia commands; the secret never appears on screen:
+
+```sh
+privasys apps backup access create my-app --out my-app-backup.env
+privasys apps backup access show my-app
+privasys apps backup access revoke my-app
+```
+
+A deleted app's backups are kept, and billed, until you delete them: `privasys backups list`, `privasys backups access create <app-id> --out <file>` and `privasys backups delete <app-id>` work on them by app id.
+
 ## Teams and access
 
 ```sh
