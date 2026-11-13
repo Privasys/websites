@@ -60,8 +60,20 @@ Where a source states the position for a passport of that age, the wallet says i
 
 After the read, and before anything is sent, the wallet shows what the chip contains: the photo, the name, the dates and the nationality. The holder checks it is them and then takes the selfie. The enclave receives the chip's contents, the frame showing the lines and the selfie. It verifies the chip's signature against the issuing country's certificates, matches the selfie to the chip's photo, returns the verified attributes to the wallet, and keeps none of it. The holder then chooses which of those attributes to keep.
 
+## Using the identity at sign-in
+
+Once verified, the attributes are used the way every other attribute in the wallet is: an application asks for them at sign-in, and the holder decides. As with any sign-in, the wallet first [checks the application's enclave](/blog/privasys-wallet-sign-in-consent-and-who-knows-what), then shows what it asks for.
+
+![Two wallet screens: an online wine shop requesting proof that the holder is 18 or older, shared as a proof only, and a treasury application requesting the holder's first and last name from their ID together with a physical presence check](/blog/privasys-wallet-strong-identity-for-critical-workflows-set-up-in-two-minutes/id-sign-in.png)
+
+*Two requests for attributes from the ID: a proof of age, and a name with a presence check before a sensitive action. Both applications are fictional.*
+
+An application that sells wine only needs to know that the holder is an adult. It asks for "18 or older", and the wallet marks the row as a proof only: the application learns yes, and never sees the date of birth, which stays in the wallet. An application approving a payment needs more. It can ask for the holder's name as it appears on their ID, and for a physical presence check: a quick selfie, matched in the enclave to the photo from the chip, which shows that the person holding the phone is the person the identity belongs to at the moment of the action.
+
+The wallet marks each attribute that comes from the ID. The application receives a signed proof of it, never the document. Each proof is made for that one application, so it is useless anywhere else.
+
 ## In short
 
-A strong identity is only useful once people have one. Setting it up from a phone is now much easier, and the entire process is transparent and verifiable. The wallet's main promise holds: the holder is always in control of which attributes a third-party application receives at sign-in, and those attributes now rest on a government-verified identity.
+A strong identity is only useful once people have one. Setting it up from a phone is now much easier, and on Privasys the entire process is transparent and verifiable. The wallet's main promise holds: the holder is always in control of which attributes a third-party application receives at sign-in, and some attributes now rest on a government-verified identity.
 
 *Privasys Wallet is available on the [App Store](https://apps.apple.com/app/privasys-wallet/id6761209489) and [Google Play](https://play.google.com/store/apps/details?id=org.privasys.wallet). Its source is open under the AGPL-3.0 licence at [github.com/Privasys/identity-platform](https://github.com/Privasys/identity-platform), and the chip-placement list, with the sources for every entry, is in its [chip-placement folder](https://github.com/Privasys/identity-platform/tree/main/chip-placement).*
