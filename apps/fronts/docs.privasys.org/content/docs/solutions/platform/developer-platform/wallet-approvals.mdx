@@ -1,0 +1,136 @@
+---
+title: Wallet approvals
+description: How an app asks a person to approve one act on their phone, and how it checks the answer before committing.
+---
+
+Some acts need more than a signed-in session: a decision with legal effect,
+granting a role, erasing personal data. What matters is that a named person
+approved **this act, now**, not that they signed in strongly this morning.
+
+A wallet approval gives your app exactly that. Your server asks the person's
+Privasys Wallet to approve one act. The wallet shows it, the person approves
+or declines with their phone's biometric, and your server receives a short-lived
+token bound to that act. Your server checks the token before it commits.
+
+Approvals work for any app deployed on the platform. The person needs a
+Privasys ID, linked to their account in your app.
+
+## The flow
+
+1. Your server sends the approval to the person's wallet, through the platform.
+2. The wallet checks that your app sent it: it connects to your app's own
+   platform hostname over [RA-TLS](/solutions/enclave-os/attestation/ra-tls/),
+   verifies the attestation and the app id in it, and asks your app to confirm
+   it is waiting on this exact approval.
+3. The wallet shows your app's registered name, the act and the assurance you
+   asked for. The person taps **Approve** or **Decline**.
+4. The wallet asks for a fresh biometric, then signs with the person's
+   Privasys ID passkey. Privasys ID verifies the signature, including user
+   verification, and issues an approval token.
+5. The wallet posts the token to your app, over RA-TLS, to the same host.
+6. Your server checks the token and commits the act.
+
+## Address the right person
+
+An approval is addressed to the person's Privasys ID subject under your app's
+sign-in client. That is the `sub` your app sees when they sign in with their
+Privasys ID.
+
+If people sign in to your app another way (Microsoft, Google), link their
+Privasys ID once with the Auth SDK's `linkIdentity`, and store the subject it
+returns against their account in your app. A person can link more than one
+Privasys ID. If they remove your app in their wallet, approvals stop reaching
+them.
+
+## Send an approval
+
+Call the platform's notify endpoint with your app's attested identity, the
+same call as any wallet notification:
+
+```http
+POST https://api.developer.privasys.org/api/v1/notify
+Content-Type: application/json
+
+{
+  "sub": "<the person's Privasys ID subject>",
+  "type": "approval",
+  "payload": { "approval": "<the approval, as a JSON string>" }
+}
+```
+
+The approval itself is a JSON string, so its digest is unambiguous:
+
+```json
+{
+  "v": 1,
+  "id": "dec_7f3a",
+  "title": "Grant the auditor role to A. Lovelace",
+  "lines": [
+    { "label": "Role", "value": "Auditor" },
+    { "label": "Granted by", "value": "B. Turing" }
+  ],
+  "act_digest": "<lowercase hex SHA-256 of the act>",
+  "assurance": "device",
+  "callback": "/api/approvals/answer",
+  "ttl": 300
+}
+```
+
+| Field | What it is |
+|---|---|
+| `id` | Your reference, 1 to 64 characters of `A-Z a-z 0-9 _ -`. |
+| `title` | What the person approves, up to 120 characters. |
+| `lines` | Up to 12 labelled lines: label up to 40 characters, value up to 200. |
+| `act_digest` | The SHA-256 your server computes over its own canonical form of the act. The wallet never computes it; your server recomputes it before committing. |
+| `assurance` | `device` or `gov-presence` (see below). |
+| `callback` | A path on your app's host where the wallet delivers the answer. |
+| `ttl` | How long the approval waits, 60 to 900 seconds. |
+
+Text is plain: no markup, links, control characters, bidirectional overrides
+or zero-width characters. The wallet shows your app's registered name; you
+never supply it.
+
+Keep the exact approval string. Its SHA-256 (lowercase hex) is the
+`approval_digest` the answer commits to.
+
+## Serve two routes
+
+On your app's platform hostname (`<app>.apps.privasys.org`), which the wallet
+reaches over RA-TLS:
+
+- `GET /.well-known/privasys/approval?id=<id>&digest=<approval_digest>`
+  answers `200 {"open": true, "id": "<id>", "approval_digest": "<digest>"}`
+  while the approval waits, and `404` otherwise. The wallet shows no buttons
+  until your app confirms.
+- `POST <callback>` receives `{"approval_id", "decision", "token"}`.
+
+## Check the token
+
+The token is a JWT with header `typ: op-approval+jwt` and `alg: ES256`,
+signed by Privasys ID ([JWKS](https://privasys.id/jwks)). It lives five minutes.
+
+| Claim | Check |
+|---|---|
+| `iss` | `https://privasys.id` |
+| `aud` | `approval:<your app id>` |
+| `exp` | In the future. |
+| `approval_id`, `approval_digest` | The approval you sent, and the SHA-256 of its exact string. |
+| `act_digest` | Equal to the digest you recompute from the act you are about to commit. |
+| `sub` | The Privasys ID linked to the person acting. |
+| `decision` | `approve` to commit. `decline` is a signed refusal: record it. |
+| `acr` | At least the assurance the act needs. |
+| `amr` | Contains `webauthn`; also `face` for `gov-presence`. |
+| `jti` | Not seen before. Each token is used once. |
+| `v` | `1`. |
+
+Keep the token with the act: it is your evidence that the person approved it.
+
+## Assurance levels
+
+| Level | The person | The token proves |
+|---|---|---|
+| `device` | Uses Face ID or their fingerprint, prompted afresh for this approval. | The holder of this Privasys ID approved this act on their phone, with user verification. |
+| `gov-presence` | Takes a live selfie, matched in the identity-verifier enclave to the passport photo they verified in their wallet. | The person whose passport was verified approved this act in person. The verifier's signed result is in the token's `presence` claim, for your records. |
+
+`gov-presence` is coming soon. Until then, an approval that asks for it is
+refused with a clear error when you send it.

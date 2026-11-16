@@ -11,6 +11,7 @@
         "app-lifecycle",
         "backups",
         "custom-domains",
-        "spend-tokens"
+        "spend-tokens",
+        "wallet-approvals"
     ]
 }
