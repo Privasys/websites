@@ -1,7 +1,7 @@
 const PROD_PORTAL_HOST = 'developer.privasys.org';
-const TEST_PORTAL_HOST = 'developer-test.privasys.org';
+const TEST_PORTAL_HOST = 'developer.test.privasys.org';
 const PROD_API_URL = 'https://api.developer.privasys.org';
-const TEST_API_URL = 'https://api-test.developer.privasys.org';
+const TEST_API_URL = 'https://api.developer.test.privasys.org';
 const LOCAL_API_URL = 'http://localhost:8080';
 
 export function getApiBaseUrl(): string {

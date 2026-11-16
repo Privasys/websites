@@ -260,7 +260,7 @@ test.describe('Explorer — FIDO2 Proxy Endpoint', () => {
 // Real E2E: wasm-app-example on development environment
 // ---------------------------------------------------------------------------
 
-const DEV_API_BASE = 'https://api-test.developer.privasys.org';
+const DEV_API_BASE = 'https://api.developer.test.privasys.org';
 const DEV_APP_NAME = 'wasm-app-example';
 
 async function connectToDevApp(page: Page) {

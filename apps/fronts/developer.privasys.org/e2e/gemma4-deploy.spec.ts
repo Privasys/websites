@@ -18,7 +18,7 @@ import { setupAuth, getToken as getE2eToken } from './e2e-auth';
 import { cleanupApps } from './e2e-cleanup';
 import { appCall } from './e2e-app-call';
 
-const API = process.env.NEXT_PUBLIC_API_URL || 'https://api-test.developer.privasys.org';
+const API = process.env.NEXT_PUBLIC_API_URL || 'https://api.developer.test.privasys.org';
 const APP_NAME = 'e2e-gemma4-pkg';
 const CONTAINER_IMAGE = 'ghcr.io/privasys/confidential-ai:latest';
 const CONTAINER_PORT = 8080;

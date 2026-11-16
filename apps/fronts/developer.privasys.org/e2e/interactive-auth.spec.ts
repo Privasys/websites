@@ -52,7 +52,7 @@ function collectFailedRequests(page: Page): string[] {
         if (res.status() >= 400) {
             const url = res.url();
             // Only flag failures on auth-specific endpoints (IdP, relay, SDK)
-            // Exclude app API calls (api-test.developer) — those are post-auth data loads
+            // Exclude app API calls (api.developer.test) — those are post-auth data loads
             if (
                 (url.includes('privasys.id') || url.includes('relay.')) &&
                 !url.includes('favicon')

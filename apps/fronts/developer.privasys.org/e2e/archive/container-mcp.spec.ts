@@ -15,7 +15,7 @@ import path from 'path';
 const screenshot = (name: string) =>
     path.join(__dirname, 'test-results', `${name}.png`);
 
-const API = process.env.NEXT_PUBLIC_API_URL || 'https://api-test.developer.privasys.org';
+const API = process.env.NEXT_PUBLIC_API_URL || 'https://api.developer.test.privasys.org';
 const TEST_APP_NAME = 'e2e-container-mcp-test';
 // New commit includes privasys.json — auto-detection should populate container_mcp
 const TEST_COMMIT_URL = 'https://github.com/Privasys/container-app-example/commit/5abf1e9';

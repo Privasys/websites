@@ -42,7 +42,7 @@ import { test, expect, type Page } from '@playwright/test';
 import { setupAuth, getToken as getE2eToken } from './e2e-auth';
 import { cleanupApps } from './e2e-cleanup';
 
-const API = process.env.NEXT_PUBLIC_API_URL || 'https://api-test.developer.privasys.org';
+const API = process.env.NEXT_PUBLIC_API_URL || 'https://api.developer.test.privasys.org';
 
 const APP_NAME = process.env.E2E_APP_NAME || 'e2e-cloud-ai';
 const ENCLAVE_MATCH = process.env.E2E_ENCLAVE_NAME || 'm2-dev-ai';

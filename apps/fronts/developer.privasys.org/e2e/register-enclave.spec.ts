@@ -5,7 +5,7 @@
 import { test, expect } from '@playwright/test';
 import { getToken, setupAuth } from './e2e-auth';
 
-const API = process.env.NEXT_PUBLIC_API_URL || 'https://api-test.developer.privasys.org';
+const API = process.env.NEXT_PUBLIC_API_URL || 'https://api.developer.test.privasys.org';
 
 test('register TDX dev enclave', async ({ page }) => {
     test.setTimeout(60_000);

@@ -39,9 +39,9 @@ import { existsSync } from 'node:fs';
 
 const INSTANCE_API =
     process.env.CHAT_INSTANCE_API ||
-    'https://api-test.developer.privasys.org/api/v1/ai/instances/demo';
+    'https://api.developer.test.privasys.org/api/v1/ai/instances/demo';
 const API_BASE =
-    process.env.CHAT_API_BASE || 'https://api-test.developer.privasys.org';
+    process.env.CHAT_API_BASE || 'https://api.developer.test.privasys.org';
 const SA_KEY = process.env.PRIVASYS_SA_KEY || '/tmp/dev-sa.json';
 const MINT_SCRIPT =
     process.env.PRIVASYS_MINT_SCRIPT ||

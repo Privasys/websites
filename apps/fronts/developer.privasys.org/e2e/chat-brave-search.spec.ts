@@ -29,10 +29,10 @@ import { test, expect, request } from '@playwright/test';
 
 const INSTANCE_API =
     process.env.CHAT_INSTANCE_API ||
-    'https://api-test.developer.privasys.org/api/v1/ai/instances/demo';
+    'https://api.developer.test.privasys.org/api/v1/ai/instances/demo';
 const ENDPOINT_OVERRIDE = process.env.CHAT_INFERENCE_ENDPOINT || '';
 const API_BASE =
-    process.env.CHAT_API_BASE || 'https://api-test.developer.privasys.org';
+    process.env.CHAT_API_BASE || 'https://api.developer.test.privasys.org';
 
 const TOOL_NAME = 'web_search';
 const USER_PROMPT =

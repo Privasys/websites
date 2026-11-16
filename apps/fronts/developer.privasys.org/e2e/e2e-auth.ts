@@ -12,7 +12,7 @@
  * IDP_BOOTSTRAP_ADMIN).
  *
  * Required env vars:
- *   E2E_BASE_URL    — portal URL (default: https://developer-test.privasys.org)
+ *   E2E_BASE_URL    — portal URL (default: https://developer.test.privasys.org)
  *   E2E_AUTH_ORIGIN — IdP URL    (default: https://privasys.id)
  *
  * Optional env vars:
@@ -31,7 +31,7 @@ import {
     type RegisterResult
 } from './lib/fido2-client';
 
-const BASE_URL = process.env.E2E_BASE_URL || 'https://developer-test.privasys.org';
+const BASE_URL = process.env.E2E_BASE_URL || 'https://developer.test.privasys.org';
 const AUTH_ORIGIN = (process.env.E2E_AUTH_ORIGIN || 'https://privasys.id').replace(/\/$/, '');
 const RP_ID = new URL(AUTH_ORIGIN).hostname;
 const CLIENT_ID = 'privasys-platform';

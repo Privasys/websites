@@ -23,7 +23,7 @@ import { test, expect, request } from '@playwright/test';
 
 const INSTANCE_API =
     process.env.CHAT_INSTANCE_API ||
-    'https://api-test.developer.privasys.org/api/v1/ai/instances/demo';
+    'https://api.developer.test.privasys.org/api/v1/ai/instances/demo';
 const ENDPOINT_OVERRIDE = process.env.CHAT_INFERENCE_ENDPOINT || '';
 
 // Plain helpful-assistant prompt. With vLLM's `--reasoning-parser

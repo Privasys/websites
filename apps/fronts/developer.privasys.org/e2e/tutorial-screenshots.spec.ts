@@ -24,7 +24,7 @@ import { setupAuth, getToken as getE2eToken } from './e2e-auth';
 import { cleanupApps } from './e2e-cleanup';
 
 const TUTORIAL_DIR = path.join(__dirname, 'test-results', 'tutorial');
-const API = process.env.NEXT_PUBLIC_API_URL || 'https://api-test.developer.privasys.org';
+const API = process.env.NEXT_PUBLIC_API_URL || 'https://api.developer.test.privasys.org';
 
 const WASM_COMMIT_URL = 'https://github.com/Privasys/wasm-app-example/commit/b296c0d78d0f7a5504d76abba7e5e5b3af885936';
 const WASM_APP_NAME = 'alice-first-wasm-app';

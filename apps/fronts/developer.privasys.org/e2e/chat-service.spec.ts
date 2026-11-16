@@ -22,7 +22,7 @@ import { test, expect, request } from '@playwright/test';
 import { getToken } from './e2e-auth';
 import { deleteApp, cleanupApps } from './e2e-cleanup';
 
-const API = process.env.NEXT_PUBLIC_API_URL || 'https://api-test.developer.privasys.org';
+const API = process.env.NEXT_PUBLIC_API_URL || 'https://api.developer.test.privasys.org';
 const COMMIT_URL =
     process.env.CHAT_SERVICE_COMMIT_URL ||
     'https://github.com/Privasys/chat-service/commit/c8bac3fd9103b97057c20d3097cb048dabee81c7';

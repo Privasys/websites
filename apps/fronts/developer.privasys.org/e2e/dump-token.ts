@@ -11,7 +11,7 @@
  *
  * Optional env vars:
  *   E2E_AUTH_ORIGIN   IdP URL (default https://privasys.id)
- *   E2E_BASE_URL      Portal URL (default https://developer-test.privasys.org)
+ *   E2E_BASE_URL      Portal URL (default https://developer.test.privasys.org)
  *   E2E_IDENTITY_FILE Override persistent FIDO2 identity path
  *
  * Output:
@@ -21,7 +21,7 @@
  */
 import { getToken } from './e2e-auth';
 
-const PORTAL = process.env.E2E_BASE_URL || 'https://developer-test.privasys.org';
+const PORTAL = process.env.E2E_BASE_URL || 'https://developer.test.privasys.org';
 
 function decodeJwtPart(part: string): unknown {
     const pad = part + '='.repeat((4 - (part.length % 4)) % 4);

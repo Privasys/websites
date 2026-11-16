@@ -26,7 +26,7 @@ import { setupAuth, getToken as getE2eToken } from './e2e-auth';
 import { cleanupApps } from './e2e-cleanup';
 import { appCall } from './e2e-app-call';
 
-const API = process.env.NEXT_PUBLIC_API_URL || 'https://api-test.developer.privasys.org';
+const API = process.env.NEXT_PUBLIC_API_URL || 'https://api.developer.test.privasys.org';
 
 // Pushed container-app-example-with-config (typed config + actions, no app-level
 // freeze logic).

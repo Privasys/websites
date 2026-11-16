@@ -21,7 +21,7 @@ test.skip('diagnose auth callback', async ({ browser }) => {
 
     // Go to dashboard — should redirect via login -> Privasys ID -> GitHub
     console.log('=== Step 1: Go to /dashboard/ ===');
-    await page.goto('https://developer-test.privasys.org/dashboard/');
+    await page.goto('https://developer.test.privasys.org/dashboard/');
     console.log(`URL after goto: ${page.url()}`);
 
     // Wait for Privasys ID or GitHub

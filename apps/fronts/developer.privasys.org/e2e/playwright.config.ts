@@ -12,7 +12,7 @@ const env = process.env.E2E_ENV || 'dev';
 dotenv.config({ path: path.join(E2E_DIR, `.env.${env}`) });
 dotenv.config({ path: path.join(E2E_DIR, '.env.local'), override: true });
 
-const BASE_URL = process.env.E2E_BASE_URL || 'https://developer-test.privasys.org';
+const BASE_URL = process.env.E2E_BASE_URL || 'https://developer.test.privasys.org';
 const AUTH_FILE = path.join(E2E_DIR, '.auth', 'state.json');
 
 export default defineConfig({

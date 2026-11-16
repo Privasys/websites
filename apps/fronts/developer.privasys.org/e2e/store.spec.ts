@@ -11,7 +11,7 @@ import { cleanupApps } from './e2e-cleanup';
 //
 // The API tests are read-only; the publish round-trip restores prior state.
 
-const API = process.env.NEXT_PUBLIC_API_URL || 'https://api-test.developer.privasys.org';
+const API = process.env.NEXT_PUBLIC_API_URL || 'https://api.developer.test.privasys.org';
 const STORE_URL = process.env.E2E_STORE_URL || 'https://store.privasys.org';
 const screenshot = (name: string) => path.join(__dirname, 'test-results', `${name}.png`);
 

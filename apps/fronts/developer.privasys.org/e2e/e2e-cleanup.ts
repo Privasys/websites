@@ -21,7 +21,7 @@
 import { request, type APIRequestContext } from '@playwright/test';
 import { getToken } from './e2e-auth';
 
-const API = process.env.NEXT_PUBLIC_API_URL || 'https://api-test.developer.privasys.org';
+const API = process.env.NEXT_PUBLIC_API_URL || 'https://api.developer.test.privasys.org';
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 async function stopAndDelete(req: APIRequestContext, token: string, id: string, label: string): Promise<void> {

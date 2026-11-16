@@ -19,7 +19,7 @@ import { deleteApp, cleanupApps } from './e2e-cleanup';
 import { appCall } from './e2e-app-call';
 
 const screenshot = (name: string) => path.join(__dirname, 'test-results', `${name}.png`);
-const API = process.env.NEXT_PUBLIC_API_URL || 'https://api-test.developer.privasys.org';
+const API = process.env.NEXT_PUBLIC_API_URL || 'https://api.developer.test.privasys.org';
 
 // ── App config ─────────────────────────────────────────────────────
 const WASM_COMMIT_URL =

@@ -22,7 +22,7 @@ import { test, expect } from '@playwright/test';
 import { getToken } from './e2e-auth';
 import { cleanupApps } from './e2e-cleanup';
 
-const API = process.env.NEXT_PUBLIC_API_URL || 'https://api-test.developer.privasys.org';
+const API = process.env.NEXT_PUBLIC_API_URL || 'https://api.developer.test.privasys.org';
 const TEST_APP_NAME = 'e2e-multiarch-oci-label';
 // container-app-lightpanda was published by buildx (provenance + sbom) → image index.
 const LIGHTPANDA_IMAGE = 'ghcr.io/privasys/container-app-lightpanda:817987b';

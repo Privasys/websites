@@ -45,7 +45,7 @@ import { createHash, generateKeyPairSync } from 'node:crypto';
 import { setupAuth, getToken as getE2eToken } from './e2e-auth';
 import { cleanupApps } from './e2e-cleanup';
 
-const API = process.env.NEXT_PUBLIC_API_URL || 'https://api-test.developer.privasys.org';
+const API = process.env.NEXT_PUBLIC_API_URL || 'https://api.developer.test.privasys.org';
 
 const ENCLAVE_NAME = process.env.E2E_SR_ENCLAVE || 'm1-dev';
 const GCE_NAME = process.env.E2E_SR_GCE_NAME || ENCLAVE_NAME;

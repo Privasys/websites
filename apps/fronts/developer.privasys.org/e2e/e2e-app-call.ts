@@ -14,7 +14,7 @@
  */
 import { execFile } from 'node:child_process';
 
-const API = process.env.NEXT_PUBLIC_API_URL || 'https://api-test.developer.privasys.org';
+const API = process.env.NEXT_PUBLIC_API_URL || 'https://api.developer.test.privasys.org';
 
 /**
  * Invoke a tool on the app's enclave directly. Returns { status, body } like

@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import path from 'path';
 
 const screenshot = (name: string) => path.join(__dirname, 'test-results', `${name}.png`);
-const API = process.env.NEXT_PUBLIC_API_URL || 'https://api-test.developer.privasys.org';
+const API = process.env.NEXT_PUBLIC_API_URL || 'https://api.developer.test.privasys.org';
 
 const TEST_APP_NAME = 'e2e-container-test';
 const TEST_COMMIT_URL = 'https://github.com/Privasys/container-app-example/commit/04a44ffc9068a8600a69b7791bde8fd970362502';

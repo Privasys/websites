@@ -404,7 +404,7 @@ test.describe('Developer Portal', () => {
 
     test('cleanup: delete all test apps', async ({ page }) => {
         test.setTimeout(300_000);
-        const API = process.env.NEXT_PUBLIC_API_URL || 'https://api-test.developer.privasys.org';
+        const API = process.env.NEXT_PUBLIC_API_URL || 'https://api.developer.test.privasys.org';
 
         await setupAuth(page);
 
