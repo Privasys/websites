@@ -10,10 +10,12 @@ For a step-by-step integration, read the [tutorial](/tutorials/integrate-auth-sd
 ## What the SDK does
 
 - Signs the user in: wallet ceremony by QR code or push to a paired wallet, with passkey and federated sign-in as configurable alternatives.
-- Keeps the user signed in: tokens are held in the iframe on `privasys.id`, renewed silently, and shared across every site that loads the SDK (cross-site SSO).
+- Keeps the user signed in: tokens are held in the iframe on `privasys.id`, renewed silently, and shared by the pages of your site. On a site the person has not used yet, their phone gets a notification, with no QR code to scan.
 - Asks for attributes the app declares, with the user's consent in the wallet.
 - When the app runs in an enclave, establishes a **sealed session**: AES-256-GCM end to end from the iframe to the enclave, through a gateway that only ever carries ciphertext, with requests, server-sent streams and WebSockets all sealed.
 - Keeps that sealed session alive without the user: when the enclave forgets it (idle, restart) the SDK re-establishes it from a voucher the wallet issued at sign-in, and only involves the user again when the enclave's measurement changed.
+- Reaches the app with one call whichever way the person signed in: sealed after a wallet sign-in, over the app's direct name otherwise.
+- Links a Privasys ID to a person who signed in another way, so the app can ask them to approve an act on their phone.
 
 ## Loading it
 
@@ -74,6 +76,7 @@ It rejects with a `ConnectError` whose `code` is `cancelled`, `timeout` or `fail
 | `theme` | Style the gate within a closed set of tokens: `font` (a font stack), `colours` (hex only: `text`, `background`, `border`, `focus`, `focusText`, `primary`, `primaryText`, `secondary`, `secondaryText`, `link`), `radius` (0 to 24). A value outside its rule is dropped. The "Secured by Privasys ID" seal stays in every theme. |
 | `legal` | `false` hides the terms line in `inline` and `page` presentations, for a page that carries its own terms. A modal keeps it. |
 | `audience` | The audience of the access token issued at sign-in, for an app that authorises on it. A direct name passes `app:<app id>` (32 hex characters), which the identity provider grants a client registered for that app. This first token is the only one that can carry the person's name and email, and `getTokenForAudience()` returns it while it is valid; see [the profile headers](#the-persons-name-and-email). |
+| `direct` | Also serve people who sign in without the wallet, over the app's direct name; see [one call for both ways](#one-call-for-both-ways-to-reach-your-app). |
 | `pitch`, `app` | Plain strings and an https logo, rendered by the SDK in its own styling. |
 | `headless` | Draw the gate yourself; see [a headless gate](#your-own-design-a-headless-gate). |
 
@@ -98,7 +101,7 @@ const { accessToken } = await frame.connect();
 
 | Callback | What it receives |
 | --- | --- |
-| `onOptions(options, gate)` | What the client offers: `own` (the client's [own registrations](/tutorials/entra-sign-in), such as an organisation's staff sign-in, each with its display name), `providers` (the platform's, each with `id`, `name` and a brand `icon`), `wallet` (Privasys ID is offered) and `push` (this device can be notified). Called again for every new attempt. `gate.start(choice)` starts `{ method: 'social', provider, own? }` or `{ method: 'wallet', qr? }`; the frame starts only a choice it offered. `gate.cancel()` stops the attempt. |
+| `onOptions(options, gate)` | What the client offers: `own` (the client's [own registrations](/tutorials/entra-sign-in), such as an organisation's staff sign-in, each with its display name), `providers` (the platform's, each with `id`, `name` and a brand `icon`), `wallet` (Privasys ID is offered), `push` (this device can be notified) and, when the browser remembers several phones, `wallets` (each with an `id` and a `label`, the most recently used first: draw one button each). Called again for every new attempt. `gate.start(choice)` starts `{ method: 'social', provider, own?, chooseAccount? }` or `{ method: 'wallet', qr?, wallet? }`, where `wallet` is the `id` of the phone to notify and `chooseAccount: true` has Google, Microsoft or GitHub show its own account picker; the frame starts only a choice it offered. `gate.cancel()` stops the attempt. |
 | `onState(state)` | Where the attempt is: `authenticating`, `push-waiting` (while a push waits, `start({ method: 'wallet', qr: true })` switches to the QR code), `qr-scanning` with the code as `qrSvg`, `success`, and `error` with `error`. |
 
 A social sign-in opens its popup on `privasys.id`, at the address the frame names, from the click on your page; the SDK does this for you. Set every label as text and show `qrSvg` as an image, never as markup. Passkeys are not offered headless, because a passkey ceremony needs the click inside the frame: use the visible gate where passkeys matter. With `headless`, `container`, `presentation`, `pitch`, `theme` and `legal` have no effect.
@@ -142,6 +145,32 @@ session.onState((s) => {
 
 A sealed WebSocket refused because the enclave forgot the session is re-opened by the SDK on the recovered session, queued sends intact. Create one `AuthFrame` per page and per enclave host (`sessionRelay.appHost` is fixed at construction); the SDK warns when a second one for the same host is alive.
 
+## One call for both ways to reach your app
+
+An app that also serves people who sign in without the wallet has two ways in: the sealed session for wallet users, and its [direct name](/solutions/platform/developer-platform/custom-domains#private-routes-for-signed-in-users) with an access token for everyone else. Set `direct` and call the frame; it takes the right one.
+
+```ts
+const frame = new AuthFrame({
+  // ...as above
+  sessionRelay: { appHost: 'my-app.apps.privasys.org' },
+  direct: { audience: 'app:<app id hex>' },   // origin defaults to the page's own
+});
+
+const { transport } = await frame.connect();               // 'sealed' | 'direct' | null
+const r = await frame.request('GET', '/api/v1/me');        // { status, headers, body: Uint8Array, transport }
+const s = await frame.stream('POST', '/v1/chat', body);
+const ws = frame.openWebSocket('/api/v1/events');
+```
+
+| Who signed in | What `frame.request()` does |
+| --- | --- |
+| With the wallet | Uses the sealed session. A wallet user is never moved to direct: when the sealed session needs re-approval, the call fails until `connect()` restores it. |
+| With a passkey, Google, Microsoft, GitHub or LinkedIn | Sends the request over HTTPS to `direct.origin` with an access token for `direct.audience`. |
+
+Your app receives the same identity headers either way, and `X-Privasys-Transport` tells it which way a request came. Its manifest must declare `"direct": "private"` for the private routes to answer on the direct name.
+
+A direct WebSocket carries the token in the handshake, which the enclave verifies and removes before your app sees the request. It closes when the token expires, after about an hour: open a new one on close, as you would for a sealed socket.
+
 ## The person's name and email
 
 When a client has registered `email` and `name` as required attributes, the enclave asserts them to the app beside the subject, on a direct name and on a sealed session:
@@ -158,11 +187,60 @@ The identity provider stores no user profile, so only the token from the sign-in
 
 An address is proved when the identity provider mailed a code to it, when the provider says so (Google's `email_verified`, GitHub's primary address), when Microsoft's `xms_edov` claim says its domain is verified by the person's tenant, or when it comes through an organisation's [own Entra registration](/tutorials/entra-sign-in) on a named tenant. Otherwise no email header is sent: ask the person, and check the address yourself.
 
-## SSO across sites
+## Staying signed in
 
-Every site that loads the SDK shares the iframe origin `privasys.id`, so the session held there is visible to all of them: signing in once signs the user in everywhere, and `frame.clearSession()` signs them out everywhere. The shared state lives in the iframe's storage. The IdP takes no part in deciding who is signed in where; while a session is open it holds that session's renewal token, which it deletes at sign-out.
+A session belongs to one client and is held in the iframe's storage on `privasys.id`. Browsers keep that storage separately for each site that embeds the iframe, so:
 
-Because that session is shared, its renewal is coordinated across documents by the SDK. Create one `AuthFrame` per page; the SDK warns when a second is alive, because frames created and destroyed around each other are how a renewal is lost.
+| Where the person goes next | What happens |
+| --- | --- |
+| Another page of your site, same client | Signed in already. Pages on subdomains of one registered domain count as one site. |
+| Another client on the same site | A sign-in of its own. A page is only ever given the session of a client that registered its origin. |
+| A site on another domain | A sign-in of its own, by notification when the browser knows the person's phone (below). |
+
+`frame.clearSession()` signs the person out of your client on your site. The IdP takes no part in deciding who is signed in where; while a session is open it holds that session's renewal token, which it deletes at sign-out.
+
+Because pages share a session, its renewal is coordinated across documents by the SDK. Create one `AuthFrame` per page; the SDK warns when a second is alive, because frames created and destroyed around each other are how a renewal is lost.
+
+### One QR code per browser
+
+After a wallet sign-in the gate asks "Trust this device?". A person who agrees is remembered by `privasys.id` itself, in that browser. On a site they have never used, pressing the Privasys ID button opens a small `privasys.id` window for a moment to read that, and their phone gets a notification. They scan a QR code once per browser, not once per site.
+
+The window opens from the person's click, so start sign-in from a click. A headless page gets the same behaviour: the SDK opens the window for it. A site that sets `Cross-Origin-Opener-Policy: same-origin` cuts the window off from the page, and the gate shows the QR code there.
+
+### Several phones, several accounts
+
+- **Several phones.** A browser can remember more than one Privasys ID. The gate then lists them by the name the wallet gives the phone, with "Forget" beside each and "Use another Privasys ID" for a new one. Signing out keeps the list.
+- **Several provider accounts.** Google, Microsoft and GitHub sign a person straight in when one account is active in the browser. "Use another account" on the gate has the provider show its own account picker. The gate keeps no list of accounts.
+
+## Linking a Privasys ID to another sign-in
+
+People who sign in to your app with Microsoft or Google can add their Privasys ID to that account, so your app can ask them to [approve an act on their phone](/solutions/platform/developer-platform/wallet-approvals). The link returns their Privasys ID subject under your client and leaves the session they are in untouched.
+
+```ts
+// 1. Your server makes a single-use nonce for this person's session.
+const { nonce } = await (await fetch('/link/start', { method: 'POST' })).json();
+
+// 2. From a click: a modal limited to the Privasys ID wallet.
+const { idToken } = await frame.linkIdentity(nonce);
+
+// 3. Your server verifies the token and stores its subject.
+await fetch('/link/finish', { method: 'POST', body: JSON.stringify({ idToken }) });
+```
+
+The nonce is 16 to 256 URL-safe characters. Your server accepts the ID token only when all of these hold:
+
+| Check | Value |
+| --- | --- |
+| Signature | A key from `https://privasys.id/jwks` |
+| `iss` | `https://privasys.id` |
+| `aud` | Your client id |
+| `exp` | In the future (the token lives 15 minutes) |
+| `nonce` | The one your server made for this session, not used before |
+| `amr` | Contains `"webauthn"`: the person answered with a Privasys ID, not through another provider |
+
+`sub` is then the person's Privasys ID under your client: store it beside their account and address approvals to it. It is the same subject they would have if they signed in to your client with their Privasys ID directly.
+
+No session is kept for the linked identity and its access token stays in the frame. The person sees your app in their wallet from then on; removing it there ends the link, and approvals stop reaching them.
 
 ## Attribute consent
 
