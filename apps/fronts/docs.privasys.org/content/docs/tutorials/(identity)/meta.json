@@ -1,6 +1,6 @@
 {
     "title": "Sign-in and Identity",
-    "defaultOpen": true,
+    "defaultOpen": false,
     "pages": [
         "integrate-auth-sdk",
         "entra-sign-in",
