@@ -1,0 +1,9 @@
+{
+    "title": "Sign-in and Identity",
+    "defaultOpen": true,
+    "pages": [
+        "integrate-auth-sdk",
+        "entra-sign-in",
+        "age-verification"
+    ]
+}

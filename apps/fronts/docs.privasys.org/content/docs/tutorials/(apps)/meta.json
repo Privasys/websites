@@ -1,0 +1,8 @@
+{
+    "title": "Deploying Apps",
+    "defaultOpen": true,
+    "pages": [
+        "web-app-surfaces",
+        "enclave-upgrade"
+    ]
+}

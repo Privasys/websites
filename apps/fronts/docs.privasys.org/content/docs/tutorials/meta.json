@@ -3,10 +3,7 @@
     "defaultOpen": false,
     "pages": [
         "index",
-        "integrate-auth-sdk",
-        "enclave-upgrade",
-        "age-verification",
-        "web-app-surfaces",
-        "entra-sign-in"
+        "(identity)",
+        "(apps)"
     ]
 }

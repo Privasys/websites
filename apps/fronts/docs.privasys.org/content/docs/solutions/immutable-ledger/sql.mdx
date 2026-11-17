@@ -1,0 +1,76 @@
+---
+title: SQL
+description: MySQL-dialect SQL over the ledger. Rows and the catalogue are ledger entries, so the root attests the whole database, and every row can be read with its proof.
+---
+
+The `sqlledger` package runs MySQL-dialect SQL over the [authenticated store](/solutions/immutable-ledger/authenticated-store), using [go-mysql-server](https://github.com/dolthub/go-mysql-server) (Apache-2.0) as the embedded query engine. Applications keep working with tables and queries, and **the root attests the whole database**.
+
+## Getting started
+
+```go
+import "github.com/Privasys/immutable-ledger/sqlledger"
+
+store, _ := sqlledger.Open(led, backend, "app")
+eng := sqlledger.NewEngine(store)
+ctx := eng.NewContext(context.Background())
+
+eng.Exec(ctx, `CREATE TABLE accounts (id BIGINT PRIMARY KEY, name VARCHAR(64), balance DOUBLE)`)
+eng.Exec(ctx, `INSERT INTO accounts VALUES (1, 'alice', 100.5)`)
+rows, _ := eng.Exec(ctx, `SELECT name, balance FROM accounts WHERE id = 1`)
+```
+
+The engine runs inside the application process and opens no network listener, so the application remains the only way to reach its data. See [In-process by design](/solutions/immutable-ledger/overview#in-process-by-design).
+
+## How rows are committed
+
+Rows and the catalogue are stored as ordinary ledger entries. Two consequences follow:
+
+- **The root covers everything.** Schema and data together are attested by one 32-byte value.
+- **Identical SQL histories produce identical roots.** Two stores that apply the same statements in the same order agree on the root, so replicas and audits compare whole databases in one step.
+
+## Verified row reads
+
+`Store.VerifiedGet` returns a row together with its inclusion proof and the exact `(root, version)` it was read at. A row that does not exist comes back with an absence proof. A client can verify either against an anchored root with no access to the database.
+
+## Ordered scans and indexes
+
+The Merkle tree is ordered by keyed hash, so ordered access comes from a **derived keyspace** next to the ledger: primary-key order, secondary indexes and the version they reflect. It is treated strictly as an index. It is rebuilt automatically from a verified scan whenever its version disagrees with the ledger's, and **every row a scan returns is re-read and verified through the ledger**. Row content is never served from the index.
+
+## Supported SQL
+
+| Area | Supported |
+|---|---|
+| DDL | `CREATE`, `DROP`, `RENAME` and `TRUNCATE TABLE` (a primary key is required); `CREATE` and `DROP INDEX` |
+| DML | `INSERT`, `UPDATE`, `DELETE` |
+| Queries | Joins, aggregation, window functions, CTEs, `ORDER BY`, `LIMIT` |
+| Indexes | Secondary and unique indexes, `AUTO_INCREMENT` |
+| Transactions | `BEGIN`, `COMMIT`, `ROLLBACK`, savepoints, `SET autocommit = 0` |
+| Types | `INT` and `BIGINT` (signed and unsigned), `FLOAT`, `DOUBLE`, `CHAR`, `VARCHAR`, `TEXT`, `BINARY`, `VARBINARY`, `BLOB`, `DATETIME`, `TIMESTAMP`, `BOOLEAN` |
+
+Foreign keys, `DECIMAL`, `JSON` and `ENUM` columns, non-binary collations and column defaults are on the list for later releases.
+
+## Transactions
+
+Without an explicit transaction, statements run in autocommit: each DML statement is one atomic ledger commit.
+
+`BEGIN … COMMIT` buffers a multi-statement transaction in the session:
+
+- Later statements read the transaction's own earlier writes through every path: point lookups, scans and indexes.
+- Other sessions see nothing until commit.
+- `COMMIT` applies the whole write-set as **one ledger version**. The root history only ever contains committed states, and a crash mid-transaction needs no recovery because nothing reached storage.
+
+DDL commits directly and implicitly commits the surrounding transaction, as in MySQL.
+
+### Concurrency
+
+Concurrency is optimistic. A transaction records the committed row each write was based on, and at commit the write-set (rows and unique indexes) is re-validated if other work committed in between. A transaction whose touched rows changed underneath it fails with `ErrTxnConflict` and is rolled back, ready to retry.
+
+Keys a transaction only read are not tracked, so write skew across transactions is possible. Where it matters, serialise those transactions in the application.
+
+## With the history chain
+
+A SQL transaction is one ledger commit, so with the [history chain](/solutions/immutable-ledger/auditable-history) enabled each transaction adds exactly one link. An auditor reviewing a version with `ChangesAt` sees the complete effect of one transaction.
+
+## Build requirements
+
+Building `sqlledger` needs Go 1.27.3 or later and a choice for the query engine's regular expressions: cgo with the ICU library, or the `gms_pure_go` build tag for a pure-Go build (`GOFLAGS=-tags=gms_pure_go`). Without one of them the build stops with "build constraints exclude all Go files in …/internal/regex". The core `ledger` package needs neither.

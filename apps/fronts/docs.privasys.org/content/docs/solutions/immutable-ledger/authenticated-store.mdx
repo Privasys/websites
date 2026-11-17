@@ -1,0 +1,87 @@
+---
+title: Authenticated Store
+description: The Merkle core of Immutable Ledger. A versioned sparse Merkle tree over any key-value backend, with verified reads, atomic commits, proofs and pruning.
+---
+
+The `ledger` package is an authenticated key-value store: a versioned sparse Merkle tree over any storage backend, where one 32-byte root attests the entire logical data state. It uses the same tree layout and commitment scheme as the [Merkle store](/solutions/enclave-os/enclave-os-mini/merkle-store) in Enclave OS (Mini), and that page describes the structure in depth. This page covers what matters when you use the Go library.
+
+## Getting started
+
+```go
+import ledger "github.com/Privasys/immutable-ledger/ledger"
+
+// ck is the dataset's commitment key, shared by every replica of the same
+// logical dataset. In a confidential deployment it comes from an attested
+// key release (an Enclave Vaults credential), never from disk.
+store, err := ledger.OpenOrCreate(backend, ck)
+
+root, version, err := store.PutBatch([]ledger.Op{
+    ledger.Put([]byte("alice"), []byte("1000")),
+    ledger.Put([]byte("bob"), []byte("250")),
+})
+
+value, ok, err := store.Get([]byte("alice"))
+
+proof, err := store.Prove([]byte("alice"))
+ok, err = store.VerifyValue(&root, []byte("alice"), []byte("1000"), proof)
+```
+
+`Get` returns `(value, ok, err)`: empty values are legal, so absence is reported by `ok` rather than by a nil value.
+
+The store is single-writer. Wrap it in a mutex at the application layer when several goroutines share it; the SQL layer does this for you.
+
+## Keys
+
+| Key | Scope | Purpose |
+|---|---|---|
+| **Commitment key (`ck`)** | The logical dataset | Derives tree positions and value commitments with HMAC-SHA-256. Every replica of a dataset shares it. |
+| **Storage key (`sk`)** | One machine, optional | AES-256-GCM encryption of values at rest, enabled with `WithStorageKey(sk)` |
+
+The tree commits only to keyed hashes of paths and plaintext values, so **the root is a function of the logical data and `ck` alone**. Keyed hashing also means storage cannot dictionary-attack low-entropy keys or values.
+
+By default there is a single key to manage. Inside a confidential VM the backend sits on an attested, LUKS-encrypted volume, which is the confidentiality layer, and the ledger adds integrity on top. Deployments that want defence in depth pass `WithStorageKey(sk)` and get value encryption under a per-machine key. Roots and proofs are identical in both modes, though a backend must always be reopened in the mode that wrote it.
+
+In a Privasys deployment, `ck` belongs in [Enclave Vaults](/solutions/enclave-vaults/overview), released to the application only when its attestation satisfies the key's policy.
+
+## Storage backends
+
+The store reaches storage through a three-method `Backend` interface: a point get, an atomic write batch and an ascending scan.
+
+- `backend/pebble` is the production adapter over [Pebble](https://github.com/cockroachdb/pebble), a pure-Go storage engine.
+- `MemBackend` ships for tests.
+
+Any engine that offers atomic batches and ordered scans can sit behind it.
+
+## Commits
+
+`PutBatch` applies any mix of puts and deletes as **one commit**. New nodes, values, stale marks for superseded records, the new root record and an authenticated checkpoint land in a single atomic backend write. The in-memory root advances only after the backend confirms. A batch that changes nothing does not commit at all.
+
+Each commit is an immutable copy-on-write version: it rewrites only the touched paths and links to unchanged subtrees of earlier versions. `GetAt` and `ProveAt` read and prove against any version that has not been pruned.
+
+## Verified reads
+
+A read returns a value only after every node on its path hashes up to the **in-memory root**, the value re-derives its committed hash, and, when a storage key is configured, its AES-256-GCM tag verifies. A mismatch is an error, never data.
+
+A node cache keeps the upper levels of the tree in memory. In 1.0.0 it evicts least-recently-used nodes in constant time and holds 16,384 nodes by default, enough for the top four levels (about 16 MiB); `SetCacheCapacity` takes more. Cached nodes are still hash-verified on every use, so the cache saves I/O without being trusted.
+
+## Proofs
+
+`Prove(key)` returns a compact binary sparse-Merkle proof of either **inclusion** (this key holds this value) or **absence** (this key holds nothing). Verification is a pure function of the root, the key, the claimed value and the proof. A client, an auditor or another service can check it with no access to the store and no trust in whoever served it. Because the format matches the Rust implementation, a proof produced by a Go store verifies with the Rust verifier and the reverse.
+
+## Transaction forks
+
+A fork runs application logic against a read-through overlay of the current state. Sealing it yields `(root_before, write_set, root_after)`, and applying it commits atomically. The previewed `root_after` is exactly what the commit produces, so a fork can be shown, signed or compared before it lands.
+
+## Pruning
+
+Every commit marks the records it supersedes. `Prune(version)`, or the convenience `RetainRecent(window)`, deletes stale records and old roots in chunked atomic batches, at a cost proportional to the garbage. Versions at or above the horizon stay readable and provable; older versions fail cleanly. Pruning is also how deleted data is physically erased; [Auditable History](/solutions/immutable-ledger/auditable-history) describes how to pair it with an audit.
+
+## Freshness model
+
+| Surface | Guarantee |
+|---|---|
+| **Live reads** | Bound to the in-memory root: storage cannot roll back or forge state while the process runs. |
+| **Restart** | `OpenLatest` resumes from an authenticated checkpoint written with every commit (HMAC under a key derived from `ck`, or AES-256-GCM with a storage key) and refuses storage that does not verify against it. |
+| **Historical reads** | `GetAt` and `ProveAt` authenticate content against the stored root record for that version. |
+
+A backend that replays an old checkpoint together with a matching old store is the residual a single process cannot detect on its own. Anchoring `Root()` externally (in a monitoring system, a transparency log or a vault) narrows it, replicating and comparing roots closes it, and the [history chain](/solutions/immutable-ledger/auditable-history) exposes it at the first comparison with a newer anchor.

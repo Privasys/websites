@@ -98,3 +98,7 @@ The current `root ‖ version` is embedded in every freshly minted RA-TLS certif
 | Write amplification | 1 record | ~depth records per commit (batched) |
 
 Use the sealed KV store for high-churn private state where the host serving stale data is tolerable; use the Merkle store when integrity, auditability, or state attestation matter.
+
+## The Go Implementation
+
+[Immutable Ledger](/solutions/immutable-ledger/overview) brings the same store to container applications in confidential VMs, written in Go, with a SQL layer and an auditable history chain on top. Its commitment scheme and proof format are byte-identical to this crate: the two produce the same root for the same logical data under the same commitment key, and proofs verify across them.

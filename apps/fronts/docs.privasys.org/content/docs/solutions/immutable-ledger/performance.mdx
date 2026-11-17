@@ -1,0 +1,70 @@
+---
+title: Performance
+description: Measured throughput and latency of Immutable Ledger 1.0.0 for the core store, the Pebble backend and the full SQL stack, with how to reproduce them.
+---
+
+The figures below were measured on 17 November 2026 at version 1.0.0, on a GCE `n2-standard-8` (Intel Xeon at 2.80 GHz, 8 vCPUs, `pd-ssd` disk) running Debian 12 and Go 1.27.4. They are **single-goroutine**: one writer, one reader, no concurrency, so they describe the cost of each operation rather than saturated throughput. The repository's [benchmarks document](https://github.com/Privasys/immutable-ledger/blob/main/docs/benchmarks.md) has the full method and a side-by-side comparison with the figures from before 1.0.0.
+
+## Core store (in-memory backend)
+
+This measures CPU and encoding cost alone.
+
+| Operation | Result |
+|---|---|
+| `PutBatch`, 100-row batches at 100k keys | 4.86 ms per batch, about 20,560 rows/s |
+| `Get`, warm cache at 100k keys | 37 µs |
+| `Prove` at 100k keys | 59 µs |
+| Verify a proof (pure function) | 11.4 µs |
+
+## Ledger over Pebble (synced commits)
+
+| Operation | Result |
+|---|---|
+| `PutBatch`, 1 row per commit | 680 µs, about 1,470 commits/s |
+| `PutBatch`, 100-row batches | 9.15 ms, about 10,930 rows/s |
+| `PutBatch`, 1,000-row batches | 73.1 ms, about 13,680 rows/s |
+| `Get`, warm cache at 100k keys | 83 µs |
+| `Prove` at 100k keys | 88 µs |
+
+## Full SQL stack (engine, ledger, Pebble, synced commits)
+
+| Operation | Result |
+|---|---|
+| `INSERT`, single statement | 1.97 ms, about 510 statements/s |
+| `INSERT`, 500 rows in one statement | 45.8 ms, about 10,920 rows/s |
+| Point `SELECT` by primary key | 216 µs, about 4,640 queries/s |
+| `UPDATE` by primary key | 1.32 ms |
+| `COUNT(*)` over a 1,000-row index range | 93.5 ms, about 10,690 verified rows/s |
+| `VerifiedGet` (row, inclusion proof and verification) | 166 µs |
+
+## Reading the numbers
+
+- **Batched writes are CPU-bound.** From 100 rows per batch upwards, turning off the WAL fsync barely changes the figure. The ceiling is commitment hashing, around 11,000 to 14,000 rows/s per core on disk, and larger batches amortise it better.
+- **Single-row commits are fsync-bound.** Each commit is one synced atomic write, so batch writes, or group them in a SQL transaction, whenever you can.
+- **Scans pay for verification.** Every row a scan returns is re-read through the ledger and verified against the root, about 94 µs per row here. This is deliberate: the index is never trusted for row content.
+- **Reads and proofs sit between 40 and 220 µs** through every layer, including the full SQL engine.
+
+## What 1.0.0 changed
+
+Version 1.0.0 replaced the node cache with a constant-time LRU that holds 16,384 nodes by default, enough to keep the upper levels of the tree in memory. Against the same suite on the same machine type before the change, batched writes roughly doubled (5,100 to 10,930 rows/s for 100-row batches on disk), verified scans went from about 6,700 to 10,690 rows/s, and point reads and proofs on disk got 25 to 40% faster. `SetCacheCapacity` raises the cache further for large datasets.
+
+## Reproducing
+
+The benchmarks ship with the repository and run with the standard Go tooling on any Linux machine with an SSD:
+
+```bash
+git clone https://github.com/Privasys/immutable-ledger.git
+cd immutable-ledger
+export GOFLAGS=-tags=gms_pure_go
+
+go test -bench=. -benchtime=2s -run=NONE ./ledger/
+go test -bench=. -benchtime=2s -run=NONE ./backend/pebble/
+go test -bench=. -benchtime=2s -timeout=60m -run=NONE ./sqlledger/
+```
+
+The disk-backed suites create their stores under `TMPDIR`, so point it at the disk you mean to measure.
+
+## Build requirements
+
+- Go 1.27.3 or later.
+- For `sqlledger`, either cgo with the ICU library or the `gms_pure_go` build tag. The core `ledger` package and the Pebble backend need neither.

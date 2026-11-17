@@ -7,17 +7,27 @@ import { Cards, Card } from 'fumadocs-ui/components/card';
 
 Practical, end-to-end guides for building on Privasys. Each tutorial walks a complete workflow with the exact commands or code for every step, and explains what happens underneath so you understand the guarantees, not just the keystrokes.
 
+## Sign-in and identity
+
 <Cards>
   <Card title="Integrating the auth SDK" href="/tutorials/integrate-auth-sdk">
     Add Privasys ID sign-in and a sealed channel to your enclave app from a web page: one frame, one call, a session that keeps itself alive, and what an integration must not do.
   </Card>
-  <Card title="Upgrading a confidential app" href="/tutorials/enclave-upgrade">
-    Ship a new version of a data-holding app: why the vault locks the data on an upgrade, how the owner approves the new measurement, and how to migrate a whole constellation without downtime.
+  <Card title="Sign in with your Microsoft Entra tenant" href="/tutorials/entra-sign-in">
+    For Entra administrators: register an application in your tenant, give the platform a certificate credential, and have your staff sign in through your own registration under your own policies.
   </Card>
   <Card title="Gov-backed age verification" href="/tutorials/age-verification">
     Integrate the auth SDK to prove a customer is 18+ with a passport-backed, enclave-signed credential: the ceremony, the cryptographic evidence, how to verify it, and what to store for the auditor.
   </Card>
+</Cards>
+
+## Deploying apps
+
+<Cards>
   <Card title="Serve a web app from an enclave" href="/tutorials/web-app-surfaces">
     Declare what a container serves in the clear (its page shell, public reads, a webhook) and what stays private, deploy it, verify the three surfaces with curl, and see the declaration in the attestation.
+  </Card>
+  <Card title="Upgrading a confidential app" href="/tutorials/enclave-upgrade">
+    Ship a new version of a data-holding app: why the vault locks the data on an upgrade, how the owner approves the new measurement, and how to migrate a whole constellation without downtime.
   </Card>
 </Cards>
