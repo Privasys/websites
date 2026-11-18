@@ -62,6 +62,7 @@ export function AppOnCallTab({ appId, token }: { appId: string; token: string })
     const [data, setData] = useState<OnCallOverview | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [off, setOff] = useState(false);
+    const [formKey, setFormKey] = useState(0);
 
     const load = useCallback(async () => {
         try {
@@ -101,14 +102,17 @@ export function AppOnCallTab({ appId, token }: { appId: string; token: string })
 
     return (
         <div className="space-y-6">
-            <MyAlerts key={data.me.updated_at ?? 0} appId={appId} token={token} me={data.me} onSaved={load} />
+            <MyAlerts key={formKey} appId={appId} token={token} me={data.me} onSaved={load}
+                onForgotten={async () => { await load(); setFormKey(k => k + 1); }} />
             <Rota appId={appId} token={token} data={data} nameOf={nameOf} onSaved={load} />
             <Pages appId={appId} token={token} pages={data.pages ?? []} nameOf={nameOf} onChanged={load} />
         </div>
     );
 }
 
-function MyAlerts({ appId, token, me, onSaved }: { appId: string; token: string; me: AlertPreference; onSaved: () => void }) {
+function MyAlerts({ appId, token, me, onSaved, onForgotten }: {
+    appId: string; token: string; me: AlertPreference; onSaved: () => void; onForgotten: () => Promise<void>;
+}) {
     const confirm = useConfirm();
     const window0 = me.weekly?.[0];
     const [wallet, setWallet] = useState(me.wallet);
@@ -137,17 +141,20 @@ function MyAlerts({ appId, token, me, onSaved }: { appId: string; token: string;
         }
     }
 
+    const persist = () => saveMyAlerts(token, appId, {
+        wallet, email: email.trim() || undefined, when: mode, timezone: zone,
+        weekly: mode === 'schedule' ? [{ days, from, to }] : undefined,
+        away: awayFrom && awayTo ? [{ from: awayFrom, to: awayTo }] : undefined
+    });
+
     const save = () => run(async () => {
-        await saveMyAlerts(token, appId, {
-            wallet, email: email.trim() || undefined, when: mode, timezone: zone,
-            weekly: mode === 'schedule' ? [{ days, from, to }] : undefined,
-            away: awayFrom && awayTo ? [{ from: awayFrom, to: awayTo }] : undefined
-        });
+        await persist();
         setNote('Saved.');
         onSaved();
     });
 
     const test = () => run(async () => {
+        await persist();
         const results = await sendTestAlert(token, appId);
         const parts = Object.entries(results).map(([k, v]) => `${k === 'wallet' ? 'Wallet' : 'Email'}: ${v}`);
         setNote(parts.length ? parts.join(' · ') : 'Choose a channel and save first.');
@@ -159,7 +166,7 @@ function MyAlerts({ appId, token, me, onSaved }: { appId: string; token: string;
             body: 'Your email address and hours are deleted from the monitor. You go back to wallet alerts while on call.',
             confirmLabel: 'Remove', danger: true
         }))) return;
-        await run(async () => { await forgetMyAlerts(token, appId); onSaved(); });
+        await run(async () => { await forgetMyAlerts(token, appId); await onForgotten(); });
     }
 
     return (
@@ -225,7 +232,7 @@ function MyAlerts({ appId, token, me, onSaved }: { appId: string; token: string;
 
             <div className="mt-4 flex flex-wrap gap-2">
                 <button type="button" onClick={save} disabled={busy} className={primary}>{busy ? 'Working…' : 'Save'}</button>
-                <button type="button" onClick={test} disabled={busy} className={secondary}>Send me a test</button>
+                <button type="button" onClick={test} disabled={busy} className={secondary}>Save and send me a test</button>
                 <button type="button" onClick={forget} disabled={busy} className={secondary}>Remove my settings</button>
             </div>
         </section>
