@@ -77,3 +77,39 @@ export async function getStoreApp(slug: string): Promise<StoreAppDetail> {
 export function attestUrlFor(appId: string): string {
     return `${API_BASE}/api/v1/apps/${encodeURIComponent(appId)}/attest`;
 }
+
+// The platform monitor, where an app's team may publish a live status page.
+// Its public data allows any origin, so the store reads it directly.
+export const STATUS_BASE = (
+    process.env.NEXT_PUBLIC_STATUS_BASE_URL ??
+    (/\.test\.|api-test\./.test(API_BASE)
+        ? 'https://platform-monitoring.apps.test.privasys.org'
+        : 'https://status.privasys.org')
+).replace(/\/$/, '');
+
+export type StatusIndicator = 'none' | 'minor' | 'major' | 'critical' | 'maintenance';
+
+export interface PublicStatus {
+    indicator: StatusIndicator;
+    headline: string;
+    pageUrl: string;
+}
+
+// getPublicStatus returns the app's live status, or null when its team has
+// not published a status page (the monitor answers 404, the same as for an
+// app it does not watch).
+export async function getPublicStatus(appId: string): Promise<PublicStatus | null> {
+    const id = encodeURIComponent(appId);
+    try {
+        const res = await fetch(`${STATUS_BASE}/api/v1/public/apps/${id}/status`, { cache: 'no-store' });
+        if (!res.ok) return null;
+        const page = await res.json() as { indicator?: StatusIndicator; headline?: string };
+        return {
+            indicator: page.indicator ?? 'none',
+            headline: page.headline ?? '',
+            pageUrl: `${STATUS_BASE}/apps/${id}/`
+        };
+    } catch {
+        return null;
+    }
+}

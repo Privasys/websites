@@ -10,10 +10,51 @@ import {
 } from '@privasys/attestation-view';
 import {
     attestUrlFor,
+    getPublicStatus,
     getStoreApp,
     resolveAsset,
+    type PublicStatus,
+    type StatusIndicator,
     type StoreAppDetail
 } from '~/lib/store-api';
+
+const STATUS_LABEL: Record<StatusIndicator, string> = {
+    none: 'Operational',
+    minor: 'Degraded performance',
+    major: 'Partial outage',
+    critical: 'Major outage',
+    maintenance: 'Under maintenance'
+};
+
+const STATUS_DOT: Record<StatusIndicator, string> = {
+    none: 'bg-emerald-500',
+    minor: 'bg-amber-500',
+    major: 'bg-orange-500',
+    critical: 'bg-red-500',
+    maintenance: 'bg-sky-500'
+};
+
+// The app's live status, from the platform monitor, when its team publishes a
+// status page. Nothing is shown for an app that does not.
+function LiveStatus({ app }: { app: StoreAppDetail }) {
+    const [status, setStatus] = useState<PublicStatus | null>(null);
+    useEffect(() => {
+        let live = true;
+        getPublicStatus(app.id).then(s => { if (live) setStatus(s); });
+        return () => { live = false; };
+    }, [app.id]);
+    if (!status) return null;
+    return (
+        <section className='p-5 rounded-2xl border border-black/10 dark:border-white/10 flex items-center gap-3 flex-wrap'>
+            <span className={`inline-block w-2.5 h-2.5 rounded-full ${STATUS_DOT[status.indicator] ?? STATUS_DOT.none}`} aria-hidden='true' />
+            <div className='min-w-0'>
+                <div className='text-sm font-semibold'>{STATUS_LABEL[status.indicator] ?? 'Status'}</div>
+                {status.headline && <div className='text-xs text-black/50 dark:text-white/50'>{status.headline}</div>}
+            </div>
+            <a href={status.pageUrl} target='_blank' rel='noreferrer' className='ml-auto text-sm text-blue-600 dark:text-blue-400 hover:underline'>Status page &rarr;</a>
+        </section>
+    );
+}
 
 function ReproRow({ label, children }: { label: string; children: React.ReactNode }) {
     return (
@@ -157,6 +198,8 @@ function AppDetail() {
                     {app.tagline && <p className='mt-2 text-black/75 dark:text-white/70'>{app.tagline}</p>}
                 </div>
             </header>
+
+            <LiveStatus app={app} />
 
             {app.screenshots.length > 0 && (
                 <div className='flex gap-4 overflow-x-auto pb-2'>
