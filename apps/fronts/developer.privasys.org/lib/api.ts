@@ -1152,6 +1152,44 @@ export function removeAppOwner(token: string, appId: string, sub: string): Promi
 }
 
 // ---------------------------------------------------------------------------
+// Per-app support team (the people the app's monitor alerts, with no app rights)
+// ---------------------------------------------------------------------------
+
+export type SupportRole = 'support-admin' | 'support-member' | 'support-viewer';
+
+export interface AppSupportMember {
+    sub: string;
+    email: string;
+    name: string;
+    role: SupportRole;
+    added_at: string;
+    added_by: string;
+}
+
+export function listAppSupportTeam(token: string, appId: string): Promise<{ members: AppSupportMember[] }> {
+    return request<{ members: AppSupportMember[] }>(`/api/v1/apps/${encodeURIComponent(appId)}/support-team`, token);
+}
+
+export function upsertAppSupportMember(
+    token: string,
+    appId: string,
+    member: { sub: string; role: SupportRole; email?: string; name?: string }
+): Promise<{ members: AppSupportMember[] }> {
+    return request<{ members: AppSupportMember[] }>(`/api/v1/apps/${encodeURIComponent(appId)}/support-team`, token, {
+        method: 'POST',
+        body: JSON.stringify(member)
+    });
+}
+
+export function removeAppSupportMember(token: string, appId: string, sub: string): Promise<{ members: AppSupportMember[] }> {
+    return request<{ members: AppSupportMember[] }>(
+        `/api/v1/apps/${encodeURIComponent(appId)}/support-team/${encodeURIComponent(sub)}`,
+        token,
+        { method: 'DELETE' }
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Account & team API (the billing/ownership boundary above apps)
 // ---------------------------------------------------------------------------
 
