@@ -246,15 +246,36 @@ function Rota({ appId, token, data, nameOf, onSaved }: {
     const [rotation, setRotation] = useState<string[]>(data.plan.rotation ?? []);
     const [period, setPeriod] = useState(data.plan.period_days || 7);
     const [ack, setAck] = useState(data.plan.ack_minutes || 10);
+    // Cover that has ended is dropped the next time the rota is saved.
+    const [overrides, setOverrides] = useState(
+        (data.plan.overrides ?? []).filter(o => o.to > Math.floor(Date.now() / 1000))
+    );
+    const [coverSub, setCoverSub] = useState('');
+    const [coverFrom, setCoverFrom] = useState('');
+    const [coverTo, setCoverTo] = useState('');
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
+
+    function addCover() {
+        const from = Math.floor(new Date(coverFrom).getTime() / 1000);
+        const to = Math.floor(new Date(coverTo).getTime() / 1000);
+        if (!coverSub || !from || !to || to <= from) {
+            setError('Choose a person, and an end after the start.');
+            return;
+        }
+        setError(null);
+        setOverrides([...overrides, { sub: coverSub, from, to }].sort((a, b) => a.from - b.from));
+        setCoverSub('');
+        setCoverFrom('');
+        setCoverTo('');
+    }
 
     async function save() {
         setBusy(true);
         setError(null);
         try {
             const plan: OnCallPlan = {
-                ...data.plan, rotation, period_days: rotation.length ? period : 0, ack_minutes: ack,
+                ...data.plan, rotation, overrides, period_days: rotation.length ? period : 0, ack_minutes: ack,
                 start_at: data.plan.start_at || Math.floor(Date.now() / 1000)
             };
             await saveOnCallPlan(token, appId, plan);
@@ -304,7 +325,40 @@ function Rota({ appId, token, data, nameOf, onSaved }: {
                             <input id="rota-ack" type="number" min={1} max={240} value={ack} onChange={e => setAck(Number(e.target.value))} className={input} />
                         </div>
                     </div>
-                    <p className="text-[11px] text-black/40 dark:text-white/40">If nobody takes an outage in that time it passes to the whole team, then to the app&apos;s owners and admins.</p>
+                    <p className="text-[11px] text-black/40 dark:text-white/40">If nobody takes an outage in that time it passes to the whole team, then to the app&apos;s owners and admins, and finally to the Privasys team.</p>
+                    <div className="pt-3 border-t border-black/10 dark:border-white/10">
+                        <span className={label}>Cover</span>
+                        <p className="mt-0.5 text-[11px] text-black/40 dark:text-white/40">Puts someone on call for a set time, ahead of the rota. Save the rota to apply it.</p>
+                        {overrides.length > 0 && (
+                            <ul className="mt-2 space-y-1">
+                                {overrides.map(o => (
+                                    <li key={`${o.sub}-${o.from}`} className="flex items-center justify-between gap-3 text-xs">
+                                        <span className="min-w-0 truncate">{nameOf(o.sub)} · {when(o.from)} to {when(o.to)}</span>
+                                        <button type="button" onClick={() => setOverrides(overrides.filter(x => x !== o))}
+                                            className="shrink-0 underline text-black/60 dark:text-white/60">Remove</button>
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
+                        <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                            <div>
+                                <label className={label} htmlFor="cover-who">Who</label>
+                                <select id="cover-who" value={coverSub} onChange={e => setCoverSub(e.target.value)} className={input}>
+                                    <option value="">Choose…</option>
+                                    {responders.map(m => <option key={m.sub} value={m.sub}>{m.name || m.sub}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label className={label} htmlFor="cover-from">From</label>
+                                <input id="cover-from" type="datetime-local" value={coverFrom} onChange={e => setCoverFrom(e.target.value)} className={input} />
+                            </div>
+                            <div>
+                                <label className={label} htmlFor="cover-to">Until</label>
+                                <input id="cover-to" type="datetime-local" value={coverTo} onChange={e => setCoverTo(e.target.value)} className={input} />
+                            </div>
+                        </div>
+                        <button type="button" onClick={addCover} className={`mt-2 ${secondary}`}>Add cover</button>
+                    </div>
                     {error && <div className="p-2.5 rounded-lg bg-red-50 dark:bg-red-900/20 text-sm text-red-700 dark:text-red-300">{error}</div>}
                     <button type="button" onClick={save} disabled={busy} className={primary}>{busy ? 'Saving…' : 'Save rota'}</button>
                 </div>
