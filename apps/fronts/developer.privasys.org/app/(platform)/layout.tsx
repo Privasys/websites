@@ -34,7 +34,8 @@ function appDot(app: App): string {
         case 'starting':
         case 'deploying': return 'bg-blue-500 animate-pulse';
         case 'none':
-            if (app.status === 'deployed' || app.status === 'undeployed') return 'bg-gray-400';
+            // Green means running, so a ready app with nothing live is grey.
+            if (['approved', 'built', 'deployed', 'undeployed'].includes(app.status)) return 'bg-gray-400';
     }
     return STATUS_DOT[app.status] ?? 'bg-gray-400';
 }
@@ -45,7 +46,7 @@ function appRank(app: App): number {
         case 'active': return 0;
         case 'starting':
         case 'deploying': return 1;
-        case undefined: return app.status === 'deployed' ? 0 : 2;
+        case undefined: return ['built', 'deployed'].includes(app.status) ? 0 : 2;
         default: return 2;
     }
 }

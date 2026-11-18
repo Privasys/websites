@@ -51,8 +51,8 @@ export interface App {
     };
     status: string;
     // Computed on GET /apps: the live deployment's status ("active",
-    // "starting", "deploying") or "none". `status` stays "deployed" after a
-    // stop, so this is what tells a running app from a stopped one.
+    // "starting", "deploying") or "none". `status` is the app's lifecycle and
+    // does not change on a stop, so this tells a running app from a stopped one.
     deployment_status?: string;
     review_note?: string;
     reviewer_sub?: string;
