@@ -18,6 +18,7 @@ import { displayNameError } from '~/lib/appName';
 import type { AppSchema, ConfigureSection, FunctionSchema, JsonSchemaProp, ActionProgress, WitType, McpManifest, AppTeam, AppSupportMember, SupportRole, AppCommit, DeployLocation, Instance, PriceRule } from '~/lib/api';
 import { useSSE } from '~/lib/sse-context';
 import { AppDomains } from '~/components/app-domains';
+import { AppStatusTab } from '~/components/app-status-tab';
 import { useBalance } from '~/lib/use-balance';
 import { getApiBaseUrl } from '~/lib/api-base-url';
 import type { App, AppSurfaces, BuildJob, AppVersion, AppDeployment, Enclave, CachedImage } from '~/lib/types';
@@ -83,7 +84,7 @@ function BuildStatusDot({ status }: { status: string }) {
     return <span className={`w-2 h-2 rounded-full inline-block ${color}`} />;
 }
 
-type Tab = 'deployments' | 'store' | 'attestation' | 'api' | 'mcp' | 'ui' | 'configure' | 'backups' | 'team';
+type Tab = 'deployments' | 'store' | 'attestation' | 'api' | 'mcp' | 'ui' | 'configure' | 'backups' | 'status' | 'team';
 
 export default function AppDetailPage() {
     const { id } = useParams<{ id: string }>();
@@ -267,6 +268,9 @@ export default function AppDetailPage() {
             // Deployments tab, alongside the running instance — no separate tab.
         ] : []),
         ...(backupsOffered && app.app_type === 'container' ? [{ key: 'backups' as Tab, label: 'Backups' }] : []),
+        // The platform monitor's zero-config check reads /readiness, which
+        // container runtimes let through; WASM apps follow later.
+        ...(app.app_type === 'container' ? [{ key: 'status' as Tab, label: 'Status' }] : []),
         { key: 'team', label: 'Team' }
     ];
 
@@ -368,6 +372,9 @@ export default function AppDetailPage() {
                 )}
                 {tab === 'backups' && session?.accessToken && (
                     <BackupsTab app={app} token={session.accessToken} deployments={deployments} enclaves={enclaves} onRestoreStarted={() => { load(); setTab('deployments'); }} />
+                )}
+                {tab === 'status' && session?.accessToken && (
+                    <AppStatusTab appId={app.id} token={session.accessToken} />
                 )}
                 {tab === 'team' && session?.accessToken && (
                     <TeamTab appId={app.id} token={session.accessToken} />
