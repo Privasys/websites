@@ -19,6 +19,7 @@ import type { AppSchema, ConfigureSection, FunctionSchema, JsonSchemaProp, Actio
 import { useSSE } from '~/lib/sse-context';
 import { AppDomains } from '~/components/app-domains';
 import { AppStatusTab } from '~/components/app-status-tab';
+import { AppOnCallTab } from '~/components/app-oncall-tab';
 import { useBalance } from '~/lib/use-balance';
 import { getApiBaseUrl } from '~/lib/api-base-url';
 import type { App, AppSurfaces, BuildJob, AppVersion, AppDeployment, Enclave, CachedImage } from '~/lib/types';
@@ -84,7 +85,7 @@ function BuildStatusDot({ status }: { status: string }) {
     return <span className={`w-2 h-2 rounded-full inline-block ${color}`} />;
 }
 
-type Tab = 'deployments' | 'store' | 'attestation' | 'api' | 'mcp' | 'ui' | 'configure' | 'backups' | 'status' | 'team';
+type Tab = 'deployments' | 'store' | 'attestation' | 'api' | 'mcp' | 'ui' | 'configure' | 'backups' | 'status' | 'oncall' | 'team';
 
 export default function AppDetailPage() {
     const { id } = useParams<{ id: string }>();
@@ -270,7 +271,7 @@ export default function AppDetailPage() {
         ...(backupsOffered && app.app_type === 'container' ? [{ key: 'backups' as Tab, label: 'Backups' }] : []),
         // The platform monitor's zero-config check reads /readiness, which
         // container runtimes let through; WASM apps follow later.
-        ...(app.app_type === 'container' ? [{ key: 'status' as Tab, label: 'Status' }] : []),
+        ...(app.app_type === 'container' ? [{ key: 'status' as Tab, label: 'Status' }, { key: 'oncall' as Tab, label: 'On-call' }] : []),
         { key: 'team', label: 'Team' }
     ];
 
@@ -375,6 +376,9 @@ export default function AppDetailPage() {
                 )}
                 {tab === 'status' && session?.accessToken && (
                     <AppStatusTab appId={app.id} appName={app.name} token={session.accessToken} />
+                )}
+                {tab === 'oncall' && session?.accessToken && (
+                    <AppOnCallTab appId={app.id} token={session.accessToken} />
                 )}
                 {tab === 'team' && session?.accessToken && (
                     <TeamTab appId={app.id} token={session.accessToken} />

@@ -145,3 +145,72 @@ export function setServiceVisibility(token: string, appId: string, service: Moni
     const message = visibility === 'public' ? 'Publish the status page' : 'Make the status page private';
     return monitorCall(token, 'POST', `${appBase(appId)}/services`, { ...service, visibility, message });
 }
+
+// --- On-call ---
+
+export interface WeeklyWindow { days: number[]; from: string; to: string }
+export interface AwayRange { from: string; to: string }
+
+export interface AlertPreference {
+    sub?: string;
+    wallet: boolean;
+    email?: string;
+    when: 'always' | 'on_call' | 'schedule';
+    weekly?: WeeklyWindow[];
+    timezone?: string;
+    away?: AwayRange[];
+    updated_at?: number;
+}
+
+export interface OnCallPlan {
+    rotation?: string[];
+    period_days?: number;
+    start_at?: number;
+    overrides?: { sub: string; from: number; to: number }[];
+    ack_minutes?: number;
+}
+
+export interface OnCallPage {
+    id: string;
+    component: string;
+    state: 'open' | 'taken' | 'resolved' | 'exhausted';
+    opened_at: number;
+    taken_by?: string;
+    history?: { at: number; what: string; sub?: string; level: number; detail?: string }[];
+}
+
+export interface OnCallOverview {
+    plan: OnCallPlan;
+    on_call: string;
+    me: AlertPreference;
+    sub: string;
+    can_manage: boolean;
+    pages?: OnCallPage[];
+    team?: { sub: string; name?: string; role: string }[];
+    team_error?: string;
+}
+
+export function getOnCall(token: string, appId: string): Promise<OnCallOverview> {
+    return monitorCall(token, 'GET', `${appBase(appId)}/oncall`);
+}
+
+export function saveMyAlerts(token: string, appId: string, pref: AlertPreference): Promise<unknown> {
+    return monitorCall(token, 'POST', `${appBase(appId)}/oncall/me`, pref);
+}
+
+export function forgetMyAlerts(token: string, appId: string): Promise<unknown> {
+    return monitorCall(token, 'DELETE', `${appBase(appId)}/oncall/me`);
+}
+
+export function saveOnCallPlan(token: string, appId: string, plan: OnCallPlan): Promise<unknown> {
+    return monitorCall(token, 'POST', `${appBase(appId)}/oncall/plan`, plan);
+}
+
+export async function sendTestAlert(token: string, appId: string): Promise<Record<string, string>> {
+    const r = await monitorCall<{ results: Record<string, string> }>(token, 'POST', `${appBase(appId)}/oncall/test`, {});
+    return r.results ?? {};
+}
+
+export function takePage(token: string, appId: string, pageId: string): Promise<unknown> {
+    return monitorCall(token, 'POST', `${appBase(appId)}/oncall/pages/${encodeURIComponent(pageId)}/take`, {});
+}
