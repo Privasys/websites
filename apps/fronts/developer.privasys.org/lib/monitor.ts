@@ -11,6 +11,7 @@ import { getEnclaveSealedSession, dropEnclaveAuthFrame } from './enclave-session
 const PROD_PORTAL_HOST = 'developer.privasys.org';
 const PROD_MONITOR_HOST = 'platform-monitoring.apps.privasys.org';
 const TEST_MONITOR_HOST = 'platform-monitoring.apps.test.privasys.org';
+const PROD_STATUS_HOST = 'status.privasys.org';
 
 /** The monitor's host: NEXT_PUBLIC_MONITOR_HOST, else by the portal's own host. */
 export function getMonitorHost(): string {
@@ -23,8 +24,9 @@ export function getMonitorHost(): string {
 }
 
 /** Where an app's public status page is, once its team makes it public. */
-export function publicStatusPageUrl(appId: string): string {
-    return `https://${getMonitorHost()}/apps/${encodeURIComponent(appId)}/`;
+export function publicStatusPageUrl(appName: string): string {
+    const host = getMonitorHost() === PROD_MONITOR_HOST ? PROD_STATUS_HOST : getMonitorHost();
+    return `https://${host}/apps/${encodeURIComponent(appName)}/`;
 }
 
 export class MonitorError extends Error {

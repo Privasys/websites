@@ -32,7 +32,7 @@ function when(unix: number): string {
     return new Date(unix * 1000).toLocaleString();
 }
 
-export function AppStatusTab({ appId, token }: { appId: string; token: string }) {
+export function AppStatusTab({ appId, appName, token }: { appId: string; appName: string; token: string }) {
     const confirm = useConfirm();
     const [phase, setPhase] = useState<Phase>('loading');
     const [status, setStatus] = useState<MonitorStatus | null>(null);
@@ -189,8 +189,8 @@ export function AppStatusTab({ appId, token }: { appId: string; token: string })
                                 {isPublic && (
                                     <div className="mt-2 text-xs">
                                         Public page:{' '}
-                                        <a href={publicStatusPageUrl(appId)} target="_blank" rel="noopener noreferrer" className="underline break-all">
-                                            {publicStatusPageUrl(appId)}
+                                        <a href={publicStatusPageUrl(appName)} target="_blank" rel="noopener noreferrer" className="underline break-all">
+                                            {publicStatusPageUrl(appName)}
                                         </a>
                                     </div>
                                 )}

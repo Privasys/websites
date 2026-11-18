@@ -374,7 +374,7 @@ export default function AppDetailPage() {
                     <BackupsTab app={app} token={session.accessToken} deployments={deployments} enclaves={enclaves} onRestoreStarted={() => { load(); setTab('deployments'); }} />
                 )}
                 {tab === 'status' && session?.accessToken && (
-                    <AppStatusTab appId={app.id} token={session.accessToken} />
+                    <AppStatusTab appId={app.id} appName={app.name} token={session.accessToken} />
                 )}
                 {tab === 'team' && session?.accessToken && (
                     <TeamTab appId={app.id} token={session.accessToken} />
