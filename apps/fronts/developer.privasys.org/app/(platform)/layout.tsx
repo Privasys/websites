@@ -25,6 +25,31 @@ const STATUS_DOT: Record<string, string> = {
     deploying: 'bg-blue-500 animate-pulse'
 };
 
+// The sidebar dot follows the live deployment when the control plane reports
+// it: green while running, blue while starting, grey once stopped. Apps that
+// never got that far keep their build or review colour.
+function appDot(app: App): string {
+    switch (app.deployment_status) {
+        case 'active': return 'bg-emerald-500';
+        case 'starting':
+        case 'deploying': return 'bg-blue-500 animate-pulse';
+        case 'none':
+            if (app.status === 'deployed' || app.status === 'undeployed') return 'bg-gray-400';
+    }
+    return STATUS_DOT[app.status] ?? 'bg-gray-400';
+}
+
+// Running apps first, then the rest; each group keeps the server's order.
+function appRank(app: App): number {
+    switch (app.deployment_status) {
+        case 'active': return 0;
+        case 'starting':
+        case 'deploying': return 1;
+        case undefined: return app.status === 'deployed' ? 0 : 2;
+        default: return 2;
+    }
+}
+
 const ADMIN_ITEMS = [
     { label: 'Review apps', href: '/dashboard/admin', icon: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z' },
     { label: 'Enclave', href: '/dashboard/admin/enclave', icon: 'M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2' },
@@ -65,7 +90,9 @@ function Sidebar() {
         if (!session?.accessToken) return;
         try {
             const data = await listApps(session.accessToken);
-            setApps(data);
+            setApps(data.map((app, i) => ({ app, i }))
+                .sort((a, b) => appRank(a.app) - appRank(b.app) || a.i - b.i)
+                .map(({ app }) => app));
         } catch { /* ignore */ }
     }, [session?.accessToken]);
 
@@ -161,7 +188,7 @@ function Sidebar() {
                                     : 'hover:bg-black/3 dark:hover:bg-white/5 text-black/60 dark:text-white/60'
                             }`}
                         >
-                            <span className={`w-2 h-2 rounded-full shrink-0 ${STATUS_DOT[app.status] ?? 'bg-gray-400'}`} />
+                            <span className={`w-2 h-2 rounded-full shrink-0 ${appDot(app)}`} />
                             <span className="truncate">{app.display_name || app.name}</span>
                         </Link>
                     );

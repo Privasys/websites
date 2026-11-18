@@ -50,6 +50,10 @@ export interface App {
         mrenclave: string;
     };
     status: string;
+    // Computed on GET /apps: the live deployment's status ("active",
+    // "starting", "deploying") or "none". `status` stays "deployed" after a
+    // stop, so this is what tells a running app from a stopped one.
+    deployment_status?: string;
     review_note?: string;
     reviewer_sub?: string;
     reviewed_at?: string;
