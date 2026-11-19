@@ -1,31 +1,26 @@
 ---
 title: Overview
-description: Confidential GPU inference with end-to-end attestation, running open-source LLMs inside Intel TDX + NVIDIA confidential-compute enclaves.
+description: Open-weight language models served inside Intel TDX with an NVIDIA H100 in confidential-computing mode, over the OpenAI and Anthropic APIs, with attestation and replayable responses.
 ---
 
-Confidential AI runs open-source language models inside an Intel TDX trust domain with NVIDIA H100/H200 confidential-compute mode enabled. Prompts and responses are decrypted only inside the enclave, the model weights are loaded from a dm-verity protected disk, and every chat session can prove with a fresh remote-attestation handshake which exact code and which exact weights produced its answers.
-
-## Why this matters
-
-Today's hosted LLMs require unconditional trust in the operator: the provider can read every prompt, log every response, fine-tune on user data, or substitute a quietly modified model. There is no cryptographic mechanism a user can run to verify what was on the other end of the API call.
-
-Confidential AI removes that trust. The same hardware-rooted attestation chain that protects Privasys' confidential workloads also protects the model serving runtime:
-
-- The TDX quote pins MRTD + RTMR0..3, proving exactly which kernel, initrd, and userspace booted.
-- A custom x.509 extension on the enclave certificate (OID `1.3.6.1.4.1.65230.3.5.5`) carries the dm-verity root hash of the model disk.
-- The same RA-TLS handshake exposes the loaded model name, the proxy status, and any per-request challenge nonce, so a client can prove the response it received came from the attested binary.
+Confidential AI serves open-weight language models inside an Intel TDX trust domain with an NVIDIA H100 in confidential-computing mode. Prompts and responses are decrypted only inside the enclave, and the TLS certificate a client receives carries a hardware quote of the exact image that serves it, together with the digest of the model that answers.
 
 ## What you get
 
-- A drop-in OpenAI-compatible `/v1/chat/completions` endpoint that streams responses through the enclave.
-- Cryptographic proof of the model weights, the inference server binary, the GPU firmware, and the host platform, returned alongside every session.
-- A reproducible, signed image pipeline that lets you (or an auditor) rebuild the enclave bit-for-bit and confirm the measurements.
-- Operator transparency: the management plane can lock model load/unload behind a fleet token but cannot read prompts, responses, or KV-cache contents.
+- **The APIs you already use.** OpenAI chat completions and the Anthropic Messages API, both with streaming and tool calling, plus embeddings and reranking, with the same request and response bodies, so existing code works unchanged. See [API](api).
+- **Proof of what answered.** The instance's certificate binds a TDX quote of the image, the GPU's confidential-computing evidence and the model digest. A client checks them in the handshake, before any prompt leaves it. See [Attestation](attestation).
+- **Replayable responses.** Every generation is pinned (seed, sampling, clock) and the GPU runs in batch-invariant mode, so a response can be reproduced token for token on the same image and model. Ask for the reproducibility record with one header. See [API](api#reproducibility-record).
+- **Chat, embeddings and reranking in one boundary.** One instance serves a chat model, an embedding model and a reranker on the same GPU, so retrieval over your documents happens inside the enclave too. See [Models](models).
+- **Billing per caller.** Each caller is identified by Privasys ID or, for platform apps, by attestation, and pays for its own tokens from its Privasys account.
+
+## Why it matters
+
+A hosted model asks for unconditional trust in its operator: the operator can read every prompt, keep every response, or serve a different model from the one advertised, and the client has no way to check. Confidential AI replaces that trust with evidence the client verifies itself. The operator, the host and the cloud provider see encrypted traffic, resource counters and nothing else. See [Privacy guarantees](privacy).
 
 ## Where to go next
 
-- [Architecture](architecture) - the components inside and around the enclave.
-- [Attestation](attestation) - the certificate extensions, RTMR replay, and challenge protocol.
-- [Models](models) - dm-verity model disks and how they get published.
-- [API](api) - the OpenAI-compatible endpoints exposed by the proxy.
-- [Privacy guarantees](privacy) - what the operator can and cannot see.
+- [Architecture](architecture): the components inside and around the enclave.
+- [Attestation](attestation): what the certificate proves and how a client checks it.
+- [Models](models): the model set, how it is loaded and how its identity is attested.
+- [API](api): endpoints, authentication, billing and the reproducibility record.
+- [Privacy guarantees](privacy): what the operator can and cannot see.

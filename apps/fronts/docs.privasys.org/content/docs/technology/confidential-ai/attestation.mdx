@@ -17,17 +17,17 @@ The `report_data` binding is what tells the client this exact certificate was is
 
 ## Custom extensions
 
-Privasys-defined OIDs sit under `1.3.6.1.4.1.65230`. The ones most relevant to confidential AI:
+Privasys-defined OIDs sit under `1.3.6.1.4.1.65230`; the full registry is on the [OID reference](/solutions/enclave-os/attestation/oids). The ones a Confidential AI client checks:
 
 | OID | Name | Meaning |
 | --- | --- | --- |
-| `1.3.6.1.4.1.65230.1.1` | Config Merkle root | SHA-256 root over all platform configuration inputs. |
-| `1.3.6.1.4.1.65230.2.x` | Platform extensions | Bind the enclave configuration: combined workloads hash (`2.5`), DEK origin (`2.6`), attestation server set (`2.7`), image profile (`2.8` — `production` or `dev`). |
-| `1.3.6.1.4.1.65230.3.5.5` | `MODEL_DIGEST` | The dm-verity root hash of the model disk currently mounted, or - if no verity disk is in use - a deterministic SHA-256 over the model's index file. Lives under the app arc `3.5.*`; also emitted at the legacy literal `3.5` while older clients still pin it there. |
-| `1.3.6.1.4.1.65230.3.5.7` | `TOOLS_DIGEST` | SHA-256 over the canonical, sorted JSON of the configured MCP tool servers, so a verifier can prove exactly which tools the AI enclave exposes. Lives under the app arc `3.5.*` because it is an application extension, not a platform-standard OID (older fleet images emitted it at the top-level `3.7`). |
-| `1.3.6.1.4.1.65230.3.x` | Workload extensions | Per-workload bindings: config root (`3.1`), image digest (`3.2`), image reference (`3.3`), key source (`3.4`), platform-assigned app id (`3.6`). |
+| `4.1` | Workload App ID | Which app this is: the Confidential AI instance you meant to reach, not another app on the same platform. |
+| `4.2` | Workload Code Digest | SHA-256 of the container image manifest: the exact proxy, vLLM build and patches serving you. Rebuild the image from source and this value must match. |
+| `5.4.5` | Model Digest | The digest of the chat model: the dm-verity root hash of its disk, or the SHA-256 of a manifest of every model file (see [Models](models#attesting-the-model)). Also emitted at the legacy literal `3.5` for older clients. |
 
-The `MODEL_DIGEST` value is published by `publish-model-disk.sh` (see [Models](models)) and recorded in the dm-verity disk header. The manager mounts the disk with `veritysetup open --hash-offset=4096` and writes the root hash to `/var/lib/enclave-os/model-roothashes/<name>.roothash`. The confidential-ai proxy reads that file at attestation time, so a client can compare the OID value against a previously audited or signed roothash without having to trust the operator.
+The embedding and reranking models are not in the certificate; their digests are listed, with the chat model's, at `GET /.well-known/served-models`, which a client reads over the same attested connection (see [Models](models#attesting-the-model)). An app that depends on a particular model, such as Drive on its embedding model, pins that manifest and refuses an instance whose models changed.
+
+Earlier images also published a tools digest at `5.4.7`. Confidential AI no longer exposes tools of its own, since agents and their tools run in the [Privasys Harness](/solutions/ai/chat-and-agents), so that extension is no longer emitted.
 
 ## RTMR event-log replay
 
@@ -37,7 +37,7 @@ The enclave also exports a TPM-style event log that lists every measurement exte
 2. Replay each event into a software-only RTMR.
 3. Confirm the resulting digests match the RTMR values inside the quote.
 
-If they match, the client knows the event log has not been tampered with and can read off exactly what booted: kernel hash, initrd hash, dm-verity roothash for `/`, dm-verity roothash for the model disk, and so on.
+If they match, the client knows the event log has not been tampered with and can read off exactly what booted: kernel hash, initrd hash, and the dm-verity roothash of the root filesystem.
 
 ## Challenge protocol
 

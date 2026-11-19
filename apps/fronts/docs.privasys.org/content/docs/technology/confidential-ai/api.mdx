@@ -1,61 +1,110 @@
 ---
 title: API
-description: OpenAI-compatible chat and model-management endpoints exposed by the confidential-ai proxy.
+description: The OpenAI and Anthropic Messages endpoints, embeddings and reranking, authentication, billing and the reproducibility record.
 ---
 
-The confidential-ai proxy exposes an OpenAI-compatible HTTP surface on top of vLLM. All endpoints are served over RA-TLS; clients should pin the certificate against a freshly verified TDX quote (see [Attestation](attestation)).
+Confidential AI speaks two wire formats on the same attested model: the **OpenAI** API and the **Anthropic Messages** API, with the same request and response bodies, so code written against either works unchanged. Requests reach the instance over an attested channel only (see [Who can call it](#who-can-call-it)), so a client always knows what it is talking to before it sends a prompt.
 
-## Chat completions
+## Endpoints
 
-```
-POST /v1/chat/completions
-Content-Type: application/json
-```
+| Route | What it does |
+| --- | --- |
+| `POST /v1/chat/completions` | OpenAI chat completions: streaming, tool calling, JSON mode. |
+| `POST /v1/messages` | Anthropic Messages: streaming and tool use. |
+| `POST /v1/messages/count_tokens` | Anthropic token counting. Not billed. |
+| `POST /v1/completions` | OpenAI text completions. |
+| `POST /v1/embeddings` | Embeddings from the instance's embedding model. |
+| `POST /v1/rerank` | Relevance scores from the instance's reranker. |
+| `GET /v1/models` | The models this instance serves. |
+| `GET /v1/models/status` | Load state and progress of each model. |
+| `GET /readiness` | `200` once every configured model is loaded, `503` before. |
+| `GET /.well-known/served-models` | The attested serving manifest: image digest, vLLM and CUDA versions, and each model with its digest. |
 
-Request and response bodies are byte-compatible with the OpenAI Chat Completions API, including streaming via `stream: true` and SSE. Tool/function calling, JSON mode, and stop sequences are supported to the extent vLLM supports them for the loaded model.
+Chat, Messages and completions answer as soon as the chat model is loaded. Embeddings and rerank wait for their own model, so after a restart a chat can be served while the smaller models are still loading.
 
-There is no API key required at the chat layer by default; access control happens at the network layer (clients prove they reached the right enclave via attestation, the enclave proves the client is allowed via your auth integration). When you want per-tenant isolation, run one enclave per tenant rather than sharing.
+## Who can call it
 
-## Model status
+A request reaches the model only over a channel that ends inside the enclave, and every caller is identified:
 
-```
-GET /v1/models/status
-```
+- **An attested app on the platform**, over mutual RA-TLS. The app is identified by its app id and admitted by the instance's caller policy. The [Privasys Harness](/solutions/ai/chat-and-agents) and [Privasys Drive](/solutions/drive/memory-for-chat) call Confidential AI this way.
+- **A person in a browser**, over the [sealed session](/technology/sealed-session) opened with their Privasys ID.
+- **The Privasys CLI**, which opens a sealed session as you:
 
-Returns:
+  ```bash
+  privasys apps call <instance> chat --path /v1/chat/completions --data @request.json
+  ```
+
+Plain HTTPS to the instance's address is refused (`sealed-transport-required`): a request that does not travel over one of these channels never reaches the enclave.
+
+Inside the enclave, the instance also accepts a Privasys ID access token as `Authorization: Bearer` or `x-api-key`, the headers OpenAI and Anthropic clients send, so a client library running behind one of the channels above authenticates the way it already does.
+
+## Billing
+
+Usage is billed to the caller's Privasys account by token: prompt and completion tokens for generation, input tokens for embeddings and reranking. A caller with no funded account receives `402 Payment Required`. Prompt tokens served from the prefix cache are reported but billed as ordinary prompt tokens.
+
+## Example
+
+A chat completion request, as `request.json`:
 
 ```json
 {
-  "loaded_model": "Qwen2.5-7B-Instruct",
-  "loaded_model_digest": "<dm-verity-roothash-or-index-hash>",
-  "proxy_status": "ready",
-  "proxy_message": "vLLM accepting requests",
-  "proxy_progress": 1.0
+  "model": "qwen36-35b-a3b-fp8",
+  "messages": [{ "role": "user", "content": "Summarise the attached contract." }]
 }
 ```
 
-`proxy_status` cycles through `idle`, `loading`, `ready`, `unloading`, and `error`. `proxy_progress` is `0.0..1.0` while a load is in flight.
+The same request on the Messages wire goes to `/v1/messages` with `max_tokens` set, as the Anthropic API requires. The model name is the one `GET /v1/models` lists.
 
-The same fields are pushed to the management plane every `--push-interval` (default 30s) by the manager's runtime-status sender.
+## Reproducibility record
 
-## Model lifecycle (fleet only)
+Add the header `X-Privasys-Reproducibility: 1` and the response carries a record of everything needed to replay it:
 
+```json
+{
+  "reproducibility": {
+    "request_id": "…",
+    "seed": 2863311530,
+    "temperature": 0.7, "top_p": 0.8, "top_k": 20, "max_tokens": 1024,
+    "model": "qwen36-35b-a3b-fp8",
+    "quantization": "fp8",
+    "vllm_version": "0.29.0",
+    "cuda_version": "12.6.3",
+    "gpu": "H100-80GB",
+    "tensor_parallel_size": 1,
+    "batch_invariance": true,
+    "image_digest": "sha256:…",
+    "tee_type": "tdx",
+    "timestamp": "2026-11-19T12:00:00Z",
+    "dynamic_context": "…",
+    "kv_cache_mode": "session",
+    "cached_tokens": 0
+  }
+}
 ```
-POST /v1/models/load     {"model": "Qwen2.5-7B-Instruct"}
-POST /v1/models/unload   {"model": "Qwen2.5-7B-Instruct"}
-```
 
-When the proxy is started with `--load-token <secret>` (or `LOAD_TOKEN` env), both endpoints require `Authorization: Bearer <secret>`. Without that flag the endpoints are open, which is fine for development but should not be used in production.
+Where it appears depends on the wire:
 
-A successful `load` will:
+- **Chat completions**, non-streamed: a top-level `reproducibility` key in the body.
+- **Chat completions**, streamed: one `data:` frame carrying the record, just before `data: [DONE]`.
+- **Messages**: an `event: privasys_reproducibility` frame just before `message_stop`. It is a typed event, so Anthropic clients that ignore unknown event types read the stream as usual.
 
-1. Verify the model directory exists under `--models-dir`.
-2. Spawn vLLM bound to `--vllm-port`.
-3. Wait for vLLM's health endpoint.
-4. Look up the dm-verity root hash for the model from `--roothash-dir` and surface it via the `MODEL_DIGEST` extension.
+The header is opt-in because some strict clients reject unknown fields. Without it, responses are exactly what the OpenAI and Anthropic APIs return.
 
-`unload` stops vLLM and clears the loaded-model state.
+### What makes a response replayable
 
-## Attestation endpoint
+Whether or not you ask for the record, every generation request is pinned:
 
-The RA-TLS leaf certificate already carries the full attestation evidence, so most clients do not need a separate attestation endpoint. The developer portal exposes `/api/v1/apps/<id>/attest` as a convenience that performs the handshake server-side and returns a structured `AttestationResult` for browser consumption.
+- **Seed.** When the request carries no `seed`, the instance picks one and reports it.
+- **Sampling.** `temperature`, `top_p` and `top_k` are filled from the model's own defaults when absent, and reported, so a replay does not depend on server-side defaults.
+- **Clock.** The current UTC time is added to the last user message, so the model knows the date. The value is reported as `dynamic_context`; a replay sends it back in the `X-Privasys-Dynamic-Context` header to reproduce the same prompt.
+- **Batch invariance.** vLLM runs in batch-invariant mode, with patches for the model's attention kernels, so the output does not depend on what else the GPU was serving at the time.
+
+A replay sends the same request with the recorded `seed` and `X-Privasys-Dynamic-Context`, to an instance attesting the same image and model digest, and receives the same tokens. [Reproducible inference and the accountability gap](https://privasys.org/blog/reproducible-inference-and-the-accountability-gap) explains why this matters.
+
+### The prefix cache
+
+vLLM reuses the computation for a prompt prefix it has seen before. That is only safe between requests from the same caller, so the instance salts the cache per caller: one user's cached prefix can never shorten, and so reveal itself through, another user's response time. `X-Privasys-Reproducibility: strict` goes further and gives the request a salt of its own, so nothing is reused at all. `kv_cache_mode` and `cached_tokens` in the record report which mode applied and how much was reused.
+
+## Model management
+
+`POST /v1/models/load` and `POST /v1/models/unload` change what the instance serves. They require the app owner's or an admin's Privasys ID token; users of the API cannot influence which weights are loaded. See [Models](models).

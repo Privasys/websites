@@ -1,67 +1,58 @@
 ---
 title: Architecture
-description: The confidential AI runtime, model disk, attestation surface, and management plane.
+description: The proxy, the vLLM engines, the encrypted volume and the platform around a Confidential AI instance.
 ---
 
-A confidential AI deployment is a single Intel TDX guest with one or more NVIDIA GPUs in confidential-compute mode. Inside the guest, three Privasys components cooperate.
+A Confidential AI instance is an app on [Enclave OS Virtual](/solutions/enclave-os/enclave-os-virtual/architecture): an Intel TDX guest booted from a measured, read-only image, with an NVIDIA H100 passed through in confidential-computing mode.
 
 ## Inside the enclave
 
 ```
-+----------------------------------------------------------+
-|                  Intel TDX trust domain                  |
-|                                                          |
-|   manager  --(spawn)-->  vLLM (OpenAI server, GPU)       |
-|      |                    ^                              |
-|      |                    |                              |
-|      v                    |                              |
-|   confidential-ai  ---/v1/chat/completions----> client   |
-|      ^                                                   |
-|      |  /v1/models/load (fleet token)                    |
-|      |                                                   |
-|   management plane  (cannot read prompts or responses)   |
-+----------------------------------------------------------+
+                 +---------------------- Intel TDX trust domain ----------------------+
+                 |                                                                    |
+ caller --RA-TLS-+--> manager --> confidential-ai proxy                               |
+                 |                   |  identify caller, check account, pin sampling, |
+                 |                   |  salt the cache, meter tokens                  |
+                 |                   +--> vLLM generate  (chat, messages)   --+       |
+                 |                   +--> vLLM embed     (embeddings)      --+--> H100 (CC mode)
+                 |                   +--> vLLM rerank    (rerank)          --+       |
+                 |                                                                    |
+                 |   encrypted volume: model cache, compile cache, saved model set    |
+                 +--------------------------------------------------------------------+
 ```
 
-### `manager`
+### The manager
 
-The init-style supervisor for the enclave. It mounts the dm-verity model disk, starts vLLM, runs the confidential-ai proxy, performs the OIDC bootstrap, and pushes a runtime-status snapshot (GPU memory, temperature, power, loaded model, proxy state) to the management plane on a configurable interval.
+The Enclave OS supervisor. It terminates RA-TLS with a certificate that carries the TDX quote and the GPU's evidence, unlocks the app's encrypted volume with a key released by the platform's vaults only to a matching measurement, runs the container, and enforces which other apps may call this one.
 
-### `confidential-ai`
+### The confidential-ai proxy
 
-A small Go proxy that:
+A Go service that every request goes through. It:
 
-- Accepts OpenAI-compatible HTTP requests over RA-TLS.
-- Forwards `/v1/chat/completions` to the local vLLM server.
-- Owns model lifecycle (`/v1/models/load`, `/v1/models/unload`, `/v1/models/status`), gated behind a fleet `LOAD_TOKEN` when configured.
-- Computes the workload-attestation extension set, including the dm-verity root hash of the loaded model.
+- identifies the caller and checks that the caller's Privasys account can pay;
+- pins each generation request (seed, sampling defaults, injected clock) and salts the prefix cache per caller;
+- routes to the right vLLM engine and meters the tokens used;
+- attaches the [reproducibility record](api#reproducibility-record) on request;
+- publishes the model digests (see [Models](models#attesting-the-model)).
 
 ### vLLM
 
-The actual inference engine. It only ever listens on `localhost`; clients never reach it directly. Prompt and response data lives in GPU and host RAM that is not accessible to the host OS or hypervisor.
+Up to three engines, one per task, sharing the GPU. They listen on the loopback interface only, so nothing reaches a model except through the proxy. vLLM runs in batch-invariant mode, so a response does not depend on the other requests in its batch.
 
-## Outside the enclave
+### The encrypted volume
 
-### Model disk publisher
+Model weights downloaded from Hugging Face, vLLM's compilation caches and the declared model set live on the app's volume, encrypted with a key that only this measured image can obtain. A restart reloads the same models from there without downloading them again.
 
-A signed, reproducible script (`publish-model-disk.sh`) builds two artifacts per model:
+## Around the enclave
 
-- `model-<name>` - a sealed ext4 image containing the model files.
-- `model-<name>-verity` - a hash-tree disk prefixed with a 4 KiB Privasys header (`PRIVASYS-VERITY-V1\nROOTHASH=<hex>\n...`). The veritysetup hash tree starts at offset 4096.
+### The control plane
 
-The publisher signs the root hash and uploads both disks to whichever object store the fleet uses.
+Deploys the app, delivers its configuration, and collects usage reports for billing. It holds no key to the volume and never sees a prompt or a response: requests reach the enclave over end-to-end encrypted connections that terminate inside it.
 
-### Management plane
+### Attestation servers
 
-The fleet manager:
+Independent services that verify the TDX quote and the GPU evidence against Intel's and NVIDIA's collateral, so the instance never vouches for itself. Which servers are trusted is itself part of the attested configuration.
 
-- Issues the bootstrap OIDC client/secret.
-- Issues the per-enclave token used for runtime-status pushes.
-- Optionally distributes the `LOAD_TOKEN` so only the manager - not arbitrary tenants - can swap models.
-- Stores attestation evidence and exposes it to end-user dashboards.
+### Callers
 
-The management plane can never read prompts, responses, or the model weights at rest. Its trust scope is restricted to lifecycle and policy.
-
-## RA-TLS and the certificate chain
-
-Each enclave generates an ephemeral keypair, requests a TDX quote whose `report_data` is bound to that public key plus a per-session challenge nonce, and embeds the quote (and supporting collateral) into x.509 extensions on a self-signed leaf certificate. Clients verifying the certificate verify the quote, confirm the report-data binding, and inspect the custom extensions to learn what model is loaded and which workloads are running.
+Applications call the [API](api) directly. The [Privasys Harness](/solutions/ai/chat-and-agents) runs agents against it, and [Privasys Drive](/solutions/drive/memory-for-chat) uses its embedding model and reranker to search your files; both are attested apps that pin this instance's image and models before they send it anything.

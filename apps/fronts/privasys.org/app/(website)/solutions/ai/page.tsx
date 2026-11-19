@@ -349,12 +349,14 @@ export default function AISolution() {
                         </p>
                     </div>
                     <div>
-                        <h3 className='text-xl lg:text-3xl'>OpenAI-compatible API, attested edges</h3>
+                        <h3 className='text-xl lg:text-3xl'>OpenAI and Anthropic APIs, attested edges</h3>
                         <p>
                             <Balancer>
-                                Each fleet exposes a vLLM-backed OpenAI-compatible endpoint behind a
-                                gateway that performs RA-TLS. Existing tooling works unchanged; the
-                                only difference is that you can prove who answered.
+                                Each instance serves the OpenAI chat completions and the Anthropic
+                                Messages APIs, with embeddings and reranking beside them, over channels
+                                that end inside the enclave. The request and response bodies are the
+                                ones your code already speaks; the difference is that you can prove who
+                                answered.
                             </Balancer>
                         </p>
                     </div>

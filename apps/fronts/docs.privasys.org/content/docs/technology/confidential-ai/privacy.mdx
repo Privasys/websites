@@ -10,19 +10,21 @@ Confidential AI is built on the assumption that the operator is curious and the 
 - **Prompts.** Decrypted only inside the TDX trust domain. Never written to disk in cleartext, never logged. The host kernel, the hypervisor, and the management plane cannot read them.
 - **Responses.** Same protection class as prompts, including streamed deltas.
 - **KV-cache and intermediate activations.** Live in GPU memory protected by NVIDIA confidential-compute mode and in TDX-private guest memory.
-- **Model weights at rest.** Carried on a dm-verity disk; tampering causes a read error rather than a silent substitution. Mounted read-only.
+- **The prefix cache, between callers.** vLLM reuses the computation for a prompt prefix it has already seen. The cache is salted per caller, so one caller's prompts can never speed up, and so be inferred from, another caller's responses.
+- **Model weights and caches at rest.** Kept on the app's encrypted volume, whose key is released only to the measured image. A model loaded from a verity-protected disk is also checked block by block: tampering causes a read error rather than a silent substitution.
 - **Session keys.** RA-TLS uses ephemeral keys generated inside the enclave; private halves never leave it.
 
 ## What is observable
 
 - **Network metadata.** The host can see that the enclave received a TLS connection of a certain size, lasting a certain time. It cannot decrypt the contents.
 - **Resource counters.** GPU memory, temperature, power; aggregate request count. The manager pushes these to the management plane so operators can monitor capacity. They do not reveal prompt or response content beyond what side-channel analysis of size and timing can leak.
-- **Loaded model identity.** The `MODEL_DIGEST` extension and `/v1/models/status` endpoint deliberately publish which weights are loaded. This is the property end users want to verify.
+- **Usage counts.** Token counts per caller are reported to the control plane for billing. The counts leave the enclave; the prompts and responses they measure do not.
+- **Loaded model identity.** The model digest in the certificate and the `/.well-known/served-models` manifest deliberately publish which weights are loaded. This is the property clients verify.
 
 ## What requires operator cooperation
 
 - **Reproducible images.** The operator must publish the build inputs (kernel config, mkosi spec, manager binary, confidential-ai binary, vLLM container) so an auditor can rebuild and confirm the MRTD and RTMR values.
-- **Signed model disks.** The operator must sign the dm-verity root hash so users can pin a trusted weight set.
+- **Published model digests.** The model digest proves which weights are loaded; to know they are the weights the model's publisher released, a client compares it with a digest computed from the publisher's files.
 - **Attestation server set.** The operator chooses which Intel PCS / TDX collateral provider the client uses to verify the quote. Untrusted operators could publish a malicious server set, but the platform extension `Attestation Servers Hash` makes that choice itself attestable.
 
 ## Threat model boundaries
@@ -34,37 +36,7 @@ Confidential AI does not protect against:
 - **Compromise of the operator's release-signing key.** If an attacker can sign a malicious model disk or initrd, the chain of trust is broken at that root. Use HSMs and air-gapped signing.
 - **Abuse by the user themselves.** Confidentiality is two-way; the operator cannot see prompts, but neither can a downstream auditor unless the user shares the session.
 
-## Per-fleet isolation: conversations, RAG, and feedback
+## Conversations and documents
 
-Conversation history, document chunks, embeddings, and per-message feedback all live in `private-rag`, a Postgres + pgvector enclave that runs **once per fleet**. The public fleet has its own shared `private-rag`; a dedicated fleet has its own isolated one. There is no cross-fleet shared state.
+Confidential AI stores no conversations and no documents. Conversation history, files and the search index over them live in [Privasys Drive](/solutions/drive/memory-for-chat), sealed to the user, and reach the model only through attested apps such as the [Privasys Harness](/solutions/ai/chat-and-agents), under a scope the user sets.
 
-### What lives where
-
-| Data | Storage | Why this boundary |
-| --- | --- | --- |
-| Original uploaded documents (PDF, image, audio) | `enclave-cloud` (per-user vault) | Long-term storage, deduplicated, encrypted at rest with a per-user key. |
-| Chunked text + embeddings | `private-rag` pgvector | Fast similarity search, scoped to the fleet. |
-| Reference rows (chunk -> blob) | `private-rag` pgvector | Lets the agent recover surrounding context via `enclave-cloud.fetch_range`. |
-| Conversations and messages | `private-rag` Postgres | Resumable across devices for the same `sub`. |
-| Per-message feedback (good / bad / comment) | `private-rag` Postgres, append-only | Operators can correlate bad ratings with model and sampling on the developer portal without the raw text leaving the fleet. |
-
-### Ownership model
-
-The Privasys ID JWT carries `sub` (a per-app derived subject) and the active fleet's role. `private-rag` enforces:
-
-- The calling `sub` must own every `conversation_id` it touches.
-- Search results are filtered to documents the `sub` can read, using the `enclave-cloud` vault membership snapshot. Top-k is applied **after** the access filter, so a curious user cannot infer the existence of forbidden documents from result counts.
-- Cross-`sub` sharing is out of scope for v1. Per-fleet shared knowledge bases are a follow-up that requires a fleet-level vault.
-
-### Mutual attestation between components
-
-Cross-component traffic uses RA-TLS with mutual attestation by MRTD:
-
-- The chat orchestrator (`ai-gpu`) pins `private-rag` by MRTD before sending any conversation or RAG tool call.
-- `private-rag` pins `enclave-cloud` by MRTD before fetching blob ranges or registering uploads.
-
-A new image rollout therefore requires either pre-publishing the new MRTD in the manager or accepting a brief refusal window while peers reload their pin lists. Tampering with any component breaks the pin and the call fails closed; it does not silently fall through.
-
-### Feedback never leaves the fleet
-
-The chat front-end's per-message Good / Bad rating buttons (with optional free-text comment) end up in the per-fleet `private-rag` as `feedback(message_id, rating, comment, sub, created_at)`. The developer portal renders aggregate rates per fleet so operators can correlate bad ratings with the model, sampling, or RAG tool usage that produced them. The raw comment text never leaves the TDX trust domain; the portal only sees aggregates.
