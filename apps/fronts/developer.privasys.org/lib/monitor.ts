@@ -214,3 +214,87 @@ export async function sendTestAlert(token: string, appId: string): Promise<Recor
 export function takePage(token: string, appId: string, pageId: string): Promise<unknown> {
     return monitorCall(token, 'POST', `${appBase(appId)}/oncall/pages/${encodeURIComponent(pageId)}/take`, {});
 }
+
+// --- Support desk ---
+
+export interface TicketComment {
+    id: number;
+    author: string;
+    author_name?: string;
+    team: boolean;
+    internal?: boolean;
+    body: string;
+    at: number;
+}
+
+export interface SupportTicket {
+    number: number;
+    subject: string;
+    body: string;
+    status: string;
+    priority: string;
+    category?: string;
+    requester: string;
+    requester_name?: string;
+    assignee?: string;
+    comments?: TicketComment[];
+    events?: { at: number; actor?: string; what: string; detail?: string }[];
+    created_at: number;
+    updated_at: number;
+    first_response_at?: number;
+}
+
+export interface TicketDue {
+    first_response_by: number;
+    resolution_by: number;
+    first_response_breached: boolean;
+    resolution_breached: boolean;
+}
+
+export interface TicketRow { ticket: SupportTicket; comments: number; due?: TicketDue }
+export interface TicketDetail { ticket: SupportTicket; due?: TicketDue }
+
+export interface SupportSettings {
+    intake: 'off' | 'team' | 'public';
+    categories?: string[];
+    tickets_per_hour: number;
+    tickets_per_day: number;
+    comments_per_hour: number;
+    targets: Record<string, { first_response_minutes: number; resolution_minutes: number }>;
+}
+
+export interface TicketChange {
+    status?: string;
+    priority?: string;
+    category?: string;
+    assignee?: string;
+}
+
+export async function listTickets(token: string, appId: string): Promise<TicketRow[]> {
+    const r = await monitorCall<{ tickets: TicketRow[] }>(token, 'GET', `${appBase(appId)}/tickets`);
+    return r.tickets ?? [];
+}
+
+export function getTicket(token: string, appId: string, n: number): Promise<TicketDetail> {
+    return monitorCall(token, 'GET', `${appBase(appId)}/tickets/${n}`);
+}
+
+export function commentTicket(token: string, appId: string, n: number, body: string, internal: boolean): Promise<TicketDetail> {
+    return monitorCall(token, 'POST', `${appBase(appId)}/tickets/${n}/comments`, { body, internal });
+}
+
+export function updateTicket(token: string, appId: string, n: number, change: TicketChange): Promise<TicketDetail> {
+    return monitorCall(token, 'POST', `${appBase(appId)}/tickets/${n}/update`, change);
+}
+
+export async function deleteTicket(token: string, appId: string, n: number): Promise<void> {
+    await monitorCall(token, 'DELETE', `${appBase(appId)}/tickets/${n}`);
+}
+
+export function getSupportSettings(token: string, appId: string): Promise<{ settings: SupportSettings; can_manage: boolean; can_respond: boolean }> {
+    return monitorCall(token, 'GET', `${appBase(appId)}/support/settings`);
+}
+
+export function saveSupportSettings(token: string, appId: string, settings: SupportSettings): Promise<unknown> {
+    return monitorCall(token, 'POST', `${appBase(appId)}/support/settings`, settings);
+}
