@@ -59,7 +59,7 @@ With cvm-images, the dm-verity root hash is baked into the kernel command line a
 | Component | Details |
 |-----------|---------|
 | Guest OS | Ubuntu 24.04 LTS (Noble Numbat) |
-| Kernel | Custom-built, ABI-pinned Ubuntu 6.17 kernel (CVM Guard hardening patches, TDX guest support), built and signed in CI |
+| Kernel | Ubuntu HWE 7.0 kernel, ABI-pinned and built in CI from Canonical's source with the CVM Guard hardening patch (TDX guest support). Unsigned: its integrity comes from measured boot |
 | Root filesystem | erofs (read-only) |
 | Integrity | dm-verity hash tree |
 | Boot | shim then GRUB then kernel + initrd, each stage measured into the RTMRs; dm-verity root hash in cmdline |
@@ -161,7 +161,7 @@ Search the event log for the kernel command line event. On a cvm-images image, i
 sudo tpm2_eventlog /sys/kernel/security/tpm0/binary_bios_measurements \
   | grep -A2 "kernel_cmdline"
 # Example output:
-#   kernel_cmdline: /vmlinuz-6.17.0-35-generic root=PARTUUID=... roothash=b93b4ee5...
+#   kernel_cmdline: /vmlinuz-7.0.0-43-generic root=PARTUUID=... roothash=b93b4ee5...
 ```
 
 ### Replaying RTMR extends (Go)
