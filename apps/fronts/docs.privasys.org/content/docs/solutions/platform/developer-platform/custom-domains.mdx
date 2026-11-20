@@ -96,9 +96,11 @@ The runtime tells your app how each request arrived, in `X-Privasys-Transport`:
 
 By default a direct domain serves what a browser gets through the gateway: your declared static and public routes, plus sealed sessions. Private routes stay sealed.
 
+Your app always receives its platform hostname in `Host`, so it needs no extra configuration for a new domain. The name the visitor typed arrives in `X-Forwarded-Host`, on every route of your domain, so an app that serves several names can tell them apart (a support site and a status site from one app, for example).
+
 ### RA-TLS on your domain
 
-A client that asks for RA-TLS (it offers the `privasys-ratls/1` ALPN) on your domain gets the full attested certificate, with your hostname in it and the same attestation extensions as the platform hostname.
+A client that asks for RA-TLS (it offers the `privasys-ratls/1` ALPN) on your domain gets the full attested certificate, with your hostname in it and the same attestation extensions as the platform hostname. The two stay identical when anything the app attests changes (a new policy, new dependencies, a renewed volume key), so a client attesting either name sees the same workload.
 
 ### Private routes for signed-in users
 
