@@ -232,7 +232,7 @@ Sign-out is `frame.clearSession()` followed by a reload: it ends the Privasys ID
 
 - **The voucher.** During the ceremony the wallet attests your enclave, approves it, and uploads a signed voucher to the IdP that binds the enclave's identity key and the user's subject. The SDK establishes the sealed session from that voucher, which is why the session carries the identity, and re-establishes it from the same voucher later without the wallet.
 - **Idle and restarts.** The enclave keeps a session for fifteen minutes of inactivity. The next request after that gets an unsealed 401; the SDK rebinds from the voucher and replays the request. Requests that hit the 401 together share one rebind, because the enclave budgets rebinds per session.
-- **Upgrades.** The voucher pins the enclave's measurement. When your app is updated, or the platform under it, the enclave refuses the voucher and names the reason; the SDK reports `reapproval-required`, and `connect()` asks the wallet for one approval, which re-attests the new measurement and mints a fresh voucher. Nothing is signed out.
+- **Upgrades.** The voucher pins the enclave's measurement. When your app is updated, the platform under it, or its storage key moves to a new generation, the enclave refuses the voucher and names the reason; the SDK reports `reapproval-required`, and `connect()` asks the wallet for one approval, which re-attests the new measurement and mints a fresh voucher. Nothing is signed out.
 - **Renewal.** The Privasys ID access token is renewed in the background with a refresh token, coordinated across every tab and site that shares the session. That coordination is the reason for the one-frame rule.
 
 ## Mistakes that cost the most
