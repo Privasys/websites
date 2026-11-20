@@ -14,6 +14,8 @@ interface AuthSession {
     rpId: string;
     /** Roles from the JWT claims (e.g. 'privasys-platform:admin'). */
     roles?: string[];
+    /** The signed-in person's subject on the platform. */
+    sub?: string;
     /** When the session was established (epoch ms). */
     authenticatedAt: number;
 }
@@ -97,6 +99,7 @@ function sessionFromToken(token: string, rpId: string, authenticatedAt?: number)
         accessToken: token,
         rpId,
         roles: Array.isArray(claims.roles) ? (claims.roles as string[]) : undefined,
+        sub: typeof claims.sub === 'string' ? claims.sub : undefined,
         authenticatedAt: authenticatedAt ?? Date.now()
     };
 }

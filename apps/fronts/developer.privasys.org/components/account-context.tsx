@@ -54,7 +54,9 @@ export function AccountProvider({ children }: { children: ReactNode }) {
         listMyAccounts(session.accessToken)
             .then((list) => {
                 const stored = getCurrentAccountId();
-                const personal = list.find((a) => a.kind !== 'org') ?? list[0];
+                // The person's own personal account, not one they were invited to.
+                const personal = list.find((a) => a.kind !== 'org' && a.owner_sub === session?.sub)
+                    ?? list.find((a) => a.kind !== 'org') ?? list[0];
                 let id = stored && list.some((a) => a.id === stored) ? stored : personal?.id ?? '';
                 if (stored === MANAGEMENT && canManage) id = MANAGEMENT;
                 // An admin page opened directly is Management's.

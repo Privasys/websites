@@ -6,17 +6,23 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { AccountWithRole } from '~/lib/api';
+import { useAuth } from '~/lib/privasys-auth';
 import { MANAGEMENT } from '~/lib/current-account';
 import { useAccount } from '~/components/account-context';
 
 export { useCurrentAccount } from '~/components/account-context';
 
-function label(a: AccountWithRole): string {
-    return a.kind === 'org' ? a.name : 'Personal';
+// Your own personal account is "Personal"; someone else's that you were
+// invited to is theirs by name.
+function label(a: AccountWithRole, mySub?: string): string {
+    if (a.kind === 'org') return a.name;
+    if (mySub && a.owner_sub !== mySub) return `${a.name || 'Someone'}'s personal`;
+    return 'Personal';
 }
 
 export function AccountSwitcher() {
     const { accounts, account, management, canManage, switchTo } = useAccount();
+    const mySub = useAuth().session?.sub;
     const [open, setOpen] = useState(false);
     const ref = useRef<HTMLDivElement>(null);
 
@@ -68,7 +74,7 @@ export function AccountSwitcher() {
                 aria-expanded={open}
                 title="Switch account"
             >
-                <span className="truncate">{management ? 'Management' : account ? label(account) : 'Account'}</span>
+                <span className="truncate">{management ? 'Management' : account ? label(account, mySub) : 'Account'}</span>
                 <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
                 </svg>
@@ -76,7 +82,7 @@ export function AccountSwitcher() {
             {open && (
                 <div role="listbox" className="absolute right-0 mt-2 w-64 py-1 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-neutral-900 shadow-lg z-50">
                     {heading('Accounts')}
-                    {accounts.map((a) => item(a.id, label(a), !management && a.id === account?.id))}
+                    {accounts.map((a) => item(a.id, label(a, mySub), !management && a.id === account?.id))}
                     {canManage && (
                         <>
                             <div className="my-1 border-t border-black/5 dark:border-white/10" />
