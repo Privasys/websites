@@ -17,6 +17,7 @@ import {
 } from '~/lib/monitor';
 import type { MonitorStatus, MonitorService, MonitorIncident, Indicator } from '~/lib/monitor';
 import { useConfirm } from '~/components/confirm-dialog';
+import { useCurrentAccount } from '~/components/account-switcher';
 
 const INDICATOR: Record<Indicator, { label: string; cls: string }> = {
     none: { label: 'Operational', cls: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300' },
@@ -34,6 +35,9 @@ function when(unix: number): string {
 
 export function AppStatusTab({ appId, appName, token }: { appId: string; appName: string; token: string }) {
     const confirm = useConfirm();
+    // The app lives in the account the portal is working in; its page is
+    // under that account's short name when it has one.
+    const accountSlug = useCurrentAccount()?.slug || undefined;
     const [phase, setPhase] = useState<Phase>('loading');
     const [status, setStatus] = useState<MonitorStatus | null>(null);
     const [services, setServices] = useState<MonitorService[]>([]);
@@ -189,8 +193,8 @@ export function AppStatusTab({ appId, appName, token }: { appId: string; appName
                                 {isPublic && (
                                     <div className="mt-2 text-xs">
                                         Public page:{' '}
-                                        <a href={publicStatusPageUrl(appName)} target="_blank" rel="noopener noreferrer" className="underline break-all">
-                                            {publicStatusPageUrl(appName)}
+                                        <a href={publicStatusPageUrl(appName, accountSlug)} target="_blank" rel="noopener noreferrer" className="underline break-all">
+                                            {publicStatusPageUrl(appName, accountSlug)}
                                         </a>
                                     </div>
                                 )}

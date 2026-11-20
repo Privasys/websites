@@ -20,6 +20,7 @@ import {
 } from '~/lib/monitor';
 import type { MonitorService } from '~/lib/monitor';
 import { useConfirm } from '~/components/confirm-dialog';
+import { getCurrentAccountId } from '~/lib/current-account';
 
 const STATUS_SERVICE_ID = 'svc-app';
 
@@ -70,7 +71,9 @@ export default function StatusAndSupportPage() {
         listMyAccounts(token)
             .then((list) => {
                 setAccounts(list);
-                setSelected((cur) => cur || list[0]?.id || '');
+                // The account chosen in the top bar; the person's own by default.
+                const id = getCurrentAccountId();
+                setSelected(list.find((a) => a.id === id)?.id || list[0]?.id || '');
             })
             .catch((e) => {
                 setError(e instanceof Error ? e.message : 'Failed to load your accounts');
@@ -191,17 +194,10 @@ export default function StatusAndSupportPage() {
                 ledger. Choose which apps your pages list.
             </p>
 
-            {accounts.length > 1 && (
-                <label className="mt-6 block max-w-sm">
-                    <span className="text-xs font-medium text-black/50 dark:text-white/50">Account</span>
-                    <select value={selected} onChange={(e) => setSelected(e.target.value)} className={input}>
-                        {accounts.map((a) => (
-                            <option key={a.id} value={a.id}>
-                                {a.name || 'Personal account'}{a.kind === 'org' ? ' (organisation)' : ''}
-                            </option>
-                        ))}
-                    </select>
-                </label>
+            {account && (
+                <p className="mt-3 text-sm text-black/50 dark:text-white/50">
+                    Account: <span className="font-medium text-black/70 dark:text-white/70">{account.name}</span>. Switch accounts at the top right.
+                </p>
             )}
 
             {error && <div className="mt-4 p-3 rounded-lg bg-red-50 dark:bg-red-900/20 text-sm text-red-700 dark:text-red-300">{error}</div>}

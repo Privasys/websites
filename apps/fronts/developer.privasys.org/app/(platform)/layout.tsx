@@ -11,6 +11,7 @@ import { SSEProvider, useSSE } from '~/lib/sse-context';
 import type { App } from '~/lib/types';
 import { UserMenu } from '~/components/user-menu';
 import { CreditBalance } from '~/components/credit-balance';
+import { AccountSwitcher, useCurrentAccount } from '~/components/account-switcher';
 import { ConfirmProvider } from '~/components/confirm-dialog';
 
 const STATUS_DOT: Record<string, string> = {
@@ -74,6 +75,10 @@ function Sidebar() {
     const { session } = useAuth();
     const isManager = hasManagerRole(session?.roles);
     const isAdmin = hasAdminRole(session?.roles);
+    // The platform's own pages belong to the Privasys organisation: they
+    // show only while working in it.
+    const currentAccount = useCurrentAccount();
+    const inPlatformAccount = currentAccount?.kind === 'org' && currentAccount.slug === 'privasys';
     const [apps, setApps] = useState<App[]>([]);
     // Backups appear in the menu only where the platform offers them.
     const [backupsOffered, setBackupsOffered] = useState(false);
@@ -346,7 +351,7 @@ function Sidebar() {
                     Documentation
                 </a>
 
-                {isManager && (
+                {isManager && inPlatformAccount && (
                     <>
                         <div className="pt-4 pb-1 px-3">
                             <span className="text-[10px] font-semibold uppercase tracking-wider text-black/30 dark:text-white/30">Admin</span>
@@ -447,7 +452,7 @@ export default function PlatformLayout({ children }: { children: ReactNode }) {
     return (
         <SSEProvider>
             <ConfirmProvider>
-                <Navbar brandSuffix="Developer" items={NAVBAR_ITEMS} fullWidth trailing={<div className="flex items-center gap-3"><CreditBalance /><UserMenu /></div>} />
+                <Navbar brandSuffix="Developer" items={NAVBAR_ITEMS} fullWidth trailing={<div className="flex items-center gap-3"><AccountSwitcher /><CreditBalance /><UserMenu /></div>} />
                 <div className="flex flex-1 pt-14">
                     <Sidebar />
                     <main className="flex-1 p-6 lg:p-10 min-w-0">
