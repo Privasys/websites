@@ -1200,6 +1200,8 @@ export interface Account {
     kind: 'individual' | 'org';
     name: string;
     domain: string;
+    /** The account's short name in public addresses: status.privasys.org/@<slug>/. */
+    slug?: string;
     owner_sub: string;
     created_at: string;
     updated_at: string;
@@ -1226,7 +1228,7 @@ export function getAccount(token: string): Promise<AccountView> {
 
 export function updateAccount(
     token: string,
-    patch: { kind?: 'individual' | 'org'; name?: string; domain?: string }
+    patch: { kind?: 'individual' | 'org'; name?: string; domain?: string; slug?: string }
 ): Promise<{ account: Account }> {
     return request<{ account: Account }>('/api/v1/account', token, {
         method: 'PATCH',
@@ -2240,4 +2242,18 @@ export function adminReviewAttributeProvider(
             method: 'POST',
             body: JSON.stringify({ status })
         });
+}
+
+// --- Status and support directory ---
+
+/** Whether an app is listed in its account's directory, and whether the caller may change that. */
+export function getStatusListing(token: string, appId: string): Promise<{ listed: boolean; can_manage: boolean }> {
+    return request(`/api/v1/apps/${encodeURIComponent(appId)}/status-listing`, token);
+}
+
+export function setStatusListing(token: string, appId: string, listed: boolean): Promise<{ listed: boolean }> {
+    return request(`/api/v1/apps/${encodeURIComponent(appId)}/status-listing`, token, {
+        method: 'PUT',
+        body: JSON.stringify({ listed })
+    });
 }

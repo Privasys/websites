@@ -244,6 +244,21 @@ function Sidebar() {
                     </Link>
                 )}
 
+                {/* Status & support (public status and support pages) */}
+                <Link
+                    href="/dashboard/status"
+                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
+                        pathname === '/dashboard/status'
+                            ? 'bg-black/5 dark:bg-white/10 font-medium'
+                            : 'hover:bg-black/3 dark:hover:bg-white/5 text-black/60 dark:text-white/60'
+                    }`}
+                >
+                    <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+                        <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+                    </svg>
+                    Status &amp; support
+                </Link>
+
                 {/* Team */}
                 <Link
                     href="/dashboard/team"
