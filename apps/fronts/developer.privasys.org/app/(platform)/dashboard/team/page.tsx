@@ -24,7 +24,7 @@ const ROLE_LABEL: Record<AccountRole, string> = {
 const ROLE_HINT: Record<AccountRole, string> = {
     admin: 'Manage team, billing and app roles',
     billing: 'View and manage billing only',
-    member: 'Plain member; can be granted app roles'
+    member: 'Sees every app; can be given more on any app'
 };
 
 export default function TeamPage() {

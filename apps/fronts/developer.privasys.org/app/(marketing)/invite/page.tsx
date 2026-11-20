@@ -13,7 +13,7 @@ import { setCurrentAccountId } from '~/lib/current-account';
 const ROLE: Record<AccountRole, string> = {
     admin: 'an admin, who manages the team, billing and every app',
     billing: 'a billing member, who sees and manages the account\'s billing',
-    member: 'a member, who can be given roles on the account\'s apps'
+    member: 'a member, who sees every app in the account and can be given more on any of them'
 };
 
 type Phase = 'loading' | 'invalid' | 'ready' | 'joining' | 'joined' | 'error';
