@@ -2289,3 +2289,53 @@ export async function listAccountApps(token: string, accountId: string): Promise
     const r = await request<{ apps: AccountApp[] }>(`/api/v1/accounts/${encodeURIComponent(accountId)}/apps`, token);
     return r.apps ?? [];
 }
+
+// --- Account invitations ---
+
+export interface AccountInvite {
+    id: string;
+    account_id: string;
+    email: string;
+    role: AccountRole;
+    invited_by: string;
+    invited_by_name: string;
+    created_at: string;
+    expires_at: string;
+}
+
+export async function listAccountInvites(token: string): Promise<AccountInvite[]> {
+    const r = await request<{ invites: AccountInvite[] }>('/api/v1/account/invites', token);
+    return r.invites ?? [];
+}
+
+/** Invites an email address to the current account; the control plane sends the email. */
+export function createAccountInvite(token: string, email: string, role: AccountRole): Promise<{ invite: AccountInvite }> {
+    return request('/api/v1/account/invites', token, { method: 'POST', body: JSON.stringify({ email, role }) });
+}
+
+export function resendAccountInvite(token: string, id: string): Promise<{ invite: AccountInvite }> {
+    return request(`/api/v1/account/invites/${encodeURIComponent(id)}/resend`, token, { method: 'POST' });
+}
+
+export function revokeAccountInvite(token: string, id: string): Promise<unknown> {
+    return request(`/api/v1/account/invites/${encodeURIComponent(id)}`, token, { method: 'DELETE' });
+}
+
+export interface InvitePreview {
+    account_name: string;
+    role: AccountRole;
+    invited_by_name: string;
+    email: string;
+    expires_at: string;
+}
+
+/** What an invitation link names, with no sign-in; null when it cannot be used. */
+export async function peekInvite(secret: string): Promise<InvitePreview | null> {
+    const res = await fetch(`${API_URL}/api/v1/invites/${encodeURIComponent(secret)}`);
+    return res.ok ? res.json() : null;
+}
+
+/** Joins the account an invitation names, as the signed-in person. */
+export function acceptInvite(token: string, secret: string): Promise<{ account: Account; role: AccountRole }> {
+    return request(`/api/v1/invites/${encodeURIComponent(secret)}/accept`, token, { method: 'POST' });
+}

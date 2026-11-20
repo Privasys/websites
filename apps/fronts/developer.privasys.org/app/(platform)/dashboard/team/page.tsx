@@ -7,9 +7,13 @@ import {
     addAccountMember,
     updateAccountMember,
     removeAccountMember,
+    listAccountInvites,
+    createAccountInvite,
+    resendAccountInvite,
+    revokeAccountInvite,
     isApiStatus
 } from '~/lib/api';
-import type { Account, AccountMember, AccountRole } from '~/lib/api';
+import type { Account, AccountMember, AccountRole, AccountInvite } from '~/lib/api';
 
 const ROLE_LABEL: Record<AccountRole, string> = {
     admin: 'Admin',
@@ -32,6 +36,12 @@ export default function TeamPage() {
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
 
+    // Invitations by email
+    const [invites, setInvites] = useState<AccountInvite[]>([]);
+    const [inviteEmail, setInviteEmail] = useState('');
+    const [inviteRole, setInviteRole] = useState<AccountRole>('member');
+    const [inviting, setInviting] = useState(false);
+
     // Add-member form
     const [newSub, setNewSub] = useState('');
     const [newEmail, setNewEmail] = useState('');
@@ -48,6 +58,9 @@ export default function TeamPage() {
             setAccount(data.account);
             setRole(data.role);
             setMembers(data.members);
+            if (data.role === 'admin') {
+                setInvites(await listAccountInvites(session.accessToken).catch(() => []));
+            }
         } catch (e) {
             setError(e instanceof Error ? e.message : 'Failed to load account');
         }
@@ -76,6 +89,46 @@ export default function TeamPage() {
             setError(e instanceof Error ? e.message : 'Failed to add member');
         }
         setAdding(false);
+    }
+
+    async function handleInvite() {
+        if (!session?.accessToken || !inviteEmail.trim()) return;
+        setInviting(true);
+        setError('');
+        try {
+            const { invite } = await createAccountInvite(session.accessToken, inviteEmail.trim(), inviteRole);
+            setInvites((list) => [invite, ...list]);
+            setInviteEmail('');
+            setInviteRole('member');
+            flash(`Invitation sent to ${invite.email}.`);
+        } catch (e) {
+            setError(e instanceof Error ? e.message : 'The invitation could not be sent');
+        }
+        setInviting(false);
+    }
+
+    async function handleResend(id: string) {
+        if (!session?.accessToken) return;
+        setError('');
+        try {
+            const { invite } = await resendAccountInvite(session.accessToken, id);
+            setInvites((list) => list.map((i) => (i.id === id ? invite : i)));
+            flash(`Invitation sent again to ${invite.email}. The earlier link no longer works.`);
+        } catch (e) {
+            setError(e instanceof Error ? e.message : 'The invitation could not be sent again');
+        }
+    }
+
+    async function handleRevoke(id: string) {
+        if (!session?.accessToken) return;
+        setError('');
+        try {
+            await revokeAccountInvite(session.accessToken, id);
+            setInvites((list) => list.filter((i) => i.id !== id));
+            flash('Invitation withdrawn.');
+        } catch (e) {
+            setError(e instanceof Error ? e.message : 'The invitation could not be withdrawn');
+        }
     }
 
     async function handleRoleChange(sub: string, r: AccountRole) {
@@ -179,10 +232,70 @@ export default function TeamPage() {
                             })}
                         </div>
 
-                        {/* Add member */}
+                        {/* Invite by email */}
                         {isAdmin && (
                             <div className="mt-4 p-5 rounded-xl border border-black/10 dark:border-white/10 space-y-3">
-                                <div className="text-sm font-medium">Add a member</div>
+                                <div className="text-sm font-medium">Invite someone</div>
+                                <p className="text-xs text-black/40 dark:text-white/40">
+                                    They get an email explaining the platform and the Privasys Wallet, with a link to join
+                                    {account?.name ? <> {account.name}</> : ' this account'}. The link works once and expires after seven days.
+                                </p>
+                                <div className="flex flex-col sm:flex-row gap-3">
+                                    <input
+                                        type="email"
+                                        value={inviteEmail}
+                                        onChange={(e) => setInviteEmail(e.target.value)}
+                                        onKeyDown={(e) => { if (e.key === 'Enter') handleInvite(); }}
+                                        placeholder="name@company.com"
+                                        className="flex-1 px-3 py-2 text-sm rounded-lg border border-black/10 dark:border-white/10 bg-transparent"
+                                    />
+                                    <select
+                                        value={inviteRole}
+                                        onChange={(e) => setInviteRole(e.target.value as AccountRole)}
+                                        className="px-3 py-2 text-sm rounded-lg border border-black/10 dark:border-white/10 bg-transparent"
+                                        title={ROLE_HINT[inviteRole]}
+                                    >
+                                        <option value="member">Member</option>
+                                        <option value="billing">Billing</option>
+                                        <option value="admin">Admin</option>
+                                    </select>
+                                    <button
+                                        onClick={handleInvite}
+                                        disabled={inviting || !inviteEmail.trim()}
+                                        className="px-4 py-2 text-sm font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-80 transition-opacity disabled:opacity-50"
+                                    >
+                                        {inviting ? 'Sending…' : 'Send invitation'}
+                                    </button>
+                                </div>
+                                {invites.length > 0 && (
+                                    <div className="pt-2">
+                                        <div className="text-xs font-medium text-black/50 dark:text-white/50 mb-1">Waiting to be accepted</div>
+                                        <div className="divide-y divide-black/5 dark:divide-white/10">
+                                            {invites.map((i) => {
+                                                const expired = new Date(i.expires_at).getTime() < Date.now();
+                                                return (
+                                                    <div key={i.id} className="py-2 flex items-center gap-3 text-sm">
+                                                        <div className="flex-1 min-w-0">
+                                                            <div className="truncate">{i.email}</div>
+                                                            <div className="text-xs text-black/40 dark:text-white/40">
+                                                                {ROLE_LABEL[i.role]} · {expired ? 'expired' : `expires ${new Date(i.expires_at).toLocaleDateString()}`}
+                                                            </div>
+                                                        </div>
+                                                        <button onClick={() => handleResend(i.id)} className="text-xs hover:underline">Send again</button>
+                                                        <button onClick={() => handleRevoke(i.id)} className="text-xs text-red-600 dark:text-red-400 hover:underline">Withdraw</button>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Add member by their Privasys ID */}
+                        {isAdmin && (
+                            <details className="mt-4 p-5 rounded-xl border border-black/10 dark:border-white/10 space-y-3">
+                                <summary className="text-sm font-medium cursor-pointer">Add someone by their Privasys ID</summary>
                                 <p className="text-xs text-black/40 dark:text-white/40">
                                     Identify the person by their Privasys subject ID (<span className="font-mono">sub</span>).
                                     Email and name are for display only.
@@ -226,7 +339,7 @@ export default function TeamPage() {
                                 >
                                     {adding ? 'Adding…' : 'Add member'}
                                 </button>
-                            </div>
+                            </details>
                         )}
                     </section>
                 </>
