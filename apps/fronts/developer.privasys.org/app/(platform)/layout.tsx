@@ -259,6 +259,11 @@ function Sidebar() {
                     Status &amp; support
                 </Link>
 
+                {/* Admin: the account's own administration */}
+                <div className="pt-4 pb-1 px-3">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-black/30 dark:text-white/30">Admin</span>
+                </div>
+
                 {/* Team */}
                 <Link
                     href="/dashboard/team"
@@ -394,9 +399,10 @@ function Workspace({ children }: { children: ReactNode }) {
     return (
         <>
             <Navbar brandSuffix="Developer" items={NAVBAR_ITEMS} fullWidth trailing={<div className="flex items-center gap-3"><AccountSwitcher />{!management && <CreditBalance key={key} />}<UserMenu /></div>} />
-            <div className="flex flex-1 pt-14">
-                {management ? <ManagementSidebar /> : <Sidebar key={key} />}
-                <main key={key} className="flex-1 p-6 lg:p-10 min-w-0">
+            {/* One key on the wrapper: the sidebar and the page remount together. */}
+            <div key={key} className="flex flex-1 pt-14">
+                {management ? <ManagementSidebar /> : <Sidebar />}
+                <main className="flex-1 p-6 lg:p-10 min-w-0">
                     {children}
                 </main>
             </div>

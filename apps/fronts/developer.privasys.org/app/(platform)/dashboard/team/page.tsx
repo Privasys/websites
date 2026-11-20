@@ -4,7 +4,6 @@ import { useAuth } from '~/lib/privasys-auth';
 import { useEffect, useState, useCallback } from 'react';
 import {
     getAccount,
-    updateAccount,
     addAccountMember,
     updateAccountMember,
     removeAccountMember,
@@ -33,12 +32,6 @@ export default function TeamPage() {
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
 
-    // Account profile form
-    const [name, setName] = useState('');
-    const [domain, setDomain] = useState('');
-    const [kind, setKind] = useState<'individual' | 'org'>('individual');
-    const [savingAccount, setSavingAccount] = useState(false);
-
     // Add-member form
     const [newSub, setNewSub] = useState('');
     const [newEmail, setNewEmail] = useState('');
@@ -55,9 +48,6 @@ export default function TeamPage() {
             setAccount(data.account);
             setRole(data.role);
             setMembers(data.members);
-            setName(data.account.name || '');
-            setDomain(data.account.domain || '');
-            setKind(data.account.kind || 'individual');
         } catch (e) {
             setError(e instanceof Error ? e.message : 'Failed to load account');
         }
@@ -69,22 +59,6 @@ export default function TeamPage() {
     function flash(msg: string) {
         setSuccess(msg);
         setTimeout(() => setSuccess(''), 3000);
-    }
-
-    async function handleSaveAccount() {
-        if (!session?.accessToken) return;
-        setSavingAccount(true);
-        setError('');
-        try {
-            const { account: updated } = await updateAccount(session.accessToken, {
-                kind, name: name.trim(), domain: domain.trim()
-            });
-            setAccount(updated);
-            flash('Account updated.');
-        } catch (e) {
-            setError(e instanceof Error ? e.message : 'Failed to update account');
-        }
-        setSavingAccount(false);
     }
 
     async function handleAddMember() {
@@ -134,8 +108,7 @@ export default function TeamPage() {
         <div className="max-w-3xl">
             <h1 className="text-2xl font-semibold">Team</h1>
             <p className="mt-2 text-sm text-black/60 dark:text-white/60">
-                Your account is the billing and ownership boundary for your apps. Manage
-                its profile and members here.
+                The people in this account. Its name and public pages are under Settings.
             </p>
 
             {error && (
@@ -153,69 +126,6 @@ export default function TeamPage() {
                 <div className="mt-8 text-sm text-black/40 dark:text-white/40">Loading…</div>
             ) : (
                 <>
-                    {/* Account profile */}
-                    <section className="mt-10">
-                        <h2 className="text-lg font-medium">Account</h2>
-                        <p className="mt-1 text-sm text-black/50 dark:text-white/50">
-                            {isAdmin ? 'Update your account name and type.' : 'Only account admins can edit these details.'}
-                        </p>
-                        <div className="mt-4 p-5 rounded-xl border border-black/10 dark:border-white/10 space-y-4">
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                <label className="block">
-                                    <span className="text-xs font-medium text-black/50 dark:text-white/50">Name</span>
-                                    <input
-                                        type="text"
-                                        value={name}
-                                        disabled={!isAdmin}
-                                        onChange={(e) => setName(e.target.value)}
-                                        placeholder="Account name"
-                                        className="mt-1 w-full px-3 py-2 text-sm rounded-lg border border-black/10 dark:border-white/10 bg-transparent disabled:opacity-60"
-                                    />
-                                </label>
-                                <label className="block">
-                                    <span className="text-xs font-medium text-black/50 dark:text-white/50">Type</span>
-                                    <select
-                                        value={kind}
-                                        disabled={!isAdmin}
-                                        onChange={(e) => setKind(e.target.value as 'individual' | 'org')}
-                                        className="mt-1 w-full px-3 py-2 text-sm rounded-lg border border-black/10 dark:border-white/10 bg-transparent disabled:opacity-60"
-                                    >
-                                        <option value="individual">Individual</option>
-                                        <option value="org">Organisation</option>
-                                    </select>
-                                </label>
-                            </div>
-                            {kind === 'org' && (
-                                <label className="block">
-                                    <span className="text-xs font-medium text-black/50 dark:text-white/50">Domain</span>
-                                    <input
-                                        type="text"
-                                        value={domain}
-                                        disabled={!isAdmin}
-                                        onChange={(e) => setDomain(e.target.value)}
-                                        placeholder="example.com"
-                                        className="mt-1 w-full px-3 py-2 text-sm rounded-lg border border-black/10 dark:border-white/10 bg-transparent disabled:opacity-60"
-                                    />
-                                </label>
-                            )}
-                            {account?.id && (
-                                <div>
-                                    <div className="text-xs font-medium text-black/50 dark:text-white/50">Account ID</div>
-                                    <div className="text-sm mt-0.5 font-mono text-black/40 dark:text-white/40">{account.id}</div>
-                                </div>
-                            )}
-                            {isAdmin && (
-                                <button
-                                    onClick={handleSaveAccount}
-                                    disabled={savingAccount}
-                                    className="px-4 py-2 text-sm font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-80 transition-opacity disabled:opacity-50"
-                                >
-                                    {savingAccount ? 'Saving…' : 'Save account'}
-                                </button>
-                            )}
-                        </div>
-                    </section>
-
                     {/* Members */}
                     <section className="mt-10">
                         <h2 className="text-lg font-medium">Members</h2>

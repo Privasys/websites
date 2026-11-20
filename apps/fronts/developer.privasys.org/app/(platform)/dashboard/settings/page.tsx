@@ -1,195 +1,162 @@
 'use client';
 
-import { useAuth } from '~/lib/privasys-auth';
-import { useEffect, useState, useCallback } from 'react';
-import { getUserInfo, updateProfile } from '~/lib/api';
-import type { UserInfo } from '~/lib/api';
-import { PersonalAccessTokens } from '~/components/personal-access-tokens';
+// The account's settings: its name, kind, domain and short name. The
+// account is the one chosen in the top bar; only its admins change these.
+// Your own details and access tokens are on Your profile.
 
-export default function SettingsPage() {
-    const { session, signOut } = useAuth();
-    const [profile, setProfile] = useState<UserInfo | null>(null);
+import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
+import { useAuth } from '~/lib/privasys-auth';
+import { getAccount, updateAccount } from '~/lib/api';
+import type { Account, AccountRole } from '~/lib/api';
+import { accountPagesUrls } from '~/lib/monitor';
+
+export default function AccountSettingsPage() {
+    const { session } = useAuth();
+    const token = session?.accessToken ?? '';
+    const [account, setAccount] = useState<Account | null>(null);
+    const [role, setRole] = useState<AccountRole | ''>('');
+    const [name, setName] = useState('');
+    const [kind, setKind] = useState<'individual' | 'org'>('individual');
+    const [domain, setDomain] = useState('');
+    const [slug, setSlug] = useState('');
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
-    const [success, setSuccess] = useState('');
     const [error, setError] = useState('');
-    const [companyName, setCompanyName] = useState('');
-    const [companyDomain, setCompanyDomain] = useState('');
-    const [isIndividual, setIsIndividual] = useState(false);
+    const [success, setSuccess] = useState('');
+
+    const isAdmin = role === 'admin';
+
+    const fill = (a: Account) => {
+        setAccount(a);
+        setName(a.name || '');
+        setKind(a.kind || 'individual');
+        setDomain(a.domain || '');
+        setSlug(a.slug || '');
+    };
 
     const load = useCallback(async () => {
-        if (!session?.accessToken) return;
+        if (!token) return;
         try {
-            const data = await getUserInfo(session.accessToken);
-            setProfile(data);
-            setCompanyName(data.company_name || '');
-            setCompanyDomain(data.company_domain || '');
-            setIsIndividual(data.is_individual ?? false);
-        } catch { /* ignore */ }
+            const data = await getAccount(token);
+            fill(data.account);
+            setRole(data.role);
+        } catch (e) {
+            setError(e instanceof Error ? e.message : 'Failed to load the account');
+        }
         setLoading(false);
-    }, [session?.accessToken]);
+    }, [token]);
 
     useEffect(() => { load(); }, [load]);
 
-    async function handleSave() {
-        if (!session?.accessToken) return;
+    async function save() {
+        if (!account) return;
         setSaving(true);
         setError('');
         setSuccess('');
         try {
-            const data = await updateProfile(session.accessToken, {
-                company_name: companyName.trim(),
-                company_domain: companyDomain.trim(),
-                is_individual: isIndividual
+            const { account: updated } = await updateAccount(token, {
+                kind,
+                name: name.trim(),
+                domain: kind === 'org' ? domain.trim() : '',
+                slug: slug.trim().toLowerCase()
             });
-            setProfile(data);
-            setCompanyName(data.company_name || '');
-            setCompanyDomain(data.company_domain || '');
-            setIsIndividual(data.is_individual ?? false);
-            setSuccess('Settings updated.');
+            fill(updated);
+            setSuccess('Settings saved.');
             setTimeout(() => setSuccess(''), 3000);
         } catch (e) {
-            setError(e instanceof Error ? e.message : 'Failed to update settings');
+            setError(e instanceof Error ? e.message : 'The settings could not be saved.');
         }
         setSaving(false);
     }
 
+    const input = 'mt-1 w-full px-3 py-2 text-sm rounded-lg border border-black/10 dark:border-white/10 bg-transparent disabled:opacity-60';
+    const pages = account?.slug ? accountPagesUrls(account.slug) : null;
+
     return (
-        <div className="max-w-2xl">
+        <div className="max-w-3xl">
             <h1 className="text-2xl font-semibold">Settings</h1>
             <p className="mt-2 text-sm text-black/60 dark:text-white/60">
-                Manage your account and organisation details.
+                {account ? <>The settings of <span className="font-medium">{account.name || 'this account'}</span>. </> : null}
+                {isAdmin ? 'Only the account\'s admins can change them.' : 'Only the account\'s admins can change these.'}
+                {' '}Your own details and access tokens are on <Link href="/dashboard/profile" className="underline">Your profile</Link>.
             </p>
 
-            {/* Identity (read-only, sourced from IdP via management-service) */}
-            <section className="mt-10">
-                <h2 className="text-lg font-medium">Identity</h2>
-                <p className="mt-1 text-sm text-black/50 dark:text-white/50">
-                    Your identity is managed by your authentication provider and cannot be changed here.
-                </p>
-                {loading ? (
-                    <div className="mt-4 text-sm text-black/40 dark:text-white/40">Loading…</div>
-                ) : (
-                    <div className="mt-4 p-5 rounded-xl border border-black/10 dark:border-white/10 space-y-4">
-                        {profile?.name && (
-                            <div>
-                                <div className="text-xs font-medium text-black/50 dark:text-white/50">Name</div>
-                                <div className="text-sm mt-0.5">{profile.name}</div>
-                            </div>
-                        )}
-                        {profile?.email && (
-                            <div>
-                                <div className="text-xs font-medium text-black/50 dark:text-white/50">Email</div>
-                                <div className="text-sm mt-0.5">{profile.email}</div>
-                            </div>
-                        )}
-                        {!profile?.name && !profile?.email && (
-                            <div className="text-sm text-black/40 dark:text-white/40">
-                                No profile information available. Sign in again to share your name and email.
-                            </div>
-                        )}
-                        {profile?.sub && (
-                            <div>
-                                <div className="text-xs font-medium text-black/50 dark:text-white/50">Subject ID</div>
-                                <div className="text-sm mt-0.5 font-mono text-black/40 dark:text-white/40">{profile.sub}</div>
-                            </div>
-                        )}
-                    </div>
-                )}
-            </section>
+            {error && <div className="mt-4 p-3 rounded-lg bg-red-50 dark:bg-red-900/20 text-sm text-red-700 dark:text-red-300">{error}</div>}
+            {success && <div className="mt-4 p-3 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 text-sm text-emerald-700 dark:text-emerald-300">{success}</div>}
 
-            {/* Organisation */}
-            <section className="mt-10">
-                <h2 className="text-lg font-medium">Organisation</h2>
-                <p className="mt-1 text-sm text-black/50 dark:text-white/50">
-                    Tell us about yourself or your company. This information is shown on the App Store.
-                </p>
-
-                {loading ? (
-                    <div className="mt-4 text-sm text-black/40 dark:text-white/40">Loading…</div>
-                ) : (
-                    <div className="mt-4 space-y-4">
-                        {/* Individual toggle */}
-                        <div className="flex items-center gap-3">
-                            <button
-                                type="button"
-                                role="switch"
-                                aria-checked={isIndividual}
-                                onClick={() => setIsIndividual(!isIndividual)}
-                                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/20 ${isIndividual ? 'bg-black dark:bg-white' : 'bg-black/20 dark:bg-white/20'}`}
-                            >
-                                <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white dark:bg-black shadow ring-0 transition-transform ${isIndividual ? 'translate-x-5' : 'translate-x-0'}`} />
-                            </button>
-                            <label className="text-sm font-medium">I am an individual developer</label>
+            {loading ? (
+                <div className="mt-8 text-sm text-black/40 dark:text-white/40">Loading…</div>
+            ) : account && (
+                <>
+                    <section className="mt-10">
+                        <h2 className="text-lg font-medium">Account</h2>
+                        <div className="mt-4 p-5 rounded-xl border border-black/10 dark:border-white/10 space-y-4">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <label className="block">
+                                    <span className="text-xs font-medium text-black/50 dark:text-white/50">Name</span>
+                                    <input type="text" value={name} disabled={!isAdmin} onChange={(e) => setName(e.target.value)} className={input} />
+                                </label>
+                                <label className="block">
+                                    <span className="text-xs font-medium text-black/50 dark:text-white/50">Type</span>
+                                    <select
+                                        value={kind}
+                                        disabled={!isAdmin || account.kind === 'org'}
+                                        onChange={(e) => setKind(e.target.value as 'individual' | 'org')}
+                                        className={input}
+                                    >
+                                        <option value="individual">Individual</option>
+                                        <option value="org">Organisation</option>
+                                    </select>
+                                </label>
+                            </div>
+                            {kind === 'org' && (
+                                <label className="block">
+                                    <span className="text-xs font-medium text-black/50 dark:text-white/50">Domain</span>
+                                    <input type="text" value={domain} disabled={!isAdmin} onChange={(e) => setDomain(e.target.value)} placeholder="example.com" className={input} />
+                                </label>
+                            )}
+                            <div>
+                                <div className="text-xs font-medium text-black/50 dark:text-white/50">Account ID</div>
+                                <div className="text-sm mt-0.5 font-mono text-black/40 dark:text-white/40">{account.id}</div>
+                            </div>
                         </div>
-                        <p className="text-xs text-black/40 dark:text-white/40 -mt-2">
-                            {isIndividual
-                                ? 'Your personal name will be shown as the publisher.'
-                                : 'Enter your company details below.'}
+                    </section>
+
+                    <section className="mt-10">
+                        <h2 className="text-lg font-medium">Public pages</h2>
+                        <p className="mt-1 text-sm text-black/50 dark:text-white/50">
+                            The account&apos;s status and support pages, and its apps&apos; pages, live under its short name.
+                            Choose which apps they list on <Link href="/dashboard/status" className="underline">Status &amp; support</Link>.
                         </p>
-
-                        {!isIndividual && (
-                            <>
-                                <div>
-                                    <label className="block text-sm font-medium mb-1">Company name</label>
-                                    <input
-                                        type="text"
-                                        value={companyName}
-                                        onChange={e => setCompanyName(e.target.value)}
-                                        placeholder="Acme Corp"
-                                        className="w-full px-3 py-2 text-sm rounded-lg border border-black/10 dark:border-white/10 bg-transparent focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/20"
-                                    />
+                        <div className="mt-4 p-5 rounded-xl border border-black/10 dark:border-white/10 space-y-3">
+                            <label className="block max-w-sm">
+                                <span className="text-xs font-medium text-black/50 dark:text-white/50">Short name</span>
+                                <input type="text" value={slug} disabled={!isAdmin} maxLength={32} onChange={(e) => setSlug(e.target.value)} placeholder="your-company" className={input} />
+                                <span className="mt-1 block text-xs text-black/40 dark:text-white/40">3 to 32 lowercase letters, digits or single hyphens.</span>
+                            </label>
+                            {pages && (
+                                <div className="text-sm space-y-1">
+                                    <div>Status: <a href={pages.status} target="_blank" rel="noreferrer" className="underline">{pages.status}</a></div>
+                                    <div>Support: <a href={pages.support} target="_blank" rel="noreferrer" className="underline">{pages.support}</a></div>
                                 </div>
-                                <div>
-                                    <label className="block text-sm font-medium mb-1">Company domain</label>
-                                    <input
-                                        type="text"
-                                        value={companyDomain}
-                                        onChange={e => setCompanyDomain(e.target.value)}
-                                        placeholder="acme.com"
-                                        className="w-full px-3 py-2 text-sm rounded-lg border border-black/10 dark:border-white/10 bg-transparent focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/20"
-                                    />
-                                    <p className="mt-1 text-xs text-black/40 dark:text-white/40">Used to verify your organisation.</p>
-                                </div>
-                            </>
-                        )}
-                    </div>
-                )}
-            </section>
+                            )}
+                        </div>
+                    </section>
 
-            {/* Save */}
-            {!loading && (
-                <section className="mt-8">
-                    {error && <div className="mb-3 text-sm text-red-600 dark:text-red-400">{error}</div>}
-                    {success && <div className="mb-3 text-sm text-emerald-600 dark:text-emerald-400">{success}</div>}
-                    <button
-                        type="button"
-                        onClick={handleSave}
-                        disabled={saving}
-                        className="px-5 py-2 text-sm font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-80 transition-opacity disabled:opacity-50"
-                    >
-                        {saving ? 'Saving…' : 'Save changes'}
-                    </button>
-                </section>
+                    {isAdmin && (
+                        <div className="mt-8">
+                            <button
+                                onClick={save}
+                                disabled={saving}
+                                className="px-5 py-2 text-sm font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-80 transition-opacity disabled:opacity-50"
+                            >
+                                {saving ? 'Saving…' : 'Save settings'}
+                            </button>
+                        </div>
+                    )}
+                </>
             )}
-
-            {/* Personal access tokens */}
-            <section className="mt-10 pt-8 border-t border-black/5 dark:border-white/10">
-                <h2 className="text-lg font-medium">Personal access tokens</h2>
-                <p className="mt-1 mb-4 text-sm text-black/50 dark:text-white/50">Programmatic access to any Privasys app&rsquo;s API, billed to you.</p>
-                <PersonalAccessTokens />
-            </section>
-
-            {/* Sign out */}
-            <section className="mt-10 pt-8 border-t border-black/5 dark:border-white/10">
-                <button
-                    type="button"
-                    onClick={async () => { await signOut(); window.location.href = '/'; }}
-                    className="px-5 py-2 text-sm font-medium rounded-lg border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-                >
-                    Sign out
-                </button>
-            </section>
         </div>
     );
 }
