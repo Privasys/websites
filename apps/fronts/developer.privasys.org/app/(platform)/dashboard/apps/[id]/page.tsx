@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { useAuth } from '~/lib/privasys-auth';
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { getApp, listBuilds, listVersions, listDeployments, listCompatibleEnclaves, deleteApp, deployDirect, stopDeployment, getAppSchema, rpcCall, configComplete, updateStoreListing, publishApp, identiconUrl, getAppMcp, updateContainerMcp, detectContainerMcp, retryBuild, listAppOwners, addAppOwner, removeAppOwner, listAppSupportTeam, upsertAppSupportMember, removeAppSupportMember, createVersion, stageProfile, promoteProfile, listPending, vaultExportTarget, pendingBinding, beginVaultApproval, pollVaultApproval, listRegistryTags, uploadAsset, listAppCommits, uploadVersionCwasm, getVersion, listCachedImages, listDeployLocations, listInstances, apiErrorCode, setAutoMigrate, getBackupOptions, listAppBackups, getBackupPolicy, backupMonthlyGBP } from '~/lib/api';
+import { getApp, listBuilds, listVersions, listDeployments, listCompatibleEnclaves, deleteApp, deployDirect, stopDeployment, getAppSchema, rpcCall, configComplete, updateStoreListing, publishApp, identiconUrl, getAppMcp, updateContainerMcp, detectContainerMcp, retryBuild, listAppSupportTeam, upsertAppSupportMember, removeAppSupportMember, createVersion, stageProfile, promoteProfile, listPending, vaultExportTarget, pendingBinding, beginVaultApproval, pollVaultApproval, listRegistryTags, uploadAsset, listAppCommits, uploadVersionCwasm, getVersion, listCachedImages, listDeployLocations, listInstances, apiErrorCode, setAutoMigrate, getBackupOptions, listAppBackups, getBackupPolicy, backupMonthlyGBP } from '~/lib/api';
 
 // The IdP that runs the vault step-up approval ceremony.
 const IDP_ORIGIN = process.env.NEXT_PUBLIC_IDP_ORIGIN || 'https://privasys.id';
@@ -15,7 +15,7 @@ import type { CreateVersionBody } from '~/lib/api';
 import { isApiStatus, effectivePrice } from '~/lib/api';
 import { versionLabel, versionSemverStr, isStrictlyNewer } from '~/lib/version';
 import { displayNameError } from '~/lib/appName';
-import type { AppSchema, ConfigureSection, FunctionSchema, JsonSchemaProp, ActionProgress, WitType, McpManifest, AppTeam, AppSupportMember, SupportRole, AppCommit, DeployLocation, Instance, PriceRule } from '~/lib/api';
+import type { AppSchema, ConfigureSection, FunctionSchema, JsonSchemaProp, ActionProgress, WitType, McpManifest, AppSupportMember, SupportRole, AppCommit, DeployLocation, Instance, PriceRule } from '~/lib/api';
 import { useSSE } from '~/lib/sse-context';
 import { AppDomains } from '~/components/app-domains';
 import { AppStatusTab } from '~/components/app-status-tab';
@@ -86,7 +86,7 @@ function BuildStatusDot({ status }: { status: string }) {
     return <span className={`w-2 h-2 rounded-full inline-block ${color}`} />;
 }
 
-type Tab = 'deployments' | 'store' | 'attestation' | 'api' | 'mcp' | 'ui' | 'configure' | 'backups' | 'status' | 'oncall' | 'support' | 'team';
+type Tab = 'deployments' | 'store' | 'attestation' | 'api' | 'mcp' | 'ui' | 'configure' | 'backups' | 'status' | 'oncall' | 'support';
 
 export default function AppDetailPage() {
     const { id } = useParams<{ id: string }>();
@@ -272,8 +272,9 @@ export default function AppDetailPage() {
         ...(backupsOffered && app.app_type === 'container' ? [{ key: 'backups' as Tab, label: 'Backups' }] : []),
         // The platform monitor's zero-config check reads /readiness, which
         // container runtimes let through; WASM apps follow later.
-        ...(app.app_type === 'container' ? [{ key: 'status' as Tab, label: 'Status' }, { key: 'oncall' as Tab, label: 'On-call' }, { key: 'support' as Tab, label: 'Support' }] : []),
-        { key: 'team', label: 'Team' }
+        ...(app.app_type === 'container' ? [{ key: 'status' as Tab, label: 'Status' }, { key: 'oncall' as Tab, label: 'On-call' }, { key: 'support' as Tab, label: 'Support' }] : [])
+        // Who holds what on the app is managed for the whole account on the
+        // Team page.
     ];
 
     return (
@@ -382,10 +383,12 @@ export default function AppDetailPage() {
                     <AppOnCallTab appId={app.id} token={session.accessToken} />
                 )}
                 {tab === 'support' && session?.accessToken && (
-                    <AppSupportTab appId={app.id} token={session.accessToken} />
-                )}
-                {tab === 'team' && session?.accessToken && (
-                    <TeamTab appId={app.id} token={session.accessToken} />
+                    <>
+                        <AppSupportTab appId={app.id} token={session.accessToken} />
+                        <div className="mt-8">
+                            <SupportTeamSection appId={app.id} token={session.accessToken} />
+                        </div>
+                    </>
                 )}
 
             </div>
@@ -3954,186 +3957,6 @@ function ActionRunner({ fn, appId, token }: { fn: FunctionSchema; appId: string;
 }
 
 // ------- Team Tab -------
-function TeamTab({ appId, token }: { appId: string; token: string }) {
-    const confirm = useConfirm();
-    const [data, setData] = useState<AppTeam | null>(null);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
-    const [busy, setBusy] = useState(false);
-    const [newSub, setNewSub] = useState('');
-    const [newEmail, setNewEmail] = useState('');
-    const [newName, setNewName] = useState('');
-
-    const load = useCallback(async () => {
-        try {
-            const resp = await listAppOwners(token, appId);
-            setData(resp);
-            setError(null);
-        } catch (e) {
-            setError(e instanceof Error ? e.message : 'Failed to load owners');
-        } finally {
-            setLoading(false);
-        }
-    }, [token, appId]);
-
-    useEffect(() => { load(); }, [load]);
-
-    async function handleAdd(e: React.FormEvent) {
-        e.preventDefault();
-        const sub = newSub.trim();
-        if (!sub) return;
-        setBusy(true);
-        setError(null);
-        try {
-            const resp = await addAppOwner(token, appId, {
-                sub,
-                email: newEmail.trim() || undefined,
-                name: newName.trim() || undefined
-            });
-            setData(prev => prev ? { ...prev, owners: resp.owners } : resp);
-            setNewSub('');
-            setNewEmail('');
-            setNewName('');
-        } catch (e) {
-            setError(e instanceof Error ? e.message : 'Failed to add owner');
-        } finally {
-            setBusy(false);
-        }
-    }
-
-    async function handleRemove(sub: string, label: string) {
-        if (!(await confirm({ title: `Remove ${label} from the owners team?`, confirmLabel: 'Remove owner', danger: true }))) return;
-        setBusy(true);
-        setError(null);
-        try {
-            const resp = await removeAppOwner(token, appId, sub);
-            setData(prev => prev ? { ...prev, owners: resp.owners } : resp);
-        } catch (e) {
-            setError(e instanceof Error ? e.message : 'Failed to remove owner');
-        } finally {
-            setBusy(false);
-        }
-    }
-
-    if (loading) {
-        return <div className="text-sm text-black/50 dark:text-white/50">Loading owners…</div>;
-    }
-
-    if (!data) {
-        return (
-            <div className="text-sm text-red-600 dark:text-red-400">
-                {error || 'Failed to load owners.'}
-            </div>
-        );
-    }
-
-    return (
-        <div className="space-y-6">
-            <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">
-                <h2 className="text-sm font-semibold">Owners team</h2>
-                <p className="mt-1 text-xs text-black/50 dark:text-white/50">
-                    Owners can deploy this app, call its Owner-only RPCs, and manage the team.
-                </p>
-                {error && (
-                    <div className="mt-3 p-2.5 rounded-lg bg-red-50 dark:bg-red-900/20 text-sm text-red-700 dark:text-red-300">
-                        {error}
-                    </div>
-                )}
-                <ul className="mt-4 divide-y divide-black/10 dark:divide-white/10">
-                    {data.owners.map((o) => {
-                        const isCreator = o.sub === data.creator_sub;
-                        const label = o.name || o.email || o.sub;
-                        return (
-                            <li key={o.sub} className="py-3 flex items-start justify-between gap-4">
-                                <div className="min-w-0">
-                                    <div className="text-sm font-medium flex items-center gap-2">
-                                        <span className="truncate">{label}</span>
-                                        {isCreator && (
-                                            <span className="inline-block px-2 py-0.5 text-[10px] font-medium rounded-full bg-violet-100 text-violet-800 dark:bg-violet-900/30 dark:text-violet-300">
-                                                Creator
-                                            </span>
-                                        )}
-                                    </div>
-                                    {o.email && o.email !== label && (
-                                        <div className="text-xs text-black/50 dark:text-white/50 mt-0.5 truncate">{o.email}</div>
-                                    )}
-                                    <div className="text-[11px] font-mono text-black/40 dark:text-white/40 mt-0.5 truncate" title={o.sub}>{o.sub}</div>
-                                    <div className="text-[11px] text-black/40 dark:text-white/40 mt-0.5">
-                                        Added {new Date(o.added_at).toLocaleDateString()}
-                                    </div>
-                                </div>
-                                {!isCreator && (
-                                    <button
-                                        type="button"
-                                        onClick={() => handleRemove(o.sub, label)}
-                                        disabled={busy}
-                                        className="shrink-0 text-xs px-2.5 py-1 rounded-lg border border-red-300 text-red-700 hover:bg-red-50 dark:border-red-900/50 dark:text-red-400 dark:hover:bg-red-900/20 disabled:opacity-40"
-                                    >
-                                        Remove
-                                    </button>
-                                )}
-                            </li>
-                        );
-                    })}
-                    {data.owners.length === 0 && (
-                        <li className="py-3 text-sm text-black/50 dark:text-white/50">No owners.</li>
-                    )}
-                </ul>
-            </section>
-
-            <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">
-                <h2 className="text-sm font-semibold">Add owner</h2>
-                <p className="mt-1 text-xs text-black/50 dark:text-white/50">
-                    Ask the new owner for their <span className="font-medium">Subject ID</span> — they can find it in their <Link href="/dashboard/settings" className="underline">Settings</Link> page under Identity.
-                </p>
-                <form onSubmit={handleAdd} className="mt-4 space-y-3">
-                    <div>
-                        <label className="block text-xs font-medium text-black/60 dark:text-white/60">Subject ID <span className="text-red-600">*</span></label>
-                        <input
-                            type="text"
-                            value={newSub}
-                            onChange={(e) => setNewSub(e.target.value)}
-                            placeholder="e.g. c59A0b0909bAb1e8R1964cE1e52caKbe086cTeMdTbN"
-                            required
-                            className="mt-1 w-full px-3 py-2 text-sm font-mono rounded-lg border border-black/15 dark:border-white/15 bg-transparent focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/20"
-                        />
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div>
-                            <label className="block text-xs font-medium text-black/60 dark:text-white/60">Email (display only)</label>
-                            <input
-                                type="email"
-                                value={newEmail}
-                                onChange={(e) => setNewEmail(e.target.value)}
-                                placeholder="alice@example.com"
-                                className="mt-1 w-full px-3 py-2 text-sm rounded-lg border border-black/15 dark:border-white/15 bg-transparent focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/20"
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-xs font-medium text-black/60 dark:text-white/60">Name (display only)</label>
-                            <input
-                                type="text"
-                                value={newName}
-                                onChange={(e) => setNewName(e.target.value)}
-                                placeholder="Alice"
-                                className="mt-1 w-full px-3 py-2 text-sm rounded-lg border border-black/15 dark:border-white/15 bg-transparent focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/20"
-                            />
-                        </div>
-                    </div>
-                    <button
-                        type="submit"
-                        disabled={busy || !newSub.trim()}
-                        className="px-4 py-2 text-sm font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-90 disabled:opacity-40"
-                    >
-                        {busy ? 'Adding…' : 'Add owner'}
-                    </button>
-                </form>
-            </section>
-
-            <SupportTeamSection appId={appId} token={token} />
-        </div>
-    );
-}
 
 // ------- Support team (inside the Team tab) -------
 const SUPPORT_ROLES: { value: SupportRole; label: string; help: string }[] = [

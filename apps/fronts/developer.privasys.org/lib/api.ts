@@ -2339,3 +2339,20 @@ export async function peekInvite(secret: string): Promise<InvitePreview | null> 
 export function acceptInvite(token: string, secret: string): Promise<{ account: Account; role: AccountRole }> {
     return request(`/api/v1/invites/${encodeURIComponent(secret)}/accept`, token, { method: 'POST' });
 }
+
+// --- An account's access on one screen ---
+
+export interface AccountAccess {
+    apps: { id: string; name: string; display_name: string; creator_sub: string }[];
+    members: AccountMember[];
+    grants: { app_id: string; sub: string; role: 'owner' | 'admin' | 'viewer' | string }[];
+}
+
+export function getAccountAccess(token: string): Promise<AccountAccess> {
+    return request('/api/v1/account/access', token);
+}
+
+/** Gives a person a role on one of the account's apps ('admin' or 'viewer'), or '' to remove it. */
+export function setAccountAccess(token: string, appId: string, sub: string, role: '' | 'admin' | 'viewer'): Promise<unknown> {
+    return request('/api/v1/account/access', token, { method: 'PUT', body: JSON.stringify({ app_id: appId, sub, role }) });
+}

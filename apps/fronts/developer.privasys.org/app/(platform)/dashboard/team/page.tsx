@@ -14,6 +14,7 @@ import {
     isApiStatus
 } from '~/lib/api';
 import type { Account, AccountMember, AccountRole, AccountInvite } from '~/lib/api';
+import { TeamAppAccess } from '~/components/team-app-access';
 
 const ROLE_LABEL: Record<AccountRole, string> = {
     admin: 'Admin',
@@ -342,6 +343,10 @@ export default function TeamPage() {
                             </details>
                         )}
                     </section>
+
+                    {isAdmin && session?.accessToken && (
+                        <TeamAppAccess token={session.accessToken} refreshKey={members.map((m) => m.sub + ':' + m.role).join(',')} />
+                    )}
                 </>
             )}
         </div>
