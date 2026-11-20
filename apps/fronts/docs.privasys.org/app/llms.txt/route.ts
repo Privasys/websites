@@ -45,7 +45,7 @@ export function GET(): Response {
         '',
         '- [privasys.org](https://privasys.org/): product and company site, blog ([llms.txt](https://privasys.org/llms.txt))',
         '- [developer.privasys.org](https://developer.privasys.org/): developer console (sign-in required)',
-        '- [chat.privasys.org](https://chat.privasys.org/): confidential AI chat',
+        '- [ai.privasys.org](https://ai.privasys.org/): Privasys AI, the confidential AI assistant',
         '',
         `The complete documentation is available as a single markdown file at [llms-full.txt](${DOCS_BASE}/llms-full.txt).`,
         'Every page listed below is also served as raw markdown at the `.md` URL next to it.',
