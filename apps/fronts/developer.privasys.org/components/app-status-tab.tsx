@@ -13,7 +13,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
     enableMonitoring, getMonitorStatus, listMonitorServices, listMonitorIncidents,
-    setServiceVisibility, publicStatusPageUrl, MonitorError
+    setServiceVisibility, publicStatusPageUrl, refreshListing, MonitorError
 } from '~/lib/monitor';
 import type { MonitorStatus, MonitorService, MonitorIncident, Indicator } from '~/lib/monitor';
 import { useConfirm } from '~/components/confirm-dialog';
@@ -104,6 +104,7 @@ export function AppStatusTab({ appId, appName, token }: { appId: string; appName
         setError(null);
         try {
             await setServiceVisibility(token, appId, svc, next);
+            void refreshListing(token, appId);
             await load();
         } catch (e) {
             setError(e instanceof Error ? e.message : 'The page could not be changed.');

@@ -309,3 +309,17 @@ export function getSupportSettings(token: string, appId: string): Promise<{ sett
 export function saveSupportSettings(token: string, appId: string, settings: SupportSettings): Promise<unknown> {
     return monitorCall(token, 'POST', `${appBase(appId)}/support/settings`, settings);
 }
+
+/**
+ * Asks the monitor to read the platform's app list again now, so a change
+ * to an app's listing, publication or its account's short name shows on
+ * the public pages within seconds. Best effort: the monitor reads the list
+ * every five minutes anyway.
+ */
+export async function refreshListing(token: string, appId: string): Promise<void> {
+    try {
+        await monitorCall(token, 'POST', `${appBase(appId)}/refresh-listing`);
+    } catch {
+        // The next scheduled read catches up.
+    }
+}

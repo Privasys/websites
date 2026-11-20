@@ -16,7 +16,7 @@ import { listMyAccounts, setAccountSlug, listAccountApps, setStatusListing } fro
 import type { AccountWithRole, AccountApp } from '~/lib/api';
 import {
     enableMonitoring, listMonitorServices, setServiceVisibility, publicStatusPageUrl,
-    accountPagesUrls, MonitorError
+    accountPagesUrls, refreshListing, MonitorError
 } from '~/lib/monitor';
 import type { MonitorService } from '~/lib/monitor';
 import { useConfirm } from '~/components/confirm-dialog';
@@ -123,6 +123,7 @@ export default function StatusAndSupportPage() {
         try {
             const { account: updated } = await setAccountSlug(token, account.id, slug.trim().toLowerCase());
             setAccounts((list) => list.map((a) => (a.id === updated.id ? { ...a, slug: updated.slug } : a)));
+            if (rows[0]) void refreshListing(token, rows[0].app.id);
             flash(updated.slug ? 'Your pages have their address.' : 'The short name was removed.');
         } catch (e) {
             setError(e instanceof Error ? e.message : 'The short name could not be saved.');
@@ -161,6 +162,7 @@ export default function StatusAndSupportPage() {
         setError('');
         try {
             await setServiceVisibility(token, row.app.id, svc, next);
+            void refreshListing(token, row.app.id);
             await loadMonitor(row.app);
         } catch (e) {
             setError(e instanceof Error ? e.message : 'The page could not be changed.');
@@ -172,6 +174,7 @@ export default function StatusAndSupportPage() {
         try {
             const r = await setStatusListing(token, row.app.id, !row.app.listed);
             patchRow(row.app.id, { app: { ...row.app, listed: r.listed } });
+            void refreshListing(token, row.app.id);
         } catch (e) {
             setError(e instanceof Error ? e.message : 'The listing could not be changed.');
         }
