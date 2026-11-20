@@ -5,13 +5,14 @@ import { usePathname } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { Navbar, Footer } from '@privasys/ui';
-import { useAuth, hasAdminRole, hasManagerRole } from '~/lib/privasys-auth';
+import { useAuth, hasAdminRole } from '~/lib/privasys-auth';
 import { listApps, getBackupOptions } from '~/lib/api';
 import { SSEProvider, useSSE } from '~/lib/sse-context';
 import type { App } from '~/lib/types';
 import { UserMenu } from '~/components/user-menu';
 import { CreditBalance } from '~/components/credit-balance';
-import { AccountSwitcher, useCurrentAccount } from '~/components/account-switcher';
+import { AccountSwitcher } from '~/components/account-switcher';
+import { AccountProvider, useAccount } from '~/components/account-context';
 import { ConfirmProvider } from '~/components/confirm-dialog';
 
 const STATUS_DOT: Record<string, string> = {
@@ -73,12 +74,6 @@ const NAVBAR_ITEMS = [
 function Sidebar() {
     const pathname = usePathname();
     const { session } = useAuth();
-    const isManager = hasManagerRole(session?.roles);
-    const isAdmin = hasAdminRole(session?.roles);
-    // The platform's own pages belong to the Privasys organisation: they
-    // show only while working in it.
-    const currentAccount = useCurrentAccount();
-    const inPlatformAccount = currentAccount?.kind === 'org' && currentAccount.slug === 'privasys';
     const [apps, setApps] = useState<App[]>([]);
     // Backups appear in the menu only where the platform offers them.
     const [backupsOffered, setBackupsOffered] = useState(false);
@@ -351,34 +346,61 @@ function Sidebar() {
                     Documentation
                 </a>
 
-                {isManager && inPlatformAccount && (
-                    <>
-                        <div className="pt-4 pb-1 px-3">
-                            <span className="text-[10px] font-semibold uppercase tracking-wider text-black/30 dark:text-white/30">Admin</span>
-                        </div>
-                        {ADMIN_ITEMS.filter(item => !item.adminOnly || isAdmin).map((item) => {
-                            const active = pathname === item.href || (item.href !== '/dashboard/admin' && pathname.startsWith(item.href));
-                            return (
-                                <Link
-                                    key={item.href}
-                                    href={item.href}
-                                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
-                                        active
-                                            ? 'bg-black/5 dark:bg-white/10 font-medium'
-                                            : 'hover:bg-black/3 dark:hover:bg-white/5 text-black/60 dark:text-white/60'
-                                    }`}
-                                >
-                                    <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
-                                        <path d={item.icon} />
-                                    </svg>
-                                    {item.label}
-                                </Link>
-                            );
-                        })}
-                    </>
-                )}
             </nav>
         </aside>
+    );
+}
+
+// The sidebar in Management: the platform's own administration, for its
+// managers, apart from any account.
+function ManagementSidebar() {
+    const pathname = usePathname();
+    const { session } = useAuth();
+    const isAdmin = hasAdminRole(session?.roles);
+    return (
+        <aside className="hidden lg:flex flex-col w-60 shrink-0 border-r border-black/5 dark:border-white/10 max-h-[calc(100vh-3.5rem)] sticky top-14 self-start">
+            <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
+                <div className="pb-1 px-3">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-black/30 dark:text-white/30">Management</span>
+                </div>
+                {ADMIN_ITEMS.filter(item => !item.adminOnly || isAdmin).map((item) => {
+                    const active = pathname === item.href || pathname === item.href + '/' || (item.href !== '/dashboard/admin' && pathname.startsWith(item.href));
+                    return (
+                        <Link
+                            key={item.href}
+                            href={item.href}
+                            className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
+                                active
+                                    ? 'bg-black/5 dark:bg-white/10 font-medium'
+                                    : 'hover:bg-black/3 dark:hover:bg-white/5 text-black/60 dark:text-white/60'
+                            }`}
+                        >
+                            <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+                                <path d={item.icon} />
+                            </svg>
+                            {item.label}
+                        </Link>
+                    );
+                })}
+            </nav>
+        </aside>
+    );
+}
+
+// What the portal shows for where it is working. Everything is keyed on
+// the account, so a switch remounts it and every list loads afresh.
+function Workspace({ children }: { children: ReactNode }) {
+    const { key, management } = useAccount();
+    return (
+        <>
+            <Navbar brandSuffix="Developer" items={NAVBAR_ITEMS} fullWidth trailing={<div className="flex items-center gap-3"><AccountSwitcher />{!management && <CreditBalance key={key} />}<UserMenu /></div>} />
+            <div className="flex flex-1 pt-14">
+                {management ? <ManagementSidebar /> : <Sidebar key={key} />}
+                <main key={key} className="flex-1 p-6 lg:p-10 min-w-0">
+                    {children}
+                </main>
+            </div>
+        </>
     );
 }
 
@@ -452,13 +474,9 @@ export default function PlatformLayout({ children }: { children: ReactNode }) {
     return (
         <SSEProvider>
             <ConfirmProvider>
-                <Navbar brandSuffix="Developer" items={NAVBAR_ITEMS} fullWidth trailing={<div className="flex items-center gap-3"><AccountSwitcher /><CreditBalance /><UserMenu /></div>} />
-                <div className="flex flex-1 pt-14">
-                    <Sidebar />
-                    <main className="flex-1 p-6 lg:p-10 min-w-0">
-                        {children}
-                    </main>
-                </div>
+                <AccountProvider>
+                    <Workspace>{children}</Workspace>
+                </AccountProvider>
                 <Footer
                     companyLine="Privasys Ltd. Registered Company UK-16866500."
                     links={FOOTER_LINKS}
