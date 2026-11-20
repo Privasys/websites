@@ -13,7 +13,7 @@ export default function Drive() {
                 <p className='hero-intro mt-8'>
                     End-to-end encrypted file storage where the operator holds no key, and you can
                     prove it. Your files are sealed inside an attested confidential enclave, unlockable
-                    only by you. Connect Privasys Chat and the same sealed store becomes your
+                    only by you. Connect Privasys AI and the same sealed store becomes your
                     assistant&rsquo;s memory. Approve an app on your wallet and it becomes that
                     app&rsquo;s disk: a folder of its own, under your quota, with your Revoke.
                 </p>
@@ -60,7 +60,7 @@ export default function Drive() {
                         <h3 className='text-xl lg:text-3xl'>A brain you own</h3>
                         <p>
                             <Balancer>
-                                Connect Privasys Chat and your Drive becomes the assistant&rsquo;s memory.
+                                Connect Privasys AI and your Drive becomes the assistant&rsquo;s memory.
                                 Conversations, notes, and knowledge are all sealed files. The assistant
                                 reaches them only as an attested tool, over a mutually attested channel,
                                 and only within a scope you set.

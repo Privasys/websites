@@ -20,7 +20,7 @@ export default function AISolution() {
                     is the memory it all works from.
                 </p>
                 <div className='mt-10 flex flex-wrap gap-4'>
-                    <a href='https://chat.privasys.org/i/demo' target='_blank' rel='noopener noreferrer'
+                    <a href='https://ai.privasys.org' target='_blank' rel='noopener noreferrer'
                         className='px-6 py-2.5 font-bold rounded-full bg-black text-white hover:bg-black/80 dark:bg-white dark:text-black dark:hover:bg-white/80 transition-colors'>
                         Try it now
                     </a>

@@ -43,7 +43,7 @@ const NAV_ITEMS = [
                 label: 'Privasys Drive',
                 href: '/solutions/drive/',
                 eyebrow: 'Storage',
-                description: 'End-to-end encrypted files sealed to an attested enclave, and the self-sovereign memory behind Privasys Chat.'
+                description: 'End-to-end encrypted files sealed to an attested enclave, and the self-sovereign memory behind Privasys AI.'
             }
         ],
         dropdownLinks: [
