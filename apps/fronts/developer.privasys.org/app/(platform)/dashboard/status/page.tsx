@@ -1,20 +1,19 @@
 'use client';
 
-// Status & support: the account's public status and support pages, and
+// Status & support: an account's public status and support pages, and
 // which of its apps are watched, published and listed on them.
 //
 // Three facts per app, held in two places. Whether an app is monitored and
 // whether its status page is public are the monitor's (each app has its
-// own monitor there). Whether the app is listed on the account's pages is
+// own monitor there). Whether the app is listed on its account's pages is
 // the control plane's, with the account's short name. The portal shows
 // them together and decides nothing: each side checks the caller's role.
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '~/lib/privasys-auth';
-import { getAccount, updateAccount, listApps, getStatusListing, setStatusListing } from '~/lib/api';
-import type { Account, AccountRole } from '~/lib/api';
-import type { App } from '~/lib/types';
+import { listMyAccounts, setAccountSlug, listAccountApps, setStatusListing } from '~/lib/api';
+import type { AccountWithRole, AccountApp } from '~/lib/api';
 import {
     enableMonitoring, listMonitorServices, setServiceVisibility, publicStatusPageUrl,
     accountPagesUrls, MonitorError
@@ -25,12 +24,10 @@ import { useConfirm } from '~/components/confirm-dialog';
 const STATUS_SERVICE_ID = 'svc-app';
 
 interface Row {
-    app: App;
+    app: AccountApp;
     // undefined while loading; null when the monitor could not say.
     monitored?: boolean | null;
     service?: MonitorService | null;
-    listed?: boolean;
-    canList?: boolean;
     error?: string;
 }
 
@@ -38,8 +35,8 @@ export default function StatusAndSupportPage() {
     const { session } = useAuth();
     const token = session?.accessToken ?? '';
     const confirm = useConfirm();
-    const [account, setAccount] = useState<Account | null>(null);
-    const [role, setRole] = useState<AccountRole | ''>('');
+    const [accounts, setAccounts] = useState<AccountWithRole[]>([]);
+    const [selected, setSelected] = useState('');
     const [slug, setSlug] = useState('');
     const [savingSlug, setSavingSlug] = useState(false);
     const [rows, setRows] = useState<Row[]>([]);
@@ -47,19 +44,14 @@ export default function StatusAndSupportPage() {
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
 
-    const isAdmin = role === 'admin';
+    const account = accounts.find((a) => a.id === selected) ?? null;
+    const isAdmin = account?.role === 'admin';
 
     const patchRow = (id: string, patch: Partial<Row>) =>
         setRows((rs) => rs.map((r) => (r.app.id === id ? { ...r, ...patch } : r)));
 
-    const loadRow = useCallback(async (app: App) => {
+    const loadMonitor = useCallback(async (app: AccountApp) => {
         if (!token) return;
-        try {
-            const l = await getStatusListing(token, app.id);
-            patchRow(app.id, { listed: l.listed, canList: l.can_manage });
-        } catch {
-            patchRow(app.id, { listed: false, canList: false });
-        }
         try {
             const svcs = await listMonitorServices(token, app.id);
             patchRow(app.id, { monitored: true, service: svcs.find((s) => s.id === STATUS_SERVICE_ID) ?? svcs[0] ?? null });
@@ -72,26 +64,49 @@ export default function StatusAndSupportPage() {
         }
     }, [token]);
 
-    const load = useCallback(async () => {
+    // The accounts, once; the first with apps is shown, personal first.
+    useEffect(() => {
         if (!token) return;
-        try {
-            const [acc, apps] = await Promise.all([getAccount(token), listApps(token)]);
-            setAccount(acc.account);
-            setRole(acc.role);
-            setSlug(acc.account.slug ?? '');
-            const sorted = [...apps].sort((a, b) => (a.display_name || a.name).localeCompare(b.display_name || b.name));
-            setRows(sorted.map((app) => ({ app })));
-            setLoading(false);
-            // One app at a time: each asks the monitor over the same sealed
-            // session, and the first may need the wallet to approve it.
-            for (const app of sorted) await loadRow(app);
-        } catch (e) {
-            setError(e instanceof Error ? e.message : 'Failed to load');
-            setLoading(false);
-        }
-    }, [token, loadRow]);
+        listMyAccounts(token)
+            .then((list) => {
+                setAccounts(list);
+                setSelected((cur) => cur || list[0]?.id || '');
+            })
+            .catch((e) => {
+                setError(e instanceof Error ? e.message : 'Failed to load your accounts');
+                setLoading(false);
+            });
+    }, [token]);
 
-    useEffect(() => { load(); }, [load]);
+    // The selected account's apps, then each one's monitor in turn: they
+    // share one sealed session, and the first may need the wallet.
+    useEffect(() => {
+        if (!token || !selected) return;
+        let cancelled = false;
+        setLoading(true);
+        setRows([]);
+        listAccountApps(token, selected)
+            .then(async (apps) => {
+                if (cancelled) return;
+                setRows(apps.map((app) => ({ app })));
+                setLoading(false);
+                for (const app of apps) {
+                    if (cancelled) return;
+                    await loadMonitor(app);
+                }
+            })
+            .catch((e) => {
+                if (!cancelled) {
+                    setError(e instanceof Error ? e.message : 'Failed to load the account\'s apps');
+                    setLoading(false);
+                }
+            });
+        return () => { cancelled = true; };
+    }, [token, selected, loadMonitor]);
+
+    // The short name field follows the account shown.
+    const savedSlug = account?.slug ?? '';
+    useEffect(() => { setSlug(savedSlug); }, [selected, savedSlug]);
 
     function flash(msg: string) {
         setSuccess(msg);
@@ -99,12 +114,12 @@ export default function StatusAndSupportPage() {
     }
 
     async function saveSlug() {
+        if (!account) return;
         setSavingSlug(true);
         setError('');
         try {
-            const { account: updated } = await updateAccount(token, { slug: slug.trim().toLowerCase() });
-            setAccount(updated);
-            setSlug(updated.slug ?? '');
+            const { account: updated } = await setAccountSlug(token, account.id, slug.trim().toLowerCase());
+            setAccounts((list) => list.map((a) => (a.id === updated.id ? { ...a, slug: updated.slug } : a)));
             flash(updated.slug ? 'Your pages have their address.' : 'The short name was removed.');
         } catch (e) {
             setError(e instanceof Error ? e.message : 'The short name could not be saved.');
@@ -117,7 +132,7 @@ export default function StatusAndSupportPage() {
         setError('');
         try {
             await enableMonitoring(token, row.app.id);
-            await loadRow(row.app);
+            await loadMonitor(row.app);
         } catch (e) {
             setError(e instanceof Error ? e.message : 'Monitoring could not be turned on.');
         }
@@ -143,7 +158,7 @@ export default function StatusAndSupportPage() {
         setError('');
         try {
             await setServiceVisibility(token, row.app.id, svc, next);
-            await loadRow(row.app);
+            await loadMonitor(row.app);
         } catch (e) {
             setError(e instanceof Error ? e.message : 'The page could not be changed.');
         }
@@ -152,8 +167,8 @@ export default function StatusAndSupportPage() {
     async function toggleListed(row: Row) {
         setError('');
         try {
-            const r = await setStatusListing(token, row.app.id, !row.listed);
-            patchRow(row.app.id, { listed: r.listed });
+            const r = await setStatusListing(token, row.app.id, !row.app.listed);
+            patchRow(row.app.id, { app: { ...row.app, listed: r.listed } });
         } catch (e) {
             setError(e instanceof Error ? e.message : 'The listing could not be changed.');
         }
@@ -176,19 +191,32 @@ export default function StatusAndSupportPage() {
                 ledger. Choose which apps your pages list.
             </p>
 
+            {accounts.length > 1 && (
+                <label className="mt-6 block max-w-sm">
+                    <span className="text-xs font-medium text-black/50 dark:text-white/50">Account</span>
+                    <select value={selected} onChange={(e) => setSelected(e.target.value)} className={input}>
+                        {accounts.map((a) => (
+                            <option key={a.id} value={a.id}>
+                                {a.name || 'Personal account'}{a.kind === 'org' ? ' (organisation)' : ''}
+                            </option>
+                        ))}
+                    </select>
+                </label>
+            )}
+
             {error && <div className="mt-4 p-3 rounded-lg bg-red-50 dark:bg-red-900/20 text-sm text-red-700 dark:text-red-300">{error}</div>}
             {success && <div className="mt-4 p-3 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 text-sm text-emerald-700 dark:text-emerald-300">{success}</div>}
 
             {loading ? (
                 <div className="mt-8 text-sm text-black/40 dark:text-white/40">Loading…</div>
-            ) : (
+            ) : account && (
                 <>
-                    <section className="mt-10">
+                    <section className="mt-8">
                         <h2 className="text-lg font-medium">Your pages</h2>
                         <p className="mt-1 text-sm text-black/50 dark:text-white/50">
                             {isAdmin
-                                ? 'Choose a short name for your account. Your status and support pages, and each listed app\'s page, live under it.'
-                                : 'Only account admins can choose the short name.'}
+                                ? 'Choose a short name for this account. Its status and support pages, and each of its apps\' pages, live under it.'
+                                : 'Only the account\'s admins can choose its short name.'}
                         </p>
                         <div className="mt-4 p-5 rounded-xl border border-black/10 dark:border-white/10 space-y-4">
                             <label className="block max-w-sm">
@@ -213,7 +241,7 @@ export default function StatusAndSupportPage() {
                                 </div>
                             )}
                             {isAdmin && (
-                                <button onClick={saveSlug} disabled={savingSlug || slug.trim() === (account?.slug ?? '')} className={primary}>
+                                <button onClick={saveSlug} disabled={savingSlug || slug.trim() === (account.slug ?? '')} className={primary}>
                                     {savingSlug ? 'Saving…' : 'Save short name'}
                                 </button>
                             )}
@@ -223,12 +251,12 @@ export default function StatusAndSupportPage() {
                     <section className="mt-10">
                         <h2 className="text-lg font-medium">Apps</h2>
                         <p className="mt-1 text-sm text-black/50 dark:text-white/50">
-                            An app&apos;s page answers once it is public, listed or not. Listing adds it to your
+                            An app&apos;s page answers once it is public, listed or not. Listing adds it to this
                             account&apos;s status page, and to its support page when the app takes requests from the public.
                             On-call and support settings are in each app&apos;s Status, On-call and Support tabs.
                         </p>
                         <div className="mt-4 rounded-xl border border-black/10 dark:border-white/10 divide-y divide-black/5 dark:divide-white/5">
-                            {rows.length === 0 && <div className="p-4 text-sm text-black/50 dark:text-white/50">You have no apps yet.</div>}
+                            {rows.length === 0 && <div className="p-4 text-sm text-black/50 dark:text-white/50">This account has no apps yet.</div>}
                             {rows.map((row) => {
                                 const name = row.app.display_name || row.app.name;
                                 const isPublic = row.service?.visibility === 'public';
@@ -238,7 +266,7 @@ export default function StatusAndSupportPage() {
                                             <Link href={`/dashboard/apps/${row.app.id}`} className="font-medium hover:underline">{name}</Link>
                                             {isPublic && (
                                                 <a
-                                                    href={publicStatusPageUrl(row.app.name, account?.slug)}
+                                                    href={publicStatusPageUrl(row.app.name, account.slug)}
                                                     target="_blank"
                                                     rel="noreferrer"
                                                     className="ml-2 text-xs text-black/50 dark:text-white/50 underline"
@@ -267,17 +295,15 @@ export default function StatusAndSupportPage() {
                                                     )}
                                                 </>
                                             )}
-                                            {row.listed !== undefined && (
-                                                <label className={`flex items-center gap-1.5 text-xs ${row.canList ? '' : 'opacity-50'}`}>
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={!!row.listed}
-                                                        disabled={!row.canList}
-                                                        onChange={() => toggleListed(row)}
-                                                    />
-                                                    Listed
-                                                </label>
-                                            )}
+                                            <label className={`flex items-center gap-1.5 text-xs ${isAdmin ? '' : 'opacity-50'}`}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={row.app.listed}
+                                                    disabled={!isAdmin}
+                                                    onChange={() => toggleListed(row)}
+                                                />
+                                                Listed
+                                            </label>
                                         </div>
                                     </div>
                                 );

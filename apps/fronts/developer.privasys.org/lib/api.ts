@@ -2257,3 +2257,33 @@ export function setStatusListing(token: string, appId: string, listed: boolean):
         body: JSON.stringify({ listed })
     });
 }
+
+/** An account the signed-in person belongs to, with their role on it. */
+export interface AccountWithRole extends Account {
+    role: AccountRole;
+}
+
+export async function listMyAccounts(token: string): Promise<AccountWithRole[]> {
+    const r = await request<{ accounts: AccountWithRole[] }>('/api/v1/accounts', token);
+    return r.accounts ?? [];
+}
+
+/** Sets an account's short name (its admins); an empty name removes it. */
+export function setAccountSlug(token: string, accountId: string, slug: string): Promise<{ account: Account }> {
+    return request(`/api/v1/accounts/${encodeURIComponent(accountId)}`, token, {
+        method: 'PATCH',
+        body: JSON.stringify({ slug })
+    });
+}
+
+export interface AccountApp {
+    id: string;
+    name: string;
+    display_name: string;
+    listed: boolean;
+}
+
+export async function listAccountApps(token: string, accountId: string): Promise<AccountApp[]> {
+    const r = await request<{ apps: AccountApp[] }>(`/api/v1/accounts/${encodeURIComponent(accountId)}/apps`, token);
+    return r.apps ?? [];
+}
