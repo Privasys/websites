@@ -107,7 +107,7 @@ function Sidebar() {
     }, [loadApps]);
 
     return (
-        <aside className="hidden lg:flex flex-col w-60 shrink-0 border-r border-black/5 dark:border-white/10 max-h-[calc(100vh-3.5rem)] sticky top-14 self-start">
+        <aside className="hidden lg:flex flex-col w-60 shrink-0 border-r border-black/5 dark:border-white/10 h-[calc(100vh-3.5rem)] sticky top-14 self-start">
             <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
                 {/* Overview link */}
                 <Link
@@ -363,7 +363,7 @@ function ManagementSidebar() {
     const { session } = useAuth();
     const isAdmin = hasAdminRole(session?.roles);
     return (
-        <aside className="hidden lg:flex flex-col w-60 shrink-0 border-r border-black/5 dark:border-white/10 max-h-[calc(100vh-3.5rem)] sticky top-14 self-start">
+        <aside className="hidden lg:flex flex-col w-60 shrink-0 border-r border-black/5 dark:border-white/10 h-[calc(100vh-3.5rem)] sticky top-14 self-start">
             <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
                 <div className="pb-1 px-3">
                     <span className="text-[10px] font-semibold uppercase tracking-wider text-black/30 dark:text-white/30">Management</span>
