@@ -1469,6 +1469,43 @@ export async function adminListPromoCodes(token: string): Promise<PromoCode[]> {
     return res.codes ?? [];
 }
 
+// A refund or donation of a person's money balance, opened when they delete
+// their account (or ask for their refund early). No money leaves before a
+// platform manager approves it in the back office.
+export interface RefundCase {
+    id: string;
+    account_id: string;
+    account_name?: string;
+    reason: 'deletion' | 'refund_now';
+    destination: 'refund' | 'donation';
+    amount_pence: number;
+    currency: string;
+    status: 'awaiting_approval' | 'refunded' | 'failed' | 'rejected' | 'donated';
+    paid_pence: number;
+    provider_refs?: string;
+    note?: string;
+    created_at: string;
+    decided_by?: string;
+    decided_at?: string;
+}
+
+export interface RefundCasesResponse {
+    cases: RefundCase[];
+    donations: { year: number; total_pence: number; cases: number };
+}
+
+export function adminListRefundCases(token: string, status?: string): Promise<RefundCasesResponse> {
+    const q = status ? `?status=${encodeURIComponent(status)}` : '';
+    return request<RefundCasesResponse>(`/api/v1/admin/refund-cases${q}`, token);
+}
+
+export function adminDecideRefundCase(token: string, id: string, action: 'approve' | 'reject' | 'mark-paid', note?: string): Promise<RefundCase> {
+    return request<RefundCase>(`/api/v1/admin/refund-cases/${encodeURIComponent(id)}/${action}`, token, {
+        method: 'POST',
+        body: JSON.stringify({ note: note ?? '' })
+    });
+}
+
 export function adminCreatePromoCode(token: string, body: NewPromoCode): Promise<{ code: string }> {
     return request<{ code: string }>('/api/v1/admin/promo-codes', token, {
         method: 'POST',
