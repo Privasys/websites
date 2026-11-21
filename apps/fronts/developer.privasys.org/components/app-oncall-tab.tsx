@@ -1,7 +1,10 @@
 'use client';
 
-// The app's On-call tab: how each person wants to be alerted, who is on
-// call, and what happened to each outage.
+// On-call, for one app or for a whole account: how each person wants to
+// be alerted, who is on call, and (for an app) what happened to each
+// outage. An account's rota covers every app of the account that has no
+// rota of its own; a person's account-wide alerts cover every app where
+// they set nothing else.
 //
 // A person's choices are their own. The monitor keeps them apart from its
 // signed ledger so they can be changed or removed, and it decides who may
@@ -9,7 +12,8 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import {
-    getOnCall, saveMyAlerts, forgetMyAlerts, saveOnCallPlan, sendTestAlert, takePage, MonitorError
+    getOnCall, saveMyAlerts, forgetMyAlerts, saveOnCallPlan, sendTestAlert, takePage, MonitorError,
+    getAccountOnCall, saveMyAccountAlerts, forgetMyAccountAlerts, saveAccountOnCallPlan
 } from '~/lib/monitor';
 import type { OnCallOverview, AlertPreference, OnCallPlan, OnCallPage } from '~/lib/monitor';
 import { useConfirm } from '~/components/confirm-dialog';
@@ -58,7 +62,45 @@ function browserZone(): string {
     }
 }
 
+// What the screens below call: an app's routes or its account's.
+interface OnCallApi {
+    scope: 'app' | 'account';
+    load: () => Promise<OnCallOverview>;
+    saveMine: (_p: AlertPreference) => Promise<unknown>;
+    forgetMine: () => Promise<unknown>;
+    savePlan: (_p: OnCallPlan) => Promise<unknown>;
+    test?: () => Promise<Record<string, string>>;
+    take?: (_id: string) => Promise<unknown>;
+}
+
 export function AppOnCallTab({ appId, token }: { appId: string; token: string }) {
+    const api: OnCallApi = {
+        scope: 'app',
+        load: () => getOnCall(token, appId),
+        saveMine: (p) => saveMyAlerts(token, appId, p),
+        forgetMine: () => forgetMyAlerts(token, appId),
+        savePlan: (p) => saveOnCallPlan(token, appId, p),
+        test: () => sendTestAlert(token, appId),
+        take: (id) => takePage(token, appId, id)
+    };
+    return <OnCallPanel api={api} reloadKey={`app:${appId}`} />;
+}
+
+/** The account's rota and each person's account-wide alerts. */
+export function AccountOnCallPanel({ accountId, token, team }: {
+    accountId: string; token: string; team: { sub: string; name?: string; role: string }[];
+}) {
+    const api: OnCallApi = {
+        scope: 'account',
+        load: async () => ({ ...(await getAccountOnCall(token, accountId)), team }),
+        saveMine: (p) => saveMyAccountAlerts(token, accountId, p),
+        forgetMine: () => forgetMyAccountAlerts(token, accountId),
+        savePlan: (p) => saveAccountOnCallPlan(token, accountId, p)
+    };
+    return <OnCallPanel api={api} reloadKey={`account:${accountId}:${team.length}`} />;
+}
+
+function OnCallPanel({ api, reloadKey }: { api: OnCallApi; reloadKey: string }) {
     const [data, setData] = useState<OnCallOverview | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [off, setOff] = useState(false);
@@ -66,22 +108,27 @@ export function AppOnCallTab({ appId, token }: { appId: string; token: string })
 
     const load = useCallback(async () => {
         try {
-            setData(await getOnCall(token, appId));
+            setData(await api.load());
             setError(null);
             setOff(false);
         } catch (e) {
             if (e instanceof MonitorError && e.status === 404) setOff(true);
             else setError(e instanceof Error ? e.message : 'The monitor could not be reached.');
         }
-    }, [token, appId]);
+        // api is rebuilt each render; reloadKey names what it points at.
+    }, [reloadKey]);
 
     useEffect(() => { load(); }, [load]);
 
     if (off) {
         return (
             <section className={card}>
-                <h2 className="text-sm font-semibold">Monitoring is off</h2>
-                <p className="mt-1 text-xs text-black/50 dark:text-white/50">Turn monitoring on in the Status tab first. On-call alerts follow from it.</p>
+                <h2 className="text-sm font-semibold">{api.scope === 'app' ? 'Monitoring is off' : 'The account rota is not available'}</h2>
+                <p className="mt-1 text-xs text-black/50 dark:text-white/50">
+                    {api.scope === 'app'
+                        ? 'Turn monitoring on from the Status page first. On-call alerts follow from it.'
+                        : 'The monitor does not know this account yet: turn monitoring on for one of its apps first.'}
+                </p>
             </section>
         );
     }
@@ -102,16 +149,16 @@ export function AppOnCallTab({ appId, token }: { appId: string; token: string })
 
     return (
         <div className="space-y-6">
-            <MyAlerts key={formKey} appId={appId} token={token} me={data.me} onSaved={load}
+            <MyAlerts key={formKey} api={api} me={data.me} onSaved={load}
                 onForgotten={async () => { await load(); setFormKey(k => k + 1); }} />
-            <Rota appId={appId} token={token} data={data} nameOf={nameOf} onSaved={load} />
-            <Pages appId={appId} token={token} pages={data.pages ?? []} nameOf={nameOf} onChanged={load} />
+            <Rota api={api} data={data} nameOf={nameOf} onSaved={load} />
+            {api.take && <Pages api={api} pages={data.pages ?? []} nameOf={nameOf} onChanged={load} />}
         </div>
     );
 }
 
-function MyAlerts({ appId, token, me, onSaved, onForgotten }: {
-    appId: string; token: string; me: AlertPreference; onSaved: () => void; onForgotten: () => Promise<void>;
+function MyAlerts({ api, me, onSaved, onForgotten }: {
+    api: OnCallApi; me: AlertPreference; onSaved: () => void; onForgotten: () => Promise<void>;
 }) {
     const confirm = useConfirm();
     const window0 = me.weekly?.[0];
@@ -141,7 +188,7 @@ function MyAlerts({ appId, token, me, onSaved, onForgotten }: {
         }
     }
 
-    const persist = () => saveMyAlerts(token, appId, {
+    const persist = () => api.saveMine({
         wallet, email: email.trim() || undefined, when: mode, timezone: zone,
         weekly: mode === 'schedule' ? [{ days, from, to }] : undefined,
         away: awayFrom && awayTo ? [{ from: awayFrom, to: awayTo }] : undefined
@@ -155,7 +202,7 @@ function MyAlerts({ appId, token, me, onSaved, onForgotten }: {
 
     const test = () => run(async () => {
         await persist();
-        const results = await sendTestAlert(token, appId);
+        const results = api.test ? await api.test() : {};
         const parts = Object.entries(results).map(([k, v]) => `${k === 'wallet' ? 'Wallet' : 'Email'}: ${v}`);
         setNote(parts.length ? parts.join(' · ') : 'Choose a channel and save first.');
     });
@@ -166,13 +213,17 @@ function MyAlerts({ appId, token, me, onSaved, onForgotten }: {
             body: 'Your email address and hours are deleted from the monitor. You go back to wallet alerts while on call.',
             confirmLabel: 'Remove', danger: true
         }))) return;
-        await run(async () => { await forgetMyAlerts(token, appId); await onForgotten(); });
+        await run(async () => { await api.forgetMine(); await onForgotten(); });
     }
 
     return (
         <section className={card}>
             <h2 className="text-sm font-semibold">My alerts</h2>
-            <p className="mt-1 text-xs text-black/50 dark:text-white/50">How this app&apos;s outages reach you. Only you can change this.</p>
+            <p className="mt-1 text-xs text-black/50 dark:text-white/50">
+                {api.scope === 'app'
+                    ? 'How this app\'s outages reach you, in place of your account-wide alerts. Only you can change this.'
+                    : 'How outages of this account\'s apps reach you, unless you set something else on an app. Only you can change this.'}
+            </p>
 
             <div className="mt-4 space-y-3">
                 <label className="flex items-center gap-2 text-sm">
@@ -232,15 +283,15 @@ function MyAlerts({ appId, token, me, onSaved, onForgotten }: {
 
             <div className="mt-4 flex flex-wrap gap-2">
                 <button type="button" onClick={save} disabled={busy} className={primary}>{busy ? 'Working…' : 'Save'}</button>
-                <button type="button" onClick={test} disabled={busy} className={secondary}>Save and send me a test</button>
+                {api.test && <button type="button" onClick={test} disabled={busy} className={secondary}>Save and send me a test</button>}
                 <button type="button" onClick={forget} disabled={busy} className={secondary}>Remove my settings</button>
             </div>
         </section>
     );
 }
 
-function Rota({ appId, token, data, nameOf, onSaved }: {
-    appId: string; token: string; data: OnCallOverview; nameOf: (_s: string) => string; onSaved: () => void;
+function Rota({ api, data, nameOf, onSaved }: {
+    api: OnCallApi; data: OnCallOverview; nameOf: (_s: string) => string; onSaved: () => void;
 }) {
     const responders = (data.team ?? []).filter(m => m.role !== 'viewer' && m.role !== 'support-viewer');
     const [rotation, setRotation] = useState<string[]>(data.plan.rotation ?? []);
@@ -278,7 +329,7 @@ function Rota({ appId, token, data, nameOf, onSaved }: {
                 ...data.plan, rotation, overrides, period_days: rotation.length ? period : 0, ack_minutes: ack,
                 start_at: data.plan.start_at || Math.floor(Date.now() / 1000)
             };
-            await saveOnCallPlan(token, appId, plan);
+            await api.savePlan(plan);
             onSaved();
         } catch (e) {
             setError(e instanceof Error ? e.message : 'The rota could not be saved.');
@@ -289,7 +340,15 @@ function Rota({ appId, token, data, nameOf, onSaved }: {
 
     return (
         <section className={card}>
-            <h2 className="text-sm font-semibold">On-call rota</h2>
+            <h2 className="text-sm font-semibold">{api.scope === 'app' ? 'This app\'s rota' : 'Account rota'}</h2>
+            {api.scope === 'account' && (
+                <p className="mt-1 text-xs text-black/50 dark:text-white/50">Covers every app of the account that has no rota of its own.</p>
+            )}
+            {api.scope === 'app' && data.inherits_account && (
+                <p className="mt-1 text-xs text-black/50 dark:text-white/50">
+                    This app runs on the account rota. Set people here only to give it a rota of its own.
+                </p>
+            )}
             <p className="mt-1 text-sm">
                 {data.on_call ? <>On call now: <span className="font-medium">{nameOf(data.on_call)}</span></> : 'Nobody is on call. An outage goes straight to the whole team.'}
             </p>
@@ -363,21 +422,23 @@ function Rota({ appId, token, data, nameOf, onSaved }: {
                     <button type="button" onClick={save} disabled={busy} className={primary}>{busy ? 'Saving…' : 'Save rota'}</button>
                 </div>
             ) : (
-                <p className="mt-2 text-xs text-black/50 dark:text-white/50">The app&apos;s owners, admins and support admins manage the rota.</p>
+                <p className="mt-2 text-xs text-black/50 dark:text-white/50">
+                    {api.scope === 'app' ? 'The app\'s owners, admins and support admins manage its rota.' : 'The account\'s admins manage the account rota.'}
+                </p>
             )}
         </section>
     );
 }
 
-function Pages({ appId, token, pages, nameOf, onChanged }: {
-    appId: string; token: string; pages: OnCallPage[]; nameOf: (_s: string) => string; onChanged: () => void;
+function Pages({ api, pages, nameOf, onChanged }: {
+    api: OnCallApi; pages: OnCallPage[]; nameOf: (_s: string) => string; onChanged: () => void;
 }) {
     const [error, setError] = useState<string | null>(null);
 
     async function take(id: string) {
         setError(null);
         try {
-            await takePage(token, appId, id);
+            await api.take?.(id);
             onChanged();
         } catch (e) {
             setError(e instanceof Error ? e.message : 'The outage could not be taken.');

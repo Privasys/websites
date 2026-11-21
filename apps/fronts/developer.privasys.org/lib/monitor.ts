@@ -199,6 +199,30 @@ export interface OnCallOverview {
     pages?: OnCallPage[];
     team?: { sub: string; name?: string; role: string }[];
     team_error?: string;
+    /** The plan the app runs on: its account's when it has no rota of its own. */
+    effective_plan?: OnCallPlan;
+    /** The app has no rota of its own and runs on its account's. */
+    inherits_account?: boolean;
+}
+
+// --- The account's rota, for every app of the account without its own ---
+
+const accountOnCall = (accountId: string) => `/api/v1/accounts/${encodeURIComponent(accountId)}/oncall`;
+
+export function getAccountOnCall(token: string, accountId: string): Promise<OnCallOverview> {
+    return monitorCall(token, 'GET', accountOnCall(accountId));
+}
+
+export function saveMyAccountAlerts(token: string, accountId: string, pref: AlertPreference): Promise<unknown> {
+    return monitorCall(token, 'POST', `${accountOnCall(accountId)}/me`, pref);
+}
+
+export function forgetMyAccountAlerts(token: string, accountId: string): Promise<unknown> {
+    return monitorCall(token, 'DELETE', `${accountOnCall(accountId)}/me`);
+}
+
+export function saveAccountOnCallPlan(token: string, accountId: string, plan: OnCallPlan): Promise<unknown> {
+    return monitorCall(token, 'POST', `${accountOnCall(accountId)}/plan`, plan);
 }
 
 export function getOnCall(token: string, appId: string): Promise<OnCallOverview> {
