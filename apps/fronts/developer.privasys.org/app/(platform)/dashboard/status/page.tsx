@@ -21,6 +21,8 @@ import {
 import type { MonitorService } from '~/lib/monitor';
 import { useConfirm } from '~/components/confirm-dialog';
 import { getCurrentAccountId } from '~/lib/current-account';
+import { AppStatusTab } from '~/components/app-status-tab';
+import { AccountAppPicker, appFromAddress, useAccountApps } from '~/components/account-app-picker';
 
 const STATUS_SERVICE_ID = 'svc-app';
 
@@ -32,9 +34,17 @@ interface Row {
     error?: string;
 }
 
-export default function StatusAndSupportPage() {
+export default function StatusPage() {
     const { session } = useAuth();
     const token = session?.accessToken ?? '';
+    // One app's status in detail: incidents, checkpoints, its page.
+    const { apps: monitoredApps } = useAccountApps(token);
+    const [detailApp, setDetailApp] = useState('');
+    useEffect(() => {
+        if (monitoredApps.length === 0) return;
+        const wanted = appFromAddress();
+        setDetailApp((cur) => cur || (monitoredApps.some((a) => a.id === wanted) ? wanted : monitoredApps[0].id));
+    }, [monitoredApps]);
     const confirm = useConfirm();
     const [accounts, setAccounts] = useState<AccountWithRole[]>([]);
     const [selected, setSelected] = useState('');
@@ -190,7 +200,7 @@ export default function StatusAndSupportPage() {
 
     return (
         <div className="max-w-4xl">
-            <h1 className="text-2xl font-semibold">Status &amp; support</h1>
+            <h1 className="text-2xl font-semibold">Status</h1>
             <p className="mt-2 text-sm text-black/60 dark:text-white/60">
                 Your apps&apos; public status and support pages. Each app you monitor is watched from
                 inside a confidential VM, and its status page can be checked by anyone against a signed
@@ -309,6 +319,24 @@ export default function StatusAndSupportPage() {
                             })}
                         </div>
                     </section>
+
+                    {monitoredApps.length > 0 && (
+                        <section className="mt-10">
+                            <h2 className="text-lg font-medium">One app in detail</h2>
+                            <div className="mt-3">
+                                <AccountAppPicker apps={monitoredApps} value={detailApp} onChange={setDetailApp} />
+                            </div>
+                            {detailApp && token && (
+                                <div key={detailApp} className="mt-6">
+                                    <AppStatusTab
+                                        appId={detailApp}
+                                        appName={monitoredApps.find((a) => a.id === detailApp)?.name ?? ''}
+                                        token={token}
+                                    />
+                                </div>
+                            )}
+                        </section>
+                    )}
                 </>
             )}
         </div>

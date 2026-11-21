@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { useAuth } from '~/lib/privasys-auth';
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { getApp, listBuilds, listVersions, listDeployments, listCompatibleEnclaves, deleteApp, deployDirect, stopDeployment, getAppSchema, rpcCall, configComplete, updateStoreListing, publishApp, identiconUrl, getAppMcp, updateContainerMcp, detectContainerMcp, retryBuild, listAppSupportTeam, upsertAppSupportMember, removeAppSupportMember, createVersion, stageProfile, promoteProfile, listPending, vaultExportTarget, pendingBinding, beginVaultApproval, pollVaultApproval, listRegistryTags, uploadAsset, listAppCommits, uploadVersionCwasm, getVersion, listCachedImages, listDeployLocations, listInstances, apiErrorCode, setAutoMigrate, getBackupOptions, listAppBackups, getBackupPolicy, backupMonthlyGBP } from '~/lib/api';
+import { getApp, listBuilds, listVersions, listDeployments, listCompatibleEnclaves, deleteApp, deployDirect, stopDeployment, getAppSchema, rpcCall, configComplete, updateStoreListing, publishApp, identiconUrl, getAppMcp, updateContainerMcp, detectContainerMcp, retryBuild, createVersion, stageProfile, promoteProfile, listPending, vaultExportTarget, pendingBinding, beginVaultApproval, pollVaultApproval, listRegistryTags, uploadAsset, listAppCommits, uploadVersionCwasm, getVersion, listCachedImages, listDeployLocations, listInstances, apiErrorCode, setAutoMigrate, getBackupOptions, listAppBackups, getBackupPolicy, backupMonthlyGBP } from '~/lib/api';
 
 // The IdP that runs the vault step-up approval ceremony.
 const IDP_ORIGIN = process.env.NEXT_PUBLIC_IDP_ORIGIN || 'https://privasys.id';
@@ -15,12 +15,9 @@ import type { CreateVersionBody } from '~/lib/api';
 import { isApiStatus, effectivePrice } from '~/lib/api';
 import { versionLabel, versionSemverStr, isStrictlyNewer } from '~/lib/version';
 import { displayNameError } from '~/lib/appName';
-import type { AppSchema, ConfigureSection, FunctionSchema, JsonSchemaProp, ActionProgress, WitType, McpManifest, AppSupportMember, SupportRole, AppCommit, DeployLocation, Instance, PriceRule } from '~/lib/api';
+import type { AppSchema, ConfigureSection, FunctionSchema, JsonSchemaProp, ActionProgress, WitType, McpManifest, AppCommit, DeployLocation, Instance, PriceRule } from '~/lib/api';
 import { useSSE } from '~/lib/sse-context';
 import { AppDomains } from '~/components/app-domains';
-import { AppStatusTab } from '~/components/app-status-tab';
-import { AppOnCallTab } from '~/components/app-oncall-tab';
-import { AppSupportTab } from '~/components/app-support-tab';
 import { useBalance } from '~/lib/use-balance';
 import { getApiBaseUrl } from '~/lib/api-base-url';
 import type { App, AppSurfaces, BuildJob, AppVersion, AppDeployment, Enclave, CachedImage } from '~/lib/types';
@@ -30,7 +27,6 @@ import type { InstanceSize } from '~/lib/instance-sizes';
 import { isBinaryField, acceptFor, fileToBase64, formatBytes, base64Bytes } from '@privasys/app-call';
 import { RtmrVerifier } from '~/components/rtmr-verifier';
 import { AttestationConnect, AttestationResultView, useAttestation } from '@privasys/attestation-view';
-import { useConfirm } from '~/components/confirm-dialog';
 import { PlaceLabel, Datacentre } from '~/components/place';
 import { BackupsTab, BACKUP_DELETION_COPY } from '~/components/backups';
 
@@ -86,7 +82,7 @@ function BuildStatusDot({ status }: { status: string }) {
     return <span className={`w-2 h-2 rounded-full inline-block ${color}`} />;
 }
 
-type Tab = 'deployments' | 'store' | 'attestation' | 'api' | 'mcp' | 'ui' | 'configure' | 'backups' | 'status' | 'oncall' | 'support';
+type Tab = 'deployments' | 'store' | 'attestation' | 'api' | 'mcp' | 'ui' | 'configure' | 'backups';
 
 export default function AppDetailPage() {
     const { id } = useParams<{ id: string }>();
@@ -269,12 +265,9 @@ export default function AppDetailPage() {
             // Native Configure/Manage (role config/action) now lives inside the
             // Deployments tab, alongside the running instance — no separate tab.
         ] : []),
-        ...(backupsOffered && app.app_type === 'container' ? [{ key: 'backups' as Tab, label: 'Backups' }] : []),
-        // The platform monitor's zero-config check reads /readiness, which
-        // container runtimes let through; WASM apps follow later.
-        ...(app.app_type === 'container' ? [{ key: 'status' as Tab, label: 'Status' }, { key: 'oncall' as Tab, label: 'On-call' }, { key: 'support' as Tab, label: 'Support' }] : [])
-        // Who holds what on the app is managed for the whole account on the
-        // Team page.
+        ...(backupsOffered && app.app_type === 'container' ? [{ key: 'backups' as Tab, label: 'Backups' }] : [])
+        // Status, on-call and support are run for the whole account from the
+        // Operate pages, and who holds what on the app from the Team page.
     ];
 
     return (
@@ -315,6 +308,17 @@ export default function AppDetailPage() {
             {error && (
                 <div className="mt-4 p-3 rounded-lg bg-red-50 dark:bg-red-900/20 text-sm text-red-700 dark:text-red-300">
                     {error}
+                </div>
+            )}
+
+            {/* Operations: run for the whole account, opened on this app. The
+                platform monitor watches container apps; WASM apps follow later. */}
+            {app.app_type === 'container' && (
+                <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+                    <span className="text-black/40 dark:text-white/40">Operate:</span>
+                    <Link href={`/dashboard/status/?app=${app.id}`} className="hover:underline">Status</Link>
+                    <Link href={`/dashboard/oncall/?app=${app.id}`} className="hover:underline">On-call</Link>
+                    <Link href={`/dashboard/support/?app=${app.id}`} className="hover:underline">Support</Link>
                 </div>
             )}
 
@@ -375,20 +379,6 @@ export default function AppDetailPage() {
                 )}
                 {tab === 'backups' && session?.accessToken && (
                     <BackupsTab app={app} token={session.accessToken} deployments={deployments} enclaves={enclaves} onRestoreStarted={() => { load(); setTab('deployments'); }} />
-                )}
-                {tab === 'status' && session?.accessToken && (
-                    <AppStatusTab appId={app.id} appName={app.name} token={session.accessToken} />
-                )}
-                {tab === 'oncall' && session?.accessToken && (
-                    <AppOnCallTab appId={app.id} token={session.accessToken} />
-                )}
-                {tab === 'support' && session?.accessToken && (
-                    <>
-                        <AppSupportTab appId={app.id} token={session.accessToken} />
-                        <div className="mt-8">
-                            <SupportTeamSection appId={app.id} token={session.accessToken} />
-                        </div>
-                    </>
                 )}
 
             </div>
@@ -3956,152 +3946,3 @@ function ActionRunner({ fn, appId, token }: { fn: FunctionSchema; appId: string;
     );
 }
 
-// ------- Team Tab -------
-
-// ------- Support team (inside the Team tab) -------
-const SUPPORT_ROLES: { value: SupportRole; label: string; help: string }[] = [
-    { value: 'support-admin', label: 'Support admin', help: 'Manages the support team, on-call and the status page.' },
-    { value: 'support-member', label: 'Support member', help: 'Responds to incidents and works tickets.' },
-    { value: 'support-viewer', label: 'Support viewer', help: 'Reads incidents, tickets and reports.' }
-];
-
-function SupportTeamSection({ appId, token }: { appId: string; token: string }) {
-    const confirm = useConfirm();
-    const [members, setMembers] = useState<AppSupportMember[] | null>(null);
-    const [error, setError] = useState<string | null>(null);
-    const [busy, setBusy] = useState(false);
-    const [newSub, setNewSub] = useState('');
-    const [newEmail, setNewEmail] = useState('');
-    const [newName, setNewName] = useState('');
-    const [newRole, setNewRole] = useState<SupportRole>('support-member');
-
-    useEffect(() => {
-        listAppSupportTeam(token, appId)
-            .then(r => { setMembers(r.members); setError(null); })
-            .catch(e => setError(e instanceof Error ? e.message : 'Failed to load the support team'));
-    }, [token, appId]);
-
-    async function run(action: () => Promise<{ members: AppSupportMember[] }>) {
-        setBusy(true);
-        setError(null);
-        try {
-            const r = await action();
-            setMembers(r.members);
-            return true;
-        } catch (e) {
-            setError(e instanceof Error ? e.message : 'The support team could not be changed');
-            return false;
-        } finally {
-            setBusy(false);
-        }
-    }
-
-    async function handleAdd(e: React.FormEvent) {
-        e.preventDefault();
-        const sub = newSub.trim();
-        if (!sub) return;
-        const ok = await run(() => upsertAppSupportMember(token, appId, {
-            sub, role: newRole,
-            email: newEmail.trim() || undefined,
-            name: newName.trim() || undefined
-        }));
-        if (ok) { setNewSub(''); setNewEmail(''); setNewName(''); }
-    }
-
-    async function handleRemove(m: AppSupportMember) {
-        const label = m.name || m.email || m.sub;
-        if (!(await confirm({ title: `Remove ${label} from the support team?`, confirmLabel: 'Remove', danger: true }))) return;
-        await run(() => removeAppSupportMember(token, appId, m.sub));
-    }
-
-    const inputClass = 'mt-1 w-full px-3 py-2 text-sm rounded-lg border border-black/15 dark:border-white/15 bg-transparent focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/20';
-
-    return (
-        <section className="p-5 rounded-xl border border-black/10 dark:border-white/10">
-            <h2 className="text-sm font-semibold">Support team</h2>
-            <p className="mt-1 text-xs text-black/50 dark:text-white/50">
-                The people this app&apos;s monitor alerts, who respond to its incidents and tickets. Owners and admins are already support admins, and viewers support viewers; add anyone else here. Someone on the support team only gets no deploy, configure or team rights on the app.
-            </p>
-            {error && (
-                <div className="mt-3 p-2.5 rounded-lg bg-red-50 dark:bg-red-900/20 text-sm text-red-700 dark:text-red-300">
-                    {error}
-                </div>
-            )}
-            {members === null && !error && (
-                <div className="mt-4 text-sm text-black/50 dark:text-white/50">Loading the support team…</div>
-            )}
-            {members !== null && (
-                <ul className="mt-4 divide-y divide-black/10 dark:divide-white/10">
-                    {members.map((m) => {
-                        const label = m.name || m.email || m.sub;
-                        return (
-                            <li key={m.sub} className="py-3 flex items-start justify-between gap-4">
-                                <div className="min-w-0">
-                                    <div className="text-sm font-medium truncate">{label}</div>
-                                    {m.email && m.email !== label && (
-                                        <div className="text-xs text-black/50 dark:text-white/50 mt-0.5 truncate">{m.email}</div>
-                                    )}
-                                    <div className="text-[11px] font-mono text-black/40 dark:text-white/40 mt-0.5 truncate" title={m.sub}>{m.sub}</div>
-                                </div>
-                                <div className="shrink-0 flex items-center gap-2">
-                                    <select
-                                        value={m.role}
-                                        disabled={busy}
-                                        aria-label={`Support role for ${label}`}
-                                        onChange={(e) => run(() => upsertAppSupportMember(token, appId, {
-                                            sub: m.sub, email: m.email || undefined, name: m.name || undefined,
-                                            role: e.target.value as SupportRole
-                                        }))}
-                                        className="text-xs px-2 py-1 rounded-lg border border-black/15 dark:border-white/15 bg-transparent disabled:opacity-40"
-                                    >
-                                        {SUPPORT_ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
-                                    </select>
-                                    <button
-                                        type="button"
-                                        onClick={() => handleRemove(m)}
-                                        disabled={busy}
-                                        className="text-xs px-2.5 py-1 rounded-lg border border-red-300 text-red-700 hover:bg-red-50 dark:border-red-900/50 dark:text-red-400 dark:hover:bg-red-900/20 disabled:opacity-40"
-                                    >
-                                        Remove
-                                    </button>
-                                </div>
-                            </li>
-                        );
-                    })}
-                    {members.length === 0 && (
-                        <li className="py-3 text-sm text-black/50 dark:text-white/50">Nobody beyond the app team yet.</li>
-                    )}
-                </ul>
-            )}
-            <form onSubmit={handleAdd} className="mt-5 pt-4 border-t border-black/10 dark:border-white/10 space-y-3">
-                <h3 className="text-xs font-semibold">Add to the support team</h3>
-                <div>
-                    <label className="block text-xs font-medium text-black/60 dark:text-white/60">Subject ID <span className="text-red-600">*</span></label>
-                    <input type="text" value={newSub} onChange={(e) => setNewSub(e.target.value)} required
-                        placeholder="Their Subject ID, from Settings → Identity" className={`${inputClass} font-mono`} />
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div>
-                        <label className="block text-xs font-medium text-black/60 dark:text-white/60">Role</label>
-                        <select value={newRole} onChange={(e) => setNewRole(e.target.value as SupportRole)} className={inputClass}>
-                            {SUPPORT_ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
-                        </select>
-                    </div>
-                    <div>
-                        <label className="block text-xs font-medium text-black/60 dark:text-white/60">Email (display only)</label>
-                        <input type="email" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} placeholder="alice@example.com" className={inputClass} />
-                    </div>
-                    <div>
-                        <label className="block text-xs font-medium text-black/60 dark:text-white/60">Name (display only)</label>
-                        <input type="text" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Alice" className={inputClass} />
-                    </div>
-                </div>
-                <p className="text-[11px] text-black/40 dark:text-white/40">{SUPPORT_ROLES.find(r => r.value === newRole)?.help}</p>
-                <button type="submit" disabled={busy || !newSub.trim()}
-                    className="px-4 py-2 text-sm font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-90 disabled:opacity-40">
-                    {busy ? 'Saving…' : 'Add to the support team'}
-                </button>
-            </form>
-        </section>
-    );
-}

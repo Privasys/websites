@@ -244,11 +244,15 @@ function Sidebar() {
                     </Link>
                 )}
 
-                {/* Status & support (public status and support pages) */}
+                {/* Operate: status, on-call and support for the account's apps */}
+                <div className="pt-4 pb-1 px-3">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-black/30 dark:text-white/30">Operate</span>
+                </div>
+
                 <Link
                     href="/dashboard/status"
                     className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
-                        pathname === '/dashboard/status'
+                        pathname === '/dashboard/status' || pathname === '/dashboard/status/'
                             ? 'bg-black/5 dark:bg-white/10 font-medium'
                             : 'hover:bg-black/3 dark:hover:bg-white/5 text-black/60 dark:text-white/60'
                     }`}
@@ -256,7 +260,35 @@ function Sidebar() {
                     <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
                         <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
                     </svg>
-                    Status &amp; support
+                    Status
+                </Link>
+
+                <Link
+                    href="/dashboard/oncall"
+                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
+                        pathname === '/dashboard/oncall' || pathname === '/dashboard/oncall/'
+                            ? 'bg-black/5 dark:bg-white/10 font-medium'
+                            : 'hover:bg-black/3 dark:hover:bg-white/5 text-black/60 dark:text-white/60'
+                    }`}
+                >
+                    <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+                        <path d="M15 17h5l-1.4-1.4A2 2 0 0118 14.2V11a6 6 0 10-12 0v3.2a2 2 0 01-.6 1.4L4 17h5m6 0a3 3 0 11-6 0" />
+                    </svg>
+                    On-call
+                </Link>
+
+                <Link
+                    href="/dashboard/support"
+                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
+                        pathname === '/dashboard/support' || pathname === '/dashboard/support/'
+                            ? 'bg-black/5 dark:bg-white/10 font-medium'
+                            : 'hover:bg-black/3 dark:hover:bg-white/5 text-black/60 dark:text-white/60'
+                    }`}
+                >
+                    <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+                        <path d="M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.4-4 8-9 8a9.9 9.9 0 01-4-.8L3 20l1.3-3.9A7.9 7.9 0 013 12c0-4.4 4-8 9-8s9 3.6 9 8z" />
+                    </svg>
+                    Support
                 </Link>
 
                 {/* Admin: the account's own administration */}
