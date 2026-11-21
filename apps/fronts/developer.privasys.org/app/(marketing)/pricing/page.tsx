@@ -330,7 +330,7 @@ export default function PricingPage() {
                     <p className="mt-4 text-sm text-black/50 dark:text-white/50">
                         Charged per started hour while deployed. The size is chosen at deploy time and a
                         redeploy with a new size is the resize. Sizes price compute; your app&apos;s
-                        <strong> encrypted storage volume</strong> is sized by you (10 GB by default,
+                        <strong> encrypted storage volume</strong> is sized by you (1 GB by default,
                         growable online) and billed separately at 278 credits per GB-hour
                         (≈ £0.20/GB per month), whether the app is running or not, until you delete the
                         volume. At zero balance the app is paused with reason “credits exhausted”,

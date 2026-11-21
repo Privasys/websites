@@ -1554,7 +1554,7 @@ export function deployDirect(
     // Deploying onto an owned dedicated instance (opts.instanceId) implies
     // dedicated tenancy and needs no location; otherwise a location selects a
     // mutualised host (Phase 6). storageGB sizes the app's volume on FIRST
-    // deploy only (10 GB default; an existing volume keeps its size).
+    // deploy only (1 GB default; an existing volume keeps its size).
     const body: { location?: string; instance_size?: string; tenancy?: string; instance_id?: string; storage_gb?: number } = {};
     if (opts?.instanceId) body.instance_id = opts.instanceId;
     else body.location = location;

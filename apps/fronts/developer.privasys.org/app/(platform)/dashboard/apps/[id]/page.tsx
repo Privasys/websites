@@ -2161,10 +2161,10 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
     const [pickTenancy, setPickTenancy] = useState<'shared' | 'dedicated' | 'instance'>('shared');
     const [pickInstance, setPickInstance] = useState('');
     const [myInstances, setMyInstances] = useState<Instance[]>([]);
-    // Volume size for the FIRST deploy (10 GB default). An existing volume
+    // Volume size for the FIRST deploy (1 GB default). An existing volume
     // keeps its size — growing is the Volumes page's resize, never a deploy
     // side effect — so the input only shows before the first deployment.
-    const [pickStorageGB, setPickStorageGB] = useState('10');
+    const [pickStorageGB, setPickStorageGB] = useState('1');
     const [cwasmFile, setCwasmFile] = useState<File | null>(null);
     const [working, setWorking] = useState(false);
     const [workMsg, setWorkMsg] = useState<string | null>(null);
@@ -2601,7 +2601,7 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
             // dedicated = the platform provisions a whole VM for this app;
             // instance = deploy onto an owned running dedicated VM.
             const storageGB = app.app_type === 'container' && app.container_storage && !currentDeployment
-                ? Math.max(1, Math.floor(Number(pickStorageGB) || 10))
+                ? Math.max(1, Math.floor(Number(pickStorageGB) || 1))
                 : undefined;
             const deployOpts = tenancyChoice === 'dedicated'
                 ? { tenancy: 'dedicated' as const, storageGB }
