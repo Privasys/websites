@@ -37,6 +37,13 @@ export default function LegalIndex() {
                         </p>
                     </a>
 
+                    <a href='/legal/charity/' className='block p-6 rounded-2xl border border-black/10 dark:border-white/10 hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors'>
+                        <h2 className='text-xl font-semibold'>Charity Donations</h2>
+                        <p className='mt-2 text-sm text-[#1d1d1f]/60 dark:text-[#f5f5f7]/50'>
+                            Privasys supports Cancer Research UK: how an unused balance can be donated when you delete your account.
+                        </p>
+                    </a>
+
                     <a href='/legal/company/' className='block p-6 rounded-2xl border border-black/10 dark:border-white/10 hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors'>
                         <h2 className='text-xl font-semibold'>Company Information</h2>
                         <p className='mt-2 text-sm text-[#1d1d1f]/60 dark:text-[#f5f5f7]/50'>

@@ -7,7 +7,7 @@ export default function TermsOfService() {
         <PageShell activePage='legal'>
 
             <article className='mt-24 lg:mt-40 prose-legal'>
-                <p className='text-sm text-[#1d1d1f]/50 dark:text-[#f5f5f7]/50 mb-4'>Last updated: March 2026</p>
+                <p className='text-sm text-[#1d1d1f]/50 dark:text-[#f5f5f7]/50 mb-4'>Last updated: November 2026</p>
                 <h1 className='text-4xl lg:text-5xl'>Terms of Service</h1>
 
                 <p className='mt-8'>
@@ -103,6 +103,14 @@ export default function TermsOfService() {
                 <h2 className='text-2xl mt-12 mb-4'>Term and termination</h2>
                 <p>
                     We may suspend or terminate your use of and access to the websites or services at our sole discretion, without prior notice, for any reason or cause. Upon termination, you agree to immediately cease using the services and remove any applications deployed on the platform.
+                </p>
+
+                <h2 className='text-2xl mt-12 mb-4'>Charity donations</h2>
+                <p>
+                    100% of unused balance on account deletion will be donated to Cancer Research UK via Work for Good.
+                </p>
+                <p className='mt-4'>
+                    When you delete your account, your unused money balance is refunded to you unless you choose, with a clear option at deletion, to give up that refund in favour of the donation. The donation is made by Privasys Ltd. as a company, once a year; Gift Aid does not apply and no donation receipt is issued to you. Credits given by Privasys are not part of your money balance. See <a href='/legal/charity/' className='underline'>Charity Donations</a>.
                 </p>
 
                 <h2 className='text-2xl mt-12 mb-4'>Disclaimer of warranties</h2>
