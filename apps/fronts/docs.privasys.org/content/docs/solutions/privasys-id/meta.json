@@ -4,6 +4,7 @@
     "pages": [
         "overview",
         "wallet",
+        "verifiers",
         "idp",
         "auth-sdk",
         "attribute-marketplace"

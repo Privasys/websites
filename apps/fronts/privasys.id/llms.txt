@@ -9,6 +9,7 @@ Key facts for agents and integrators:
 - Relying parties integrate through standard OIDC. Discovery document: https://privasys.id/.well-known/openid-configuration
 - Each relying party receives a pairwise subject identifier, so users cannot be correlated across services.
 - Users choose per sign-in which attributes to disclose; undisclosed data never leaves the phone.
+- Verified attributes are checked by two open-source verifiers running in attested enclaves, which sign proofs held by the wallet and keep nothing about the user. The Privasys Identity Verifier checks passports and national ID cards against the issuing country's certificates (https://github.com/Privasys/container-app-identity-verifier). The Privasys Attribute Verifier checks provider-signed tokens (Google, Microsoft, other OIDC providers), email codes and card-bank address checks (https://github.com/Privasys/container-app-attribute-verifier). At sign-in, the relying party receives a fresh proof addressed to it, such as over 18 or a billing country, without the underlying document or address.
 - The platform is open source: https://github.com/Privasys
 
 ## Documentation

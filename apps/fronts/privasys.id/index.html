@@ -161,8 +161,31 @@
             <p class="section-lead">
                 The Privasys Wallet turns your phone into a passwordless authenticator.
                 It stores your identity in your device&rsquo;s security chip, lets you import attributes from
-                Google, Microsoft, GitHub or LinkedIn, and shares only what you approve, one attribute at a time.
+                Google, Microsoft, GitHub or LinkedIn, proves where each one came from,
+                and shares only what you approve, one attribute at a time.
             </p>
+        </section>
+
+        <!-- The verifiers -->
+        <section class="section">
+            <h2>Verified once. Proven every&nbsp;time.</h2>
+            <p class="section-lead">
+                An app can trust what you share because two open-source verifiers check it first.
+                Each runs inside an attested enclave, checks the evidence against sources it holds,
+                signs a proof for your wallet, and keeps nothing about you.
+            </p>
+            <div class="commitments">
+                <div class="commitment">
+                    <h3>Privasys Identity Verifier.</h3>
+                    <p>Reads the chip in your passport or ID card and checks it against the certificates of the country that issued it, then matches it to your face. Your wallet can then prove you are over 18, or your nationality, without handing over the document.</p>
+                    <p><a href="https://github.com/Privasys/container-app-identity-verifier" target="_blank" rel="noopener noreferrer">Source on GitHub</a></p>
+                </div>
+                <div class="commitment">
+                    <h3>Privasys Attribute Verifier.</h3>
+                    <p>Proves the rest: an email address Google or Microsoft verified, an address you confirmed with a code, the billing address your card&rsquo;s bank confirmed. It checks each provider&rsquo;s own signature, years later if needed, and proves your billing country on its own, apart from your address.</p>
+                    <p><a href="https://github.com/Privasys/container-app-attribute-verifier" target="_blank" rel="noopener noreferrer">Source on GitHub</a></p>
+                </div>
+            </div>
         </section>
 
         <!-- For developers -->
