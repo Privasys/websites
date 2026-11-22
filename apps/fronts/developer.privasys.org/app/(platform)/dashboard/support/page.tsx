@@ -8,7 +8,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '~/lib/privasys-auth';
 import { listTickets, MonitorError } from '~/lib/monitor';
 import type { TicketRow } from '~/lib/monitor';
-import { AppSupportTab } from '~/components/app-support-tab';
+import { AppSupportTab, AccountSupportSettings } from '~/components/app-support-tab';
+import { useCurrentAccount } from '~/components/account-context';
 import { SupportTeamSection } from '~/components/app-support-team';
 import { AccountAppPicker, appFromAddress, useAccountApps } from '~/components/account-app-picker';
 
@@ -28,6 +29,7 @@ function when(unix: number): string {
 export default function SupportPage() {
     const { session } = useAuth();
     const token = session?.accessToken ?? '';
+    const account = useCurrentAccount();
     const { apps, loading } = useAccountApps(token);
     const [appId, setAppId] = useState('');
     const [inbox, setInbox] = useState<InboxRow[] | null>(null);
@@ -112,7 +114,17 @@ export default function SupportPage() {
                         </div>
                     </section>
 
+                    {account && token && (
+                        <section className="mt-10">
+                            <AccountSupportSettings accountId={account.id} token={token} />
+                        </section>
+                    )}
+
                     <section className="mt-10">
+                        <h2 className="text-lg font-medium">One app</h2>
+                        <p className="mt-1 mb-4 text-sm text-black/50 dark:text-white/50">
+                            An app&apos;s requests, its support team, and settings of its own where it needs them.
+                        </p>
                         <AccountAppPicker apps={apps} value={appId} onChange={setAppId} label="App" />
                         {appId && token && (
                             <div key={appId} className="mt-6 space-y-8">

@@ -326,12 +326,40 @@ export async function deleteTicket(token: string, appId: string, n: number): Pro
     await monitorCall(token, 'DELETE', `${appBase(appId)}/tickets/${n}`);
 }
 
-export function getSupportSettings(token: string, appId: string): Promise<{ settings: SupportSettings; can_manage: boolean; can_respond: boolean }> {
+export interface AppSupportSettings {
+    /** What the desk runs on: the app's own settings, else its account's. */
+    settings: SupportSettings;
+    /** The app's team set settings of its own. */
+    own?: boolean;
+    /** The desk runs on its account's settings. */
+    inherits_account?: boolean;
+    can_manage: boolean;
+    can_respond: boolean;
+}
+
+export function getSupportSettings(token: string, appId: string): Promise<AppSupportSettings> {
     return monitorCall(token, 'GET', `${appBase(appId)}/support/settings`);
 }
 
 export function saveSupportSettings(token: string, appId: string, settings: SupportSettings): Promise<unknown> {
     return monitorCall(token, 'POST', `${appBase(appId)}/support/settings`, settings);
+}
+
+/** Forgets the app's own support settings: it runs on its account's again. */
+export function clearOwnSupportSettings(token: string, appId: string): Promise<unknown> {
+    return monitorCall(token, 'DELETE', `${appBase(appId)}/support/settings`);
+}
+
+// --- The account's support settings, for every app without its own ---
+
+const accountSupport = (accountId: string) => `/api/v1/accounts/${encodeURIComponent(accountId)}/support/settings`;
+
+export function getAccountSupportSettings(token: string, accountId: string): Promise<{ settings: SupportSettings; set: boolean; can_manage: boolean }> {
+    return monitorCall(token, 'GET', accountSupport(accountId));
+}
+
+export function saveAccountSupportSettings(token: string, accountId: string, settings: SupportSettings): Promise<unknown> {
+    return monitorCall(token, 'POST', accountSupport(accountId), settings);
 }
 
 /**

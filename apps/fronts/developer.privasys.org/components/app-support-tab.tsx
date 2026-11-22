@@ -10,7 +10,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
     listTickets, getTicket, commentTicket, updateTicket, deleteTicket,
-    getSupportSettings, saveSupportSettings, getOnCall, MonitorError
+    getSupportSettings, saveSupportSettings, getOnCall, MonitorError,
+    clearOwnSupportSettings, getAccountSupportSettings, saveAccountSupportSettings
 } from '~/lib/monitor';
 import type { TicketRow, TicketDetail, SupportSettings, TicketChange } from '~/lib/monitor';
 import { useConfirm } from '~/components/confirm-dialog';
@@ -52,6 +53,8 @@ export function AppSupportTab({ appId, token }: { appId: string; token: string }
     const [settings, setSettings] = useState<SupportSettings | null>(null);
     const [canManage, setCanManage] = useState(false);
     const [canRespond, setCanRespond] = useState(false);
+    const [own, setOwn] = useState(true);
+    const [inherits, setInherits] = useState(false);
     const [rows, setRows] = useState<TicketRow[]>([]);
     const [people, setPeople] = useState<Person[]>([]);
     const [open, setOpen] = useState<number | null>(null);
@@ -66,6 +69,8 @@ export function AppSupportTab({ appId, token }: { appId: string; token: string }
             setSettings(cfg.settings);
             setCanManage(cfg.can_manage);
             setCanRespond(cfg.can_respond);
+            setOwn(cfg.own ?? true);
+            setInherits(cfg.inherits_account ?? false);
             setRows(list);
             setError(null);
             setOff(false);
@@ -155,7 +160,11 @@ export function AppSupportTab({ appId, token }: { appId: string; token: string }
                     {shown.length === 0 && <li className="py-3 text-sm text-black/50 dark:text-white/50">No tickets here.</li>}
                 </ul>
             </section>
-            <Settings appId={appId} token={token} settings={settings} canManage={canManage} onSaved={setSettings} />
+            <Settings key={`${own}:${inherits}`} scope="app" settings={settings} canManage={canManage}
+                save={(s) => saveSupportSettings(token, appId, s)}
+                onSaved={(s) => { setSettings(s); load(); }}
+                own={own} inherits={inherits}
+                onUseAccount={async () => { await clearOwnSupportSettings(token, appId); await load(); }} />
         </div>
     );
 }
@@ -308,8 +317,46 @@ function Ticket({ appId, token, number, settings, people, nameOf, canRespond, ca
     );
 }
 
-function Settings({ appId, token, settings, canManage, onSaved }: {
-    appId: string; token: string; settings: SupportSettings; canManage: boolean; onSaved: (_s: SupportSettings) => void;
+/** The account's support settings: every app of the account whose team set none of its own runs on them. */
+export function AccountSupportSettings({ accountId, token }: { accountId: string; token: string }) {
+    const [data, setData] = useState<{ settings: SupportSettings; set: boolean; can_manage: boolean } | null>(null);
+    const [error, setError] = useState<string | null>(null);
+
+    const load = useCallback(async () => {
+        try {
+            setData(await getAccountSupportSettings(token, accountId));
+            setError(null);
+        } catch (e) {
+            setError(message(e, 'The monitor could not be reached.'));
+        }
+    }, [token, accountId]);
+
+    useEffect(() => { load(); }, [load]);
+
+    if (!data) {
+        return error
+            ? <section className={card}><h2 className="text-sm font-semibold">Account settings</h2><div className={errorBox}>{error}</div></section>
+            : <div className="text-sm text-black/50 dark:text-white/50">Asking the monitor…</div>;
+    }
+    return (
+        <Settings key={String(data.set)} scope="account" settings={data.settings} canManage={data.can_manage}
+            save={(s) => saveAccountSupportSettings(token, accountId, s)} onSaved={() => load()} accountSet={data.set} />
+    );
+}
+
+function Settings({ scope, settings, canManage, save, onSaved, own, inherits, onUseAccount, accountSet }: {
+    scope: 'app' | 'account';
+    settings: SupportSettings;
+    canManage: boolean;
+    save: (_s: SupportSettings) => Promise<unknown>;
+    onSaved: (_s: SupportSettings) => void;
+    /** For an app: its team set settings of its own. */
+    own?: boolean;
+    /** For an app: it runs on its account's settings. */
+    inherits?: boolean;
+    onUseAccount?: () => Promise<void>;
+    /** For the account: its admins set its settings. */
+    accountSet?: boolean;
 }) {
     const [intake, setIntake] = useState(settings.intake);
     const [categories, setCategories] = useState((settings.categories ?? []).join(', '));
@@ -319,7 +366,7 @@ function Settings({ appId, token, settings, canManage, onSaved }: {
     const [note, setNote] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
 
-    async function save() {
+    async function submit() {
         setBusy(true);
         setError(null);
         setNote(null);
@@ -328,7 +375,7 @@ function Settings({ appId, token, settings, canManage, onSaved }: {
                 ...settings, intake, tickets_per_hour: perHour, tickets_per_day: perDay,
                 categories: categories.split(',').map(c => c.trim()).filter(Boolean)
             };
-            await saveSupportSettings(token, appId, next);
+            await save(next);
             onSaved(next);
             setNote('Saved.');
         } catch (e) {
@@ -338,15 +385,44 @@ function Settings({ appId, token, settings, canManage, onSaved }: {
         }
     }
 
+    async function useAccount() {
+        if (!onUseAccount) return;
+        setBusy(true);
+        setError(null);
+        try {
+            await onUseAccount();
+        } catch (e) {
+            setError(message(e, 'The app could not be moved back to the account\'s settings.'));
+            setBusy(false);
+        }
+    }
+
     return (
         <section className={card}>
-            <h2 className="text-sm font-semibold">Who can open tickets</h2>
+            <h2 className="text-sm font-semibold">{scope === 'account' ? 'Account settings' : 'Who can open tickets'}</h2>
+            {scope === 'account' && (
+                <p className="mt-1 text-xs text-black/50 dark:text-white/50">
+                    {accountSet
+                        ? 'Every app of the account runs its desk on these, unless its own settings are set below.'
+                        : 'Not set yet: each app keeps its own settings, and an app without any takes no requests. Save to cover every app without its own.'}
+                </p>
+            )}
+            {scope === 'app' && inherits && (
+                <p className="mt-1 text-xs text-black/50 dark:text-white/50">
+                    This app uses the account&apos;s settings. Saving here gives it settings of its own.
+                </p>
+            )}
+            {scope === 'app' && own && (
+                <p className="mt-1 text-xs text-black/50 dark:text-white/50">
+                    This app has settings of its own, in place of the account&apos;s.
+                </p>
+            )}
             <div className="mt-3 space-y-3">
                 <div>
                     <label className={label} htmlFor="s-intake">Support requests</label>
                     <select id="s-intake" value={intake} disabled={!canManage} onChange={e => setIntake(e.target.value as SupportSettings['intake'])} className={input}>
                         <option value="off">Off</option>
-                        <option value="team">This app&apos;s team only</option>
+                        <option value="team">{scope === 'account' ? 'Each app\'s team only' : 'This app\'s team only'}</option>
                         <option value="public">Anyone signed in with the Privasys Wallet</option>
                     </select>
                 </div>
@@ -367,9 +443,18 @@ function Settings({ appId, token, settings, canManage, onSaved }: {
             </div>
             {error && <div className={errorBox}>{error}</div>}
             {note && <div className="mt-3 text-xs text-black/60 dark:text-white/60">{note}</div>}
-            {canManage
-                ? <button type="button" onClick={save} disabled={busy} className={`mt-4 ${primary}`}>{busy ? 'Saving…' : 'Save'}</button>
-                : <p className="mt-3 text-xs text-black/50 dark:text-white/50">The app&apos;s owners, admins and support admins change these.</p>}
+            {canManage ? (
+                <div className="mt-4 flex flex-wrap gap-2">
+                    <button type="button" onClick={submit} disabled={busy} className={primary}>{busy ? 'Saving…' : 'Save'}</button>
+                    {scope === 'app' && own && onUseAccount && (
+                        <button type="button" onClick={useAccount} disabled={busy} className={secondary}>Use the account&apos;s settings</button>
+                    )}
+                </div>
+            ) : (
+                <p className="mt-3 text-xs text-black/50 dark:text-white/50">
+                    {scope === 'account' ? 'The account\'s admins change these.' : 'The app\'s owners, admins and support admins change these.'}
+                </p>
+            )}
         </section>
     );
 }
