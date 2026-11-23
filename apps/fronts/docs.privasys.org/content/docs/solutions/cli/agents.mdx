@@ -1,6 +1,6 @@
 ---
 title: AI agents
-description: The CLI is agent-first. An MCP server with the full command surface, one-command wiring, and a Claude Code plugin.
+description: The CLI is agent-first. An MCP server with the full command surface, an agent skill, one-command wiring for Claude Code, Codex, Cursor, VS Code and Gemini, and a Claude Code plugin.
 ---
 
 The CLI is built to be driven by AI agents. Installing the CLI puts the binary on your PATH; one more step wires it into your agent, and a cold-start agent can then onboard a user, deploy a confidential app, attest it, and call it, with no prior knowledge of Privasys.
@@ -10,7 +10,7 @@ The CLI is built to be driven by AI agents. Installing the CLI puts the binary o
 Two surfaces, two paths. Pick the one you use:
 
 - **Claude Code terminal CLI** (`claude` in a terminal): install the [plugin](#claude-code-plugin). You get the MCP tools, the workflow skill, and `/deploy` `/attest` slash commands in one step. (`/plugin` only works in the terminal CLI, not the desktop app.)
-- **The Claude desktop app, Cursor, VS Code, Gemini, or any MCP client**: run [`privasys agents init`](#one-command-wiring) in your project. It writes the MCP registration plus an `AGENTS.md` briefing the agent reads.
+- **Codex, Cursor, VS Code, Gemini CLI, the Claude desktop app, or any MCP client**: run [`privasys agents init`](#one-command-wiring) in your project (`--harness codex` for Codex). It writes the MCP registration, the [Privasys skill](#the-privasys-skill) and an `AGENTS.md` briefing the agent reads.
 
 After either, **restart your agent or editor** so it picks up the new config (and your PATH, if you just installed `privasys`), then confirm it worked by asking the agent to run `privasys version`. Then try: *"deploy me a confidential app."*
 
@@ -21,6 +21,16 @@ After either, **restart your agent or editor** so it picks up the new config (an
 ```sh
 # Claude Code
 claude mcp add privasys -- privasys mcp serve
+
+# Codex
+codex mcp add privasys -- privasys mcp serve
+```
+
+```toml
+# Codex: ~/.codex/config.toml, or .codex/config.toml in a trusted project
+[mcp_servers.privasys]
+command = "privasys"
+args = ["mcp", "serve"]
 ```
 
 ```jsonc
@@ -44,19 +54,34 @@ The tool surface is designed so that secrets can never reach the model:
 
 ## One-command wiring
 
-`privasys agents init` writes the right MCP registration into your repository so an agent picks up the tools with no manual JSON editing, plus an `AGENTS.md` briefing:
+`privasys agents init` writes the right MCP registration into your repository, the Privasys skill, and an `AGENTS.md` briefing, so an agent picks up the tools and knows how to use them with no manual editing:
 
 ```sh
-privasys agents init            # Claude Code + AGENTS.md
-privasys agents init --all      # every supported harness: claude, cursor, vscode, gemini
-privasys agents init --print    # show what would be written, touch nothing
+privasys agents init                  # Claude Code + skill + AGENTS.md
+privasys agents init --harness codex  # Codex: .codex/config.toml + .agents/skills
+privasys agents init --all            # every supported harness: claude, codex, cursor, vscode, gemini
+privasys agents init --print          # show what would be written, touch nothing
 ```
 
-It is idempotent and never writes secrets. The generated config only points at the local `privasys` binary, which reads its token from the OS keychain.
+| Harness | MCP registration | Skill folder |
+| --- | --- | --- |
+| Claude Code | `.mcp.json` | `.claude/skills/privasys` |
+| Codex | `.codex/config.toml` | `.agents/skills/privasys` |
+| Cursor | `.cursor/mcp.json` | `.agents/skills/privasys` |
+| VS Code | `.vscode/mcp.json` | `.github/skills/privasys` |
+| Gemini CLI | `.gemini/settings.json` | `.agents/skills/privasys` |
+
+Codex reads a project's `.codex/config.toml` only once you have marked the project as trusted; otherwise register the server once with `codex mcp add`. Re-running `agents init` is idempotent: other servers, unrelated keys and the rest of `AGENTS.md` are kept, and the skill is brought back to the version your CLI ships (`--no-skill` and `--no-agents-md` skip either). It never writes secrets: the generated config only points at the local `privasys` binary, which reads its token from the OS keychain.
+
+## The Privasys skill
+
+The skill teaches an agent the platform, in the open [Agent Skills](https://agentskills.io) format: a `SKILL.md` and reference files the agent reads when it needs them. It covers onboarding, the deploy and attest loop, sizing and storage, upgrades that hold data, private images, the vault, and the [`privasys.json` manifest](/solutions/platform/developer-platform/deploy-container#mcp-tool-discovery): tools, who may call them, prices, the configure step and the surfaces served in the clear.
+
+`privasys agents init` installs it, and it is also published for agents that fetch skills from the web at [`/skills/privasys/SKILL.md`](https://docs.privasys.org/skills/privasys/SKILL.md), listed in [`llms.txt`](https://docs.privasys.org/llms.txt).
 
 ## Claude Code plugin
 
-Install the plugin for slash commands (`/deploy`, `/attest`), a workflow skill that teaches the agent the confidential-app flow, and the MCP server in one step:
+Install the plugin for slash commands (`/deploy`, `/attest`), the Privasys skill, and the MCP server in one step:
 
 ```sh
 claude plugin marketplace add Privasys/cli

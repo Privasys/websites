@@ -1,4 +1,5 @@
 import { DOCS_BASE, getLlmsPages, sectionOf, sectionTitle } from '@/lib/llms';
+import { SKILL_PATH } from '@/lib/skill';
 
 export const dynamic = 'force-static';
 
@@ -49,6 +50,13 @@ export function GET(): Response {
         '',
         `The complete documentation is available as a single markdown file at [llms-full.txt](${DOCS_BASE}/llms-full.txt).`,
         'Every page listed below is also served as raw markdown at the `.md` URL next to it.',
+        '',
+        '## Agent skill',
+        '',
+        `- [Privasys skill](${DOCS_BASE}${SKILL_PATH}/SKILL.md): how an agent deploys, configures, attests and calls`,
+        '  confidential apps with the `privasys` CLI and MCP server, in the Agent Skills format (SKILL.md and its',
+        '  `references/`). `privasys agents init` installs it into a project for Claude Code, Codex, Cursor,',
+        '  Gemini CLI and VS Code.',
         ''
     ];
 
