@@ -33,7 +33,7 @@ Rotating keeps the older versions, so data wrapped under them still unwraps and 
 - **AES keys:** re-wrap anything still wrapped under it with the current version.
 - **Signing keys:** keep the public key of every version whose signatures must stay verifiable (`privasys vault key public <vault> <name> --version <n>`). Verifying a signature needs only the public key, never the vault.
 
-A secret can be renewed only before it expires. An expired secret is gone unless you exported it.
+A secret can be renewed only before it expires. An expired secret is gone unless you exported it. `privasys secrets renew` needs CLI v0.56.2 or later ([update the CLI](/solutions/cli/install#update)).
 
 ## Application keys
 
