@@ -84,7 +84,7 @@ IssueApprovalToken {
 }
 ```
 
-The token is signed by the manager's FIDO2 credential through the Privasys Wallet and carries a short TTL. The wallet performs a fresh user-presence ceremony for each token. The vault verifies the signature, the nonce, the TTL, the key handle, and the operation name before counting the token towards the policy's `ManagerApproval` requirement.
+The token is signed by the manager's FIDO2 credential through the Privasys Wallet and carries a short TTL. The wallet performs a fresh user-presence ceremony for each token. The vault verifies the signature, the nonce, the TTL, the key handle, and the operation name before counting the token towards the policy's `ManagerApproval` requirement. Each token also carries the approver's subject and the version of the key's policy when it was given. A token is accepted only while that policy is unchanged, so an approval given before a policy change is not accepted after it: the manager approves again.
 
 A manager compromised on its own cannot use a stolen token outside its TTL. A calling enclave compromised on its own cannot mint a token. Both must cooperate, and the audit log records every issued and consumed token.
 

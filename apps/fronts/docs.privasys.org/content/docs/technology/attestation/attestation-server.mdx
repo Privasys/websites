@@ -111,7 +111,7 @@ journalctl -u attestation-server -f
 
 ## Verifying a Quote
 
-Callers must present a valid OIDC bearer token with the `attestation-server:client` role. Tokens are issued by your OIDC provider (e.g. Privasys ID, Keycloak, Auth0).
+Callers must present a valid OIDC bearer token with the `attestation-server:client` role. Tokens are issued by your OIDC provider (e.g. Privasys ID, Keycloak, Auth0). A token must carry an `exp` claim, and the server refetches an issuer's signing keys at most once every 30 seconds. A request body is limited to 1 MiB.
 
 ```bash
 curl -X POST https://as.privasys.org/ \
@@ -140,7 +140,7 @@ Response:
 
 ### Platform identity, allow-list and revocation
 
-Every verification reports the physical platform's identity read from the verified evidence (`platform`: the PCK certificate's PPID, its Platform Instance ID on multi-package hosts, the FMSPC; `chipId` for SEV-SNP) and the outcome of the revocation check (`pckRevocationChecked`). A request may carry `allowedPlatformIds`, a list of hex identifiers; evidence from any other platform fails with `PLATFORM_NOT_ALLOWED`. The PCK chain of every SGX and TDX quote is checked against Intel's PCK and Root CA CRLs (`PCK_REVOCATION_MODE`, `enforce` by default). See [platform pinning](/solutions/enclave-os/attestation/platform-pinning).
+Every verification reports the physical platform's identity read from the verified evidence (`platform`: the PCK certificate's PPID, its Platform Instance ID on multi-package hosts, the FMSPC; `chipId` for SEV-SNP) and the outcome of the revocation check (`pckRevocationChecked`). A request may carry `allowedPlatformIds`, a list of hex identifiers; evidence from any other platform fails with `PLATFORM_NOT_ALLOWED`. The PCK chain of every SGX and TDX quote is checked against Intel's PCK and Root CA CRLs (`PCK_REVOCATION_MODE`, `enforce` by default). Collateral fetched from Intel PCS, CRLs included, is served from cache for `SGX_TCB_CACHE_TTL_MINUTES` (60 by default) before it is fetched again. See [platform pinning](/solutions/enclave-os/attestation/platform-pinning).
 
 ## Setting Up the PCCS
 

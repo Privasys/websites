@@ -124,7 +124,7 @@ fetch('/api/v1/me', { headers: { Authorization: `Bearer ${token}` } });
 
 An app that serves wallet users over a sealed session as well can leave the choice to the SDK: with `direct` set, [`frame.request()`](/solutions/privasys-id/auth-sdk#one-call-for-both-ways-to-reach-your-app) uses the sealed session or the token, whichever fits the person.
 
-The runtime verifies the token, removes it, and gives your app:
+The runtime verifies the token and gives your app:
 
 | Header | Value |
 | --- | --- |
@@ -132,7 +132,7 @@ The runtime verifies the token, removes it, and gives your app:
 | `X-Privasys-Email`, `X-Privasys-Name` | the token's `name` claim and its `email` claim when the address was proved; the name is percent-encoded UTF-8. Only a token from the sign-in itself carries them, so store them on first sight |
 | `X-Privasys-Attestation-Level` | `verified` when the user signed in with the wallet, `unverified` otherwise |
 
-Keep your most sensitive routes for `verified` users if they should require the wallet. A request without a token is anonymous, and a token that does not verify is refused. Paid routes need a wallet account: a user signed in another way gets `402` on them.
+Keep your most sensitive routes for `verified` users if they should require the wallet. A request without a token is anonymous, and a token that does not verify is refused. The runtime always removes the `Authorization` header before the request reaches your app, whether or not a token was sent, so your app identifies the user only from `X-Privasys-Sub` and the headers above. Paid routes need a wallet account: a user signed in another way gets `402` on them.
 
 ## Check it yourself
 

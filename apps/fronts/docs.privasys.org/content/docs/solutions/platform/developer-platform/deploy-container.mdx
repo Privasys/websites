@@ -115,7 +115,9 @@ Surfaces are declared in the `surfaces` block of `privasys.json`, which rides th
   "surfaces": {
     // Path prefixes served in the clear for GET and HEAD: the browser shell
     // (measured code, no user data). An entry of exactly "/" is the root
-    // document only. Nothing under /api can be static.
+    // document only. Nothing under /api can be static. A prefix ends on a
+    // segment boundary: "/static" covers "/static/x" but not "/static.css",
+    // so declare a directory with a trailing slash.
     "static": ["/", "/assets/", "/favicon.svg", "/manifest.webmanifest"],
 
     // Explicit routes served in the clear. A path ending in "/" is a prefix,
@@ -152,10 +154,10 @@ These rules are enforced by the enclave runtime, so a mistake in application cod
 2. **Nothing for the browser to send.** On the response the runtime keeps only `Content-Type`, `Content-Length`, `Content-Encoding`, `Content-Disposition`, `Content-Range`, `Accept-Ranges`, `Cache-Control`, `Expires`, `ETag`, `Last-Modified`, `Location`, `Retry-After`, `Vary` and `Date`, plus its own CORS headers. `Set-Cookie` never passes, so no cookie is ever set on the application origin and a browser has none to send past the gateway. An application header such as `X-User-Id` is dropped. Static responses carry `Referrer-Policy: same-origin`.
 3. **The application can tell.** Every request carries `X-Privasys-Transport`, set by the runtime and never by a client: `public` on the clear leg, `sealed` from a sealed session, `attested` when TLS ended at the enclave, `direct` on your own [custom domain](/solutions/platform/developer-platform/custom-domains). A private handler refuses `public`.
 4. **No payer, no price.** A route that carries an `x-privasys.price` cannot be static or public. The platform refuses the version, and the runtime refuses to load the image, with a clear message. The configure endpoint can never be public either.
-5. **Bounded.** A per-client token bucket (keyed by the client address the gateway forwards) applies to every clear request, with defaults of 10 requests per second and a burst of 50, overridable in `surfaces.limits`. A full bucket answers `429` with `Retry-After`. Private routes are bounded by the session and spend machinery instead.
+5. **Bounded.** A per-client token bucket (keyed by the client address the gateway forwards, an IPv6 client by its /64) applies to every clear request, with defaults of 10 requests per second and a burst of 50, overridable in `surfaces.limits`. A full bucket answers `429` with `Retry-After`. The runtime holds at most 50,000 client buckets. Private routes are bounded by the session and spend machinery instead.
 6. **Preflight.** When `cors` is `"*"`, the runtime answers `OPTIONS` on a public path itself: `204`, `Access-Control-Allow-Origin: *`, the declared methods and headers, no credentials. Otherwise a preflight is refused.
 7. **No upgrade.** A WebSocket, or any `Upgrade`, on a public route is `403`. The sealed WebSocket is the only browser socket.
-8. **Everything else is private.** An undeclared path on the terminated leg answers `403 sealed-transport-required`.
+8. **Everything else is private.** An undeclared path on the terminated leg answers `403 sealed-transport-required`. A request is static or public only when both the path as sent and the path as resolved (dot segments, doubled slashes, `;parameters` and backslashes resolved) fall under the declaration.
 
 ### The confirmation at deploy
 

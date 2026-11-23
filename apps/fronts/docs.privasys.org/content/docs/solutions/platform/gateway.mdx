@@ -69,7 +69,7 @@ The gateway is deliberately minimal:
 - **No key for your application.** The enclave holds its own RA-TLS key, and the key of its certificate for a custom domain. The gateway holds only the public wildcard certificate for `*.apps.privasys.org`, which cannot impersonate the enclave on the splice leg and does not cover any custom domain.
 - **No reading of private traffic.** On the splice and direct legs it forwards encrypted bytes. On the terminated leg it forwards sealed bodies. It reads traffic only on the surfaces an application declared in the clear, and only on the platform hostname.
 - **No notion of your application's paths.** On the splice leg it does not parse HTTP at all. On the terminated leg it reverse-proxies without a route table of its own: it learns that a response was public from the enclave runtime, which is the only party that knows the manifest.
-- **No caching, no rate limiting.** Public routes are rate-limited per client inside the enclave runtime, and nothing of ours caches a response.
+- **No caching, no request rate limiting.** Public routes are rate-limited per client inside the enclave runtime, and nothing of ours caches a response. The gateway bounds only connections: 20,000 open at once in total and 256 per client address (an IPv6 client counted by its /64), with a request's line and headers limited to 1 MiB and 30 seconds.
 - **No session state.** Every gateway instance is stateless and interchangeable. There is no sticky routing.
 - **No authentication at the gateway layer.** Authentication and authorisation happen inside the enclave, enforced by RA-TLS, the sealed session and OIDC.
 

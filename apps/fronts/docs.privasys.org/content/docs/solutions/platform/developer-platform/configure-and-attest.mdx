@@ -52,6 +52,17 @@ consulting the platform.
    storage; the manager keeps the freeze flag set so the configure step
    never runs twice for the same payload.
 
+On a container, every request to the configure endpoint needs a token
+carrying the app's owner or admin role, however the request spells the
+route. The runtime matches the endpoint on the canonical path: letter case
+is ignored, `;parameters` on any segment are dropped, backslashes count as
+slashes, dot segments and doubled or trailing slashes are resolved, and
+one trailing format suffix such as `.json` is ignored. The method may
+also come from `X-HTTP-Method-Override`, `X-HTTP-Method`,
+`X-Method-Override` or a `_method` query parameter, `HEAD` counts for a
+`GET` endpoint, and any `POST` to the configure path is gated whatever
+method is declared.
+
 ## Per-app attestation extensions (OID `1.3.6.1.4.1.65230.3.5.*`)
 
 Apps that want to bind opaque values into their RA-TLS leaf certificate
@@ -145,6 +156,10 @@ recorded, and you earn 85% of it (the platform keeps 15%); a failed call
 charges nothing. Because the enforcement and the price are both inside the
 measurement, a successful priced call is attestable proof the caller
 pre-approved exactly the price they were charged.
+
+On a container, priced routes are matched on the same canonical path as
+the configure endpoint, ignoring letter case, and the `/.well-known/` and
+`/__privasys/` exemptions apply to the canonical path.
 
 The developer portal, the App Explorer, and the CLI read the price off the
 schema, show it to the caller, and send the approval header after explicit

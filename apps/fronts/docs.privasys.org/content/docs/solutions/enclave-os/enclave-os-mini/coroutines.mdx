@@ -45,7 +45,7 @@ At the top of every event-loop iteration, if any task has been woken, the server
 
 Scheduling rules:
 
-- **One pending request per connection.** HTTP/1.1 answers in order, so while a request is suspended the connection's next requests stay buffered in its TLS session.
+- **One pending request per connection.** HTTP/1.1 answers in order, so while a request is suspended the connection's next requests stay buffered in its TLS session. At most 64 KiB may wait behind a suspended request, and request bytes buffered across all connections share a 32 MiB budget. A connection that would cross either limit is closed.
 - **At most 8 pending requests.** Each holds a task stack, a guest fiber stack and the guest's linear memory in the enclave heap. Past the cap, a request runs to completion inline, blocking the loop as before.
 - **Wake-driven.** A task is resumed only after its waker fires; nothing is polled speculatively.
 - **Run to completion.** A task is never cancelled. If its connection closes, the task still finishes and its result is discarded. Task stacks are pooled and reused.
