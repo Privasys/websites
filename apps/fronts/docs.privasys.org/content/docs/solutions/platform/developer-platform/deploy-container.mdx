@@ -227,6 +227,27 @@ Each tool in the `tools` array follows the standard [MCP tool format](https://mo
 
 No code changes to your container are required. The `privasys.json` file is read by the platform at submission time, not at runtime.
 
+### Who may call a tool
+
+A tool can declare who may call it in `x-privasys.auth`, with the same grammar as the WIT `@auth` annotation of WASM apps. The manifest rides the measured `org.privasys.manifest` image label, so the runtime checks the caller on the tool's endpoint before the request reaches your code, and your app verifies no platform token itself.
+
+```json
+{
+  "name": "unload_model",
+  "endpoint": "/v1/models/unload",
+  "x-privasys": { "auth": "owner" }
+}
+```
+
+| `auth` | Who may call |
+| --- | --- |
+| `public` (the default) | anyone who can reach the route; it still needs a `surfaces.public` entry to be served in the clear |
+| `authenticated` | a caller with a verified platform token, or a user in a sealed session |
+| `owner` | the app's owner or admin, exactly as on the configure endpoint |
+| `role(a, b)` | a verified platform token carrying one of the roles, as written |
+
+The endpoint is matched like the configure endpoint (letter case, slashes, dot segments, `;parameters` and a format suffix all count as the same route), for every method. A value the runtime does not recognise refuses the image at load, and so does a guarded tool whose endpoint is also declared static or public.
+
 ### Comparison with WASM MCP
 
 | | **WASM** | **Container** |
@@ -234,6 +255,7 @@ No code changes to your container are required. The `privasys.json` file is read
 | **Tool source** | Auto-derived from WIT types and doc comments | Declared in `privasys.json` manifest |
 | **Schema format** | Generated JSON Schema from WIT | Hand-written JSON Schema |
 | **Tool invocation** | Connect RPC to WASM function | HTTP to container endpoint |
+| **Access policy** | `@auth` in the WIT | `x-privasys.auth` on the tool |
 | **Attestation** | SGX (per-function code hash) | TDX (VM boot chain) |
 
 See [MCP Tools](/solutions/enclave-os/enclave-os-mini/mcp-tools) for the WASM-specific MCP reference.
