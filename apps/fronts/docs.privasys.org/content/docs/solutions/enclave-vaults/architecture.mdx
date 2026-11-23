@@ -53,6 +53,7 @@ A vault holds **typed key objects**. Each `KeyObject` has a stable handle, a `Ke
 | `Aes256GcmKey` | Symmetric key, sealed inside the enclave | `Wrap`, `Unwrap` (the vault chooses the IV) | no |
 | `P256SigningKey` | Asymmetric key pair, sealed inside the enclave | `Sign` (a message the vault hashes, or a pre-computed SHA-256 digest it signs raw); the public key is readable | no |
 | `HmacSha256Key` | MAC key, sealed inside the enclave | `Mac` | no |
+| `FrostEd25519` | One share of an Ed25519 key that the vaults generated together; no vault holds the key | `Sign` by any `t` of the vaults together; the public key is readable | never |
 
 Export is off for every type except `RawShare`. A signing key cannot be exfiltrated, even by its owner: every signature happens inside the enclave, and anyone verifies it with the public key.
 
@@ -93,7 +94,7 @@ The secret is split into one share per vault, `n` in all, and any `k` of them (t
 
 For signing keys, AES data keys and HMAC keys, the value the owner needs is not the key itself but the result of an operation on it. A typed key is held **whole by one vault** of the constellation, sealed to that vault's MRENCLAVE, and never exported. Clients dial that vault, present their authentication and any required approvals, and receive the operation's result.
 
-The key is not split or copied: Shamir sharing needs the secret reassembled to use it, which a key that must never leave the enclave cannot allow, and the vault does not yet offer threshold signing, where several vaults sign together without any one holding the key. So a typed key is as available as the one vault that holds it. Treat it as a working key with a bounded life, as the [Key lifecycle](/solutions/enclave-vaults/key-lifecycle) describes: keep what you need to carry on without it (the public key of a signing key; data re-wrapped under a newer version), and rotate before it expires.
+The key is not split or copied: Shamir sharing needs the secret reassembled to use it, which a key that must never leave the enclave cannot allow. So a typed key is as available as the one vault that holds it. For a signing key that must survive the loss of a vault, use a threshold Ed25519 key ([Pattern C](#pattern-c-threshold-ed25519-keys-frosted25519)). Treat it as a working key with a bounded life, as the [Key lifecycle](/solutions/enclave-vaults/key-lifecycle) describes: keep what you need to carry on without it (the public key of a signing key; data re-wrapped under a newer version), and rotate before it expires.
 
 ```
     ┌──────────────────────┐
@@ -113,7 +114,41 @@ The key is not split or copied: Shamir sharing needs the secret reassembled to u
 
 This pattern matches classical HSM semantics: the key never leaves the hardware, and the policy is what governs whether an operation is allowed.
 
-The two patterns share the same `KeyPolicy` schema and the same lifecycle, so the developer experience is uniform.
+### Pattern C: threshold Ed25519 keys (`FrostEd25519`)
+
+A threshold Ed25519 key is one signing key that no single vault holds, and neither does the client. The vaults of the constellation generate it together with a distributed key generation, and each keeps one share. Any `t` of the `n` vaults sign together, and the result is one ordinary 64-byte Ed25519 signature (JOSE `alg` `EdDSA`) that any Ed25519 verifier accepts. The scheme is FROST(Ed25519, SHA-512), [RFC 9591](https://www.rfc-editor.org/rfc/rfc9591).
+
+```
+    ┌──────────────────────┐
+    │  Authorised caller   │   calls each vault directly, with its
+    │  (owner, TEE, ...)   │   own credentials, and relays the
+    └──────────┬───────────┘   vaults' messages between them
+       ┌───────┼───────┐
+       ▼       ▼       ▼
+    ┌──────┐┌──────┐┌──────┐
+    │share1││share2││share3│  each vault checks the key's policy,
+    │      ││      ││      │  audits the Sign, returns its part
+    └──────┘└──────┘└──────┘
+               │
+               ▼
+     one Ed25519 signature, verified under the key's public key
+```
+
+**Creation.** The client drives the rounds: it calls every vault in turn and passes each vault's messages to the others. The vaults never call each other.
+
+- The secret messages of the key generation are sealed from one vault to another, under keys each vault binds into its SGX quote. The client carries ciphertext it cannot open.
+- Every vault verifies the other vaults' quotes through the attestation servers. It accepts a vault only if it runs the same MRENCLAVE as itself and is not an SGX debug enclave, whose memory its host could read.
+- A vault stores its share only after every other vault has confirmed the same transcript and the same public key. If any check fails, no share is kept.
+
+**Signing.** The client asks `t` vaults to sign.
+
+- Each vault checks the key's policy itself, against the caller's own credentials (the owner's token, an app's attestation, approvals), and writes the `Sign` to its own audit log. No vault vouches for a caller on another's behalf.
+- The one-time signing values (nonces) live only in enclave memory: they are never sealed or stored, are erased before a vault returns its part, and are lost on restart. A signing session belongs to the caller that opened it.
+- Any vault combines the parts and checks the result against the public key before it is returned.
+
+**Properties.** The key is never exportable: there is no material to export. It survives the loss of up to `n - t` vaults, and fewer than `t` shares cannot sign. It expires after 90 days like every key. Rotating it creates a new version with a **new** public key; keeping the same public key across rotations and vault upgrades is not available yet.
+
+The three patterns share the same `KeyPolicy` schema and the same lifecycle, so the developer experience is uniform.
 
 ## Per-vault sealed storage
 

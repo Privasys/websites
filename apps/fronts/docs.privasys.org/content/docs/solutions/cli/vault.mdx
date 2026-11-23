@@ -20,14 +20,16 @@ The number of vaults you may create is set by your plan.
 ```sh
 privasys vault key create my-vault signer --type p256    # ECDSA P-256 signing key
 privasys vault key create my-vault wrapper --type aes    # AES-256-GCM wrapping key
+privasys vault key create my-vault release --type ed25519 # threshold Ed25519 signing key
 privasys vault key create my-vault seed                  # a Shamir-split secret (default)
 privasys vault key list my-vault
 ```
 
-Three key types:
+Four key types:
 
 - **`p256`**: a managed signing key. Generated client-side, created whole on one vault, **signed in-enclave**; the private half never leaves and the key is non-exportable.
 - **`aes`**: a managed wrapping key. Encrypt and decrypt happen in-enclave; non-exportable.
+- **`ed25519`**: a threshold signing key. The vaults generate it together and each keeps one share, so no vault and not the CLI ever holds the key. Any `--threshold` of the vaults sign together (the default is the constellation's threshold), and the result is a standard Ed25519 signature (`EdDSA`). Never exportable. Needs CLI v0.57.0 or later. See [threshold Ed25519 keys](/solutions/enclave-vaults/architecture#pattern-c-threshold-ed25519-keys-frosted25519).
 - **`secret`** (default): opaque bytes you provide (or random), Shamir-split across the constellation, exportable by the owner.
 
 ## Use a key
@@ -43,7 +45,9 @@ privasys vault key wrap my-vault wrapper "plaintext"
 privasys vault key unwrap my-vault wrapper --ciphertext <b64> --iv <b64>
 ```
 
-`--prehashed` signs a pre-computed 32-byte SHA-256 digest without re-hashing. That is the form TLS stacks and code signers need (PKCS#11 `CKM_ECDSA`).
+`--prehashed` signs a pre-computed 32-byte SHA-256 digest without re-hashing. That is the form TLS stacks and code signers need (PKCS#11 `CKM_ECDSA`). It applies to `p256` keys only: an Ed25519 key signs the message itself.
+
+For an `ed25519` key, `sign` asks the vaults to sign together; each checks the key's policy against your session and audits the call. `public` returns an OKP JWK (`"kty": "OKP"`, `"crv": "Ed25519"`, `x`), and the JSON output of `create` (`--format json`) carries it as `public_key_b64url`.
 
 ## Rotate, audit, delete
 
@@ -53,7 +57,7 @@ privasys vault key audit my-vault signer      # the key's tamper-evident audit l
 privasys vault key rm my-vault signer         # destroys the material on the constellation
 ```
 
-Rotation creates a new primary version with fresh material. Old versions are retained so data signed or wrapped under them still verifies and unwraps; pin one with `--version`.
+Rotation creates a new primary version with fresh material. Old versions are retained so data signed or wrapped under them still verifies and unwraps; pin one with `--version`. Rotating an `ed25519` key gives it a **new** public key, so publish the new one to your verifiers. `rm` on an `ed25519` key destroys its share on every vault.
 
 ## User secrets
 
