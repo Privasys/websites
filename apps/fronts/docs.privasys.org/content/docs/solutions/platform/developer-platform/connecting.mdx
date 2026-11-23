@@ -1,0 +1,98 @@
+---
+title: Connecting to an app
+description: Every way a client reaches a container app, what the platform can see on each, and the headers your app receives and may trust.
+---
+
+A container app is reached in one of five ways, depending on who the client is and what it can verify. Each arrives at your app with a value of `X-Privasys-Transport` that the runtime sets, so your code always knows how a request came in. This page is the map: which path suits which client, what the platform can see on each, and the full list of headers your app receives. Each path links to its own page for the detail.
+
+## Pick the path for the client
+
+| Client | Path | `X-Privasys-Transport` | Identity your app receives | Read more |
+| --- | --- | --- | --- | --- |
+| CLI, service, wallet, any client with an RA-TLS library | RA-TLS straight to the enclave | `attested` | none from the runtime; the client's own `Authorization`, forwarded as sent | [Verification libraries](/solutions/platform/verification-libraries) |
+| Browser user who signed in | sealed session through the gateway | `sealed` | `X-Privasys-Sub` | [Sealed session](/technology/sealed-session), [auth SDK](/solutions/privasys-id/auth-sdk) |
+| Anyone, in the clear (page shell, public API, webhook, OAuth redirect) | gateway, on the routes your manifest declares | `public` | none, by construction | [Surfaces](/solutions/platform/developer-platform/deploy-container#surfaces-private-static-and-public) |
+| Visitor on your own domain | TLS ends in the enclave with a public certificate | `direct` | `X-Privasys-Sub` and profile headers, from a verified token | [Your own domain](/solutions/platform/developer-platform/custom-domains) |
+| Another app on the platform | mutual RA-TLS | `attested` | `X-Privasys-Peer-*` | [Calling another app](#calling-another-app) |
+
+An app on the platform hostname (`<name>.apps.privasys.org`) serves the first three paths at once; your own domain adds the fourth. Which one a request takes is decided by the client and by your manifest, never by your app code.
+
+## What the platform can see
+
+| Path | TLS ends | What passes the platform readable |
+| --- | --- | --- |
+| `attested` | in the enclave | the server name only |
+| `direct` | in the enclave | the server name only |
+| `sealed` | at the gateway, then a second RA-TLS leg to the enclave | the method, the path and query string, the request headers, and the response status. Request and response **bodies** are sealed to the enclave |
+| `public` | at the gateway | everything: these are the routes you declared as served in the clear |
+
+So on a sealed session, keep anything private in the body. Never put a secret or personal data in a path, a query string or a custom request header: the gateway forwards them as they are. Your app's own response headers are not sent back to the browser on a sealed session at all, only the sealed body and the status, so carry anything the page needs in the body. The gateway logs TLS metadata and route outcomes, never a header, a query string or a body, and keeps nothing that transits it.
+
+## Headers your app receives
+
+The runtime sets these headers and **removes any value a client sent for them** before your app sees the request. They are the only identity headers your app should trust.
+
+| Header | Paths | Value |
+| --- | --- | --- |
+| `X-Privasys-Transport` | all | `attested`, `sealed`, `public` or `direct` |
+| `X-Privasys-Sub` | `sealed`, `direct` | the signed-in user's subject for your app |
+| `X-Privasys-Email`, `X-Privasys-Name` | `direct` | from the sign-in token: the email only when it was proved, the name percent-encoded UTF-8. Store them on first sight |
+| `X-Privasys-Attestation-Level` | `direct` | `verified` when the user signed in with the wallet, `unverified` otherwise |
+| `X-Privasys-Peer-Verified` | `attested`, mutual | `true` when the calling app's attestation verified |
+| `X-Privasys-Peer-App-Id` | `attested`, mutual | the calling app's id |
+| `X-Privasys-Peer-Image-Digest` | `attested`, mutual | the calling app's code hash |
+| `X-Privasys-Peer-Measurement` | `attested`, mutual | the calling machine's TDX measurement |
+| `X-Privasys-Peer-Payer`, `-Payer-App`, `-Payer-Sid` | any, with a spend token | the user paying for the call, the app spending for them, and the consent session ([Spend tokens](/solutions/platform/developer-platform/spend-tokens)) |
+| `X-Privasys-Voucher-Jti`, `-Provider`, `-Claims`, `-Rp-Id` | any, with a disclosure voucher | the verified claims of an attribute disclosure. Check that `X-Privasys-Voucher-Rp-Id` is your own id ([Attribute marketplace](/solutions/privasys-id/attribute-marketplace)) |
+| `X-Forwarded-Host` | `direct` | the name the visitor typed; `Host` is always your platform hostname |
+
+`X-Privasys-Attestation` (`none`, `deterministic` or `challenge`) tags how the client's TLS connection was attested; see [RA-TLS](/solutions/enclave-os/attestation/ra-tls).
+
+### What reaches your app as sent
+
+- **`Authorization` on `attested` and `sealed`.** The runtime forwards it unchanged and does not verify it for you. Either verify the token in your app, or, better, declare who may call each route with [`x-privasys.auth`](/solutions/platform/developer-platform/deploy-container#who-may-call-a-tool) and let the runtime check it before your code runs. On `direct` the runtime verifies the token, turns it into the headers above, and always removes `Authorization`. On `public` every credential is removed.
+- **Any other header.** A header that is not in the table above is the client's word. That includes conventions between apps such as `X-Privasys-On-Behalf-Of`, which the runtime neither sets nor removes: trust it only after you have verified the caller sending it, for example by its `X-Privasys-Peer-App-Id`.
+
+## Headers a client sends
+
+| Header | Sent by | Purpose |
+| --- | --- | --- |
+| `X-Billing-Approved: <n> credits` | the caller, after consent | approves the attested price of a [priced route](/solutions/platform/developer-platform/configure-and-attest#charging-for-api-calls-price). Without it the call gets `402` with `X-Billing-Price`, before your code runs |
+| `X-Privasys-Spend`, `X-Privasys-Spend-Proof` | a calling app | pays with its user's credits ([Spend tokens](/solutions/platform/developer-platform/spend-tokens)) |
+| `X-Privasys-Voucher` | a wallet or relying party | an attribute disclosure voucher |
+
+The runtime consumes all of these: it verifies them, removes them, and gives your app the result in the headers above. On a priced route it also sets `X-Billing-Charged` on the response, and removes any `X-Billing-*` header your app tries to set.
+
+## Calling another app
+
+An app calls another app over mutual RA-TLS: both sides prove what they run. Your container never holds an identity of its own. The runtime issues it a client certificate carrying your app id and code hash, and produces the hardware evidence for each connection. The [RA-TLS Go client](https://github.com/Privasys/ra-tls-clients) does this for you: `ratls.NewEgressIdentity(os.Getenv("PRIVASYS_MANAGER_URL"), os.Getenv("PRIVASYS_CONTAINER_TOKEN"))` gives the TLS client certificate and evidence callbacks.
+
+On the receiving side:
+
+- The owner names the apps that are recognised as attested callers with **allowed callers** (`privasys apps allowed-callers`). A caller that presents a certificate must also present current evidence, or it is refused.
+- The list does not keep other clients out: the same hostname serves browsers and RA-TLS clients, so a caller without a certificate still arrives, as an anonymous request with no `X-Privasys-Peer-*` headers. A route meant for attested apps only must check for them.
+- Your app reads the caller from `X-Privasys-Peer-App-Id` and `X-Privasys-Peer-Image-Digest`, and acts on it only when `X-Privasys-Peer-Verified` is `true`.
+
+On the calling side, the owner declares the app's **dependencies** (`privasys apps dependencies`): the identities it is allowed to call, attested in its certificate. Your app reads its own set from the runtime (`GET $PRIVASYS_MANAGER_URL/api/v1/containers/$PRIVASYS_CONTAINER_NAME/dependencies` with the container token) and checks the callee against it.
+
+## Environment your app gets
+
+| Variable | What it is for |
+| --- | --- |
+| `PORT` | the port your app must listen on |
+| `PRIVASYS_MANAGER_URL` | the runtime's in-enclave API, reachable only from your container |
+| `PRIVASYS_CONTAINER_TOKEN` | your container's credential for that API, sent as `Authorization: Bearer` |
+| `PRIVASYS_CONTAINER_NAME` | your container's name, used in the API paths |
+| `PRIVASYS_APP_ID` | your app's id |
+| `PRIVASYS_ISSUER` | the identity provider, for fetching [spend tokens](/solutions/platform/developer-platform/spend-tokens) |
+| `PRIVASYS_IMAGE_DIGEST` | your image's digest, the value clients see attested |
+
+Through `PRIVASYS_MANAGER_URL` your app gets its client identity for calling other apps, its declared dependencies, and reports usage when it bills by consumption. None of these needs a platform credential in your app.
+
+## Next steps
+
+- [Gateway](/solutions/platform/gateway), the legs in detail
+- [Surfaces: private, static and public](/solutions/platform/developer-platform/deploy-container#surfaces-private-static-and-public), what you serve in the clear
+- [Sealed session](/technology/sealed-session), how a browser reaches private routes
+- [Your own domain](/solutions/platform/developer-platform/custom-domains), TLS that ends in the enclave on your hostname
+- [Spend tokens](/solutions/platform/developer-platform/spend-tokens), paying with the user's credits

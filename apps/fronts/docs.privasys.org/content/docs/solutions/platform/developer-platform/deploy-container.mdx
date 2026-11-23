@@ -101,7 +101,7 @@ Everything a container serves is **private** unless the application declares oth
 
 | Surface | Reached over | Methods | Who sees the traffic | Identity the app may trust | What is on it |
 | --- | --- | --- | --- | --- | --- |
-| **private** | RA-TLS, or a sealed session on the terminated leg | any | the client and the enclave only | `X-Privasys-Sub`, the inner bearer, `X-Privasys-App-*`, the payer headers | everything not declared |
+| **private** | RA-TLS, or a sealed session on the terminated leg | any | the client and the enclave; on a sealed session the gateway also sees the path and headers, never the body | `X-Privasys-Sub`, `X-Privasys-Peer-*`, the payer headers ([full list](/solutions/platform/developer-platform/connecting#headers-your-app-receives)) | everything not declared |
 | **static** | in the clear, terminated leg | GET, HEAD | the gateway | none | the declared prefixes |
 | **public** | in the clear, terminated leg | GET, HEAD, POST, PUT, PATCH, DELETE as declared; OPTIONS answered by the runtime | the gateway | none | the declared method and path pairs |
 
