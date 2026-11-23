@@ -117,6 +117,8 @@ test.describe('Fast Verification Suite', () => {
     // still runs; a cleanup *test* would be skipped in serial mode after a
     // failure), so the admin Review-apps list isn't littered with built e2e apps.
     test.afterAll(async () => {
+        // Each app takes 15 s or more to stop and delete; there are four.
+        test.setTimeout(180_000);
         await cleanupApps({ names: SUITE_APPS });
     });
 
@@ -816,18 +818,19 @@ test.describe('Fast Verification Suite', () => {
     test('WASM: portal tabs visible', async ({ page }) => {
         test.skip(!wasmDeployed, 'WASM deploy failed — skipping');
         test.setTimeout(30_000);
+        // Each test has a fresh page: sign it in (the token is cached, the
+        // AuthFrame mock is per page).
+        await setupAuth(page);
         await page.goto(`/dashboard/apps/${wasmAppId}`);
-        await page.waitForSelector('nav', { timeout: 30_000 });
+        await page.waitForSelector('nav', { timeout: 15_000 });
 
-        // Always-present tabs (Overview was removed; App Store is now first)
+        // Always-present tabs (Overview was removed; App Store is now first;
+        // Team is the account's, in the sidebar)
         await expect(
             page.getByRole('button', { name: 'App Store' }),
         ).toBeVisible({ timeout: 15_000 });
         await expect(
             page.getByRole('button', { name: 'Deployments' }),
-        ).toBeVisible();
-        await expect(
-            page.getByRole('button', { name: 'Team' }),
         ).toBeVisible();
         // Deployment-conditional tabs — wait for Attestation as the signal
         // the active-deployment data has loaded, then check siblings.
@@ -981,6 +984,7 @@ test.describe('Fast Verification Suite', () => {
     test('container: portal tabs visible', async ({ page }) => {
         test.skip(!containerDeployed, 'Container deploy failed — skipping');
         test.setTimeout(30_000);
+        await setupAuth(page);
         await page.goto(`/dashboard/apps/${containerAppId}`);
         await page.waitForSelector('nav', { timeout: 10_000 });
 

@@ -13,6 +13,9 @@ import { cleanupApps } from './e2e-cleanup';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'https://api.developer.test.privasys.org';
 const STORE_URL = process.env.E2E_STORE_URL || 'https://store.privasys.org';
+// The store front reads the prod store API, and there is no dev store front:
+// an app published on dev only shows there when a front for dev is named.
+const STORE_FRONT_SEES_API = !!process.env.E2E_STORE_URL || (process.env.E2E_ENV || 'dev') === 'prod';
 const screenshot = (name: string) => path.join(__dirname, 'test-results', `${name}.png`);
 
 interface StoreApp { slug: string; name: string; target: string; tee: string; icon_url: string; category: string }
@@ -125,14 +128,18 @@ test.describe('Public App Store', () => {
             // pretty URL the portal hands the developer on publish. This is
             // served by nginx from the exported /app page (the slug comes from
             // the path), so it covers the routing an app relies on the moment
-            // it is published.
-            await page.goto(`${STORE_URL}/apps/${encodeURIComponent(name)}`);
-            await expect(page.getByRole('heading', { name: 'Reproducibility' })).toBeVisible({ timeout: 20_000 });
-            await page.screenshot({ path: screenshot('store-detail'), fullPage: true });
+            // it is published. Only where the front reads this API.
+            if (STORE_FRONT_SEES_API) {
+                await page.goto(`${STORE_URL}/apps/${encodeURIComponent(name)}`);
+                await expect(page.getByRole('heading', { name: 'Reproducibility' })).toBeVisible({ timeout: 20_000 });
+                await page.screenshot({ path: screenshot('store-detail'), fullPage: true });
 
-            // The older query form stays supported for links already shared.
-            await page.goto(`${STORE_URL}/app/?slug=${encodeURIComponent(name)}`);
-            await expect(page.getByRole('heading', { name: 'Reproducibility' })).toBeVisible({ timeout: 20_000 });
+                // The older query form stays supported for links already shared.
+                await page.goto(`${STORE_URL}/app/?slug=${encodeURIComponent(name)}`);
+                await expect(page.getByRole('heading', { name: 'Reproducibility' })).toBeVisible({ timeout: 20_000 });
+            } else {
+                console.log("No store front reads this environment's API (set E2E_STORE_URL): front checks skipped");
+            }
         } finally {
             await request.delete(`${API}/api/v1/apps/${appId}`, { headers, timeout: 60_000 }).catch(() => {});
         }

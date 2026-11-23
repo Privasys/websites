@@ -24,8 +24,34 @@ import { cleanupApps } from './e2e-cleanup';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'https://api.developer.test.privasys.org';
 const TEST_APP_NAME = 'e2e-multiarch-oci-label';
-// container-app-lightpanda was published by buildx (provenance + sbom) → image index.
-const LIGHTPANDA_IMAGE = 'ghcr.io/privasys/container-app-lightpanda:817987b';
+// The fixture must be an image whose top level is an OCI index and whose
+// platform image carries the org.privasys.manifest label. lightpanda's
+// 817987b was one (buildx with provenance + sbom) and is gone from GHCR; its
+// releases since are single-arch, and no tagged Privasys image is both today.
+// Point E2E_MULTIARCH_IMAGE at one to run this; until then it skips, and the
+// control plane's hermetic TestFetchOCILabel_MultiArchIndex covers bug #34.
+const LIGHTPANDA_IMAGE = process.env.E2E_MULTIARCH_IMAGE || 'ghcr.io/privasys/container-app-lightpanda:817987b';
+
+/** Whether the image exists and its top level is a multi-arch index. */
+async function isPublicIndex(image: string): Promise<boolean> {
+    const m = /^ghcr\.io\/([^:@]+)[:@](.+)$/.exec(image);
+    if (!m) return false;
+    const [, repo, ref] = m;
+    try {
+        const tok = await (await fetch(`https://ghcr.io/token?scope=repository:${repo}:pull`)).json() as { token?: string };
+        const res = await fetch(`https://ghcr.io/v2/${repo}/manifests/${ref}`, {
+            headers: {
+                Authorization: `Bearer ${tok.token ?? ''}`,
+                Accept: 'application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json'
+            }
+        });
+        if (!res.ok) return false;
+        const type = res.headers.get('content-type') ?? '';
+        return type.includes('image.index') || type.includes('manifest.list');
+    } catch {
+        return false;
+    }
+}
 
 async function deleteAppIfExists(page: import('@playwright/test').Page, token: string) {
     const resp = await page.request.get(`${API}/api/v1/apps`, {
@@ -49,6 +75,8 @@ test.describe('Container app — multi-arch OCI label auto-detect (bug #34)', ()
 
     test('package-source app populates container_mcp from OCI image index', async ({ page }) => {
         test.setTimeout(60_000);
+
+        test.skip(!(await isPublicIndex(LIGHTPANDA_IMAGE)), `${LIGHTPANDA_IMAGE} is not a multi-arch index on GHCR (set E2E_MULTIARCH_IMAGE)`);
 
         const token = await getToken();
         await deleteAppIfExists(page, token);

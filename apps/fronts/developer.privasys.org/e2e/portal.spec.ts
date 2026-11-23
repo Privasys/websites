@@ -183,7 +183,7 @@ test.describe('Developer Portal', () => {
     test('dashboard loads with sidebar and nav elements', async ({ page }) => {
         await page.goto('/dashboard/');
         await expect(page.getByText('Applications', { exact: true })).toBeVisible();
-        await expect(page.getByRole('link', { name: 'Settings' })).toBeVisible();
+        await expect(page.getByRole('link', { name: 'Settings', exact: true })).toBeVisible();
         // Header shows branding
         await expect(page.getByRole('link', { name: 'Privasys Developer' })).toBeVisible();
         await page.screenshot({ path: screenshot('dashboard'), fullPage: true });
@@ -252,7 +252,8 @@ test.describe('Developer Portal', () => {
         // Verify core tabs (Overview was removed; App Store is now the first tab)
         await expect(page.getByRole('button', { name: 'App Store' })).toBeVisible();
         await expect(page.getByRole('button', { name: 'Deployments' })).toBeVisible();
-        await expect(page.getByRole('button', { name: 'Team' })).toBeVisible();
+        // Team is the account's now, in the sidebar, not a tab of the app.
+        await expect(page.getByRole('button', { name: 'Team' })).toHaveCount(0);
 
         // Click Deployments tab
         await page.getByRole('button', { name: 'Deployments' }).click();
@@ -325,12 +326,17 @@ test.describe('Developer Portal', () => {
         }
     });
 
-    test('settings page shows identity and organisation', async ({ page }) => {
+    test('settings page shows the account, and your profile your identity', async ({ page }) => {
+        // Settings are the account's; a person's own details are on Your profile.
         await page.goto('/dashboard/settings/');
-        await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
-        await expect(page.getByRole('heading', { name: 'Identity' })).toBeVisible();
-        await expect(page.getByRole('heading', { name: 'Organisation' })).toBeVisible();
+        await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible();
+        await expect(page.getByRole('heading', { name: 'Account', exact: true })).toBeVisible();
         await page.screenshot({ path: screenshot('settings'), fullPage: true });
+
+        await page.goto('/dashboard/profile/');
+        await expect(page.getByRole('heading', { name: 'Your profile' })).toBeVisible();
+        await expect(page.getByRole('heading', { name: 'Identity' })).toBeVisible();
+        await page.screenshot({ path: screenshot('profile'), fullPage: true });
     });
 
     test('new app page shows upload option', async ({ page }) => {

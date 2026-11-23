@@ -17,12 +17,39 @@ import { execFile } from 'node:child_process';
 const API = process.env.NEXT_PUBLIC_API_URL || 'https://api.developer.test.privasys.org';
 
 /**
+ * A freshly deployed app is not routed yet: the gateway pulls new routes
+ * every few seconds, and until then the host answers with the gateway's
+ * fallback certificate, which no Privasys fleet anchor signed. That is the
+ * only error worth waiting out; every other one is the test's to see.
+ */
+const NOT_ROUTED_YET = /does not reach a trusted Privasys fleet anchor|certificate signed by unknown authority/;
+const ROUTE_WAIT_MS = 20_000;
+
+/**
  * Invoke a tool on the app's enclave directly. Returns { status, body } like
  * the old relay helper so call sites keep their assertions: `status` is the
  * app's HTTP status (200 on success, the refused status on 4xx/5xx), `body`
  * the parsed JSON response (or { raw } when not JSON).
  */
-export function appCall(
+export async function appCall(
+    token: string,
+    appId: string,
+    fn: string,
+    params: unknown,
+    opts?: { timeout?: number }
+): Promise<{ status: number; body: Record<string, unknown> }> {
+    const deadline = Date.now() + ROUTE_WAIT_MS;
+    for (;;) {
+        try {
+            return await appCallOnce(token, appId, fn, params, opts);
+        } catch (e) {
+            if (!(e instanceof Error) || !NOT_ROUTED_YET.test(e.message) || Date.now() > deadline) throw e;
+            await new Promise((r) => setTimeout(r, 2_000));
+        }
+    }
+}
+
+function appCallOnce(
     token: string,
     appId: string,
     fn: string,
