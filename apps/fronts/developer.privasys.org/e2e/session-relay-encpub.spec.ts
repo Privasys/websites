@@ -42,7 +42,7 @@ import { test, expect, type APIRequestContext, type Page } from '@playwright/tes
 import { execSync } from 'node:child_process';
 import { createHash, generateKeyPairSync } from 'node:crypto';
 
-import { setupAuth, getToken as getE2eToken } from './e2e-auth';
+import { setupAuth, getToken as getE2eToken, accountHeader } from './e2e-auth';
 import { cleanupApps } from './e2e-cleanup';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'https://api.developer.test.privasys.org';
@@ -186,7 +186,7 @@ async function getToken(page: Page): Promise<string> {
 /** FULL mode: create + build + deploy a fresh container app on the target enclave. */
 async function deployFreshApp(page: Page): Promise<string> {
     const tok = await getToken(page);
-    const hdrs = { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' };
+    const hdrs = { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json', ...(await accountHeader()) };
 
     // Clean any prior run, then create.
     await cleanupApps({ names: [APP_NAME] });

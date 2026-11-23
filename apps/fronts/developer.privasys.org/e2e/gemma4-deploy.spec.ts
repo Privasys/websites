@@ -14,7 +14,7 @@
  *     gemma4-deploy.spec.ts --project=gemma4 --no-deps
  */
 import { test, expect } from '@playwright/test';
-import { setupAuth, getToken as getE2eToken } from './e2e-auth';
+import { setupAuth, getToken as getE2eToken, accountHeader } from './e2e-auth';
 import { cleanupApps } from './e2e-cleanup';
 import { appCall } from './e2e-app-call';
 
@@ -43,7 +43,7 @@ async function getToken(page: import('@playwright/test').Page): Promise<string> 
 
 async function cleanupApp(page: import('@playwright/test').Page, tok: string, name: string) {
     const resp = await page.request.get(`${API}/api/v1/apps`, {
-        headers: { Authorization: `Bearer ${tok}` },
+        headers: { Authorization: `Bearer ${tok}`, ...(await accountHeader()) },
     });
     if (!resp.ok()) return;
     const apps: { id: string; name: string }[] = await resp.json();
@@ -95,7 +95,7 @@ test.describe('Gemma 4 Package Deploy', () => {
 
         const resp = await page.request.post(`${API}/api/v1/apps`, {
             headers: {
-                Authorization: `Bearer ${token}`,
+                Authorization: `Bearer ${token}`, ...(await accountHeader()),
                 'Content-Type': 'application/json',
             },
             data: {

@@ -19,7 +19,7 @@
  * so afterAll needs no token in scope; cleanupApps no-ops if auth is unavailable.
  */
 import { request, type APIRequestContext } from '@playwright/test';
-import { getToken } from './e2e-auth';
+import { getToken, accountHeader } from './e2e-auth';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'https://api.developer.test.privasys.org';
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -46,7 +46,7 @@ async function stopAndDelete(req: APIRequestContext, token: string, id: string, 
  * it works with `page.request` in a test or a standalone context in afterAll.
  */
 export async function deleteApp(req: APIRequestContext, token: string, name: string): Promise<void> {
-    const resp = await req.get(`${API}/api/v1/apps`, { headers: { Authorization: `Bearer ${token}` } });
+    const resp = await req.get(`${API}/api/v1/apps`, { headers: { Authorization: `Bearer ${token}`, ...(await accountHeader()) } });
     if (!resp.ok()) return;
     const apps: { id: string; name: string }[] = await resp.json();
     const app = apps.find(a => a.name === name);
@@ -66,7 +66,7 @@ export async function cleanupApps(opts: { names?: string[]; prefixes?: string[] 
     try {
         for (const name of opts.names ?? []) await deleteApp(ctx, token, name);
         if (opts.prefixes && opts.prefixes.length > 0) {
-            const resp = await ctx.get(`${API}/api/v1/apps`, { headers: { Authorization: `Bearer ${token}` } });
+            const resp = await ctx.get(`${API}/api/v1/apps`, { headers: { Authorization: `Bearer ${token}`, ...(await accountHeader()) } });
             if (resp.ok()) {
                 const apps: { id: string; name: string }[] = await resp.json();
                 for (const app of apps.filter(a => opts.prefixes!.some(p => a.name.startsWith(p)))) {

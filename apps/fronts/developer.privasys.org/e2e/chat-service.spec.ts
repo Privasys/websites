@@ -19,7 +19,7 @@
  *     chat-service.spec.ts --project=chat-service --no-deps
  */
 import { test, expect, request } from '@playwright/test';
-import { getToken } from './e2e-auth';
+import { getToken, accountHeader } from './e2e-auth';
 import { deleteApp, cleanupApps } from './e2e-cleanup';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'https://api.developer.test.privasys.org';
@@ -55,7 +55,7 @@ test.describe('chat-service container app', () => {
         await deleteApp(ctx, token, APP_NAME);
 
         const create = await ctx.post(`${API}/api/v1/apps`, {
-            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+            headers: { Authorization: `Bearer ${token}`, ...(await accountHeader()), 'Content-Type': 'application/json' },
             data: {
                 name: APP_NAME,
                 source_type: 'github',

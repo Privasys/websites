@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import path from 'path';
-import { setupAuth, getToken } from './e2e-auth';
+import { setupAuth, getToken, accountHeader } from './e2e-auth';
 
 const screenshot = (name: string) => path.join(__dirname, 'test-results', `${name}.png`);
 
@@ -422,7 +422,7 @@ test.describe('Developer Portal', () => {
 
         // List apps via API
         const listResp = await page.request.get(`${API}/api/v1/apps`, {
-            headers: { Authorization: `Bearer ${token}` },
+            headers: { Authorization: `Bearer ${token}`, ...(await accountHeader()) },
         });
         expect(listResp.ok()).toBeTruthy();
         const apps: { id: string; name: string }[] = await listResp.json();
@@ -441,7 +441,7 @@ test.describe('Developer Portal', () => {
 
         // Verify via API
         const verifyResp = await page.request.get(`${API}/api/v1/apps`, {
-            headers: { Authorization: `Bearer ${token}` },
+            headers: { Authorization: `Bearer ${token}`, ...(await accountHeader()) },
         });
         const remaining: unknown[] = await verifyResp.json();
         expect(remaining.length).toBe(0);

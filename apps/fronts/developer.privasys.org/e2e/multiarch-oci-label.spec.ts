@@ -19,7 +19,7 @@
  *     --project portal -g "multi-arch OCI"
  */
 import { test, expect } from '@playwright/test';
-import { getToken } from './e2e-auth';
+import { getToken, accountHeader } from './e2e-auth';
 import { cleanupApps } from './e2e-cleanup';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'https://api.developer.test.privasys.org';
@@ -55,7 +55,7 @@ async function isPublicIndex(image: string): Promise<boolean> {
 
 async function deleteAppIfExists(page: import('@playwright/test').Page, token: string) {
     const resp = await page.request.get(`${API}/api/v1/apps`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${token}`, ...(await accountHeader()) },
     });
     if (!resp.ok()) return;
     const apps: { id: string; name: string }[] = await resp.json();
@@ -83,7 +83,7 @@ test.describe('Container app — multi-arch OCI label auto-detect (bug #34)', ()
 
         const createResp = await page.request.post(`${API}/api/v1/apps`, {
             headers: {
-                Authorization: `Bearer ${token}`,
+                Authorization: `Bearer ${token}`, ...(await accountHeader()),
                 'Content-Type': 'application/json',
             },
             data: {

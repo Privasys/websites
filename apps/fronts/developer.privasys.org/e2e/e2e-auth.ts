@@ -302,10 +302,51 @@ export async function getToken(): Promise<string> {
     return fetchToken();
 }
 
-/** Full auth setup for a page: inject cookies + mock the AuthFrame iframe. */
+// The suite works in an organisation account of its own ("E2E Tests"),
+// so the apps it deploys are billed and listed there, never in a person's
+// account. The e2e user is an admin of it. E2E_ACCOUNT_NAME names another
+// one; E2E_ACCOUNT=personal works in the e2e user's own account instead.
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://api.developer.test.privasys.org';
+const ACCOUNT_NAME = process.env.E2E_ACCOUNT_NAME || 'E2E Tests';
+let accountId: string | null | undefined;
+
+/** The id of the account the suite works in, or null for the personal one. */
+export async function getAccountId(): Promise<string | null> {
+    if (accountId !== undefined) return accountId;
+    if (process.env.E2E_ACCOUNT === 'personal') return (accountId = null);
+    const token = await getToken();
+    const res = await fetch(`${API_URL}/api/v1/accounts`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) throw new Error(`listing the e2e user's accounts: HTTP ${res.status}`);
+    const { accounts } = (await res.json()) as { accounts: { id: string; kind: string; name: string }[] };
+    const acc = accounts.find(a => a.kind === 'org' && a.name === ACCOUNT_NAME);
+    if (!acc) {
+        throw new Error(`the e2e user is not in an organisation account named "${ACCOUNT_NAME}" ` +
+            '(set E2E_ACCOUNT=personal to run in its own account)');
+    }
+    return (accountId = acc.id);
+}
+
+/** The header naming the suite's account to the control plane. */
+export async function accountHeader(): Promise<Record<string, string>> {
+    const id = await getAccountId();
+    return id ? { 'X-Privasys-Account': id } : {};
+}
+
+/** Full auth setup for a page: inject cookies, mock the AuthFrame iframe,
+ *  and open the portal in the suite's account (as the switcher would). */
 export async function setupAuth(page: Page): Promise<void> {
     await injectAuthCookies(page.context());
     await mockAuthFrame(page);
+    const id = await getAccountId();
+    if (id) {
+        await page.addInitScript((acc: string) => {
+            try {
+                if (!new URLSearchParams(window.location.search).get('account')) {
+                    window.localStorage.setItem('privasys.account', acc);
+                }
+            } catch { /* not remembered; the page falls back to the default */ }
+        }, id);
+    }
 }
 
 /** Navigate to the dashboard and wait for it to be ready. */

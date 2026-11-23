@@ -22,7 +22,7 @@
  *     container-config-actions.spec.ts --project=portal --no-deps
  */
 import { test, expect } from '@playwright/test';
-import { setupAuth, getToken as getE2eToken } from './e2e-auth';
+import { setupAuth, getToken as getE2eToken, accountHeader } from './e2e-auth';
 import { cleanupApps } from './e2e-cleanup';
 import { appCall } from './e2e-app-call';
 
@@ -57,7 +57,7 @@ async function rpc(_page: import('@playwright/test').Page, tok: string, fn: stri
 }
 
 async function deleteApp(page: import('@playwright/test').Page, tok: string, name: string) {
-    const resp = await page.request.get(`${API}/api/v1/apps`, { headers: { Authorization: `Bearer ${tok}` } });
+    const resp = await page.request.get(`${API}/api/v1/apps`, { headers: { Authorization: `Bearer ${tok}`, ...(await accountHeader()) } });
     if (!resp.ok()) return;
     const apps: { id: string; name: string }[] = await resp.json();
     const app = apps.find(a => a.name === name);
@@ -83,7 +83,7 @@ test.describe('Container typed config + actions (image-bound freeze)', () => {
         await deleteApp(page, token, APP_NAME);
 
         const resp = await page.request.post(`${API}/api/v1/apps`, {
-            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+            headers: { Authorization: `Bearer ${token}`, ...(await accountHeader()), 'Content-Type': 'application/json' },
             data: { name: APP_NAME, source_type: 'github', commit_url: COMMIT_URL, app_type: 'container' },
         });
         expect(resp.ok(), `create app: ${resp.status()}`).toBeTruthy();

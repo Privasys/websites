@@ -14,7 +14,7 @@
  */
 import { test, expect } from '@playwright/test';
 import path from 'path';
-import { setupAuth, getToken as getE2eToken } from './e2e-auth';
+import { setupAuth, getToken as getE2eToken, accountHeader } from './e2e-auth';
 import { cleanupApps } from './e2e-cleanup';
 
 const screenshot = (name: string) => path.join(__dirname, 'test-results', `${name}.png`);
@@ -51,7 +51,7 @@ async function deleteApp(
     name: string,
 ) {
     const resp = await page.request.get(`${API}/api/v1/apps`, {
-        headers: { Authorization: `Bearer ${tok}` },
+        headers: { Authorization: `Bearer ${tok}`, ...(await accountHeader()) },
     });
     if (!resp.ok()) return;
     const apps: { id: string; name: string }[] = await resp.json();
@@ -99,7 +99,7 @@ test.describe('Confidential AI Deployment', () => {
 
         const resp = await page.request.post(`${API}/api/v1/apps`, {
             headers: {
-                Authorization: `Bearer ${token}`,
+                Authorization: `Bearer ${token}`, ...(await accountHeader()),
                 'Content-Type': 'application/json',
             },
             data: {

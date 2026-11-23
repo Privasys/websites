@@ -14,7 +14,7 @@
  */
 import { test, expect } from '@playwright/test';
 import path from 'path';
-import { setupAuth, getToken as getE2eToken } from './e2e-auth';
+import { setupAuth, getToken as getE2eToken, accountHeader } from './e2e-auth';
 import { deleteApp, cleanupApps } from './e2e-cleanup';
 import { appCall } from './e2e-app-call';
 
@@ -134,7 +134,7 @@ test.describe('Fast Verification Suite', () => {
         // Create WASM app
         const wasmResp = await page.request.post(`${API}/api/v1/apps`, {
             headers: {
-                Authorization: `Bearer ${token}`,
+                Authorization: `Bearer ${token}`, ...(await accountHeader()),
                 'Content-Type': 'application/json',
             },
             data: {
@@ -152,7 +152,7 @@ test.describe('Fast Verification Suite', () => {
         // Create container app (privasys.json → auto-detected MCP)
         const ctrResp = await page.request.post(`${API}/api/v1/apps`, {
             headers: {
-                Authorization: `Bearer ${token}`,
+                Authorization: `Bearer ${token}`, ...(await accountHeader()),
                 'Content-Type': 'application/json',
             },
             data: {
@@ -177,7 +177,7 @@ test.describe('Fast Verification Suite', () => {
         // this (it re-keys the volume in place).
         const rotResp = await page.request.post(`${API}/api/v1/apps`, {
             headers: {
-                Authorization: `Bearer ${token}`,
+                Authorization: `Bearer ${token}`, ...(await accountHeader()),
                 'Content-Type': 'application/json',
             },
             data: {
@@ -204,7 +204,7 @@ test.describe('Fast Verification Suite', () => {
         // vault_key_handle is empty here and asserted after deploy.
         const wasmRotResp = await page.request.post(`${API}/api/v1/apps`, {
             headers: {
-                Authorization: `Bearer ${token}`,
+                Authorization: `Bearer ${token}`, ...(await accountHeader()),
                 'Content-Type': 'application/json',
             },
             data: {

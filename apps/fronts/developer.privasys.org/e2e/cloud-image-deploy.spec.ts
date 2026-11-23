@@ -39,7 +39,7 @@
  *       --project=cloud-image
  */
 import { test, expect, type Page } from '@playwright/test';
-import { setupAuth, getToken as getE2eToken } from './e2e-auth';
+import { setupAuth, getToken as getE2eToken, accountHeader } from './e2e-auth';
 import { cleanupApps } from './e2e-cleanup';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'https://api.developer.test.privasys.org';
@@ -67,7 +67,7 @@ async function getToken(page: Page): Promise<string> {
 
 async function deleteApp(page: Page, tok: string, name: string) {
     const resp = await page.request.get(`${API}/api/v1/apps`, {
-        headers: { Authorization: `Bearer ${tok}` },
+        headers: { Authorization: `Bearer ${tok}`, ...(await accountHeader()) },
     });
     if (!resp.ok()) return;
     const apps: { id: string; name: string }[] = await resp.json();
@@ -152,7 +152,7 @@ test.describe('Cloud-image deploy', () => {
 
         const resp = await page.request.post(`${API}/api/v1/apps`, {
             headers: {
-                Authorization: `Bearer ${token}`,
+                Authorization: `Bearer ${token}`, ...(await accountHeader()),
                 'Content-Type': 'application/json',
             },
             data: {
