@@ -5,6 +5,7 @@
         "overview",
         "architecture",
         "access-control",
+        "key-lifecycle",
         "standard-interfaces"
     ]
 }

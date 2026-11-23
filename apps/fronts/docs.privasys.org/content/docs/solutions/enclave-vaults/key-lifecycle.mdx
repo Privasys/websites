@@ -1,0 +1,74 @@
+---
+title: Key lifecycle
+description: Vault keys expire after at most 90 days. What that means, how to see it, how keys are renewed, and what happens when the vault itself is upgraded.
+---
+
+Every key in Enclave Vaults expires. The vault is designed for **temporary key management**: holding an application's keys while it is deployed, restarted or upgraded, so that only the attested code the owner approved can get them back. It is not a place for long-term storage. The application holds its keys while it runs; a key that has to live longer than its expiry is renewed actively, the way a Let's Encrypt certificate is.
+
+## Keys expire
+
+- A key's expiry is fixed when it is created: **90 days** after creation for every key the platform creates (application storage keys, your vault keys and your secrets).
+- The date never moves. No operation extends a key's life; renewing creates a new key.
+- After expiry the vault refuses the operations that use the key: `Sign`, `Wrap`, `Unwrap`, `Mac`, `ExportKey`, and policy changes. It still answers for reading the key's information and audit log, and for deleting it.
+- The vault decides expiry from its own trusted clock. Without a trusted time, it treats a key as expired.
+
+## See when your keys expire
+
+```sh
+privasys vault key list <vault>        # VERSION and EXPIRES for every key; "renew" from 30 days out
+privasys secrets info <name>           # where a secret is held and when it expires
+```
+
+`privasys vault key create` prints the expiry of the key it created, and the API returns `expires_at` with every key.
+
+## Renew your own keys
+
+| What | How | What you get |
+| --- | --- | --- |
+| A signing or AES key | `privasys vault key rotate <vault> <name>` | a new version with **new** material, the new primary, for 90 days |
+| A secret | `privasys secrets renew <name>` | the **same** value for a fresh 90 days, after a wallet step-up |
+
+Rotating keeps the older versions, so data wrapped under them still unwraps and their public keys stay readable, but only until each version's own expiry. Before an old version expires:
+
+- **AES keys:** re-wrap anything still wrapped under it with the current version.
+- **Signing keys:** keep the public key of every version whose signatures must stay verifiable (`privasys vault key public <vault> <name> --version <n>`). Verifying a signature needs only the public key, never the vault.
+
+A secret can be renewed only before it expires. An expired secret is gone unless you exported it.
+
+## Application keys
+
+The key that opens an application's encrypted storage is held in the vault so that the application, and only its approved code, gets it back on every restart.
+
+- **While a container application runs,** the platform renews this key for it once it is 60 days old. The renewed key opens the same storage: nothing is re-encrypted, and a bring-your-own-key owner's file stays valid.
+- **A WASM application's key** is renewed by its owner with `privasys apps migrate-constellation <app>`, which re-creates it on the active constellation.
+- **A stopped application is not renewed.** If its key expires while it is stopped, its storage can no longer be opened by the platform. Start an application you want to keep before its key is 90 days old. An application created with your own key (`--key-provider byok`, see `privasys apps key`) can always be recovered from the copy you hold; for any other, `privasys apps export-key` writes the key to a local file you keep.
+- A new version of the application gets the key only after the owner approves its measurement, see [Approving a new measurement](/solutions/enclave-vaults/access-control#approving-a-new-measurement).
+
+## Constellations: when the vault itself is upgraded
+
+A **constellation** is one version of the vault: a set of vault enclaves running the same code, with one attestation configuration and one Shamir threshold. A new vault version is a new constellation, and one is active at a time.
+
+- New keys and new key versions are always created on the **active** constellation.
+- An existing key stays on the constellation that created it, its **home**, until it expires. Keys are never moved for you, and the platform addresses each key at its home, so an upgrade of the vault changes nothing for a key in use.
+- A key reaches the new constellation when it is renewed: rotating a vault key or renewing a secret creates it on the active constellation, and the platform's renewal of application keys moves them there.
+- A constellation is not retired while it still holds an unexpired key.
+
+So, as long as you renew within 90 days, every vault upgrade carries your keys forward without an action of its own.
+
+## How a key is held
+
+| Key | Held by | Survives the loss of |
+| --- | --- | --- |
+| A secret (`privasys secrets create`, or `privasys vault key create --type secret`) | split into one Shamir share per vault; any `k` shares reconstruct it | up to `n - k` vaults |
+| A signing, AES or HMAC key | one vault, whole | no vault: it is as available as the one vault that holds it |
+
+The threshold `k` is at least 2. `privasys secrets create --threshold` sets it for a secret; a vault key uses the constellation's threshold. Fewer than `k` shares reveal nothing about the secret.
+
+A typed key is not split because Shamir sharing reassembles the secret to use it, which a key that must never leave the enclave cannot allow. The vault does not yet offer threshold signing, where several vaults would sign together without any one holding the key. Until it does, treat a signing or AES key as a working key: keep its public key, re-wrap your data under newer versions, and rotate within its 90 days.
+
+## Checklist
+
+- Read the expiry of your keys with `privasys vault key list` and `privasys secrets info`.
+- Rotate vault keys and renew secrets before 90 days, and the earlier the better: the CLI flags a key from 30 days out.
+- Keep public keys of signing keys, and re-wrap data under the current AES version.
+- Keep the applications whose data you need running, or hold their keys yourself.

@@ -5,7 +5,7 @@ description: A distributed virtual HSM (vHSM) built on a constellation of attest
 
 Enclave Vaults is a **distributed virtual HSM** (vHSM). Each vault instance is a small key-management service that runs inside an Intel SGX enclave: it holds typed key objects, executes cryptographic operations on them inside the enclave, and refuses to act outside the policy attached to each key. A constellation of independent vault instances forms a single logical key-management surface, with redundancy across machines and an information-theoretic distribution path for the secrets that warrant it.
 
-This page is a one-screen orientation. The [Architecture](/solutions/enclave-vaults/architecture) page describes the runtime in detail, the [Access Control](/solutions/enclave-vaults/access-control) page covers policies, principals, and approvals, and the [Standard Interfaces](/solutions/enclave-vaults/standard-interfaces) page covers the PKCS#11, KMIP, and REST surfaces your existing software can use to reach a vault-held key.
+This page is a one-screen orientation. The [Architecture](/solutions/enclave-vaults/architecture) page describes the runtime in detail, the [Access Control](/solutions/enclave-vaults/access-control) page covers policies, principals, and approvals, the [Key lifecycle](/solutions/enclave-vaults/key-lifecycle) page covers expiry, renewal and constellations, and the [Standard Interfaces](/solutions/enclave-vaults/standard-interfaces) page covers the PKCS#11, KMIP, and REST surfaces your existing software can use to reach a vault-held key.
 
 ## Where Enclave Vaults sits
 
@@ -18,18 +18,19 @@ This page is a one-screen orientation. The [Architecture](/solutions/enclave-vau
 
 Enclave Vaults is the right fit when you want HSM-style key custody without putting the trust of the system in any one device, provider, or operator.
 
-## Three properties to remember
+## Four properties to remember
 
-1. **Keys live inside attested enclaves.** Typed key objects (signing keys, AES data keys, HMAC keys, derivation seeds, opaque shared secrets) sit in the enclave's sealed state. Callers ask the vault to `Sign`, `Wrap`, `Mac`, `Derive`, and so on. By default, raw key material does not cross the enclave boundary.
-2. **Distributed trust where it matters.** Highly sensitive secrets that the owner wants to keep recoverable across the constellation can be stored as `RawShare` keys: the secret is split with Shamir Secret Sharing, one share per vault, and reconstructed by the owner from any quorum. A single compromised vault leaks one share, which reveals nothing about the secret.
+1. **Keys live inside attested enclaves.** Typed key objects (P-256 signing keys, AES data keys, HMAC keys) sit in one vault's sealed state. Callers ask the vault to `Sign`, `Wrap`, `Unwrap` or `Mac`. Raw key material does not cross the enclave boundary.
+2. **Distributed trust for secrets.** A secret the owner needs back in cleartext is stored as `RawShare` keys: it is split with Shamir Secret Sharing, one share per vault, and reconstructed by the owner from any `k` of them. A single compromised vault leaks one share, which reveals nothing about the secret.
 3. **Every operation is gated by a policy that the enclave enforces.** A `KeyPolicy` describes which OIDC identities, which calling enclaves, and which fresh approvals are required for each operation. The enclave refuses anything that does not match. There is no admin override.
+4. **Keys expire.** Every key lives at most 90 days. The vault is designed for temporary key management, such as carrying an app's keys across an upgrade, not for long-term storage: the app holds its keys, and a key that must live longer is renewed actively, the way a Let's Encrypt certificate is. See [Key lifecycle](/solutions/enclave-vaults/key-lifecycle).
 
 ## Typed keys and in-enclave operations
 
 The `v0.19` redesign reorganised the vault around typed keys and in-enclave operations, and that is the shape today. The earlier information-theoretic distribution of opaque secrets across attested enclaves is still here as the `RawShare` key type.
 
-- **Typed key objects with in-enclave operations.** `Aes256GcmKey`, `Ed25519SigningKey`, `P256SigningKey`, `HmacKey`, `Bip32MasterSeed`, `WrappedBlob`. By default these keys are non-exportable: the operation runs inside the enclave, only the result leaves. Signing covers both a message the vault hashes and a pre-computed digest the vault signs raw (the path TLS stacks and code signers use).
-- **A richer `KeyPolicy`.** Per-operation rules with composable conditions (`AttestationMatches`, `ManagerApproval`, `TimeWindow`, `CallerHoldsRole`), a separate `Mutability` surface, and explicit `principals` for owner, managers, auditors, plus optional TEE / FIDO2 / mTLS principals.
+- **Typed key objects with in-enclave operations.** `Aes256GcmKey`, `P256SigningKey` and `HmacSha256Key`. These keys are non-exportable: the operation runs inside the enclave, only the result leaves. Signing covers both a message the vault hashes and a pre-computed digest the vault signs raw (the path TLS stacks and code signers use).
+- **A richer `KeyPolicy`.** Per-operation rules with conditions (`AttestationMatches`, `ManagerApproval`, `TimeWindow`, `OidcStepUp`), a separate `Mutability` surface, and explicit `principals`: an owner, managers and auditors identified by OIDC, and the attested enclaves allowed to use the key.
 - **A controlled lifecycle for caller-enclave version changes.** When the customer application that consumes a key is rebuilt and its MRENCLAVE changes from `v(N)` to `v(N+1)`, the new measurement is held in a **pending** slot until the key owner (and managers, if configured) explicitly approves promoting it into the key's `attestation_profiles`. The platform never auto-grants a new measurement access to existing key material; this is a protocol invariant.
 
 ## A user-first KMS with standard interfaces

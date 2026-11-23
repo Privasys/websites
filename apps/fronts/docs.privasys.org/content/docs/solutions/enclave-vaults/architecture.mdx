@@ -49,14 +49,12 @@ A vault holds **typed key objects**. Each `KeyObject` has a stable handle, a `Ke
 
 | Type | Material | Default operations | Exportable by default |
 |---|---|---|---|
-| `RawShare` | One Shamir share of an external secret | `Reconstruct` (the share itself is fetched by an authorised client) | yes |
-| `Aes256GcmKey` | Symmetric key, sealed inside the enclave | `Wrap`, `Unwrap` | no |
-| `P256SigningKey` / `Ed25519SigningKey` | Asymmetric key pair, sealed inside the enclave | `Sign` (a message the vault hashes, or a pre-computed digest it signs raw), `Verify` | no |
-| `HmacKey` | MAC key, sealed inside the enclave | `Mac`, `MacVerify` | no |
-| `Bip32MasterSeed` | Hierarchical seed, sealed inside the enclave | `Derive(path)` returns a child key handle | no |
-| `WrappedBlob` | Caller ciphertext under a vault KEK | `Unwrap` only | no |
+| `RawShare` | One Shamir share of a secret | `ExportKey` (an authorised client fetches a quorum of shares and reconstructs the secret) | yes |
+| `Aes256GcmKey` | Symmetric key, sealed inside the enclave | `Wrap`, `Unwrap` (the vault chooses the IV) | no |
+| `P256SigningKey` | Asymmetric key pair, sealed inside the enclave | `Sign` (a message the vault hashes, or a pre-computed SHA-256 digest it signs raw); the public key is readable | no |
+| `HmacSha256Key` | MAC key, sealed inside the enclave | `Mac` | no |
 
-`Export` is a `KeyUsage` flag that is off by default for everything except `RawShare`. A signing key whose policy never grants `Export` cannot be exfiltrated, even by its owner: every signature happens inside the enclave.
+Export is off for every type except `RawShare`. A signing key cannot be exfiltrated, even by its owner: every signature happens inside the enclave, and anyone verifies it with the public key.
 
 Every key object carries a [`KeyPolicy`](/solutions/enclave-vaults/access-control). The policy is part of the sealed state, and any change to it is recorded in the audit log.
 
@@ -87,13 +85,15 @@ For secrets the owner wants to keep recoverable across the constellation, **and*
     attestation against the share's KeyPolicy before releasing it.
 ```
 
-A single compromised vault leaks one share. By the information-theoretic guarantee of Shamir's scheme, any N-1 shares reveal nothing about the original secret. There is no threshold cryptography or multi-party computation involved; reconstruction is a polynomial interpolation done by the client.
+The secret is split into one share per vault, `n` in all, and any `k` of them (the threshold, at least 2) reconstruct it. A single compromised vault leaks one share. By the information-theoretic guarantee of Shamir's scheme, fewer than `k` shares reveal nothing about the original secret, and the secret survives the loss of up to `n - k` vaults. There is no threshold cryptography or multi-party computation involved; reconstruction is a polynomial interpolation done by the client.
 
 `RawShare` is the right pattern for things like LUKS volume keys for confidential VMs, master KEKs that are reconstructed on a controlled schedule, and any secret whose value the owner ultimately needs in cleartext somewhere.
 
 ### Pattern B: in-enclave operations on a typed key
 
-For signing keys, AES data keys, HMAC keys, and derivation seeds, the value the owner needs is not the key itself but the result of an operation on it. Each vault that holds the key holds the **full** key material, sealed to its own MRENCLAVE, and refuses to export it. The constellation provides redundancy and geographic distribution; clients dial a vault, present their authentication and any required approvals, and receive the operation's result.
+For signing keys, AES data keys and HMAC keys, the value the owner needs is not the key itself but the result of an operation on it. A typed key is held **whole by one vault** of the constellation, sealed to that vault's MRENCLAVE, and never exported. Clients dial that vault, present their authentication and any required approvals, and receive the operation's result.
+
+The key is not split or copied: Shamir sharing needs the secret reassembled to use it, which a key that must never leave the enclave cannot allow, and the vault does not yet offer threshold signing, where several vaults sign together without any one holding the key. So a typed key is as available as the one vault that holds it. Treat it as a working key with a bounded life, as the [Key lifecycle](/solutions/enclave-vaults/key-lifecycle) describes: keep what you need to carry on without it (the public key of a signing key; data re-wrapped under a newer version), and rotate before it expires.
 
 ```
     ┌──────────────────────┐
@@ -111,7 +111,7 @@ For signing keys, AES data keys, HMAC keys, and derivation seeds, the value the 
     └──────────────────────┘
 ```
 
-This pattern matches classical HSM semantics: the key never leaves the hardware, and the policy is what governs whether an operation is allowed. The constellation here is for availability and to give the owner a choice of attestation profile per region; it is not threshold cryptography.
+This pattern matches classical HSM semantics: the key never leaves the hardware, and the policy is what governs whether an operation is allowed.
 
 The two patterns share the same `KeyPolicy` schema and the same lifecycle, so the developer experience is uniform.
 
@@ -122,8 +122,8 @@ Each vault has its own KV store sealed with an MRENCLAVE-bound AES-256-GCM key, 
 | Key | Value | Purpose |
 |---|---|---|
 | `key:{handle}` | JSON `KeyRecord` | Type, usage, algorithm, policy, sealed material. |
-| `audit:{seq}` | JSON `AuditEntry` | Append-only log of every state change and every operation. |
-| `pending-profile:{handle}` | JSON `PendingProfile` | A caller-enclave attestation profile staged for future inclusion in `policy.attestation_profiles`. |
+| `audit:{seq}` | JSON `AuditEntry` | Append-only log of every operation on a key, allowed or denied. |
+| `pending-profile:{handle}` | JSON `PendingProfile` | A caller-enclave attestation profile staged for future inclusion in the key's TEE principals. |
 | `config:bootstrap` | JSON `BootstrapConfig` | OIDC issuer, audience, attestation servers, registered modules. Sealed on first boot. |
 
 The host OS, hypervisor, and cloud provider see only encrypted bytes.
@@ -138,7 +138,7 @@ The vault's RA-TLS server requires mutual TLS for every interesting operation. T
 
 ## Audit log
 
-Every state-changing call (create key, update policy, stage profile, promote profile, issue approval token) and every operation (sign, encrypt, wrap, derive) appends an entry to the per-vault audit log. Each entry records the principal, the operation, the policy that was evaluated, the outcome, and the time. The log is sealed with the rest of the KV store and can be exported through an authenticated audit RPC.
+Every operation on a key, allowed or denied, appends an entry to that key's audit log: a sequence number, the time, the operation, the caller, the outcome, and a reason when it was refused. The log is sealed with the rest of the KV store, and any principal of the key can read it through the audit RPC (`privasys vault key audit`).
 
 ## Caller-enclave version changes (the pending-profile flow)
 
@@ -158,34 +158,34 @@ The `pending-profile` lifecycle implements that invariant.
       to call StagePendingProfile(handle, profile_v_n_plus_1).
 
       Each vault in the constellation stores the profile in its
-      pending-profile slot. The key's `attestation_profiles`
-      is unchanged. v(N+1) cannot yet read the key.
+      pending-profile slot. The key's TEE principals are
+      unchanged. v(N+1) cannot yet read the key.
 
-   3. The owner reviews the diff (commit range, build inputs,
-      MRENCLAVE) and signals approval. If the policy lists managers,
-      each manager produces a fresh approval token via the wallet
-      (FIDO2). The owner collects the tokens.
+   3. The owner reviews the change (commit range, build inputs,
+      measurement) and approves it with a fresh wallet or passkey
+      step-up bound to this promotion. If the policy requires
+      manager approval, a manager's approval token is collected too.
 
-   4. The owner calls PromotePendingProfile(handle, profile_id, approvals).
+   4. The owner calls PromotePendingProfile(handle, profile_id).
 
-      Each vault verifies the approvals against the key's policy
-      and atomically merges the pending profile into
-      `policy.attestation_profiles`. v(N+1) is now authorised.
+      Each vault checks the step-up and approvals against the key's
+      policy and atomically adds the pending profile to the key's
+      TEE principals. v(N+1) is now authorised.
 
    5. The platform schedules v(N+1), v(N) is retired on its own
       schedule. Both versions can coexist until the owner removes
       v(N) from the policy.
 ```
 
-The fan-out is driven by the client SDK on the **owner's** side. The vaults do not coordinate behind the operator's back; the directory never sees policies, profiles, or approvals. A single compromised vault still cannot promote a profile on its own, because the policy requires the configured number of approvals from authentic principals.
+The fan-out is driven by the client SDK on the **owner's** side. The vaults do not coordinate behind the operator's back; the directory never sees policies, profiles, or approvals. A single compromised vault still cannot promote a profile on its own, because the policy requires approvals from authentic principals.
 
-A separate `Lifecycle.auto_migrate_to_next_attestation_profile` flag exists for adopters who explicitly opt in to hands-off rollout (sandbox tenants, low-stakes workloads). It is off by default, and the SDK forces a one-time confirmation when a key is first created with the flag set.
+A separate `auto_migrate_to_next_attestation_profile` flag exists for owners who explicitly opt in to hands-off rollout of runtime-only changes. It is off by default, and only the owner can switch it.
 
 ## Vault enclave version changes
 
 The pending-profile flow is about the *caller's* MRENCLAVE in a key's policy. Upgrading the **vault's own enclave** to a new MRENCLAVE is a separate concern and is handled by the deployment model, not by the per-key lifecycle.
 
-The vault directory models each vault version as a **constellation**: a set of vault instances that share one MRENCLAVE, attestation server, and OIDC configuration. A new vault build is a new constellation, which an operator activates; at most one is active per environment. To roll a new vault enclave version forward we stand up the new constellation alongside the old one and cut the directory pin over to it. When a constellation holds no production keys, the cutover is a clean replacement with fresh sealed storage. When it holds keys the owner needs to keep reachable, the owner stages and promotes the new vault profile on each key first, exactly as for a caller-enclave version change, so the key owner is in control of when their secret material reaches the new vault enclave. Self-migration of sealed storage across a version boundary is on the roadmap.
+The vault directory models each vault version as a **constellation**: a set of vault instances that share one MRENCLAVE, attestation server, and OIDC configuration. A new vault build is a new constellation, which an operator activates; at most one is active per environment. To roll a new vault enclave version forward, we stand up the new constellation alongside the old one and make it the active one. New keys and new key versions are created on the active constellation. Existing keys stay on the constellation that created them, their **home**, which keeps serving them until they expire: the platform addresses each key at its home, and does not retire a constellation while it still holds an unexpired key. Sealed storage does not migrate across a vault version, and keys are never moved behind their owner's back. A key reaches the new constellation when it is renewed: the platform renews the storage keys of running apps, and an owner renews their own keys and secrets. See [Key lifecycle](/solutions/enclave-vaults/key-lifecycle).
 
 ## Bootstrap and configuration
 

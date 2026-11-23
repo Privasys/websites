@@ -1,59 +1,65 @@
 ---
 title: Access Control
-description: KeyPolicy, principals, OIDC roles, attestation profiles, and live human approvals for Enclave Vaults.
+description: KeyPolicy, principals, attestation profiles, step-up and manager approvals for Enclave Vaults.
 ---
 
 Every key in Enclave Vaults carries a `KeyPolicy` that controls **who** can do **what**, **under which attestation conditions**, and **with which approvals**. The policy is part of the sealed state of the vault and is enforced inside the enclave on every call. There is no admin override.
 
+A policy has four parts: `principals` (who is recognised), `operations` (what each may do, and on which conditions), `mutability` (which parts of the policy may change later, and by whom), and `lifecycle` (how long the key lives, see [Key lifecycle](/solutions/enclave-vaults/key-lifecycle)).
+
 ## Principals
 
-The vault recognises three kinds of principal.
+The vault recognises two kinds of principal.
 
-| Principal | Authentication | Typical role |
+| Principal | Authentication | Matched on |
 |---|---|---|
-| **OIDC subject** | Bearer JWT validated against the configured issuer and audience via JWKS | Owner, manager, auditor (humans or service accounts). |
-| **Attested enclave** | Mutual RA-TLS; the caller's SGX or TDX quote, MRENCLAVE, and config Merkle root are extracted from the peer X.509 certificate | A CI runner, a confidential VM, another enclave. |
-| **FIDO2 wallet credential** | Signed `IssueApprovalToken` request from a registered Privasys Wallet | Live human approval for sensitive operations. |
+| **OIDC** | A bearer JWT, verified against the vault's configured issuer and audience through JWKS | `issuer`, and `sub`, and the token's roles against `required_roles`. An empty `sub` matches by role alone |
+| **TEE** | Mutual RA-TLS: the caller's SGX or TDX quote is read from its certificate and verified through an attestation server | an [attestation profile](#attestation-profiles) |
 
-A single call may need to satisfy several principals at once (for example, a calling enclave with the right MRENCLAVE, a manager OIDC token, and a fresh wallet approval).
+The policy names them in four slots:
 
-## OIDC roles
+| Slot | Kind | Typical use |
+|---|---|---|
+| `owner` | OIDC, required | the person or service that owns the key |
+| `managers` | OIDC, any number | people who approve sensitive operations or new measurements |
+| `auditors` | OIDC, any number | people who read the key's audit log |
+| `tees` | TEE, any number | the enclaves allowed to use the key |
 
-The default OIDC roles checked by the vault. Custom roles can be added per deployment.
+A principal that is not listed cannot influence the key in any way. Rules refer to them as `Owner`, `Manager(i)`, `Auditor(i)`, `Tee(i)` or `AnyTee`.
 
-| Role | Operations |
-|---|---|
-| `vault:owner` | Create and delete keys, update `KeyPolicy`, list keys, run any operation on owned keys, drive the pending-profile lifecycle (`StagePendingProfile`, `PromotePendingProfile`). |
-| `vault:manager` | Issue `ApprovalToken`s for operations that require live approval. Cannot read, create, or modify keys. |
-| `vault:auditor` | Read the audit log. Cannot perform any operation on keys. |
+Live human approval does not need a principal of its own: it comes through the identity provider, which issues a short-lived token after a wallet or passkey ceremony (see [Step-up](#step-up)).
 
-The split between owner and manager is intentional. It keeps a defence-in-depth boundary even if the owner identity is compromised, because sensitive operations still require a separate manager approval.
+## Operations
 
-## KeyPolicy
+These operations are governed by the policy: `Sign`, `Wrap`, `Unwrap`, `Mac`, `ExportKey`, `DeleteKey`, `UpdatePolicy` and `PromoteProfile`. Creating a key needs a creation grant from the platform; listing keys, reading the audit log, staging and revoking a pending profile, and issuing approval tokens follow fixed rules described below.
 
-The policy attached to each key is organised into three independent surfaces.
+Each rule has the form "these operations are allowed for these principals when these conditions hold":
 
-### `principals`
+```json
+{
+  "ops": ["Sign"],
+  "principals": [{ "Tee": 0 }],
+  "requires": [
+    { "ManagerApproval": { "manager": 0, "fresh_for_seconds": 300 } },
+    { "TimeWindow": { "not_before": 0, "not_after": 1798761600 } }
+  ]
+}
+```
 
-Who is recognised at all for this key: the owner, optional managers, optional auditors, plus optional TEE, FIDO2, and mTLS principals. A principal that is not listed here cannot influence the key in any way.
-
-### `operations`
-
-Per-operation rules of the form "operation X is allowed for principal P when condition C holds". Conditions are composable:
+An operation is allowed when **any** rule lists the operation and the caller, and **all** of that rule's conditions pass.
 
 | Condition | Meaning |
 |---|---|
-| `AttestationMatches(profile)` | The caller presented an RA-TLS certificate whose quote matches `profile`. |
-| `ManagerApproval { manager, fresh_for }` | A `ManagerApproval` token from `manager`, signed within `fresh_for`, accompanies the request. |
-| `TimeWindow { from, until }` | The current time is inside the window. |
-| `CallerHoldsRole(role)` | The caller's OIDC token includes `role`. |
-| `All(...)`, `Any(...)`, `Not(...)` | Boolean combinators. |
+| `AttestationMatches(profile)` | The caller's RA-TLS certificate satisfies `profile`, in addition to the principal match. |
+| `ManagerApproval { manager, fresh_for_seconds }` | The request carries a valid [approval token](#approval-tokens) from manager number `manager`, no older than `fresh_for_seconds`. |
+| `TimeWindow { not_before, not_after }` | The vault's trusted time is inside the window, in Unix seconds; `0` leaves that side open. |
+| `OidcStepUp { required_amr, operation_bound, fresh_for_seconds }` | The caller's token proves a fresh step-up, see below. |
 
-The same operation can have several rules, and all matching rules must succeed for the operation to be allowed.
+### Step-up
 
-### `mutability`
+`OidcStepUp` requires the caller's OIDC token to carry every method in `required_amr` (for example `["webauthn"]`) and to have been issued within `fresh_for_seconds`. The identity provider issues such a token only after a wallet or passkey ceremony. With `operation_bound`, the token must also be bound to this exact operation: it carries a hash over the key handle, the measurement being approved, the policy version, a nonce and an expiry, so an approval for one operation cannot be replayed for another. Binding applies to the operations that name a target, promoting a measurement and exporting a key; on any other operation an `operation_bound` condition fails closed, so do not set it there.
 
-Which fields of the policy can change, and under what conditions. The schema separates fields the **owner** can edit unilaterally, fields the owner can edit only with a quorum of **manager** approvals, and fields that are **immutable** for the life of the key. For example, on a `platform-managed` key, the platform's manager identity is allowed to add a new MRENCLAVE to the attestation profile but cannot change the owner or change `auto_migrate_to_next_attestation_profile`.
+Exporting a key you created through the platform always requires an operation-bound WebAuthn step-up no older than 300 seconds.
 
 ## Attestation profiles
 
@@ -61,54 +67,60 @@ An attestation profile describes what a calling enclave must look like.
 
 | Field | Purpose |
 |---|---|
-| `mrenclave` | Required SGX MRENCLAVE (hex). |
-| `mrsigner` | Optional SGX MRSIGNER (hex). Useful for accepting any release signed by a known build pipeline. |
-| `mrtd` | TDX measurement, for confidential VM callers. |
-| `config_merkle_root` | Optional commitment to the caller's runtime configuration. Lets the policy require not just the right code, but the right configuration of that code. |
-| `required_oids` | List of `(oid, expected_value)` claims that must appear in the caller's RA-TLS certificate. |
+| `name` | A label for the profile. |
+| `measurements` | The accepted measurements: `Mrenclave` (SGX, hex) or `Tdx { mrtd, rtmr1, rtmr2 }` (all three must match). Any one listed measurement is enough. |
+| `attestation_servers` | The attestation servers that may verify the caller's quote. At least one. |
+| `required_oids` | `(oid, expected_value)` pairs that must appear in the caller's RA-TLS certificate, such as the app's code hash. |
+| `acceptable_tcb_statuses` | The platform TCB statuses accepted from the attestation server. A `Revoked` platform always fails. |
 
-A `KeyPolicy` typically lists more than one profile (for example, "the production CI enclave plus the on-call recovery enclave") so that operations can continue across deploys without policy churn.
+A policy usually lists several measurements or profiles (for example, the version running now and the next one) so that operations continue across deploys.
+
+## Approving a new measurement
+
+When the app that uses a key is rebuilt, its measurement changes, and the new build has no access to the key until someone allowed to promote it approves. The new measurement waits in a **pending** slot:
+
+1. **Stage.** The owner, a manager, or the platform stages the new profile (up to 16 pending per key). Staging grants nothing.
+2. **Promote.** A caller allowed `PromoteProfile` by the policy approves it, typically with a step-up. The profile joins the key's TEE principals and the policy version increases. A promotion only adds: `required_oids` can be added or strengthened, never dropped.
+3. **Revoke.** A pending profile can be withdrawn by whoever the policy's mutability allows; the platform cannot revoke.
+
+A key can opt in to `auto_migrate_to_next_attestation_profile`. Only then, and only for a profile the platform staged whose change is to the runtime alone (same required OIDs, attestation servers, TCB policy and TEE family), is the promotion automatic. Only the owner can turn this on or off. Retiring an old measurement once the new one runs is a separate step.
 
 ## Approval tokens
 
-For operations that require a live human approval, the manager issues an `ApprovalToken` against a specific key handle and operation:
+For a `ManagerApproval` condition, a manager of the key asks the vault for an approval token naming a key handle and an operation. The vault issues it as a JWT it signs itself, after checking that the caller is that manager.
 
-```
-IssueApprovalToken {
-  key_handle: "k-7f3...",
-  operation:  "Sign",
-  not_before: 2026-04-29T10:00:00Z,
-  not_after:  2026-04-29T10:05:00Z,
-  nonce:      <random>,
-  signed_by:  <wallet FIDO2 credential>
-}
-```
+- A token lives 5 minutes by default, and at most 1 hour.
+- It is bound to the key handle, the operation, the manager's index, the approver's subject and the **policy version** when it was given. Any change to the policy invalidates every outstanding token, so an approval given before a change is never accepted after it.
+- When a manager slot is matched by role rather than by a named subject, the approver must be a different person from the one making the request (co-signing).
 
-The token is signed by the manager's FIDO2 credential through the Privasys Wallet and carries a short TTL. The wallet performs a fresh user-presence ceremony for each token. The vault verifies the signature, the nonce, the TTL, the key handle, and the operation name before counting the token towards the policy's `ManagerApproval` requirement. Each token also carries the approver's subject and the version of the key's policy when it was given. A token is accepted only while that policy is unchanged, so an approval given before a policy change is not accepted after it: the manager approves again.
+A manager compromised on their own cannot use a token outside its lifetime or for another operation. A caller compromised on its own cannot mint one.
 
-A manager compromised on its own cannot use a stolen token outside its TTL. A calling enclave compromised on its own cannot mint a token. Both must cooperate, and the audit log records every issued and consumed token.
+## Mutability
+
+`mutability` says which parts of the policy may change after creation, and by whom. It lists fields under `owner_can`, `manager_can` and `immutable`, from `Owner`, `Managers`, `Auditors`, `Tees`, `Operations`, `Lifecycle`, `Mutability` and `PendingProfiles`.
+
+- A field in `immutable` never changes for the life of the key.
+- Auditors and TEE principals can never change the policy.
+- Only the owner can switch automatic migration on or off.
+- A key's expiry date never moves, whatever the policy allows; see [Key lifecycle](/solutions/enclave-vaults/key-lifecycle).
 
 ## How a typical call is evaluated
 
-For a sensitive `Sign` call by a CI enclave:
+For a sensitive `Sign` call by an application enclave:
 
-1. The CI enclave opens a mutual RA-TLS channel to a vault. The vault verifies that the CI enclave's MRENCLAVE matches at least one `attestation_profile` on the key.
-2. The CI enclave's request envelope carries an OIDC bearer token. The vault verifies the token via JWKS and reads `sub` and `roles`. The owner check passes.
-3. The request includes one or more `ApprovalToken`s from the manager. The vault verifies each (signature, TTL, key handle, operation, nonce). The count must reach the policy's manager-approval threshold.
-4. The vault performs the `Sign` operation inside the enclave. The signature is returned to the caller. The raw key never leaves the enclave.
-5. Every step is appended to the audit log.
+1. The enclave opens a mutual RA-TLS channel to the vault holding the key. The vault verifies its quote and matches it against the key's TEE principals.
+2. The vault finds a rule that allows `Sign` for that principal.
+3. It checks each of the rule's conditions: for example a manager approval token (signature, lifetime, handle, operation, policy version) and a time window.
+4. It signs inside the enclave and returns the signature. The private key never leaves.
+5. The call, allowed or denied, is appended to the key's audit log.
 
-If any check fails, the operation is refused and the failure is logged.
+## Audit log
 
-## Auditability
-
-Read access to the audit log requires the `vault:auditor` role and a mutual RA-TLS channel. Each entry is hash-chained to the previous one, so an auditor can detect tampering with the log itself. Streaming export of the log to an external append-only store is on the roadmap; today the log is pulled on demand.
+Every operation on a key, allowed or denied, is recorded in that key's audit log with a sequence number, the time, the operation, the caller and the outcome, plus a reason for a refusal. Any principal of the key can read it (`privasys vault key audit`). The log is sealed with the vault's storage.
 
 ## Why this is more than RBAC plus attestation
 
 Classical RBAC says "this user can do this thing". The vault adds two orthogonal axes:
 
-- **The calling code's identity must match.** Not just the user, but the exact enclave binary that is acting on the user's behalf. This is what eliminates "secret leaked from a CI runner" as a threat.
-- **A fresh act of human consent can be required.** Not a long-lived token, but a per-operation FIDO2 ceremony on a phone. This is what eliminates "compromised long-lived credential" as a threat for the operations you care most about.
-
-Combined with the per-vault sealed storage and (for `RawShare` keys) the Shamir distribution that prevents any single vault from leaking a secret on its own, these properties produce a system where the cost of misuse is high enough to actually deter it, even against a determined insider.
+- **The calling code's identity must match.** Not just the user, but the exact enclave binary acting on their behalf. This removes "a secret leaked from a CI runner" as a threat.
+- **A fresh act of human consent can be required.** Not a long-lived token, but a per-operation wallet or passkey ceremony. This removes "a compromised long-lived credential" as a threat for the operations that matter most.
