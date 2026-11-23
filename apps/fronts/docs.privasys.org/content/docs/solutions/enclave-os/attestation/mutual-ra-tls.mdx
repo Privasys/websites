@@ -86,11 +86,19 @@ The `RequestContext` passed to each module's `handle()` method includes the DER-
 
 ### Enclave OS Virtual
 
-In Virtual, Caddy handles client authentication at the TLS layer. When `client_auth` is enabled on a route, Caddy requests a client certificate during the handshake, verifies its chain and extensions, runs the `present` step on `/__privasys/attest`, and forwards requests to the container only once the client's evidence has verified. The request carries the connection tag `X-Privasys-Attestation`; a container that requires attested callers checks the tag and never trusts the caller's word.
+In Virtual, mutual RA-TLS is switched on for an app when its owner sets **allowed callers** (`privasys apps allowed-callers`), the list of attested apps it recognises.
+
+1. Caddy asks for a client certificate on connections that offer the `privasys-ratls/1` ALPN, and verifies its chain and extensions at the handshake.
+2. The client's `present` evidence goes to the in-enclave manager, which verifies the quote through the attestation server and matches the caller against the allowed callers: the app id in its certificate, then its measurements and OIDs. The verdict is recorded for that connection and stays current for a few minutes, after which the client attests again.
+3. On every request the manager removes any `X-Privasys-Peer-*` header the client sent. For a caller with a current verdict it sets `X-Privasys-Peer-Verified: true`, `X-Privasys-Peer-App-Id`, `X-Privasys-Peer-Image-Digest` and `X-Privasys-Peer-Measurement`. A caller that presented a certificate without a current verdict, or whose app is not an allowed caller, is refused with `403`.
+
+A request with no client certificate is not refused: the same hostname serves browsers, whose connections the gateway terminates and opens again inward without one. It reaches the container as an anonymous request with no peer headers. A container that requires attested callers therefore checks `X-Privasys-Peer-Verified` and the peer's app id, and never trusts the caller's word. See [Connecting to an app](/solutions/platform/developer-platform/connecting#calling-another-app) for the headers and for how a container calls another app.
+
+The connection tag `X-Privasys-Attestation` (`none`, `deterministic` or `challenge`) records how the connection itself was attested; the peer headers are what identify a calling app.
 
 ## Client-Side Support
 
-The client certificate is a standing 24-hour leaf minted by the client's own runtime, with the key kept across re-mints; nothing is generated during the handshake. When the server's response says `client_evidence: "required"`, the SDK (Rust `connect_mutual`, the Go `Client` with a client certificate) obtains a fresh quote from its runtime bound to `client_context` and the connection's exporter, and sends the `present` message before any application data.
+The client certificate is a standing 24-hour leaf minted by the client's own runtime, with the key kept across re-mints; nothing is generated during the handshake. A container on Enclave OS Virtual cannot mint its own identity or produce a quote: its runtime issues the certificate and key, stamped with the app's id and code hash, and produces each connection's evidence; the container fetches both through the runtime's in-enclave API (the Go client's `NewEgressIdentity`). When the server's response says `client_evidence: "required"`, the SDK (Rust `connect_mutual`, the Go `Client` with a client certificate) obtains a fresh quote from its runtime bound to `client_context` and the connection's exporter, and sends the `present` message before any application data.
 
 Because the binding uses the RFC 8446 exporter, upstream Go `crypto/tls` and rustls are sufficient on both ends. Earlier versions needed forks of both libraries to carry a challenge nonce inside the `CertificateRequest` message; version 2 needs none, and those forks are archived.
 
