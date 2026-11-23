@@ -56,10 +56,12 @@ export function useAuth(): AuthContextValue {
 // privasys.id) and the legacy `privasys-platform:admin` aliases used by
 // older clients so sessions established against either form keep working.
 
-const ADMIN_ROLES = new Set(['platform:admin', 'privasys-platform:admin']);
+// The test environment's roles carry its own audience, privasys-platform-test.
+const ADMIN_ROLES = new Set(['platform:admin', 'privasys-platform:admin', 'privasys-platform-test:admin']);
 const MANAGER_ROLES = new Set([
     'platform:admin', 'platform:manager',
-    'privasys-platform:admin', 'privasys-platform:manager'
+    'privasys-platform:admin', 'privasys-platform:manager',
+    'privasys-platform-test:admin', 'privasys-platform-test:manager'
 ]);
 
 export function hasAdminRole(roles: string[] | undefined | null): boolean {

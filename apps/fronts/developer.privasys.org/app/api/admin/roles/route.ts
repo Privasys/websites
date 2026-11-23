@@ -8,7 +8,7 @@ const IDP_ADMIN_TOKEN = process.env.IDP_ADMIN_TOKEN || '';
 export async function GET(req: NextRequest) {
     const claims = await verifyJwt(req);
     const roles = claims?.roles as string[] | undefined;
-    if (!roles?.some(r => r === 'platform:admin' || r === 'privasys-platform:admin')) {
+    if (!roles?.some(r => r === 'platform:admin' || r === 'privasys-platform:admin' || r === 'privasys-platform-test:admin')) {
         return NextResponse.json({ error: 'forbidden' }, { status: 403 });
     }
 
@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
     const claims = await verifyJwt(req);
     const roles = claims?.roles as string[] | undefined;
-    if (!roles?.some(r => r === 'platform:admin' || r === 'privasys-platform:admin')) {
+    if (!roles?.some(r => r === 'platform:admin' || r === 'privasys-platform:admin' || r === 'privasys-platform-test:admin')) {
         return NextResponse.json({ error: 'forbidden' }, { status: 403 });
     }
 
@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
     const claims = await verifyJwt(req);
     const roles = claims?.roles as string[] | undefined;
-    if (!roles?.some(r => r === 'platform:admin' || r === 'privasys-platform:admin')) {
+    if (!roles?.some(r => r === 'platform:admin' || r === 'privasys-platform:admin' || r === 'privasys-platform-test:admin')) {
         return NextResponse.json({ error: 'forbidden' }, { status: 403 });
     }
 
