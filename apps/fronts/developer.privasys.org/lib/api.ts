@@ -1202,7 +1202,7 @@ export interface Account {
     kind: 'individual' | 'org';
     name: string;
     domain: string;
-    /** The account's short name in public addresses: status.privasys.org/@<slug>/. */
+    /** The account's short name in public addresses: status.privasys.org/@/<slug>/. */
     slug?: string;
     owner_sub: string;
     created_at: string;

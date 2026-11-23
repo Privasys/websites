@@ -26,7 +26,7 @@ export function getMonitorHost(): string {
 /** Where an app's public status page is, once its team makes it public. */
 export function publicStatusPageUrl(appName: string, accountSlug?: string): string {
     const host = getMonitorHost() === PROD_MONITOR_HOST ? PROD_STATUS_HOST : getMonitorHost();
-    const path = accountSlug ? `@${accountSlug}/${encodeURIComponent(appName)}` : `apps/${encodeURIComponent(appName)}`;
+    const path = accountSlug ? `@/${accountSlug}/${encodeURIComponent(appName)}` : `apps/${encodeURIComponent(appName)}`;
     return `https://${host}/${path}/`;
 }
 
@@ -35,8 +35,8 @@ export function accountPagesUrls(accountSlug: string): { status: string; support
     const prod = getMonitorHost() === PROD_MONITOR_HOST;
     const host = prod ? PROD_STATUS_HOST : getMonitorHost();
     return {
-        status: `https://${host}/@${accountSlug}/`,
-        support: prod ? `https://support.privasys.org/@${accountSlug}/` : `https://${host}/support/@${accountSlug}/`
+        status: `https://${host}/@/${accountSlug}/`,
+        support: prod ? `https://support.privasys.org/@/${accountSlug}/` : `https://${host}/support/@${accountSlug}/`
     };
 }
 
