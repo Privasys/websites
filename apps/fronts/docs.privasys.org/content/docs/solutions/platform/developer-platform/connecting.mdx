@@ -23,10 +23,10 @@ An app on the platform hostname (`<name>.apps.privasys.org`) serves the first th
 | --- | --- | --- |
 | `attested` | in the enclave | the server name only |
 | `direct` | in the enclave | the server name only |
-| `sealed` | at the gateway, then a second RA-TLS leg to the enclave | the method, the path and query string, the request headers, and the response status. Request and response **bodies** are sealed to the enclave |
+| `sealed` | at the gateway, then a second RA-TLS leg to the enclave | the method, the path and query string, every request header (only `Authorization` is replaced by the session id), the response status, and the size and timing of each body. Request and response **bodies** are sealed to the enclave |
 | `public` | at the gateway | everything: these are the routes you declared as served in the clear |
 
-So on a sealed session, keep anything private in the body. Never put a secret or personal data in a path, a query string or a custom request header: the gateway forwards them as they are. Your app's own response headers are not sent back to the browser on a sealed session at all, only the sealed body and the status, so carry anything the page needs in the body. The gateway logs TLS metadata and route outcomes, never a header, a query string or a body, and keeps nothing that transits it.
+So on a sealed session, keep anything private in the body. Never put a secret, a token or personal data in a path, a query string or a custom request header: the gateway forwards them as they are. Treat the route and the status as metadata the gateway can see. Your app's own response headers are not sent back to the browser on a sealed session at all, only the sealed body and the status, so carry anything the page needs in the body. The gateway logs TLS metadata and route outcomes, never a header, a query string or a body, and keeps nothing that transits it.
 
 ## Headers your app receives
 
@@ -35,7 +35,7 @@ The runtime sets these headers and **removes any value a client sent for them** 
 | Header | Paths | Value |
 | --- | --- | --- |
 | `X-Privasys-Transport` | all | `attested`, `sealed`, `public` or `direct` |
-| `X-Privasys-Sub` | `sealed`, `direct` | the signed-in user's subject for your app |
+| `X-Privasys-Sub` | `sealed`, `direct` | the authenticated user's subject for your app: on `sealed`, the wallet-authenticated user; on `direct`, the subject of the verified token. A request without it is anonymous: treat it as unauthenticated and answer `401` |
 | `X-Privasys-Email`, `X-Privasys-Name` | `direct` | from the sign-in token: the email only when it was proved, the name percent-encoded UTF-8. Store them on first sight |
 | `X-Privasys-Attestation-Level` | `direct` | `verified` when the user signed in with the wallet, `unverified` otherwise |
 | `X-Privasys-Peer-Verified` | `attested`, mutual | `true` when the calling app's attestation verified |
@@ -45,6 +45,8 @@ The runtime sets these headers and **removes any value a client sent for them** 
 | `X-Privasys-Peer-Payer`, `-Payer-App`, `-Payer-Sid` | any, with a spend token | the user paying for the call, the app spending for them, and the consent session ([Spend tokens](/solutions/platform/developer-platform/spend-tokens)) |
 | `X-Privasys-Voucher-Jti`, `-Provider`, `-Claims`, `-Rp-Id` | any, with a disclosure voucher | the verified claims of an attribute disclosure. Check that `X-Privasys-Voucher-Rp-Id` is your own id ([Attribute marketplace](/solutions/privasys-id/attribute-marketplace)) |
 | `X-Forwarded-Host` | `direct` | the name the visitor typed; `Host` is always your platform hostname |
+
+After a wallet sign-in the [auth SDK](/solutions/privasys-id/auth-sdk) sets up a session that identifies the user, so in normal use every sealed request from a signed-in user carries `X-Privasys-Sub`. A sealed session can still be anonymous, for example when the sign-in could not hand the enclave the user's identity; your app sees no `X-Privasys-Sub` and should refuse what needs a user.
 
 `X-Privasys-Attestation` (`none`, `deterministic` or `challenge`) tags how the client's TLS connection was attested; see [RA-TLS](/solutions/enclave-os/attestation/ra-tls).
 
