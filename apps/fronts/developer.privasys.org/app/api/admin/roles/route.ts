@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyJwt } from '~/lib/verify-jwt';
+import { isTestPortal } from '~/lib/api-base-url';
+
+// The test admin role counts only on the test portal's server.
+const isAdminRole = (r: string) =>
+    r === 'platform:admin' || r === 'privasys-platform:admin' || (isTestPortal() && r === 'privasys-platform-test:admin');
 
 const IDP_URL = process.env.AUTH_PRIVASYS_ISSUER || process.env.IDP_ADMIN_URL || '';
 const IDP_ADMIN_TOKEN = process.env.IDP_ADMIN_TOKEN || '';
@@ -8,7 +13,7 @@ const IDP_ADMIN_TOKEN = process.env.IDP_ADMIN_TOKEN || '';
 export async function GET(req: NextRequest) {
     const claims = await verifyJwt(req);
     const roles = claims?.roles as string[] | undefined;
-    if (!roles?.some(r => r === 'platform:admin' || r === 'privasys-platform:admin' || r === 'privasys-platform-test:admin')) {
+    if (!roles?.some(r => isAdminRole(r))) {
         return NextResponse.json({ error: 'forbidden' }, { status: 403 });
     }
 
@@ -32,7 +37,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
     const claims = await verifyJwt(req);
     const roles = claims?.roles as string[] | undefined;
-    if (!roles?.some(r => r === 'platform:admin' || r === 'privasys-platform:admin' || r === 'privasys-platform-test:admin')) {
+    if (!roles?.some(r => isAdminRole(r))) {
         return NextResponse.json({ error: 'forbidden' }, { status: 403 });
     }
 
@@ -57,7 +62,7 @@ export async function POST(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
     const claims = await verifyJwt(req);
     const roles = claims?.roles as string[] | undefined;
-    if (!roles?.some(r => r === 'platform:admin' || r === 'privasys-platform:admin' || r === 'privasys-platform-test:admin')) {
+    if (!roles?.some(r => isAdminRole(r))) {
         return NextResponse.json({ error: 'forbidden' }, { status: 403 });
     }
 

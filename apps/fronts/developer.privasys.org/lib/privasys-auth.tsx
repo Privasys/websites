@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { AuthFrame, type AuthFrameConfig } from '@privasys/auth';
+import { isTestPortal } from './api-base-url';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -56,12 +57,17 @@ export function useAuth(): AuthContextValue {
 // privasys.id) and the legacy `privasys-platform:admin` aliases used by
 // older clients so sessions established against either form keep working.
 
-// The test environment's roles carry its own audience, privasys-platform-test.
-const ADMIN_ROLES = new Set(['platform:admin', 'privasys-platform:admin', 'privasys-platform-test:admin']);
+// The test environment's roles carry its own audience, privasys-platform-test,
+// and count only on the test portal.
+const TEST = isTestPortal();
+const ADMIN_ROLES = new Set([
+    'platform:admin', 'privasys-platform:admin',
+    ...(TEST ? ['privasys-platform-test:admin'] : [])
+]);
 const MANAGER_ROLES = new Set([
     'platform:admin', 'platform:manager',
     'privasys-platform:admin', 'privasys-platform:manager',
-    'privasys-platform-test:admin', 'privasys-platform-test:manager'
+    ...(TEST ? ['privasys-platform-test:admin', 'privasys-platform-test:manager'] : [])
 ]);
 
 export function hasAdminRole(roles: string[] | undefined | null): boolean {
