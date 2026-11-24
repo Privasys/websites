@@ -3,6 +3,10 @@
 import { createContext, useContext, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { AuthFrame, type AuthFrameConfig } from '@privasys/auth';
 import { isTestPortal } from './api-base-url';
+import { cachedToken, setVaultBearerSource } from './vault-bearer';
+
+// The audience the vaults accept.
+const PLATFORM_AUDIENCE = 'privasys-platform';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -157,6 +161,14 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
         }
         return frameRef.current;
     }, [config]);
+
+    // On the test portal, the vaults still need a privasys-platform token
+    // for the same session (lib/vault-bearer.ts).
+    useEffect(() => {
+        if (!isTestPortal()) return;
+        setVaultBearerSource(cachedToken(() => getFrame().getTokenForAudience(PLATFORM_AUDIENCE)));
+        return () => setVaultBearerSource(null);
+    }, [getFrame]);
 
     // Check for existing session on mount (cross-site SSO).
     useEffect(() => {
