@@ -1042,6 +1042,21 @@ export function revokeProfile(token: string, appId: string, versionId: string, p
 // data key follows platform runtime updates (new enclave measurement, app
 // code unchanged) without a fresh owner approval. Owner-only; applied to the
 // live vault policy before the flag is recorded.
+export interface KeyApproval {
+    handle: string;
+    policy_version: number;
+    // Operations a person may perform on the key with no approval.
+    without_approval: string[];
+    // Operations whose approval is not tied to the operation itself.
+    approval_not_bound: string[];
+}
+
+// getKeyApproval reads the app key's policy with the owner's own token and
+// lists the operations that ask for no approval.
+export function getKeyApproval(token: string, appId: string): Promise<KeyApproval> {
+    return request<KeyApproval>(`/api/v1/apps/${encodeURIComponent(appId)}/key/approval`, token);
+}
+
 export function setAutoMigrate(token: string, appId: string, enabled: boolean): Promise<App> {
     return request<App>(
         `/api/v1/apps/${encodeURIComponent(appId)}/auto-migrate`,

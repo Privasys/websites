@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { useAuth } from '~/lib/privasys-auth';
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { getApp, listBuilds, listVersions, listDeployments, listCompatibleEnclaves, deleteApp, deployDirect, stopDeployment, getAppSchema, rpcCall, configComplete, updateStoreListing, publishApp, identiconUrl, getAppMcp, updateContainerMcp, detectContainerMcp, retryBuild, createVersion, stageProfile, promoteProfile, listPending, vaultExportTarget, pendingBinding, beginVaultApproval, pollVaultApproval, listRegistryTags, uploadAsset, listAppCommits, uploadVersionCwasm, getVersion, listCachedImages, listDeployLocations, listInstances, apiErrorCode, setAutoMigrate, getBackupOptions, listAppBackups, getBackupPolicy, backupMonthlyGBP } from '~/lib/api';
+import { getApp, listBuilds, listVersions, listDeployments, listCompatibleEnclaves, deleteApp, deployDirect, stopDeployment, getAppSchema, rpcCall, configComplete, updateStoreListing, publishApp, identiconUrl, getAppMcp, updateContainerMcp, detectContainerMcp, retryBuild, createVersion, stageProfile, promoteProfile, listPending, vaultExportTarget, pendingBinding, beginVaultApproval, pollVaultApproval, listRegistryTags, uploadAsset, listAppCommits, uploadVersionCwasm, getVersion, listCachedImages, listDeployLocations, listInstances, apiErrorCode, setAutoMigrate, getKeyApproval, getBackupOptions, listAppBackups, getBackupPolicy, backupMonthlyGBP } from '~/lib/api';
 
 // The IdP that runs the vault step-up approval ceremony.
 const IDP_ORIGIN = process.env.NEXT_PUBLIC_IDP_ORIGIN || 'https://privasys.id';
@@ -2120,6 +2120,18 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
     const [autoMigrateConfirm, setAutoMigrateConfirm] = useState(false);
     const [autoMigrateErr, setAutoMigrateErr] = useState<string | null>(null);
 
+    // Operations on the app key that ask the owner for no approval. Read with
+    // the owner's own token; anyone else gets an error and sees nothing.
+    const [keyGaps, setKeyGaps] = useState<{ open: string[]; unbound: string[] }>({ open: [], unbound: [] });
+    useEffect(() => {
+        if (!needsApproval) return;
+        let live = true;
+        getKeyApproval(token, app.id)
+            .then(r => { if (live) setKeyGaps({ open: r.without_approval ?? [], unbound: r.approval_not_bound ?? [] }); })
+            .catch(() => { if (live) setKeyGaps({ open: [], unbound: [] }); });
+        return () => { live = false; };
+    }, [token, app.id, needsApproval]);
+
     async function applyAutoMigrate(enabled: boolean) {
         setAutoMigrateBusy(true);
         setAutoMigrateErr(null);
@@ -3346,6 +3358,29 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                 to the platform's own enclave-upgrade approval, so it goes
                 through an explicit confirmation. Only meaningful for
                 vault-backed apps (the data key is what follows or waits). */}
+            {needsApproval && (keyGaps.open.length > 0 || keyGaps.unbound.length > 0) && (
+                <section>
+                    <h2 className="text-sm font-semibold mb-3">Data key approvals</h2>
+                    <div className="rounded-lg border border-amber-200 dark:border-amber-800/30 bg-amber-50 dark:bg-amber-900/15 p-3 text-xs text-amber-800 dark:text-amber-300 space-y-1">
+                        <p className="font-medium">Your data key does not ask for your approval on every change.</p>
+                        {keyGaps.open.length > 0 && (
+                            <p>
+                                Anyone holding your signed-in session can{' '}
+                                {keyGaps.open.map(op => KEY_OP_LABELS[op] ?? op).join(', ')} without a confirmation in
+                                your Privasys wallet.
+                            </p>
+                        )}
+                        {keyGaps.unbound.length > 0 && (
+                            <p>
+                                To {keyGaps.unbound.map(op => KEY_OP_LABELS[op] ?? op).join(', ')}, the key asks for a
+                                confirmation that is not tied to that exact change, so a confirmation given for one
+                                change could be used for another.
+                            </p>
+                        )}
+                    </div>
+                </section>
+            )}
+
             {needsApproval && (
                 <section>
                     <h2 className="text-sm font-semibold mb-3">Platform runtime updates</h2>
@@ -3948,3 +3983,11 @@ function ActionRunner({ fn, appId, token }: { fn: FunctionSchema; appId: string;
     );
 }
 
+
+// What each key operation means to the owner, for the approvals notice.
+const KEY_OP_LABELS: Record<string, string> = {
+    PromoteProfile: 'approve a new version',
+    UpdatePolicy: 'change who may use the key',
+    DeleteKey: 'delete the key',
+    ExportKey: 'export the key'
+};
