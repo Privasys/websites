@@ -1,6 +1,6 @@
 import type { App, CreateAppRequest, ReviewRequest, DeploymentLog, BuildJob, Enclave, EnclaveApp, CreateEnclaveRequest, EnclaveMeasurements, AppVersion, AppDeployment, AttestationResult, TeeType, CachedImage, CloudProvider, CloudRegion, CloudRegionsMeta, Place, StorageRate } from './types';
 import { getApiBaseUrl } from './api-base-url';
-import { accountHeaders } from './current-account';
+import { ACCOUNT_HEADER, accountHeaders } from './current-account';
 import { callApp, AppCallError, type AppManifest } from '@privasys/app-call';
 import { getEnclaveSealedSession, dropEnclaveAuthFrame } from './enclave-session';
 
@@ -2303,7 +2303,12 @@ export interface AccountWithRole extends Account {
 }
 
 export async function listMyAccounts(token: string): Promise<AccountWithRole[]> {
-    const r = await request<{ accounts: AccountWithRole[] }>('/api/v1/accounts', token);
+    // The list names every account the person belongs to, so it acts in none:
+    // a remembered account that is no longer theirs (or from the other
+    // environment) must not make the list itself fail. Empty means none.
+    const r = await request<{ accounts: AccountWithRole[] }>('/api/v1/accounts', token, {
+        headers: { [ACCOUNT_HEADER]: '' }
+    });
     return r.accounts ?? [];
 }
 
