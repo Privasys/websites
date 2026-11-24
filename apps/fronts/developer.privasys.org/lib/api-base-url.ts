@@ -16,12 +16,16 @@ export function isTestPortal(): boolean {
 }
 
 /**
- * The extra scope that asks the IdP for this environment's platform
- * audience: none in production (the IdP's default), the test audience on
- * the test portal.
+ * The sign-in client and token audience for this environment. The test
+ * portal signs in with its own client, so its session stays apart from
+ * production's on the same site (the frame keeps one per client), and asks
+ * for the test audience. rpId stays privasys.id for both: the wallet keys
+ * its sign-in credential by rpId, so another rpId would be another person.
  */
-export function platformAudienceScope(): string[] {
-    return isTestPortal() ? [`audience:${TEST_PLATFORM_AUDIENCE}`] : [];
+export function platformSignIn(): { clientId: string; audience?: string } {
+    return isTestPortal()
+        ? { clientId: 'privasys-platform-test', audience: TEST_PLATFORM_AUDIENCE }
+        : { clientId: 'privasys-platform' };
 }
 
 export function getApiBaseUrl(): string {

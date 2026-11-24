@@ -22,7 +22,7 @@
 // via `dropEnclaveAuthFrame(appHost)` so the next deploy can rebuild it.
 
 import { AuthFrame, type AuthFrameConfig, type SealedSession } from '@privasys/auth';
-import { getApiBaseUrl } from './api-base-url';
+import { getApiBaseUrl, platformSignIn } from './api-base-url';
 import { APP_NAME } from './constants';
 
 export interface OpenEnclaveSessionOptions {
@@ -75,7 +75,7 @@ function buildAuthFrame(appHost: string): AuthFrame {
         authOrigin: process.env.NEXT_PUBLIC_IDP_ORIGIN || 'https://privasys.id',
         rpId: `privasys-platform-deploy:${appHost}`,
         brokerUrl: process.env.NEXT_PUBLIC_BROKER_URL || 'wss://relay.privasys.org/relay',
-        clientId: 'privasys-platform',
+        ...platformSignIn(),
         scope: ['openid', 'offline_access'],
         sessionRelay: { appHost }
     };
