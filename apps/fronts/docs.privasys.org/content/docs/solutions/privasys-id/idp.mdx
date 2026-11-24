@@ -14,7 +14,7 @@ The Privasys IdP runs at `https://privasys.id`. It is a standard OpenID Connect 
 | `https://privasys.id/oidc/authorize` | Authorization endpoint |
 | `https://privasys.id/oidc/token` | Token endpoint (authorization-code, refresh-token, JWT-bearer for service accounts) |
 
-Audience: a relying-party app's tokens are addressed to its own client id. The platform audience, `privasys-platform`, is reserved for the platform's own clients (the developer portal and the CLI); a third-party client cannot obtain it.
+Audience: a relying-party app's tokens are addressed to its own client id. The platform audience, `privasys-platform`, is reserved for the platform's own clients (the developer portal and the CLI); a third-party client cannot obtain it. The test platform has its own audience, `privasys-platform-test`, so its roles (`privasys-platform-test:*`) stay apart from production's. A platform client asks for either with the scope `audience:<name>`; the subject is the same for both.
 
 ## Subjects: one per application
 

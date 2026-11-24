@@ -40,7 +40,18 @@ privasys apps list --test          # test/dev environment
 privasys apps list --endpoint https://api.example.com   # custom
 ```
 
-`--endpoint` overrides `--test`. Authentication always uses the production issuer (`privasys.id`), so only the platform endpoint changes.
+`--endpoint` overrides `--test`. Authentication always uses the production issuer (`privasys.id`), so your identity is the same in every environment.
+
+Each platform has its own **audience**, and the CLI asks the issuer for tokens addressed to the platform it talks to:
+
+| Platform | Audience | Roles in the token |
+| --- | --- | --- |
+| Production | `privasys-platform` | `privasys-platform:app:<id>:owner`, `privasys-platform:admin`, ... |
+| Test / dev (`--test`) | `privasys-platform-test` | `privasys-platform-test:app:<id>:owner`, `privasys-platform-test:admin`, ... |
+
+The CLI picks the audience from the endpoint: the test endpoint gets the test audience, every other endpoint gets the production one. Your test roles and production roles therefore stay apart, and a test token only opens the test platform. The CLI keeps a cached token for each audience, so moving between `--test` and production needs no new sign-in. `privasys auth whoami --test` shows the test token's audience and roles.
+
+A custom environment with its own audience names it in the configuration (`audience`) or in `PRIVASYS_AUDIENCE`.
 
 ## Configuration
 
@@ -52,6 +63,14 @@ privasys config set account <account-id>
 privasys config list
 ```
 
+| Key | Meaning |
+| --- | --- |
+| `endpoint` | platform API base URL |
+| `issuer` | identity provider issuer URL |
+| `account` | account id to act on |
+| `audience` | platform audience to request tokens for. Leave it unset to follow the endpoint; set it only for a custom environment with its own audience. `privasys config get audience` shows the one for the configured endpoint. |
+| `format` | output format: `table`, `json` or `yaml` |
+
 ## Environment overrides
 
 | Variable | Overrides |
@@ -59,6 +78,7 @@ privasys config list
 | `PRIVASYS_ENDPOINT` | platform API base URL |
 | `PRIVASYS_ISSUER` | identity provider issuer URL |
 | `PRIVASYS_ACCOUNT` | account id to act on |
+| `PRIVASYS_AUDIENCE` | platform audience to request tokens for |
 | `PRIVASYS_FORMAT` | output format |
 | `PRIVASYS_SERVICE_KEY` | service-account key (unattended auth) |
 | `PRIVASYS_ACCESS_TOKEN` | a raw bearer, bypassing stored sessions |
