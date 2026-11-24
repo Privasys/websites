@@ -34,7 +34,7 @@ Rotating keeps the older versions, so data wrapped under them still unwraps and 
 - **AES keys:** re-wrap anything still wrapped under it with the current version.
 - **Signing keys:** keep the public key of every version whose signatures must stay verifiable (`privasys vault key public <vault> <name> --version <n>`). Verifying a signature needs only the public key, never the vault.
 
-A secret can be renewed only before it expires. An expired secret is gone unless you exported it. `privasys secrets renew` needs CLI v0.56.2 or later ([update the CLI](/solutions/cli/install#update)).
+A secret can be renewed only before it expires. An expired secret is gone unless you exported it. `privasys secrets renew` needs CLI v0.56.2 or later, and v0.58.3 or later on the test platform ([update the CLI](/solutions/cli/install#update)).
 
 A threshold Ed25519 key is renewed the same way, before it expires: its vaults hand fresh shares of the same key to the active constellation, so verifiers keep the public key they have. `--threshold` changes how many vaults must sign. `privasys vault key renew` needs CLI v0.58.1 or later, and works for keys created on vault v0.39.0 or later; rotate an older one (`privasys vault key rotate` gives a new key and a new public key) or let it expire.
 

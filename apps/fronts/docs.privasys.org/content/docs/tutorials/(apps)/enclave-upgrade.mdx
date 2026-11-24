@@ -192,7 +192,7 @@ privasys apps versions revoke  notes v1.4.0     # discard a staged-but-unwanted 
 
 Here is the same flow, one layer down.
 
-**`stage` → `StagePendingProfile` on each vault.** management-service takes your bearer token (audience `privasys-platform`, which is exactly the vault audience — no token exchange needed) and, acting purely as a proxy, asks each vault to record a **pending profile**: the new measurement, as a *candidate* that is not yet allowed to unlock anything. The platform's own service token is used only to verify each vault's attestation quote during the RA-TLS dial — that is infrastructure, not key authority. The service account appears in **no principal slot** on your key.
+**`stage` → `StagePendingProfile` on each vault.** management-service takes your bearer token of the audience your key's vaults accept (`privasys-platform` in production, `privasys-platform-test` on the test platform; no token exchange is needed) and, acting purely as a proxy, asks each vault to record a **pending profile**: the new measurement, as a *candidate* that is not yet allowed to unlock anything. The platform's own service token is used only to verify each vault's attestation quote during the RA-TLS dial — that is infrastructure, not key authority. The service account appears in **no principal slot** on your key.
 
 **`promote` → `PromotePendingProfile`.** The vault checks that the caller is the key's `Owner` (or a role-based approver — see below), then folds the pending profile into the live policy and bumps `policy_version` from N to N+1. From this instant, an enclave presenting the new measurement passes `tee_matches` and gets its share; the old measurement no longer does (unless it is still listed). This is a single, owner-authenticated state change on an attested vault — the platform cannot forge it.
 
@@ -203,7 +203,7 @@ Here is the same flow, one layer down.
 **The deploy gate is a courtesy, not the control.** Before it even attempts the cutover, management-service probes the vault (`GetKeyInfo` over RA-TLS) to learn whether the key exists, and refuses an un-promoted upgrade early with the "approve first" hint you saw — so you get a clean message instead of a confusing denied-key crash. But this is just fail-fast UX. The real boundary is the vault's `tee_matches` + owner-gated promote; a compromised platform that skipped the gate would still be denied the key by the vaults.
 
 <Callout type="info">
-**Team upgrades without touching the policy.** Approvers are matched by *role*, not by individual identity: the policy carries one static Manager principal with `required_roles: ["privasys-platform:app:<id>:approver"]`. Adding or removing a teammate is an IdP role grant, never a vault policy edit, so the policy is stable across team changes and anyone with the approver role can stage and promote.
+**Team upgrades without touching the policy.** Approvers are matched by *role*, not by individual identity: the policy carries one static Manager principal with `required_roles: ["<audience>:app:<id>:approver"]`, where the audience is the one the key's vaults accept (`privasys-platform:app:<id>:approver` in production). Adding or removing a teammate is an IdP role grant, never a vault policy edit, so the policy is stable across team changes and anyone with the approver role can stage and promote.
 </Callout>
 
 ## Stronger approval: operation-bound WebAuthn

@@ -64,7 +64,7 @@ privasys vault key renew my-vault release                # same key and public k
 privasys vault key renew my-vault release --threshold 3  # and change how many vaults must sign
 ```
 
-Renewal moves the key to the active constellation and needs your approval in the wallet, which names the vaults and the vault build the key goes to. It needs CLI v0.58.1 or later, and a key created on vault v0.39.0 or later. `rm` on an `ed25519` key destroys its share on every vault.
+Renewal moves the key to the active constellation and needs your approval in the wallet, which names the vaults and the vault build the key goes to. It needs CLI v0.58.1 or later (v0.58.3 or later on the test platform), and a key created on vault v0.39.0 or later. Since v0.58.5 the wallet notification names the key and its key vault. `rm` on an `ed25519` key destroys its share on every vault.
 
 ## User secrets
 
