@@ -2581,7 +2581,8 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                 policy_version: binding.policyVersion,
                 members: target.members,
                 member_identities: target.member_identities,
-                audience: target.oidc_audience
+                audience: target.oidc_audience,
+                vault_release: target.vault_release
             }, context)
             : await beginVaultApproval(IDP_ORIGIN, token, {
                 operation: 'promote',

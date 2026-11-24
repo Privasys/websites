@@ -943,6 +943,8 @@ export interface VaultExportTarget {
     binding_version?: number;
     members?: string[];
     member_identities?: VaultMemberIdentity[];
+    // The vault release the key's vaults run (a hint for the wallet).
+    vault_release?: string;
 }
 
 // VaultMemberIdentity is a vault's own identity, as it reports it over its
@@ -974,6 +976,8 @@ export interface VaultApprovalV2 {
     new_policy?: unknown;
     // update_policy_from only: the policy replaced, as the vaults return it.
     current_policy?: unknown;
+    // The vault release the vaults run: relayed in the context as a hint.
+    vault_release?: string;
     audience?: string;
 }
 
@@ -1117,7 +1121,11 @@ export async function beginVaultApprovalV2(
             ...(op.operation !== 'promote' ? { new_policy: op.new_policy } : {}),
             ...(op.operation === 'update_policy_from' ? { current_policy: op.current_policy } : {}),
             ...(op.audience ? { audience: op.audience } : {}),
-            ...(context ? { context } : {})
+            // The release is a hint for the wallet, which checks its
+            // MRENCLAVE itself; never part of the binding.
+            ...(context || op.vault_release
+                ? { context: { ...(context ?? {}), ...(op.vault_release ? { vault_release: op.vault_release } : {}) } }
+                : {})
         })
     });
     if (!res.ok) {
