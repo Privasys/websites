@@ -960,7 +960,9 @@ export interface VaultMemberIdentity {
 // operation, its key, the target it binds, the policy version it replaces,
 // and the vaults it is for. The control plane computes all of it.
 export interface VaultApprovalV2 {
-    operation: 'promote' | 'update_policy';
+    // update_policy_from also binds the policy it replaces (vaults that
+    // list update-policy-from-v1).
+    operation: 'promote' | 'update_policy' | 'update_policy_from';
     handle: string;
     // The bound value: the staged profile's digest for promote, the digest of
     // new_policy for update_policy.
@@ -970,6 +972,8 @@ export interface VaultApprovalV2 {
     member_identities: VaultMemberIdentity[];
     // update_policy only: the exact JSON the vaults will receive.
     new_policy?: unknown;
+    // update_policy_from only: the policy replaced, as the vaults return it.
+    current_policy?: unknown;
     audience?: string;
 }
 
@@ -979,7 +983,8 @@ export interface VaultApprovalV2 {
 export function policyApprovalRequired(e: unknown): VaultApprovalV2 | null {
     if (e instanceof ApiError && e.status === 428 && e.code === 'policy_approval_required') {
         const a = (e.body as { approval?: VaultApprovalV2 } | undefined)?.approval;
-        if (a && a.operation === 'update_policy' && a.new_policy !== undefined) return a;
+        if (a && a.new_policy !== undefined && (a.operation === 'update_policy'
+            || (a.operation === 'update_policy_from' && a.current_policy !== undefined))) return a;
     }
     return null;
 }
@@ -1109,7 +1114,8 @@ export async function beginVaultApprovalV2(
             policy_version: op.policy_version,
             members: op.members,
             member_identities: op.member_identities,
-            ...(op.operation === 'update_policy' ? { new_policy: op.new_policy } : {}),
+            ...(op.operation !== 'promote' ? { new_policy: op.new_policy } : {}),
+            ...(op.operation === 'update_policy_from' ? { current_policy: op.current_policy } : {}),
             ...(op.audience ? { audience: op.audience } : {}),
             ...(context ? { context } : {})
         })
