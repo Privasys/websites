@@ -235,6 +235,8 @@ The vault directory models each vault version as a **constellation**: a set of v
 
 On first boot, each vault accepts a bootstrap configuration over an authenticated channel: OIDC issuer, audience, attestation server URL(s), registered modules, intermediate CA cert and key for RA-TLS issuance. The vault seals this configuration and refuses to use a different one on subsequent boots without a recorded reconfiguration event. The configuration is committed into the Merkle root attested by the vault's RA-TLS certificate, so clients can detect any drift.
 
+Because the audience is part of that sealed configuration, a constellation accepts tokens for one audience only. Privasys runs its production vaults on `privasys-platform` and its test platform's vaults on `privasys-platform-test`, so a token issued for one environment is refused by the other's vaults. The platform API reports each constellation's audience (`oidc_audience`), which tells a client which token to request.
+
 ## Standard interfaces
 
 The RA-TLS wire protocol described above is the native surface. On top of it, the same enclave operations are reachable through the interfaces existing software already speaks: a PKCS#11 3.1 module, a KMIP 2.1 gateway, and a REST API plus CLI. These are front-ends over the same policy engine and data plane, so they add no new trust boundary. The [Standard Interfaces](/solutions/enclave-vaults/standard-interfaces) page covers how each maps onto the vault and where the standard client's reach ends.

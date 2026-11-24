@@ -51,6 +51,8 @@ Each platform has its own **audience**, and the CLI asks the issuer for tokens a
 
 The CLI picks the audience from the endpoint: the test endpoint gets the test audience, every other endpoint gets the production one. Your test roles and production roles therefore stay apart, and a test token only opens the test platform. The CLI keeps a cached token for each audience, so moving between `--test` and production needs no new sign-in. `privasys auth whoami --test` shows the test token's audience and roles.
 
+The vaults follow the same split. Each vault constellation accepts one audience, fixed when its vaults first boot: production vaults accept `privasys-platform`, and the test platform's vaults accept `privasys-platform-test`. The platform reports each constellation's audience, and the CLI asks for a token of that audience for every vault call, so each vault gets a token for the audience it accepts, and a test token never opens a production vault.
+
 A custom environment with its own audience names it in the configuration (`audience`) or in `PRIVASYS_AUDIENCE`.
 
 ## Configuration
