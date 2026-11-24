@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { useAuth } from '~/lib/privasys-auth';
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { getApp, listBuilds, listVersions, listDeployments, listCompatibleEnclaves, deleteApp, deployDirect, stopDeployment, getAppSchema, rpcCall, configComplete, updateStoreListing, publishApp, identiconUrl, getAppMcp, updateContainerMcp, detectContainerMcp, retryBuild, createVersion, stageProfile, promoteProfile, listPending, vaultExportTarget, pendingBinding, beginVaultApproval, beginVaultApprovalV2, policyApprovalRequired, pollVaultApproval, listRegistryTags, uploadAsset, listAppCommits, uploadVersionCwasm, getVersion, listCachedImages, listDeployLocations, listInstances, apiErrorCode, setAutoMigrate, getKeyApproval, getBackupOptions, listAppBackups, getBackupPolicy, backupMonthlyGBP } from '~/lib/api';
+import { getApp, listBuilds, listVersions, listDeployments, listCompatibleEnclaves, deleteApp, deployDirect, stopDeployment, getAppSchema, rpcCall, configComplete, updateStoreListing, publishApp, identiconUrl, getAppMcp, updateContainerMcp, detectContainerMcp, retryBuild, createVersion, stageProfile, promoteProfile, listPending, vaultExportTarget, pendingBinding, beginVaultApproval, beginVaultApprovalV2, policyApprovalRequired, pollVaultApproval, listRegistryTags, uploadAsset, listAppCommits, uploadVersionCwasm, getVersion, listCachedImages, listDeployLocations, listInstances, apiErrorCode, setAutoMigrate, getKeyApproval, addKeyApprovals, getBackupOptions, listAppBackups, getBackupPolicy, backupMonthlyGBP } from '~/lib/api';
 
 // The IdP that runs the vault step-up approval ceremony.
 const IDP_ORIGIN = process.env.NEXT_PUBLIC_IDP_ORIGIN || 'https://privasys.id';
@@ -32,6 +32,31 @@ import { BackupsTab, BACKUP_DELETION_COPY } from '~/components/backups';
 
 // An approval waiting on the owner's wallet: what the card shows.
 interface ApprovalCard { challenge: string; ceremonyUrl: string; measurement: string; deadline: number }
+
+// PolicyApprovalCardView asks the owner to approve a change to the data key's
+// policy on their wallet, showing the digest the wallet shows.
+function PolicyApprovalCardView({ card, onCancel }: { card: ApprovalCard; onCancel: () => void }) {
+    return (
+        <div className="rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 p-3 text-xs text-amber-800 dark:text-amber-300 space-y-2">
+            <p className="font-medium text-amber-900 dark:text-amber-200">Approve this change on your wallet</p>
+            <p>
+                Your data key&apos;s vaults change who may use the key only with your approval of
+                the exact new policy. A request is waiting in your Privasys Wallet. Check that the
+                policy digest there matches the one below before you approve.
+            </p>
+            <div className="text-[11px] font-mono break-all text-amber-900/80 dark:text-amber-200/80">{card.measurement}</div>
+            <div className="flex items-center gap-4">
+                <span>Waiting for approval…</span>
+                <a href={card.ceremonyUrl} target="_blank" rel="noopener noreferrer" className="underline font-medium text-amber-900 dark:text-amber-200">
+                    Use a passkey in this browser instead
+                </a>
+                <button type="button" onClick={onCancel} className="underline text-amber-900/70 dark:text-amber-200/70">
+                    Cancel
+                </button>
+            </div>
+        </div>
+    );
+}
 
 function StatusBadge({ status, labels, colors }: { status: string; labels: Record<string, string>; colors: Record<string, string> }) {
     return (
@@ -2125,15 +2150,48 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
 
     // Operations on the app key that ask the owner for no approval. Read with
     // the owner's own token; anyone else gets an error and sees nothing.
-    const [keyGaps, setKeyGaps] = useState<{ open: string[]; unbound: string[] }>({ open: [], unbound: [] });
+    const [keyGaps, setKeyGaps] = useState<{ open: string[]; unbound: string[]; canAdd: boolean }>({ open: [], unbound: [], canAdd: false });
+    const [keyGapsTick, setKeyGapsTick] = useState(0);
+    const [gapApproval, setGapApproval] = useState<ApprovalCard | null>(null);
+    const [gapBusy, setGapBusy] = useState(false);
+    const [gapErr, setGapErr] = useState<string | null>(null);
     useEffect(() => {
         if (!needsApproval) return;
         let live = true;
         getKeyApproval(token, app.id)
-            .then(r => { if (live) setKeyGaps({ open: r.without_approval ?? [], unbound: r.approval_not_bound ?? [] }); })
-            .catch(() => { if (live) setKeyGaps({ open: [], unbound: [] }); });
+            .then(r => { if (live) setKeyGaps({ open: r.without_approval ?? [], unbound: r.approval_not_bound ?? [], canAdd: !!r.can_add_approvals }); })
+            .catch(() => { if (live) setKeyGaps({ open: [], unbound: [], canAdd: false }); });
         return () => { live = false; };
-    }, [token, app.id, needsApproval]);
+    }, [token, app.id, needsApproval, keyGapsTick]);
+
+    // addApprovals is the owner's one tap that makes every change to the key
+    // ask for a wallet approval bound to that change. The owner approves the
+    // exact new policy (as for automatic updates below).
+    async function addApprovals() {
+        setGapBusy(true);
+        setGapErr(null);
+        try {
+            try {
+                await addKeyApprovals(token, app.id);
+            } catch (e) {
+                const need = policyApprovalRequired(e);
+                if (!need) throw e;
+                const start = await beginVaultApprovalV2(IDP_ORIGIN, token, need, {
+                    app_name: app.display_name || app.name,
+                    app_id: app.id,
+                    key_type: 'storage',
+                    summary: 'Ask for your wallet approval, tied to the exact change, before anyone approves a new version, changes who may use the key, deletes it or exports it'
+                });
+                const stepToken = await waitForApproval(start, need.target, setGapApproval);
+                await addKeyApprovals(stepToken, app.id, need.new_policy);
+            }
+            setKeyGapsTick(t => t + 1);
+        } catch (e) {
+            setGapErr(e instanceof Error ? e.message : 'Failed to add the approvals');
+        } finally {
+            setGapBusy(false);
+        }
+    }
 
     async function applyAutoMigrate(enabled: boolean) {
         setAutoMigrateBusy(true);
@@ -3419,6 +3477,20 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                                 change could be used for another.
                             </p>
                         )}
+                        {keyGaps.canAdd && !gapApproval && (
+                            <div className="pt-2">
+                                <button
+                                    type="button"
+                                    onClick={addApprovals}
+                                    disabled={gapBusy}
+                                    className="px-3 py-1.5 font-medium rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-85 disabled:opacity-50"
+                                >
+                                    {gapBusy ? 'Updating…' : 'Ask for my approval on every change'}
+                                </button>
+                            </div>
+                        )}
+                        {gapApproval && <PolicyApprovalCardView card={gapApproval} onCancel={() => { approvalCancelled.current = true; }} />}
+                        {gapErr && <p className="text-red-600 dark:text-red-400">{gapErr}</p>}
                     </div>
                 </section>
             )}
@@ -3487,30 +3559,7 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                                 </div>
                             </div>
                         )}
-                        {policyApproval && (
-                            <div className="rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 p-3 text-xs text-amber-800 dark:text-amber-300 space-y-2">
-                                <p className="font-medium text-amber-900 dark:text-amber-200">Approve this change on your wallet</p>
-                                <p>
-                                    Your data key&apos;s vaults change who may use the key only with your approval of
-                                    the exact new policy. A request is waiting in your Privasys Wallet. Check that the
-                                    policy digest there matches the one below before you approve.
-                                </p>
-                                <div className="text-[11px] font-mono break-all text-amber-900/80 dark:text-amber-200/80">{policyApproval.measurement}</div>
-                                <div className="flex items-center gap-4">
-                                    <span>Waiting for approval…</span>
-                                    <a href={policyApproval.ceremonyUrl} target="_blank" rel="noopener noreferrer" className="underline font-medium text-amber-900 dark:text-amber-200">
-                                        Use a passkey in this browser instead
-                                    </a>
-                                    <button
-                                        type="button"
-                                        onClick={() => { approvalCancelled.current = true; }}
-                                        className="underline text-amber-900/70 dark:text-amber-200/70"
-                                    >
-                                        Cancel
-                                    </button>
-                                </div>
-                            </div>
-                        )}
+                        {policyApproval && <PolicyApprovalCardView card={policyApproval} onCancel={() => { approvalCancelled.current = true; }} />}
                         {autoMigrateErr && (
                             <div className="text-xs text-red-600 dark:text-red-400">{autoMigrateErr}</div>
                         )}

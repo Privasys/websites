@@ -1187,6 +1187,20 @@ export interface KeyApproval {
     without_approval: string[];
     // Operations whose approval is not tied to the operation itself.
     approval_not_bound: string[];
+    // The owner can add the approvals in one tap (addKeyApprovals): only on
+    // vaults that verify binding v2.
+    can_add_approvals?: boolean;
+}
+
+// addKeyApprovals makes every change to the app key ask for a wallet approval
+// bound to it. The first call fails with policyApprovalRequired; the second
+// carries the approved policy and the approval token.
+export function addKeyApprovals(token: string, appId: string, newPolicy?: unknown): Promise<{ changed: boolean }> {
+    return request<{ changed: boolean }>(
+        `/api/v1/apps/${encodeURIComponent(appId)}/key/approval`,
+        token,
+        { method: 'POST', body: JSON.stringify(newPolicy !== undefined ? { new_policy: newPolicy } : {}) }
+    );
 }
 
 // getKeyApproval reads the app key's policy with the owner's own token and
