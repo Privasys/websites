@@ -1126,7 +1126,8 @@ export async function beginVaultApprovalV2(
     const now = Math.floor(Date.now() / 1000);
     if (b.op !== op.operation || b.handle !== op.handle || b.target !== (op.target || '-')
         || b.policy_version !== op.policy_version || b.holder_head !== '-'
-        || !b.approver.startsWith('oidc:') || b.exp > now + 900
+        // The vaults take at most 600 s; 60 s of clock skew on top.
+        || !b.approver.startsWith('oidc:') || b.exp > now + 600 + 60
         || [...b.members].sort().join(',') !== asked.join(',')) {
         throw new Error('approval refused: privasys.id returned another operation than the one asked');
     }
