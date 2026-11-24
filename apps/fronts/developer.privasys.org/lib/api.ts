@@ -1,7 +1,6 @@
 import type { App, CreateAppRequest, ReviewRequest, DeploymentLog, BuildJob, Enclave, EnclaveApp, CreateEnclaveRequest, EnclaveMeasurements, AppVersion, AppDeployment, AttestationResult, TeeType, CachedImage, CloudProvider, CloudRegion, CloudRegionsMeta, Place, StorageRate } from './types';
 import { getApiBaseUrl } from './api-base-url';
 import { ACCOUNT_HEADER, accountHeaders } from './current-account';
-import { vaultBearerHeaders } from './vault-bearer';
 import { callApp, AppCallError, type AppManifest } from '@privasys/app-call';
 import { getEnclaveSealedSession, dropEnclaveAuthFrame } from './enclave-session';
 
@@ -39,7 +38,6 @@ async function request<T>(path: string, token: string, init?: RequestInit, opts?
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json',
             ...accountHeaders(),
-            ...(await vaultBearerHeaders(path)),
             ...init?.headers
         }
     });
