@@ -9,11 +9,14 @@ const API_URL = getApiBaseUrl();
 class ApiError extends Error {
     status: number;
     code?: string;
-    constructor(message: string, status: number, code?: string) {
+    // The error response's JSON, for errors that carry more than a message.
+    body?: unknown;
+    constructor(message: string, status: number, code?: string, body?: unknown) {
         super(message);
         this.name = 'ApiError';
         this.status = status;
         this.code = code;
+        this.body = body;
     }
 }
 
@@ -54,7 +57,7 @@ async function request<T>(path: string, token: string, init?: RequestInit, opts?
         const vaultErr = Array.isArray(body?.vaults)
             ? (body.vaults as Array<{ ok?: boolean; error?: string }>).find(v => v && v.ok === false && v.error)?.error
             : undefined;
-        throw new ApiError(body.error || vaultErr || `API error ${res.status}`, res.status, body.code);
+        throw new ApiError(body.error || vaultErr || `API error ${res.status}`, res.status, body.code, body);
     }
     if (res.status === 204) return undefined as T;
     return res.json();
@@ -934,6 +937,51 @@ export interface VaultExportTarget {
     require_step_up: boolean;
     // The audience the key's vaults accept; a step-up token must carry it.
     oidc_audience?: string;
+    // Set when the key's vaults verify binding v2: the approval then names
+    // these vaults, and the identities are relayed to privasys.id untouched
+    // (the wallet checks each vault's quote).
+    binding_version?: number;
+    members?: string[];
+    member_identities?: VaultMemberIdentity[];
+}
+
+// VaultMemberIdentity is a vault's own identity, as it reports it over its
+// attested connection. Relayed, never interpreted here.
+export interface VaultMemberIdentity {
+    member_id: string;
+    member_public_key: string;
+    billing_id: string;
+    mrenclave: string;
+    quote_b64: string;
+    capabilities?: string[];
+}
+
+// VaultApprovalV2 is what a binding-v2 approval of one operation needs: the
+// operation, its key, the target it binds, the policy version it replaces,
+// and the vaults it is for. The control plane computes all of it.
+export interface VaultApprovalV2 {
+    operation: 'promote' | 'update_policy';
+    handle: string;
+    // The bound value: the staged profile's digest for promote, the digest of
+    // new_policy for update_policy.
+    target: string;
+    policy_version: number;
+    members: string[];
+    member_identities: VaultMemberIdentity[];
+    // update_policy only: the exact JSON the vaults will receive.
+    new_policy?: unknown;
+    audience?: string;
+}
+
+// PolicyApprovalRequired is the control plane's 428 for a policy change on a
+// binding-v2 key: approve `approval`, then send the same change again with
+// approval.new_policy as `new_policy` and the approval token as the bearer.
+export function policyApprovalRequired(e: unknown): VaultApprovalV2 | null {
+    if (e instanceof ApiError && e.status === 428 && e.code === 'policy_approval_required') {
+        const a = (e.body as { approval?: VaultApprovalV2 } | undefined)?.approval;
+        if (a && a.operation === 'update_policy' && a.new_policy !== undefined) return a;
+    }
+    return null;
 }
 
 // vaultExportTarget reports the app's data-key handle and whether promoting on
@@ -1006,6 +1054,95 @@ export async function beginVaultApproval(
     return { challenge, ceremonyUrl: `${idpOrigin.replace(/\/$/, '')}/fido2/vault-approval#${frag}` };
 }
 
+// VaultBindingV2 is a binding v2 as privasys.id returns it: every field of the
+// text the vaults rebuild.
+export interface VaultBindingV2 {
+    members: string[];
+    op: string;
+    handle: string;
+    target: string;
+    policy_version: number;
+    approver: string;
+    holder_head: string;
+    nonce: string;
+    exp: number;
+}
+
+// bindingV2Text is the binding v2 text (members sorted, "-" for an empty
+// target or holder head, no trailing newline). Its SHA-256 is the challenge.
+export function bindingV2Text(b: VaultBindingV2): string {
+    const members = [...b.members].sort();
+    return [
+        'privasys-vault-approval/v2', String(members.length), ...members,
+        b.op, b.handle, b.target || '-', String(b.policy_version),
+        b.approver, b.holder_head || '-', b.nonce, String(b.exp)
+    ].join('\n');
+}
+
+async function sha256B64url(text: string): Promise<string> {
+    const sum = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)));
+    let bin = '';
+    sum.forEach(b => { bin += String.fromCharCode(b); });
+    return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+// beginVaultApprovalV2 opens a binding-v2 approval. privasys.id returns the
+// binding it built (adding the approver, a nonce and an expiry); the portal
+// rebuilds the text, checks it is the operation it asked for and that its
+// digest is the challenge, so the owner is never asked to approve something
+// else than what the vaults will check.
+export async function beginVaultApprovalV2(
+    idpOrigin: string,
+    token: string,
+    op: VaultApprovalV2,
+    context?: Record<string, string>
+): Promise<VaultApprovalStart> {
+    const res = await fetch(`${idpOrigin.replace(/\/$/, '')}/fido2/vault-approval/begin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({
+            binding_version: 2,
+            ttl_seconds: 240,
+            operation: op.operation,
+            handle: op.handle,
+            target: op.target,
+            policy_version: op.policy_version,
+            members: op.members,
+            member_identities: op.member_identities,
+            ...(op.operation === 'update_policy' ? { new_policy: op.new_policy } : {}),
+            ...(op.audience ? { audience: op.audience } : {}),
+            ...(context ? { context } : {})
+        })
+    });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(`approval could not be started (${res.status}${err.error ? `: ${err.error}` : ''})`);
+    }
+    const options = await res.json() as { publicKey?: { challenge?: string }; binding?: VaultBindingV2 };
+    const challenge = options?.publicKey?.challenge;
+    const b = options?.binding;
+    if (!challenge || !b) throw new Error('approval could not be started: no binding');
+    const asked = [...op.members].sort();
+    const now = Math.floor(Date.now() / 1000);
+    if (b.op !== op.operation || b.handle !== op.handle || b.target !== (op.target || '-')
+        || b.policy_version !== op.policy_version || b.holder_head !== '-'
+        || !b.approver.startsWith('oidc:') || b.exp > now + 900
+        || [...b.members].sort().join(',') !== asked.join(',')) {
+        throw new Error('approval refused: privasys.id returned another operation than the one asked');
+    }
+    if (await sha256B64url(bindingV2Text(b)) !== challenge) {
+        throw new Error('approval refused: the challenge is not the digest of the binding');
+    }
+    const summary: Record<string, string> = {
+        operation: op.operation,
+        handle: op.handle,
+        measurement: op.target,
+        ...(context ?? {})
+    };
+    const frag = b64url(JSON.stringify({ options, summary }));
+    return { challenge, ceremonyUrl: `${idpOrigin.replace(/\/$/, '')}/fido2/vault-approval#${frag}` };
+}
+
 // pollVaultApproval returns the operation-bound token once the approver has
 // confirmed, or null while still pending. Owner-scoped and single-use server
 // side, so a poll that returns a token consumes it.
@@ -1057,11 +1194,14 @@ export function getKeyApproval(token: string, appId: string): Promise<KeyApprova
     return request<KeyApproval>(`/api/v1/apps/${encodeURIComponent(appId)}/key/approval`, token);
 }
 
-export function setAutoMigrate(token: string, appId: string, enabled: boolean): Promise<App> {
+// On a binding-v2 key the first call fails with policyApprovalRequired; the
+// second carries the approved policy as `newPolicy` and the approval token as
+// `token`.
+export function setAutoMigrate(token: string, appId: string, enabled: boolean, newPolicy?: unknown): Promise<App> {
     return request<App>(
         `/api/v1/apps/${encodeURIComponent(appId)}/auto-migrate`,
         token,
-        { method: 'PATCH', body: JSON.stringify({ auto_migrate: enabled }) }
+        { method: 'PATCH', body: JSON.stringify({ auto_migrate: enabled, ...(newPolicy !== undefined ? { new_policy: newPolicy } : {}) }) }
     );
 }
 

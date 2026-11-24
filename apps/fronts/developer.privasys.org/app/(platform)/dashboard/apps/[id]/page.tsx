@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { useAuth } from '~/lib/privasys-auth';
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { getApp, listBuilds, listVersions, listDeployments, listCompatibleEnclaves, deleteApp, deployDirect, stopDeployment, getAppSchema, rpcCall, configComplete, updateStoreListing, publishApp, identiconUrl, getAppMcp, updateContainerMcp, detectContainerMcp, retryBuild, createVersion, stageProfile, promoteProfile, listPending, vaultExportTarget, pendingBinding, beginVaultApproval, pollVaultApproval, listRegistryTags, uploadAsset, listAppCommits, uploadVersionCwasm, getVersion, listCachedImages, listDeployLocations, listInstances, apiErrorCode, setAutoMigrate, getKeyApproval, getBackupOptions, listAppBackups, getBackupPolicy, backupMonthlyGBP } from '~/lib/api';
+import { getApp, listBuilds, listVersions, listDeployments, listCompatibleEnclaves, deleteApp, deployDirect, stopDeployment, getAppSchema, rpcCall, configComplete, updateStoreListing, publishApp, identiconUrl, getAppMcp, updateContainerMcp, detectContainerMcp, retryBuild, createVersion, stageProfile, promoteProfile, listPending, vaultExportTarget, pendingBinding, beginVaultApproval, beginVaultApprovalV2, policyApprovalRequired, pollVaultApproval, listRegistryTags, uploadAsset, listAppCommits, uploadVersionCwasm, getVersion, listCachedImages, listDeployLocations, listInstances, apiErrorCode, setAutoMigrate, getKeyApproval, getBackupOptions, listAppBackups, getBackupPolicy, backupMonthlyGBP } from '~/lib/api';
 
 // The IdP that runs the vault step-up approval ceremony.
 const IDP_ORIGIN = process.env.NEXT_PUBLIC_IDP_ORIGIN || 'https://privasys.id';
@@ -15,7 +15,7 @@ import type { CreateVersionBody } from '~/lib/api';
 import { isApiStatus, effectivePrice } from '~/lib/api';
 import { versionLabel, versionSemverStr, isStrictlyNewer } from '~/lib/version';
 import { displayNameError } from '~/lib/appName';
-import type { AppSchema, ConfigureSection, FunctionSchema, JsonSchemaProp, ActionProgress, WitType, McpManifest, AppCommit, DeployLocation, Instance, PriceRule } from '~/lib/api';
+import type { AppSchema, ConfigureSection, FunctionSchema, JsonSchemaProp, ActionProgress, WitType, McpManifest, AppCommit, DeployLocation, Instance, PriceRule, VaultApprovalStart } from '~/lib/api';
 import { useSSE } from '~/lib/sse-context';
 import { AppDomains } from '~/components/app-domains';
 import { useBalance } from '~/lib/use-balance';
@@ -29,6 +29,9 @@ import { RtmrVerifier } from '~/components/rtmr-verifier';
 import { AttestationConnect, AttestationResultView, useAttestation } from '@privasys/attestation-view';
 import { PlaceLabel, Datacentre } from '~/components/place';
 import { BackupsTab, BACKUP_DELETION_COPY } from '~/components/backups';
+
+// An approval waiting on the owner's wallet: what the card shows.
+interface ApprovalCard { challenge: string; ceremonyUrl: string; measurement: string; deadline: number }
 
 function StatusBadge({ status, labels, colors }: { status: string; labels: Record<string, string>; colors: Record<string, string> }) {
     return (
@@ -2136,7 +2139,25 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
         setAutoMigrateBusy(true);
         setAutoMigrateErr(null);
         try {
-            await setAutoMigrate(token, app.id, enabled);
+            try {
+                await setAutoMigrate(token, app.id, enabled);
+            } catch (e) {
+                // A key on binding-v2 vaults changes its policy only with the
+                // owner's approval of the exact new policy: approve the policy
+                // the control plane computed, then send the same bytes back.
+                const need = policyApprovalRequired(e);
+                if (!need) throw e;
+                const start = await beginVaultApprovalV2(IDP_ORIGIN, token, need, {
+                    app_name: app.display_name || app.name,
+                    app_id: app.id,
+                    key_type: 'storage',
+                    summary: enabled
+                        ? 'Let the data key follow Privasys runtime updates without asking each time (app code unchanged)'
+                        : 'Ask for your approval at each Privasys runtime update'
+                });
+                const stepToken = await waitForApproval(start, need.target, setPolicyApproval);
+                await setAutoMigrate(stepToken, app.id, enabled, need.new_policy);
+            }
             setAutoMigrateConfirm(false);
             onRefresh();
         } catch (e) {
@@ -2182,8 +2203,30 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
     const [workMsg, setWorkMsg] = useState<string | null>(null);
     // In-flight vault step-up approval (see promoteWithStepUp). Non-null while
     // the owner is being asked to approve the new measurement on their wallet.
-    const [approval, setApproval] = useState<{ challenge: string; ceremonyUrl: string; measurement: string; deadline: number } | null>(null);
+    const [approval, setApproval] = useState<ApprovalCard | null>(null);
+    // The same, for a change to the key's policy (automatic runtime updates).
+    const [policyApproval, setPolicyApproval] = useState<ApprovalCard | null>(null);
     const approvalCancelled = useRef(false);
+
+    // waitForApproval shows the approval card and polls privasys.id until the
+    // owner approves, cancels or the request expires. Returns the
+    // operation-bound token.
+    async function waitForApproval(start: VaultApprovalStart, measurement: string, setCard: (c: ApprovalCard | null) => void): Promise<string> {
+        approvalCancelled.current = false;
+        const deadline = Date.now() + 4 * 60_000;
+        setCard({ challenge: start.challenge, ceremonyUrl: start.ceremonyUrl, measurement, deadline });
+        try {
+            for (;;) {
+                if (approvalCancelled.current) throw new Error('approval cancelled');
+                if (Date.now() > deadline) throw new Error('approval timed out — the request expired before it was approved');
+                const stepToken = await pollVaultApproval(IDP_ORIGIN, token, start.challenge);
+                if (stepToken) return stepToken;
+                await new Promise(r => setTimeout(r, 2000));
+            }
+        } finally {
+            setCard(null);
+        }
+    }
     // Live build info while a github commit builds during an upgrade (status + the
     // GitHub Actions run link), so the user can watch the reproducible build.
     const [buildLink, setBuildLink] = useState<{ status: string; url?: string; error?: string } | null>(null);
@@ -2461,42 +2504,41 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
         if (!binding) throw new Error('could not read the staged measurement to approve');
 
         const version = versions.find(v => v.id === versionId);
-        const start = await beginVaultApproval(IDP_ORIGIN, token, {
-            operation: 'promote',
-            handle: target.handle,
-            measurement_digest: binding.digest,
-            policy_version: binding.policyVersion,
-            // The token must carry the audience of the vaults holding the key.
-            ...(target.oidc_audience ? { audience: target.oidc_audience } : {}),
-            // Advisory only (never part of the binding): it lets the approver's
-            // wallet show which app and version they are releasing the key to.
-            context: {
-                app_name: app.display_name || app.name,
-                app_id: app.id,
-                version_id: versionId,
-                key_type: 'storage',
-                ...(version ? { version: versionLabel(version) } : {})
-            }
-        });
+        // Advisory only (never part of the binding): it lets the approver's
+        // wallet show which app and version they are releasing the key to.
+        const context: Record<string, string> = {
+            app_name: app.display_name || app.name,
+            app_id: app.id,
+            version_id: versionId,
+            key_type: 'storage',
+            ...(version ? { version: versionLabel(version) } : {})
+        };
+        // On binding v2 the approval also names the vaults it is for, so it
+        // cannot be spent on another constellation.
+        const start = target.binding_version === 2 && target.members && target.member_identities
+            ? await beginVaultApprovalV2(IDP_ORIGIN, token, {
+                operation: 'promote',
+                handle: target.handle,
+                target: binding.digest,
+                policy_version: binding.policyVersion,
+                members: target.members,
+                member_identities: target.member_identities,
+                audience: target.oidc_audience
+            }, context)
+            : await beginVaultApproval(IDP_ORIGIN, token, {
+                operation: 'promote',
+                handle: target.handle,
+                measurement_digest: binding.digest,
+                policy_version: binding.policyVersion,
+                // The token must carry the audience of the vaults holding the key.
+                ...(target.oidc_audience ? { audience: target.oidc_audience } : {}),
+                context
+            });
 
-        approvalCancelled.current = false;
-        const deadline = Date.now() + 4 * 60_000;
-        setApproval({ challenge: start.challenge, ceremonyUrl: start.ceremonyUrl, measurement: binding.digest, deadline });
         setWorkMsg('Waiting for your approval…');
-        try {
-            for (;;) {
-                if (approvalCancelled.current) throw new Error('approval cancelled');
-                if (Date.now() > deadline) throw new Error('approval timed out — the request expired before it was approved');
-                const stepToken = await pollVaultApproval(IDP_ORIGIN, token, start.challenge);
-                if (stepToken) {
-                    setWorkMsg('Promoting (releasing data key)…');
-                    return await promoteProfile(stepToken, app.id, versionId, pendingId);
-                }
-                await new Promise(r => setTimeout(r, 2000));
-            }
-        } finally {
-            setApproval(null);
-        }
+        const stepToken = await waitForApproval(start, binding.digest, setApproval);
+        setWorkMsg('Promoting (releasing data key)…');
+        return promoteProfile(stepToken, app.id, versionId, pendingId);
     }
 
     // approveRuntime drives the one-click owner re-approval after a PLATFORM
@@ -3441,6 +3483,30 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
                                         className="px-3 py-1.5 font-medium rounded-lg border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5"
                                     >
                                         Keep manual approval
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                        {policyApproval && (
+                            <div className="rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 p-3 text-xs text-amber-800 dark:text-amber-300 space-y-2">
+                                <p className="font-medium text-amber-900 dark:text-amber-200">Approve this change on your wallet</p>
+                                <p>
+                                    Your data key&apos;s vaults change who may use the key only with your approval of
+                                    the exact new policy. A request is waiting in your Privasys Wallet. Check that the
+                                    policy digest there matches the one below before you approve.
+                                </p>
+                                <div className="text-[11px] font-mono break-all text-amber-900/80 dark:text-amber-200/80">{policyApproval.measurement}</div>
+                                <div className="flex items-center gap-4">
+                                    <span>Waiting for approval…</span>
+                                    <a href={policyApproval.ceremonyUrl} target="_blank" rel="noopener noreferrer" className="underline font-medium text-amber-900 dark:text-amber-200">
+                                        Use a passkey in this browser instead
+                                    </a>
+                                    <button
+                                        type="button"
+                                        onClick={() => { approvalCancelled.current = true; }}
+                                        className="underline text-amber-900/70 dark:text-amber-200/70"
+                                    >
+                                        Cancel
                                     </button>
                                 </div>
                             </div>
