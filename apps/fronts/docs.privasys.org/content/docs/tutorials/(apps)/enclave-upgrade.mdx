@@ -263,9 +263,12 @@ privasys apps rotate-key notes
 ```
 
 ```text
+Rotating for the running version 5b1c…
 Rotate the data encryption key for notes? The app keeps running and data is preserved. [y/N] y
 rotated to vault:apps.privasys.org/<app-id>/storage-kek/v4
 ```
+
+Without a version, the key is rotated for the version the app is running (CLI v0.58.8 or later; pass the version explicitly with an older CLI).
 
 The platform provisions a new key generation, `luksAddKey`s the new DEK and `luksKillSlot`s the old one (both open the volume across the switch, so no failure can lock your data), advances the handle, and retires the old generation. The data on disk is never rewritten.
 

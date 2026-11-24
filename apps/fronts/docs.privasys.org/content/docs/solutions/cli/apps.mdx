@@ -99,6 +99,8 @@ privasys apps versions promote my-app [version] [--pending 0]
 privasys apps versions revoke  my-app [version] [--pending 0]
 ```
 
+Without a `[version]`, these commands (and `apps upgrade`, `apps update`, `apps deploy` and `apps versions confirm-surfaces`) act on the app's newest version, the one with the highest version number. `apps rotate-key` acts on the version the app is running, and names it; it asks you to name the version when none is running or several are. Since CLI v0.58.8; an older CLI picked the app's oldest version, so pass the version explicitly with one ([update the CLI](/solutions/cli/install#update)).
+
 A container version that adds routes served in the clear (the manifest's `surfaces` block, see [Surfaces](/solutions/platform/developer-platform/deploy-container#surfaces-private-static-and-public)) ships only once an owner confirms those routes carry no personal data. `apps deploy` and `apps versions stage` show the routes and ask; `--confirm-surfaces` answers without a prompt (for CI, after you have reviewed the diff), and the confirmation can be recorded ahead of time:
 
 ```sh
