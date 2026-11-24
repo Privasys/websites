@@ -146,7 +146,16 @@ A threshold Ed25519 key is one signing key that no single vault holds, and neith
 - The one-time signing values (nonces) live only in enclave memory: they are never sealed or stored, are erased before a vault returns its part, and are lost on restart. A signing session belongs to the caller that opened it.
 - Any vault combines the parts and checks the result against the public key before it is returned.
 
-**Properties.** The key is never exportable: there is no material to export. It survives the loss of up to `n - t` vaults, and fewer than `t` shares cannot sign. It expires after 90 days like every key. Rotating it creates a new version with a **new** public key; keeping the same public key across rotations and vault upgrades is not available yet.
+**Properties.** The key is never exportable: there is no material to export. It survives the loss of up to `n - t` vaults, and fewer than `t` shares cannot sign. It expires after 90 days like every key.
+
+**Renewal keeps the public key.** Renewing a threshold key gives it a fresh 90 days under the same handle and the same public key, on the active constellation: in place when the key is already there, or moved there after a vault upgrade.
+
+- The key's current vaults each deal a fresh share of the same key to the new vaults, sealed to keys the new vaults bind into their attestation. No vault and no client holds the key at any point.
+- Each new vault checks every piece it receives against the key's existing public data. It stores its share only after every new vault has confirmed the same result.
+- Every share changes, and old shares cannot be combined with new ones.
+- The owner approves each renewal in the wallet. The approval names the exact new vaults, the threshold and the vault build the key goes to, and a renewal cannot change the key's policy. The threshold may change at renewal.
+
+Rotating a threshold key is different: it creates a new key with a **new** public key. Keys created before vault v0.39.0 cannot be renewed this way; rotate them, or let them expire.
 
 The three patterns share the same `KeyPolicy` schema and the same lifecycle, so the developer experience is uniform.
 

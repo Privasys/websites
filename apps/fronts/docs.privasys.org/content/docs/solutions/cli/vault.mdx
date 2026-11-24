@@ -57,7 +57,14 @@ privasys vault key audit my-vault signer      # the key's tamper-evident audit l
 privasys vault key rm my-vault signer         # destroys the material on the constellation
 ```
 
-Rotation creates a new primary version with fresh material. Old versions are retained so data signed or wrapped under them still verifies and unwraps; pin one with `--version`. Rotating an `ed25519` key gives it a **new** public key, so publish the new one to your verifiers. `rm` on an `ed25519` key destroys its share on every vault.
+Rotation creates a new primary version with fresh material. Old versions are retained so data signed or wrapped under them still verifies and unwraps; pin one with `--version`. Rotating an `ed25519` key gives it a **new** public key. To keep the same public key, renew it instead:
+
+```sh
+privasys vault key renew my-vault release                # same key and public key, fresh shares, a fresh 90 days
+privasys vault key renew my-vault release --threshold 3  # and change how many vaults must sign
+```
+
+Renewal moves the key to the active constellation and needs your approval in the wallet, which names the vaults and the vault build the key goes to. It needs CLI v0.58.1 or later, and a key created on vault v0.39.0 or later. `rm` on an `ed25519` key destroys its share on every vault.
 
 ## User secrets
 
