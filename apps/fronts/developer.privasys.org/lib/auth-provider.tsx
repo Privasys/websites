@@ -1,21 +1,21 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import type { AuthFrameConfig } from '@privasys/auth';
 import { PrivasysAuthProvider } from '~/lib/privasys-auth';
-import { getApiBaseUrl, isTestPortal, platformAudienceScope } from './api-base-url';
+import { getApiBaseUrl } from './api-base-url';
 
-// The test portal keeps its session under its own rpId: both portals are on
-// one site, so with one rpId they would share the frame's stored session and
-// trade tokens of each other's audience.
+// The test portal signs in exactly as production does for now: asking for
+// the test audience from the sign-in frame gave the portal a session the
+// control plane could not tie to the person's account. The test control
+// plane accepts privasys-platform tokens too.
 const SDK_CONFIG = {
     apiBase: getApiBaseUrl(),
     appName: 'Privasys Developer Platform',
     authOrigin: process.env.NEXT_PUBLIC_IDP_ORIGIN || 'https://privasys.id',
-    rpId: process.env.NEXT_PUBLIC_IDP_RP_ID || (isTestPortal() ? 'privasys.id:test' : 'privasys.id'),
+    rpId: process.env.NEXT_PUBLIC_IDP_RP_ID || 'privasys.id',
     brokerUrl: process.env.NEXT_PUBLIC_BROKER_URL || 'wss://relay.privasys.org/relay',
     clientId: 'privasys-platform',
-    scope: ['openid', 'email', 'profile', 'offline_access', ...platformAudienceScope()] as AuthFrameConfig['scope']
+    scope: ['openid', 'email', 'profile', 'offline_access'] as const
 };
 
 export function AuthProvider({ children }: { children: ReactNode }) {
