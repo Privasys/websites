@@ -2454,6 +2454,8 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
             handle: target.handle,
             measurement_digest: binding.digest,
             policy_version: binding.policyVersion,
+            // The token must carry the audience of the vaults holding the key.
+            ...(target.oidc_audience ? { audience: target.oidc_audience } : {}),
             // Advisory only (never part of the binding): it lets the approver's
             // wallet show which app and version they are releasing the key to.
             context: {

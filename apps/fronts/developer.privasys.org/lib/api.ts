@@ -932,6 +932,8 @@ export interface VaultExportTarget {
     mrenclave: string;
     attestation_server: string;
     require_step_up: boolean;
+    // The audience the key's vaults accept; a step-up token must carry it.
+    oidc_audience?: string;
 }
 
 // vaultExportTarget reports the app's data-key handle and whether promoting on
@@ -981,6 +983,8 @@ export async function beginVaultApproval(
         policy_version: number;
         ttl_seconds?: number;
         context?: Record<string, string>;
+        // The aud of the approval token; the IdP defaults to privasys-platform.
+        audience?: string;
     }
 ): Promise<VaultApprovalStart> {
     const res = await fetch(`${idpOrigin.replace(/\/$/, '')}/fido2/vault-approval/begin`, {
