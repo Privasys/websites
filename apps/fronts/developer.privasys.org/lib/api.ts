@@ -1034,7 +1034,9 @@ export async function beginVaultApproval(
     idpOrigin: string,
     token: string,
     body: {
-        operation: 'promote';
+        // policy-update: a change to the key's policy on a key whose rule asks
+        // for a v1 step-up (binds no measurement; privasys.id forces it empty).
+        operation: 'promote' | 'policy-update';
         handle: string;
         measurement_digest: string;
         policy_version: number;

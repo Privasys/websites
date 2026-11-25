@@ -39,12 +39,21 @@ function PolicyApprovalCardView({ card, onCancel }: { card: ApprovalCard; onCanc
     return (
         <div className="rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 p-3 text-xs text-amber-800 dark:text-amber-300 space-y-2">
             <p className="font-medium text-amber-900 dark:text-amber-200">Approve this change on your wallet</p>
-            <p>
-                Your data key&apos;s vaults change who may use the key only with your approval of
-                the exact new policy. A request is waiting in your Privasys Wallet. Check that the
-                policy digest there matches the one below before you approve.
-            </p>
-            <div className="text-[11px] font-mono break-all text-amber-900/80 dark:text-amber-200/80">{card.measurement}</div>
+            {/^[0-9a-f]{64}$/.test(card.measurement) ? (
+                <>
+                    <p>
+                        Your data key&apos;s vaults change who may use the key only with your approval of
+                        the exact new policy. A request is waiting in your Privasys Wallet. Check that the
+                        policy digest there matches the one below before you approve.
+                    </p>
+                    <div className="text-[11px] font-mono break-all text-amber-900/80 dark:text-amber-200/80">{card.measurement}</div>
+                </>
+            ) : (
+                <p>
+                    Your data key asks for your passkey before its policy changes. A request is waiting in
+                    your Privasys Wallet for this change: <span className="font-medium">{card.measurement}</span>.
+                </p>
+            )}
             <div className="flex items-center gap-4">
                 <span>Waiting for approval…</span>
                 <a href={card.ceremonyUrl} target="_blank" rel="noopener noreferrer" className="underline font-medium text-amber-900 dark:text-amber-200">
@@ -2197,6 +2206,34 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
         setAutoMigrateBusy(true);
         setAutoMigrateErr(null);
         try {
+            // A key whose policy changes ask for a v1 step-up (a passkey
+            // approval not tied to the change, as production keys created
+            // before binding v2 have) takes privasys.id's v1 "policy-update"
+            // approval: the session token alone is refused by the vaults.
+            const approvalState = await getKeyApproval(token, app.id).catch(() => null);
+            if (approvalState?.approval_not_bound?.includes('UpdatePolicy')) {
+                const target = await vaultExportTarget(token, app.id);
+                const start = await beginVaultApproval(IDP_ORIGIN, token, {
+                    operation: 'policy-update',
+                    handle: approvalState.handle,
+                    measurement_digest: '',
+                    policy_version: approvalState.policy_version,
+                    ...(target.oidc_audience ? { audience: target.oidc_audience } : {}),
+                    context: {
+                        app_name: app.display_name || app.name,
+                        app_id: app.id,
+                        key_type: 'storage',
+                        summary: enabled
+                            ? 'Let the data key follow Privasys runtime updates without asking each time (app code unchanged)'
+                            : 'Ask for your approval at each Privasys runtime update'
+                    }
+                });
+                const stepToken = await waitForApproval(start, enabled ? 'Automatic runtime updates: on' : 'Automatic runtime updates: off', setPolicyApproval);
+                await setAutoMigrate(stepToken, app.id, enabled);
+                setAutoMigrateConfirm(false);
+                onRefresh();
+                return;
+            }
             try {
                 await setAutoMigrate(token, app.id, enabled);
             } catch (e) {
