@@ -2211,6 +2211,14 @@ function DeploymentsTab({ app, deployments, versions, enclaves, builds, token, o
             // before binding v2 have) takes privasys.id's v1 "policy-update"
             // approval: the session token alone is refused by the vaults.
             const approvalState = await getKeyApproval(token, app.id).catch(() => null);
+            // Paused: a v1 "policy-update" approval is also valid for other
+            // operations on the key, so the portal asks for none until
+            // privasys.id ties each approval to its operation.
+            const v1PolicyUpdatePaused = true;
+            if (v1PolicyUpdatePaused && approvalState?.approval_not_bound?.includes('UpdatePolicy')) {
+                setAutoMigrateErr('Changing this setting is temporarily unavailable for this app’s data key. It will be back shortly.');
+                return;
+            }
             if (approvalState?.approval_not_bound?.includes('UpdatePolicy')) {
                 const target = await vaultExportTarget(token, app.id);
                 const start = await beginVaultApproval(IDP_ORIGIN, token, {
