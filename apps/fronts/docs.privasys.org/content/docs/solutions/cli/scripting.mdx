@@ -73,6 +73,8 @@ privasys config list
 | `audience` | platform audience to request tokens for. Leave it unset to follow the endpoint; set it only for a custom environment with its own audience. `privasys config get audience` shows the one for the configured endpoint. |
 | `format` | output format: `table`, `json` or `yaml` |
 
+`--account` (or the `account` key, or `PRIVASYS_ACCOUNT`) makes every command act in that account, which must be one you belong to. Before the first change it makes there, the CLI names the account on stderr (`Acting in account "Acme" (…)`), and an MCP tool that changes something says in its result which account it acted in. Without it, commands act in your personal account. Before CLI v0.59.0 the setting was ignored and every command acted in your personal account, so check where anything you created with an older CLI landed ([update the CLI](/solutions/cli/install#update)).
+
 ## Environment overrides
 
 | Variable | Overrides |

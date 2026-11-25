@@ -57,7 +57,7 @@ Commands that take an app accept either its **id or its name**.
 | --- | --- |
 | `apps` | `list`, `describe`, `create`, `store-listing`, `upload`, `delete`, `versions` (incl. `stage`/`pending`/`promote`/`revoke`), `deploy`, `update`, `upgrade`, `rotate-key`, `export-key`, `cosign`, `migrate-constellation`, `deployments`, `stop`, `api`, `mcp`, `call`, `configure`, `action`, `builds`, `owners` |
 | `vault` | `create`, `list`, `rm`; `key create`/`list`/`rm`/`sign`/`public`/`wrap`/`unwrap`/`rotate`/`audit`; `serve` (Azure Key Vault-shaped REST facade) |
-| `secrets` | `create`, `export` (user-owned keys in the vault) |
+| `secrets` | `create`, `export`, `info`, `renew`, `rm` (user-owned keys in the vault) |
 | `registry` | `add`, `status`, `rm` (private-image pull credentials) |
 | `enclaves` | `list`, `get` (platform fleet view; requires the `privasys-platform:manager` role, or `privasys-platform-test:manager` with `--test`) |
 | `instances` | `create`, `list`, `describe`, `start`, `stop`, `delete` (dedicated confidential VMs) |

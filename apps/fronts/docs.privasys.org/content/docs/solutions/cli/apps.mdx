@@ -121,7 +121,15 @@ privasys apps rotate-key my-app          # online re-key; data is never re-encry
 privasys apps export-key my-app --out f  # take YOUR data key out (local file only, never printed)
 privasys apps cosign my-app --enable     # require a second team approver on promote
 privasys apps migrate-constellation my-app   # move the key onto a new vault constellation, gracefully
+privasys apps retire-measurement my-app <workload-digest>   # stop releasing the key to an older version
 ```
+
+On a key whose vaults require your approval for every change, these commands ask for it in your wallet:
+
+- `apps retire-measurement` asks you to approve the key's new policy. Before your wallet shows anything, the CLI reads the current policy from every vault and checks that the change retires that one version and nothing else. The card says what the change does and names the key type.
+- `apps rotate-key` and `apps migrate-constellation` move the app to its new key first, then ask you to approve deleting the previous key. If you decline, the previous key is no longer used and expires on its own.
+
+This needs CLI v0.59.0 or later ([update the CLI](/solutions/cli/install#update)). An AI agent using the [MCP tools](/solutions/cli/agents) cannot give these approvals: it asks you to run the command yourself.
 
 ## Backups
 

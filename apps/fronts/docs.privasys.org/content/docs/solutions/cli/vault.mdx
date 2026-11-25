@@ -73,7 +73,10 @@ Renewal moves the key to the active constellation and needs your approval in the
 ```sh
 privasys secrets create api-seed              # random material; Shamir-split; you own it
 privasys secrets export api-seed --out ./key  # local file only, never printed; WebAuthn step-up
+privasys secrets rm api-seed                  # destroy every copy you own; cannot be undone
 ```
+
+`secrets rm` finds every copy of the secret you own, on every constellation and in every generation a renewal left, and destroys each one, newest first, with your approval in the wallet for each where the secret asks for it. Declining one stops there. At the end it asks the vaults again and says whether anything of that name is still held. It needs CLI v0.59.0 or later. Vaults that keep a record of deleted keys hold a deleted secret's name until the date it would have expired, so a new secret needs another name until then.
 
 Export is deliberately guarded: the material is written to a local file with `0600` permissions, only a fingerprint is shown, and the vault requires a fresh WebAuthn approval bound to that exact export, so a leaked session token alone cannot exfiltrate a key.
 
