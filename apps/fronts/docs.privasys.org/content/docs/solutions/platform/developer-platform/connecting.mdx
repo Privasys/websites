@@ -44,6 +44,7 @@ The runtime sets these headers and **removes any value a client sent for them** 
 | `X-Privasys-Peer-Measurement` | `attested`, mutual | the calling machine's TDX measurement |
 | `X-Privasys-Peer-Payer`, `-Payer-App`, `-Payer-Sid` | any, with a spend token | the user paying for the call, the app spending for them, and the consent session ([Spend tokens](/solutions/platform/developer-platform/spend-tokens)) |
 | `X-Privasys-Voucher-Jti`, `-Provider`, `-Claims`, `-Rp-Id` | any, with a disclosure voucher | the verified claims of an attribute disclosure. Check that `X-Privasys-Voucher-Rp-Id` is your own id ([Attribute marketplace](/solutions/privasys-id/attribute-marketplace)) |
+| `X-Privasys-Configure-Authorized` | any, on your configure endpoint and on routes you declared `owner` | `role=<owner\|admin>; sub=<subject>`: the runtime verified this caller as an owner or admin of this app, for this request. Rely on it only on those routes, and only when `PRIVASYS_CONFIGURE_GRANT` is `1` |
 | `X-Forwarded-Host` | `direct` | the name the visitor typed; `Host` is always your platform hostname |
 
 After a wallet sign-in the [auth SDK](/solutions/privasys-id/auth-sdk) sets up a session that identifies the user, so in normal use every sealed request from a signed-in user carries `X-Privasys-Sub`. A sealed session can still be anonymous, for example when the sign-in could not hand the enclave the user's identity; your app sees no `X-Privasys-Sub` and should refuse what needs a user.
@@ -52,7 +53,7 @@ After a wallet sign-in the [auth SDK](/solutions/privasys-id/auth-sdk) sets up a
 
 ### What reaches your app as sent
 
-- **`Authorization` on `attested` and `sealed`.** The runtime forwards it unchanged and does not verify it for you. Either verify the token in your app, or, better, declare who may call each route with [`x-privasys.auth`](/solutions/platform/developer-platform/deploy-container#who-may-call-a-tool) and let the runtime check it before your code runs. On `direct` the runtime verifies the token, turns it into the headers above, and always removes `Authorization`. On `public` every credential is removed.
+- **`Authorization` on `attested` and `sealed`.** A token issued for your app (audience `app:<your app id>`) reaches it unchanged, and the runtime does not verify it for you. A Privasys platform token (audience `privasys-platform`) never reaches your app: the runtime uses it for its own checks (your configure endpoint, routes declared in [`x-privasys.auth`](/solutions/platform/developer-platform/deploy-container#who-may-call-a-tool), paid calls) and removes it, from `Authorization`, `X-App-Auth` and a WebSocket bearer alike. To restrict a route to the app's owners, declare it `owner` and read `X-Privasys-Configure-Authorized`. On `direct` the runtime verifies the token, turns it into the headers above, and always removes `Authorization`. On `public` every credential is removed.
 - **Any other header.** A header that is not in the table above is the client's word. That includes conventions between apps such as `X-Privasys-On-Behalf-Of`, which the runtime neither sets nor removes: trust it only after you have verified the caller sending it, for example by its `X-Privasys-Peer-App-Id`.
 
 ## Headers a client sends
@@ -88,6 +89,7 @@ On the calling side, the owner declares the app's **dependencies** (`privasys ap
 | `PRIVASYS_APP_ID` | your app's id |
 | `PRIVASYS_ISSUER` | the identity provider, for fetching [spend tokens](/solutions/platform/developer-platform/spend-tokens) |
 | `PRIVASYS_AUDIENCE` | the platform audience of this deployment's tokens (absent when the host sets none) |
+| `PRIVASYS_CONFIGURE_GRANT` | `1` when the runtime sets `X-Privasys-Configure-Authorized` and removes any copy a client sent. Without it, ignore that header |
 | `PRIVASYS_IMAGE_DIGEST` | your image's digest, the value clients see attested |
 
 `PRIVASYS_ISSUER` and `PRIVASYS_AUDIENCE` come from the host's configuration, which is not attested. Treat them as hints, never as the settings of a token verifier. An app that verifies tokens itself accepts only values from a list fixed in its own code (the issuer `https://privasys.id`; the audience `privasys-platform` or `privasys-platform-test`), or verifies the audience bound to its attested identity.

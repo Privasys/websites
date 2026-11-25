@@ -243,7 +243,7 @@ A tool can declare who may call it in `x-privasys.auth`, with the same grammar a
 | --- | --- |
 | `public` (the default) | anyone who can reach the route; it still needs a `surfaces.public` entry to be served in the clear |
 | `authenticated` | a caller with a verified platform token, or a user in a sealed session |
-| `owner` | the app's owner or admin, exactly as on the configure endpoint |
+| `owner` | the app's owner or admin, exactly as on the configure endpoint; your app learns who from [`X-Privasys-Configure-Authorized`](/solutions/platform/developer-platform/connecting#headers-your-app-receives) |
 | `role(a, b)` | a verified platform token carrying one of the roles, as written |
 
 The endpoint is matched like the configure endpoint (letter case, slashes, dot segments, `;parameters` and a format suffix all count as the same route), for every method. A value the runtime does not recognise refuses the image at load, and so does a guarded tool whose endpoint is also declared static or public.
