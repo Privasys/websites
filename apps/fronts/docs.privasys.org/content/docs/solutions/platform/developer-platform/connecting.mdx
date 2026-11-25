@@ -35,7 +35,8 @@ The runtime sets these headers and **removes any value a client sent for them** 
 | Header | Paths | Value |
 | --- | --- | --- |
 | `X-Privasys-Transport` | all | `attested`, `sealed`, `public` or `direct` |
-| `X-Privasys-Sub` | `sealed`, `direct` | the authenticated user's subject for your app: on `sealed`, the wallet-authenticated user; on `direct`, the subject of the verified token. A request without it is anonymous: treat it as unauthenticated and answer `401` |
+| `X-Privasys-Sub` | `sealed`, `direct`, `attested` | the authenticated user's subject for your app: on `sealed`, the wallet-authenticated user; on `direct`, the subject of the verified token; on `attested` and `sealed`, also the person a tool (such as the wallet) presented with a token for your app alone. A request without it is anonymous: treat it as unauthenticated and answer `401` |
+| `X-Privasys-Sub-Via` | `attested`, `sealed` | the tool through which `X-Privasys-Sub` came, when it came from a tool token rather than a sign-in to your app. Ignore it unless you treat calls through a tool differently |
 | `X-Privasys-Email`, `X-Privasys-Name` | `direct` | from the sign-in token: the email only when it was proved, the name percent-encoded UTF-8. Store them on first sight |
 | `X-Privasys-Attestation-Level` | `direct` | `verified` when the user signed in with the wallet, `unverified` otherwise |
 | `X-Privasys-Peer-Verified` | `attested`, mutual | `true` when the calling app's attestation verified |
