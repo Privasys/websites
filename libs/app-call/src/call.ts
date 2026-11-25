@@ -45,6 +45,12 @@ export interface AppCallOptions {
      */
     bearer?: string;
     /**
+     * Allow a platform token as the bearer. Only for the platform's own
+     * first-party apps, named by the caller from a fixed list it holds, never
+     * from anything the app sends. Every other app is refused one.
+     */
+    allowPlatformToken?: boolean;
+    /**
      * Literal price consent, e.g. "5000 credits". The attested runtime refuses
      * a priced call unless this matches the measured price exactly, which is
      * what makes the charge provably informed.
@@ -93,9 +99,27 @@ function textOf(res: SealedResponse): string {
  * envelope, so a WASM error surfaces like an HTTP one instead of resolving as
  * a successful call with an error inside.
  */
+// An app runs code its caller does not control, so it must never receive a
+// token for the platform (the control plane's audience carries the person's
+// platform roles). A caller sends the app a token for the app's own audience.
+function refusePlatformToken(bearer: string): void {
+    let aud: unknown;
+    try {
+        const part = bearer.split('.')[1] ?? '';
+        const json = atob(part.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(part.length / 4) * 4, '='));
+        aud = (JSON.parse(json) as { aud?: unknown }).aud;
+    } catch {
+        return; // not a JWT: an app-specific credential, the app's business
+    }
+    const auds = Array.isArray(aud) ? aud : [aud];
+    if (auds.some(a => typeof a === 'string' && (a === 'privasys-platform' || a.startsWith('privasys-platform-')))) {
+        throw new Error('refusing to send a platform token to an app: it runs code its caller does not control');
+    }
+}
+
 export async function callApp(opts: AppCallOptions): Promise<unknown> {
     const {
-        session, appType, appName, tool, manifest, bearer, billingApproved,
+        session, appType, appName, tool, manifest, bearer, billingApproved, allowPlatformToken,
         timeoutMs = DEFAULT_TIMEOUT_MS, onResponse
     } = opts;
 
@@ -107,6 +131,7 @@ export async function callApp(opts: AppCallOptions): Promise<unknown> {
 
     const headers: Record<string, string> = {};
     if (bearer) {
+        if (!allowPlatformToken) refusePlatformToken(bearer);
         headers['Authorization'] = `Bearer ${bearer}`;
         headers['X-App-Auth'] = bearer;
     }

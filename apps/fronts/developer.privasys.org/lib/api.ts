@@ -409,7 +409,23 @@ export async function getAppSchema(token: string, appId: string): Promise<AppSch
 // cap. The mgmt relay is DELETED — there is no fallback path; a sealed-channel
 // failure (ceremony declined, relay down) surfaces to the caller, and an
 // enclave answer surfaces as the app's verdict.
+// The platform's own apps, which may receive the person's platform token: a
+// fixed list held here, never decided by anything an app sends.
+const FIRST_PARTY_APP_IDS = new Set([
+    'e9de5530-41c3-471e-9566-c5c9a6d963bc', // platform-monitoring (production)
+    '218bc492-9ac5-4e3e-b8c2-692ab93e046a'  // platform-monitoring (test)
+]);
+
 export async function rpcCall(token: string, appId: string, func: string, params: unknown, billingApproved?: string, onResponse?: (_status: number, _headers: Headers) => void): Promise<unknown> {
+    // An app runs code the portal does not control, so it never receives the
+    // person's control-plane token, which carries their platform roles. Until
+    // the runtime decides the payer and strips the token itself, the portal
+    // sends no token to an app that is not the platform's own, and pauses
+    // paid calls to it (the runtime needs the platform token to charge).
+    const firstParty = FIRST_PARTY_APP_IDS.has(appId.toLowerCase());
+    if (!firstParty && billingApproved) {
+        throw new ApiError('Paid calls to apps from the portal are paused while the platform runtime is updated. Use the app itself, or the CLI.', 409);
+    }
     const meta = await appCallTarget(token, appId);
     if (!meta?.host) {
         throw new ApiError('the app has no live hostname yet (not deployed, or mid-redeploy) — retry once it is running', 409);
@@ -424,7 +440,8 @@ export async function rpcCall(token: string, appId: string, func: string, params
             tool: func,
             params,
             manifest: meta.manifest,
-            bearer: token,
+            bearer: firstParty ? token : undefined,
+            allowPlatformToken: firstParty,
             billingApproved,
             onResponse: (_s, h) => { hdrRec = h; }
         });
