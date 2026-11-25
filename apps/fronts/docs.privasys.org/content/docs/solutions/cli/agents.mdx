@@ -16,7 +16,7 @@ After either, **restart your agent or editor** so it picks up the new config (an
 
 ## MCP server
 
-`privasys mcp serve` exposes the full command surface as [Model Context Protocol](https://modelcontextprotocol.io) tools over stdio: onboarding (`auth_begin`/`auth_poll`), the app lifecycle, attestation, the vault and key operations, owners, teams, and billing.
+`privasys mcp serve` exposes the full command surface as [Model Context Protocol](https://modelcontextprotocol.io) tools over stdio: onboarding (`auth_begin`/`auth_poll`), the app lifecycle, attestation, the vault and key operations, owners, teams, and billing. It speaks MCP 2025-06-18, 2025-03-26 and 2024-11-05, whichever your client asks for; the tool titles and hints described below need CLI v0.59.1 or later.
 
 ```sh
 # Claude Code
@@ -48,7 +48,8 @@ The tool surface is designed so that secrets can never reach the model:
 
 - Key-creating tools (`secrets_create`, `vault_key_create`, `vault_key_rotate`) generate random material the agent never sees.
 - Export tools write to a **local file only** and return just a path and a fingerprint.
-- Destructive tools are flagged so the agent confirms with the human first.
+- Every tool carries a title and the standard MCP hints (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`), so Claude Code, Codex, Cursor, VS Code and Gemini CLI can label it and decide what needs your confirmation. Only pure reads are read-only. Anything that deletes, revokes, stops, releases a data key or changes access is destructive. Signing, encrypting and decrypting with a vault key are never presented as read-only, because they use key material. The hints are advice to your client: approvals that protect keys and data are enforced by the vaults and your wallet whatever a client does with them.
+- Steps that need the owner's approval in the Privasys Wallet (retiring a version on a key that requires it, deleting the previous key after a rotation) are never approved by an agent: the tool says so and names the CLI command you run.
 - The registry pull token (`registry add`) stays a human CLI command; only a read-only status tool is exposed.
 - Onboarding never touches credentials: the agent surfaces a URL and code, the human approves in their wallet, the agent polls.
 
@@ -87,6 +88,15 @@ Install the plugin for slash commands (`/deploy`, `/attest`), the Privasys skill
 claude plugin marketplace add Privasys/cli
 claude plugin install privasys@privasys
 ```
+
+The plugin's version follows the CLI release that changes it (0.59.1 with CLI v0.59.1), so Claude Code sees a new version when the skill or commands change. To pick it up:
+
+```sh
+claude plugin marketplace update privasys
+claude plugin update privasys@privasys
+```
+
+The MCP server it starts is the `privasys` on your PATH, so keep the CLI itself up to date too ([update the CLI](/solutions/cli/install#update)).
 
 ## Apps become tools too
 
