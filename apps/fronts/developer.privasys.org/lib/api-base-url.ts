@@ -28,6 +28,18 @@ export function platformSignIn(): { clientId: string; audience?: string } {
         : { clientId: 'privasys-platform' };
 }
 
+/**
+ * The sign-in client of the portal's sealed sessions to enclaves (deploys,
+ * the monitor). rpId stays privasys.id, so the wallet uses the person's one
+ * credential; its own client keeps its session apart from the front's (the
+ * frame keeps one per rpId, client and platform).
+ */
+export function deploySignIn(): { clientId: string; audience?: string } {
+    return isTestPortal()
+        ? { clientId: 'privasys-platform-deploy-test', audience: TEST_PLATFORM_AUDIENCE }
+        : { clientId: 'privasys-platform-deploy' };
+}
+
 export function getApiBaseUrl(): string {
     const configured = process.env.NEXT_PUBLIC_API_URL?.trim();
     if (configured) return configured;

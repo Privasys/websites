@@ -6,9 +6,11 @@
 // ceremony; that is the explorer's contract now (the ATTESTATION viewer stays
 // public — only calling an API needs the wallet).
 //
-// Mirrors the portal's enclave-session.ts, including the CRITICAL per-host
-// rpId: SessionManager keys sessions solely by rpId, so reusing 'privasys.id'
-// would overwrite the front's own session and cancel its renewal timer.
+// Mirrors the portal's enclave-session.ts. rpId is privasys.id, so the wallet
+// uses the person's one credential (another rpId would register another
+// identity); the explorer's own client per environment keeps its session
+// apart from any other on the page (the frame keeps one per rpId, client
+// and platform).
 
 import { AuthFrame, type AuthFrameConfig, type SealedSession } from '@privasys/auth';
 import type { ConnectionConfig } from '~/lib/config';
@@ -34,14 +36,22 @@ export function appHostFor(connection: ConnectionConfig): string {
     return `${connection.appName}.${connection.gatewayDomain}`;
 }
 
+// The explorer's sign-in client for the environment it is connected to:
+// development apps take the test platform's audience.
+function explorerSignIn(connection: ConnectionConfig): { clientId: string; audience?: string } {
+    return connection.env === 'development'
+        ? { clientId: 'privasys-explorer-test', audience: 'privasys-platform-test' }
+        : { clientId: 'privasys-explorer' };
+}
+
 function buildAuthFrame(connection: ConnectionConfig, appHost: string): AuthFrame {
     const cfg: AuthFrameConfig = {
         apiBase: connection.baseUrl,
         appName: `Privasys Explorer (${appHost})`,
         authOrigin: 'https://privasys.id',
-        rpId: `privasys-explorer:${appHost}`,
+        rpId: 'privasys.id',
         brokerUrl: connection.brokerUrl,
-        clientId: 'privasys-platform',
+        ...explorerSignIn(connection),
         scope: ['openid', 'offline_access'],
         sessionRelay: { appHost }
     };
