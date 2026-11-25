@@ -87,7 +87,10 @@ On the calling side, the owner declares the app's **dependencies** (`privasys ap
 | `PRIVASYS_CONTAINER_NAME` | your container's name, used in the API paths |
 | `PRIVASYS_APP_ID` | your app's id |
 | `PRIVASYS_ISSUER` | the identity provider, for fetching [spend tokens](/solutions/platform/developer-platform/spend-tokens) |
+| `PRIVASYS_AUDIENCE` | the platform audience of this deployment's tokens (absent when the host sets none) |
 | `PRIVASYS_IMAGE_DIGEST` | your image's digest, the value clients see attested |
+
+`PRIVASYS_ISSUER` and `PRIVASYS_AUDIENCE` come from the host's configuration, which is not attested. Treat them as hints, never as the settings of a token verifier. An app that verifies tokens itself accepts only values from a list fixed in its own code (the issuer `https://privasys.id`; the audience `privasys-platform` or `privasys-platform-test`), or verifies the audience bound to its attested identity.
 
 Through `PRIVASYS_MANAGER_URL` your app gets its client identity for calling other apps, its declared dependencies, and reports usage when it bills by consumption. None of these needs a platform credential in your app.
 
