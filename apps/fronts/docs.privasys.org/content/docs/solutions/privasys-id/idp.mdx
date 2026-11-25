@@ -14,7 +14,7 @@ The Privasys IdP runs at `https://privasys.id`. It is a standard OpenID Connect 
 | `https://privasys.id/oidc/authorize` | Authorization endpoint |
 | `https://privasys.id/oidc/token` | Token endpoint (authorization-code, refresh-token, JWT-bearer for service accounts) |
 
-Audience: a relying-party app's tokens are addressed to its own client id. The platform audience, `privasys-platform`, is reserved for the platform's own clients (the developer portal and the CLI); a third-party client cannot obtain it. The test platform has its own audience, `privasys-platform-test`, so its roles (`privasys-platform-test:*`) stay apart from production's. A platform client asks for either with the scope `audience:<name>`; the subject is the same for both.
+Audience: a relying-party app's tokens are addressed to its own client id. The platform audience, `privasys-platform`, is reserved for the platform's own clients (the developer portal and the CLI); a third-party client cannot obtain it. The test platform has its own audience, `privasys-platform-test`, so its roles (`privasys-platform-test:*`) stay apart from production's. A platform client asks for either with the scope `audience:<name>`; the subject is the same for both. The wallet names no platform itself: the IdP publishes each platform's audience and the domains that belong to it at `GET /wallet/platforms`, and the wallet asks for a token addressed to the platform of the host it is about to call. A token one platform accepts is therefore never sent to another, and a wallet that has not yet read that list sends no token at all.
 
 ## Subjects: one per application
 

@@ -153,7 +153,7 @@ A threshold Ed25519 key is one signing key that no single vault holds, and neith
 - The key's current vaults each deal a fresh share of the same key to the new vaults, sealed to keys the new vaults bind into their attestation. No vault and no client holds the key at any point.
 - Each new vault checks every piece it receives against the key's existing public data. It stores its share only after every new vault has confirmed the same result.
 - Every share changes, and old shares cannot be combined with new ones.
-- The owner approves each renewal in the wallet. The approval names the exact new vaults, the threshold and the vault build the key goes to, and a renewal cannot change the key's policy. The threshold may change at renewal.
+- The owner approves each renewal in the wallet. The approval names the exact new vaults, the threshold and the vault build the key goes to, and a renewal cannot change the key's policy. The wallet shows that build as a published release, which it [checks itself](/solutions/privasys-id/wallet#approving-changes-to-your-vault-keys). The threshold may change at renewal.
 
 Rotating a threshold key is different: it creates a new key with a **new** public key. Keys created before vault v0.39.0 cannot be renewed this way; rotate them, or let them expire.
 

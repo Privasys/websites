@@ -108,6 +108,20 @@ Privasys Wallet is available on the Apple Store (iOS) and Google Play (Android).
 
 The application is open source under the AGPL-3.0 licence as part of the [Privasys identity-platform repository](https://github.com/Privasys/identity-platform).
 
+## Approving changes to your vault keys
+
+The wallet is where the owner of a key in [Enclave Vaults](/solutions/enclave-vaults/access-control) approves what happens to it: a new version of the app that may use it, a renewal, a change to its rules, an export, a deletion. The passkey does not sign a generic "yes". It signs the act itself, and the vaults accept the approval for that act only, for a few minutes.
+
+The request reaches the phone through the platform, so the wallet checks what it is about to show before it shows it:
+
+- **What is on the card is what is signed.** The wallet recomputes the value the passkey signs from the details it displays. A request whose details do not produce that value is refused, so a label can never differ from the act it stands for.
+- **The vault build is a published release.** When a key is renewed, its shares go to vaults running a build the approval names. The wallet looks that build up among the public [Enclave Vaults releases](https://github.com/Privasys/enclave-vaults/releases), reading them itself and never from the platform, and shows it by name, for example "Enclave Vault v0.39.0". A build that is no published release cannot be approved: the card offers Decline only. Releases known when the wallet was built are included in it, so an approval does not depend on reaching GitHub.
+- **A fresh biometric check, every time.** An approval never rides an unlock from a minute ago.
+
+Several approvals that belong to one release of an app arrive as one card and take one tap; the card lists each of them.
+
+This needs wallet 1.5.0 or later. The commands that ask for these approvals are in the CLI reference for [apps](/solutions/cli/apps) and [vault keys](/solutions/cli/vault); what a key's rules can require is in [Access control](/solutions/enclave-vaults/access-control).
+
 ## Granting apps a resource
 
 The wallet is also where a user approves a confidential app's request for something they own, such as a folder in their Drive. The app names what it asks for; the wallet fetches the request from the attested app itself, so the key being authorised is learned inside an attested channel and never from a notification; the user approves on the device; and the wallet carries the approval to the resource service, which mints a grant bound to the app's key. A refusal is delivered too, so an app stops asking. The flow, what a grant is bound to, and what the user sees afterwards are described in [Apps and the wallet](/solutions/drive/apps-and-wallet).
