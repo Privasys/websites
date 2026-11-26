@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
-import { Navbar, Footer } from '@privasys/ui';
+import { Footer } from '@privasys/ui';
+import { MarketingNavbar } from './marketing-navbar';
 
 const NAV_ITEMS = [
     { label: 'Pricing', href: '/pricing' },
@@ -18,11 +19,7 @@ const FOOTER_LINKS = [
 export default function MarketingLayout({ children }: { children: ReactNode }) {
     return (
         <>
-            <Navbar
-                brandSuffix="Developer"
-                items={NAV_ITEMS}
-                cta={{ label: 'Sign in', href: '/dashboard' }}
-            />
+            <MarketingNavbar items={NAV_ITEMS} />
             <main className="flex-grow pt-14">
                 {children}
             </main>

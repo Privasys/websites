@@ -6,7 +6,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '~/lib/privasys-auth';
-import { peekInvite, acceptInvite } from '~/lib/api';
+import { peekInvite, acceptInvite, apiErrorCode } from '~/lib/api';
 import type { InvitePreview, AccountRole } from '~/lib/api';
 import { setCurrentAccountId } from '~/lib/current-account';
 
@@ -19,7 +19,7 @@ const ROLE: Record<AccountRole, string> = {
 type Phase = 'loading' | 'invalid' | 'ready' | 'joining' | 'joined' | 'error';
 
 export default function InvitePage() {
-    const { session, signIn, loading: authLoading } = useAuth();
+    const { session, signIn, signOut, loading: authLoading } = useAuth();
     const [secret, setSecret] = useState('');
     const [invite, setInvite] = useState<InvitePreview | null>(null);
     const [phase, setPhase] = useState<Phase>('loading');
@@ -59,8 +59,33 @@ export default function InvitePage() {
             setPhase('joined');
             window.location.href = '/dashboard/';
         } catch (e) {
-            setError(e instanceof Error ? e.message : 'The invitation could not be accepted.');
-            setPhase('error');
+            if (apiErrorCode(e) === 'email_unverified' && invite) {
+                // The wallet can show an address as verified while holding no
+                // proof that still counts for this identity (one verified long
+                // ago, before the identity changed). Verifying it again issues
+                // a fresh one; say so rather than leave a dead end.
+                setError(
+                    `The address ${invite.email} is not verified on the identity you signed in with. ` +
+                    'In the Privasys Wallet, open your email address and verify it again (even if it shows as verified), ' +
+                    'then sign in again and join.'
+                );
+            } else {
+                setError(e instanceof Error ? e.message : 'The invitation could not be accepted.');
+            }
+            // Back to 'ready', so joining can be tried again after a fresh sign-in.
+            setPhase('ready');
+        }
+    }
+
+    // Sign out and start over, for someone who signed in with the wrong
+    // identity, or whose sign-in needs to carry a newly verified address.
+    async function switchIdentity() {
+        setError('');
+        wantJoin.current = false;
+        try {
+            await signOut();
+        } catch {
+            // Nothing to undo: the page simply shows the signed-out state.
         }
     }
 
@@ -113,7 +138,19 @@ export default function InvitePage() {
                                     ? 'Joining…'
                                     : session ? `Join ${invite.account_name}` : 'Sign in with the Privasys Wallet to join'}
                             </button>
-                            {session && <span className="text-xs text-black/50 dark:text-white/50">You are signed in.</span>}
+                            {session && (
+                                <span className="text-xs text-black/50 dark:text-white/50">
+                                    You are signed in.{' '}
+                                    <button
+                                        type="button"
+                                        onClick={switchIdentity}
+                                        disabled={phase === 'joining' || phase === 'joined'}
+                                        className="underline hover:opacity-80 disabled:opacity-50"
+                                    >
+                                        Use a different identity
+                                    </button>
+                                </span>
+                            )}
                         </div>
                     </div>
 
