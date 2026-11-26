@@ -139,7 +139,7 @@ export function ApiTestingTab({ connection, fido2, fido2Actions }: { connection:
         setSchemaLoading(true);
         setSchemaError(null);
         setSchema(null);
-        appFetch<{ status: string; schema: AppSchema; message?: string }>(base, `/api/v1/apps/${encodeURIComponent(appName)}/schema`, { sessionToken: token })
+        appFetch<{ status: string; schema: AppSchema; message?: string }>(base, `/api/v1/apps/${encodeURIComponent(appName)}/schema`, {})
             .then((resp) => {
                 if (cancelled) return;
                 if (!resp || resp.status !== 'schema') throw new Error(resp?.message || 'Failed to fetch schema');
@@ -192,7 +192,6 @@ export function ApiTestingTab({ connection, fido2, fido2Actions }: { connection:
             // and, below, the response status + billing headers.
             setReqHeaders([
                 ['Content-Type', 'application/json'],
-                ...(token ? [['X-App-Auth', '●●●●' + token.slice(-6)] as [string, string]] : []),
                 ...(extraHeaders ? Object.entries(extraHeaders) : [])
             ]);
             setRespMeta(null);
@@ -208,28 +207,27 @@ export function ApiTestingTab({ connection, fido2, fido2Actions }: { connection:
                 throw new Error('schema does not declare the app runtime (app_type) — the platform is too old for direct calls');
             }
             try {
-                const { session, accessToken } = await getAppSealedSession(connection);
-                // One ceremony, one identity: the sealed sign-in already
-                // proved who the caller is and minted a platform token, so
-                // an @auth function must not demand a SECOND ceremony when
-                // the explorer has no separate app sign-in. The explorer's
-                // own session (token) still wins when present.
-                const appAuth = token || accessToken;
+                const { session } = await getAppSealedSession(connection);
+                // The explorer sends no app auth until app-scoped tokens
+                // exist. Every token it can mint today (the sealed ceremony's
+                // and the Authenticate tab's) is a platform token, and
+                // platform tokens never reach an app, which runs code we do
+                // not control. An @auth function answers 401 as it would for
+                // any anonymous caller.
+                // (No app_auth in the body, no X-App-Auth header.)
                 const innerPath = appType === 'wasm'
                     ? `/rpc/${encodeURIComponent(appName)}/${encodeURIComponent(fn.name)}`
                     : ((fn as { endpoint?: string }).endpoint || `/${fn.name}`);
-                // wasm rides the /rpc shim: app_auth and the price consent
-                // travel in the body (lifted out server-side); containers
+                // wasm rides the /rpc shim: the price consent
+                // travels in the body (lifted out server-side); containers
                 // read the headers themselves.
                 const body = appType === 'wasm'
                     ? {
                         ...paramValues,
-                        ...(appAuth ? { app_auth: appAuth } : {}),
                         ...(approvedCredits > 0 ? { billing_approved: `${approvedCredits} credits` } : {})
                     }
                     : paramValues;
                 const hdrs: Record<string, string> = {};
-                if (appAuth) hdrs['X-App-Auth'] = appAuth;
                 if (approvedCredits > 0) hdrs['X-Billing-Approved'] = `${approvedCredits} credits`;
                 const res = await session.request('POST', innerPath, body, { headers: hdrs });
                 if (typeof res.status !== 'number') throw new Error('sealed channel not ready');

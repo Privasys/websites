@@ -56,7 +56,7 @@ export function AuthenticateTab({ connection, fido2, actions }: { connection: Co
                             <span className='font-mono text-xs break-all'>{rpId}</span>
                         </div>
                     </div>
-                    <p className='mt-3 text-xs text-black/45 dark:text-white/45'>Your session token is sent automatically as <code>X-App-Auth</code> on API calls.</p>
+                    <p className='mt-3 text-xs text-black/45 dark:text-white/45'>App sign-in from the explorer is paused while it moves to app-scoped tokens: this sign-in proves the wallet flow, but its token is not sent to the app, so functions that require a signed-in caller answer 401 here.</p>
                     <div className='mt-4 flex gap-2'>
                         <button type='button' onClick={actions.signOut} className='rounded-lg border border-black/10 dark:border-white/15 px-3 py-1.5 text-xs hover:bg-black/5 dark:hover:bg-white/5'>Sign out</button>
                         <button type='button' onClick={actions.reauthenticate} className='rounded-lg border border-black/10 dark:border-white/15 px-3 py-1.5 text-xs hover:bg-black/5 dark:hover:bg-white/5'>Re-authenticate</button>
