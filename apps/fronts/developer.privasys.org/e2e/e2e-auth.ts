@@ -34,9 +34,45 @@ import {
 const BASE_URL = process.env.E2E_BASE_URL || 'https://developer.test.privasys.org';
 const AUTH_ORIGIN = (process.env.E2E_AUTH_ORIGIN || 'https://privasys.id').replace(/\/$/, '');
 const RP_ID = new URL(AUTH_ORIGIN).hostname;
-const CLIENT_ID = 'privasys-platform';
-const REDIRECT_URI = `${AUTH_ORIGIN}/auth/callback`;
-const SCOPE = 'openid email profile';
+
+// The suite's token must be for the platform it runs against: a production
+// token (aud privasys-platform) must never reach the test control plane or a
+// test app. Like the test portal, a run against anything but the production
+// API signs in with the test client and asks for the test audience.
+const PROD_API_URL = 'https://api.developer.privasys.org';
+const TARGET_API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://api.developer.test.privasys.org';
+const PROD_AUDIENCE = 'privasys-platform';
+const TEST_AUDIENCE = 'privasys-platform-test';
+/** The audience every token this suite uses must carry, and nothing else. */
+export const TARGET_AUDIENCE = TARGET_API_URL === PROD_API_URL ? PROD_AUDIENCE : TEST_AUDIENCE;
+const CLIENT_ID = TARGET_AUDIENCE === TEST_AUDIENCE ? 'privasys-platform-test' : 'privasys-platform';
+// The IdP grants the test audience only to a page on the test platform, so a
+// test run's redirect is on the test portal's origin, and it must be one the
+// client registered (E2E_REDIRECT_URI names another). The flow reads the code
+// from the session status and never loads this URL.
+const REDIRECT_URI =
+    process.env.E2E_REDIRECT_URI ||
+    (TARGET_AUDIENCE === TEST_AUDIENCE ? `${new URL(BASE_URL).origin}/auth/callback` : `${AUTH_ORIGIN}/auth/callback`);
+const SCOPE = 'openid email profile' + (TARGET_AUDIENCE === TEST_AUDIENCE ? ` audience:${TEST_AUDIENCE}` : '');
+
+/**
+ * Refuse a token whose audience is not exactly TARGET_AUDIENCE, before it is
+ * sent anywhere. The token itself never appears in the error.
+ */
+export function assertTokenAudience(token: string): void {
+    let aud: unknown;
+    try {
+        aud = JSON.parse(Buffer.from(token.split('.')[1] ?? '', 'base64url').toString('utf8')).aud;
+    } catch {
+        throw new Error('[e2e-auth] the e2e token is not a readable JWT; refusing to use it');
+    }
+    const auds = Array.isArray(aud) ? aud : [aud];
+    if (auds.length !== 1 || auds[0] !== TARGET_AUDIENCE) {
+        throw new Error(
+            `[e2e-auth] the e2e token's audience ${JSON.stringify(aud)} is not ${TARGET_AUDIENCE} (the platform at ${TARGET_API_URL}); refusing to use it`
+        );
+    }
+}
 const E2E_DISPLAY_NAME = 'E2E Test User';
 const E2E_EMAIL = 'e2e@test.privasys.org';
 
@@ -182,8 +218,10 @@ async function runOidcFlow(): Promise<string> {
 }
 
 async function fetchToken(): Promise<string> {
-    if (cachedToken) return cachedToken;
-    cachedToken = await runOidcFlow();
+    if (!cachedToken) cachedToken = await runOidcFlow();
+    // Checked on every use, E2E_TOKEN included: nothing reaches a request
+    // with another platform's audience.
+    assertTokenAudience(cachedToken);
     return cachedToken;
 }
 

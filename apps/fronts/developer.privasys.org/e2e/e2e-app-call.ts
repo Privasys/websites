@@ -14,6 +14,8 @@
  */
 import { execFile } from 'node:child_process';
 
+import { assertTokenAudience } from './e2e-auth';
+
 const API = process.env.NEXT_PUBLIC_API_URL || 'https://api.developer.test.privasys.org';
 
 /**
@@ -38,6 +40,8 @@ export async function appCall(
     params: unknown,
     opts?: { timeout?: number }
 ): Promise<{ status: number; body: Record<string, unknown> }> {
+    // The token goes to the app's enclave: it must be for this platform.
+    assertTokenAudience(token);
     const deadline = Date.now() + ROUTE_WAIT_MS;
     for (;;) {
         try {
