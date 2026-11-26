@@ -14,6 +14,12 @@ The `privasys` CLI documentation has moved to its own section: **[Privasys CLI](
 - [Scripting and configuration](/solutions/cli/scripting)
 
 ```sh
+# macOS / Linux
 curl -fsSL https://raw.githubusercontent.com/Privasys/cli/main/install.sh | sh
+
+# Windows (PowerShell, no WSL needed)
+scoop bucket add privasys https://github.com/Privasys/scoop-bucket
+scoop install privasys
+
 privasys auth login
 ```

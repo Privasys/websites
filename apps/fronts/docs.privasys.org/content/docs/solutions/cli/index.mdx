@@ -4,6 +4,7 @@ description: The privasys command-line interface. Sign in with your wallet, depl
 ---
 
 import { Cards, Card } from 'fumadocs-ui/components/card';
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
 
 The `privasys` CLI is a single binary that drives the whole [Privasys Platform](/solutions/platform/overview): wallet authentication, the app lifecycle, the vault key store, teams, billing, and client-side attestation. It is built for three audiences: developers, CI pipelines, and AI agents.
 
@@ -13,9 +14,33 @@ The source is public and AGPL-3.0 at [github.com/Privasys/cli](https://github.co
 
 ## Quickstart
 
+Install it on Windows, macOS or Linux (on Windows it runs natively, no WSL needed):
+
+<Tabs groupId="os" items={['Windows', 'macOS / Linux']} persist>
+  <Tab value="Windows">
+
+```powershell
+scoop bucket add privasys https://github.com/Privasys/scoop-bucket
+scoop install privasys
+```
+
+New to [Scoop](https://scoop.sh)? See [Install](/solutions/cli/install) for the one-line Scoop setup and other options.
+
+  </Tab>
+  <Tab value="macOS / Linux">
+
 ```sh
 curl -fsSL https://raw.githubusercontent.com/Privasys/cli/main/install.sh | sh
+```
 
+Or `brew install Privasys/tap/privasys`. See [Install](/solutions/cli/install) for packages and other options.
+
+  </Tab>
+</Tabs>
+
+Then:
+
+```sh
 privasys auth login                          # scan the QR with your Privasys Wallet
 privasys apps deploy my-app --watch          # build, roll out, and follow progress
 privasys attest my-app                       # challenge the enclave and verify its quote
@@ -32,7 +57,7 @@ Commands that take an app accept either its **id or its name**.
 
 <Cards>
   <Card title="Install" href="/solutions/cli/install">
-    Install script, Homebrew, Scoop, deb/rpm packages, and why go install is not supported.
+    Windows (Scoop, no WSL needed), macOS and Linux (install script, Homebrew, deb/rpm), and why go install is not supported.
   </Card>
   <Card title="Authentication" href="/solutions/cli/authentication">
     Wallet sign-in, passkeys, agent-brokered device flow, and service accounts for CI.

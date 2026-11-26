@@ -1,26 +1,52 @@
 ---
 title: Install
-description: Install the privasys CLI with the install script, Homebrew, Scoop, or OS packages, and verify the install.
+description: Install the privasys CLI on Windows, macOS or Linux, with Scoop, the install script, Homebrew, or OS packages, and verify the install.
 ---
 
-The canonical install is a script you can read before you run it:
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+
+The CLI is a single native binary for **Windows, macOS and Linux** (x86-64 and Arm64). On Windows it runs natively in PowerShell or Command Prompt: WSL is not needed.
+
+<Tabs groupId="os" items={['Windows', 'macOS / Linux']} persist>
+  <Tab value="Windows">
+
+Install with [Scoop](https://scoop.sh), in PowerShell:
+
+```powershell
+scoop bucket add privasys https://github.com/Privasys/scoop-bucket
+scoop install privasys
+```
+
+No Scoop yet? Install it first (no administrator rights needed). This runs Scoop's own installer from get.scoop.sh, which you can [read before you run it](https://github.com/ScoopInstaller/Install/blob/master/install.ps1):
+
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+Invoke-RestMethod -Uri https://get.scoop.sh | Invoke-Expression
+```
+
+You can also download `privasys_<version>_windows_amd64.zip` (or `_arm64`) from the [latest release](https://github.com/Privasys/cli/releases/latest), check it against `checksums.txt`, and put `privasys.exe` on your `PATH`.
+
+  </Tab>
+  <Tab value="macOS / Linux">
+
+The install script, which you can [read before you run it](https://github.com/Privasys/cli/blob/main/install.sh):
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/Privasys/cli/main/install.sh | sh
 ```
 
-Other channels:
+Or with Homebrew:
 
 ```sh
-# Homebrew (macOS / Linux)
 brew install Privasys/tap/privasys
-
-# Scoop (Windows)
-scoop bucket add privasys https://github.com/Privasys/scoop-bucket
-scoop install privasys
 ```
 
-Debian and RPM packages (`.deb` / `.rpm`) and raw archives for every OS and architecture are attached to each [GitHub release](https://github.com/Privasys/cli/releases).
+Debian and RPM packages (`.deb` / `.rpm`) are attached to each [release](https://github.com/Privasys/cli/releases). Inside WSL, use the install script as on Linux.
+
+  </Tab>
+</Tabs>
+
+Raw archives for every OS and architecture, with their `checksums.txt`, are attached to each [GitHub release](https://github.com/Privasys/cli/releases).
 
 <Callout type="info">
 `go install` is not supported. The CLI performs client-side RA-TLS, which links the RA-TLS client library and is built with the [Privasys Go fork](https://github.com/Privasys/go). Use the released binaries or one of the package managers above.
