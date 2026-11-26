@@ -7,7 +7,7 @@ Every key in Enclave Vaults expires. The vault is designed for **temporary key m
 
 ## Keys expire
 
-- A key's expiry is fixed when it is created: **90 days** after creation for every key the platform creates (application storage keys, your vault keys and your secrets).
+- A key's expiry is fixed when it is created, from the lifetime in its policy: at most **90 days**, and 30 days when the policy names none. Every key the platform creates (application storage keys, your vault keys and your secrets) gets 90 days, and the platform renews application keys at 60 days.
 - The date never moves. No operation extends a key's life; renewing creates a new key.
 - After expiry the vault refuses the operations that use the key: `Sign`, `Wrap`, `Unwrap`, `Mac`, `ExportKey`, and policy changes. It still answers for reading the key's information and audit log, and for deleting it.
 - The vault decides expiry from its own trusted clock. Without a trusted time, it treats a key as expired.
@@ -51,11 +51,12 @@ The key that opens an application's encrypted storage is held in the vault so th
 
 ## Constellations: when the vault itself is upgraded
 
-A **constellation** is one version of the vault: a set of vault enclaves running the same code, with one attestation configuration and one Shamir threshold. A new vault version is a new constellation, and one is active at a time.
+A **constellation** is one version of the vault: a set of vault enclaves running the same code, with one attestation configuration and one Shamir threshold. In production a constellation is 2-of-4: four vaults across two independent hosts, any two of which recover a split secret or sign with a threshold key. A new vault version is a new constellation, and one is active at a time.
 
 - New keys and new key versions are always created on the **active** constellation.
-- An existing key stays on the constellation that created it, its **home**, until it expires. Keys are never moved for you, and the platform addresses each key at its home, so an upgrade of the vault changes nothing for a key in use.
-- A key reaches the new constellation when it is renewed: rotating a vault key, renewing a secret or renewing a threshold key creates it on the active constellation, and the platform's renewal of application keys moves them there.
+- An existing key stays on the constellation that created it, its **home**, and the platform addresses each key at its home, so an upgrade of the vault changes nothing for a key in use.
+- A renewal creates the key on the active constellation, carrying its policy byte for byte: renewing a secret or a threshold key does this, and so does the platform's renewal of application keys. Rotating a vault key creates its new version there too.
+- After a move, the old generation is deleted with the owner's approval naming its successor (`delete_after`), or expires on its own (an application key renewed at 60 days has at most 30 days left), or goes with its constellation. A successor on the same vault must belong to the same owner and be newer than the key it replaces.
 - A constellation is not retired while it still holds an unexpired key.
 
 So, as long as you renew within 90 days, every vault upgrade carries your keys forward without an action of its own.

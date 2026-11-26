@@ -46,17 +46,17 @@ Two capabilities were added on top of that core.
 | Component | Repository | Role |
 |---|---|---|
 | Vault enclave | [`Privasys/enclave-vaults`](https://github.com/Privasys/enclave-vaults) | Runs inside Intel SGX. Holds keys, runs in-enclave operations, enforces `KeyPolicy`. |
-| Vault directory | [`Privasys/management-service`](https://github.com/Privasys) | Phonebook for the constellation, served from `GET /api/v1/vaults`. Returns the active set of `(endpoint, measurement)` tuples for clients to dial and verify. Treated as untrusted by every other component. (Replaced the standalone Attested Registry.) |
+| Vault directory | Served by the control plane | Phonebook for the constellation, served from `GET /api/v1/vaults`. Returns the active set of `(endpoint, measurement)` tuples for clients to dial and verify. Treated as untrusted by every other component. (Replaced the standalone Attested Registry.) |
 | PKCS#11 module | [`Privasys/pkcs11-provider`](https://github.com/Privasys/pkcs11-provider) | A Cryptoki 3.1 provider that proxies to a local agent holding the vault session. Consumption surface for OpenSSL, Java, and other PKCS#11 clients. |
 | KMIP gateway | [`Privasys/kmip-gateway`](https://github.com/Privasys/kmip-gateway) | A KMIP 2.1 front-end deployed as an attested confidential workload. |
 | Client SDK (Rust + Go) | [`Privasys/enclave-vaults-client`](https://github.com/Privasys/enclave-vaults-client) | Three layers: directory client (discover), `Client` (single-vault session), `Constellation` (fan-out, approvals, pending-profile lifecycle). |
 | Privasys Wallet | [`Privasys/auth`](https://github.com/Privasys/auth) | Default surface for the live FIDO2 approvals required by sensitive policies. |
 | Underlying enclave OS | [`Privasys/enclave-os-mini`](https://github.com/Privasys/enclave-os-mini) | Provides attestation, RA-TLS, sealed storage, OIDC, and the module system the vault is built on. |
 
-## Boundaries
+## Where it fits
 
-Enclave Vaults is a **vHSM, not a FIPS 140-3 certified HSM**. It has no tamper-evident enclosure and no environmental sensors. The security model rests on Intel SGX isolation, on attested identity for every connection, and (for `RawShare` keys) on the unlinkability of Shamir shares across independent enclaves. For most threat models this improves on a single appliance taken on faith. Where a specific FIPS certification is a hard legal requirement, dedicated certified HSMs remain the right choice.
+Enclave Vaults is a **vHSM that runs on Intel SGX**: its assurance comes from attestation rather than a certified appliance enclosure with environmental sensors. The security model rests on Intel SGX isolation, on attested identity for every connection, and (for `RawShare` keys) on the unlinkability of Shamir shares across independent enclaves. For most threat models this improves on a single appliance taken on faith. Where a specific FIPS 140-3 certification is a legal requirement, a dedicated certified HSM serves that workload alongside it.
 
-The standard interfaces carry a deliberate limit as well: a PKCS#11 or KMIP client cannot present a wallet approval or reason about attested measurements, so operations a key gates on those conditions are unavailable over those interfaces and fail closed. A standard client gets the baseline operations; the richer policy is authored through the native API.
+The standard interfaces serve the baseline operations. PKCS#11 and KMIP have no field for a wallet approval or an attested measurement, so keys gated on those conditions are used through the native API, where the richer policy is authored and enforced; over a standard interface those operations fail closed.
 
 The architectural rationale is in the original blog post on [rethinking secrets management](https://privasys.org/blog/enclave-vaults-rethinking-secrets-management-for-the-age-of-confidential-computing). The typed-key redesign is covered in [the v0.19 release post](https://privasys.org/blog/enclave-vaults-v0-19-typed-keys-and-policy-driven-operations), and the standard interfaces in [Enclave Vaults speaks PKCS#11 and KMIP](https://privasys.org/blog/enclave-vaults-speaks-pkcs11-and-kmip).

@@ -53,11 +53,25 @@ An operation is allowed when **any** rule lists the operation and the caller, an
 | `AttestationMatches(profile)` | The caller's RA-TLS certificate satisfies `profile`, in addition to the principal match. |
 | `ManagerApproval { manager, fresh_for_seconds }` | The request carries a valid [approval token](#approval-tokens) from manager number `manager`, no older than `fresh_for_seconds`. |
 | `TimeWindow { not_before, not_after }` | The vault's trusted time is inside the window, in Unix seconds; `0` leaves that side open. |
-| `OidcStepUp { required_amr, operation_bound, fresh_for_seconds }` | The caller's token proves a fresh step-up, see below. |
+| `OidcStepUp { required_amr, operation_bound, fresh_for_seconds, binding }` | The caller's token proves a fresh step-up, bound to this operation; see below. |
 
 ### Step-up
 
-`OidcStepUp` requires the caller's OIDC token to carry every method in `required_amr` (for example `["webauthn"]`) and to have been issued within `fresh_for_seconds`. The identity provider issues such a token only after a wallet or passkey ceremony. With `operation_bound`, the token must also be bound to this exact operation: it carries a hash over the key handle, the measurement being approved, the policy version, a nonce and an expiry, so an approval for one operation cannot be replayed for another. Binding applies to the operations that name a target, promoting a measurement and exporting a key; on any other operation an `operation_bound` condition fails closed, so do not set it there.
+`OidcStepUp` requires the caller's OIDC token to carry every method in `required_amr` (for example `["webauthn"]`) and to have been issued within `fresh_for_seconds`. The identity provider issues such a token only after a wallet or passkey ceremony. The token is also bound to this exact operation through its `vault_op` claim, so an approval for one operation cannot be replayed for another. `binding` says which binding the key takes, and the key accepts only that one.
+
+**Binding 2**, the canonical condition `{"required_amr":["webauthn"],"operation_bound":true,"fresh_for_seconds":300,"binding":2}`, covers every operation that governs a key: `create` (of a re-created name, see [Deleted names](#deleted-names)), `promote`, `export`, `update_policy`, `update_policy_from`, `delete` and `delete_after`. The approval binds:
+
+- the members of the constellation (each vault checks that it is named);
+- the operation and the key handle;
+- the target: the measurement being promoted, the digest of the new policy, or the successor of a key being deleted after a move;
+- the policy version, so any change to the policy invalidates outstanding approvals;
+- the approver, a nonce and an expiry.
+
+The token must be fresh within 300 seconds, its expiry is at most 10 minutes ahead (24 hours for a `delete_after`, which is presented only once the move has finished), and the vault accepts each approval once. Keys created before binding 2 keep binding 1 (`operation_bound` with `binding` absent), which binds the handle, the measurement, the policy version, a nonce and an expiry for promote and export.
+
+### Approval by default
+
+A new key's policy must ask for a wallet approval (a passkey step-up bound to the operation) on every rule through which a person can promote, update or delete the key, and export it when it is exportable. A policy without one is refused unless it opts out explicitly with `"approval": "none"`. Rules that name only enclaves (`Tee`, `AnyTee`) are exempt: an app fetching its own key is not a governance act. A later update cannot take away the approvals a key has.
 
 Exporting a key you created through the platform always requires an operation-bound WebAuthn step-up no older than 300 seconds.
 
@@ -103,6 +117,12 @@ A manager compromised on their own cannot use a token outside its lifetime or fo
 - Auditors and TEE principals can never change the policy.
 - Only the owner can switch automatic migration on or off.
 - A key's expiry date never moves, whatever the policy allows; see [Key lifecycle](/solutions/enclave-vaults/key-lifecycle).
+- The owner can always tighten a key: adding the canonical bound passkey step-up to existing rules that people use (and that govern promote, update, delete or export) is allowed even where `owner_can` does not list `Operations`, unless `Operations` is `immutable`. Nothing else may change in the same update.
+- A rule change on a binding 2 key sends the new policy exactly as `CanonicalisePolicy` returns it (the form the vault stores and returns), so the owner approves the same JSON the vault keeps. As `update_policy_from`, the approval also binds the digest of the rules it replaces, so the wallet can show both.
+
+## Deleted names
+
+Deleting a key leaves a tombstone: the material is gone, and the vault remembers the name until the key's original expiry. Every way of creating a key stops at a tombstone, so a deleted name cannot quietly come back with a new value. Re-creating it is an explicit act: a new handle ending in `new-<k>`, created only with the owner's bound `create` approval of the exact policy it will hold. When the original expiry passes, the tombstone and the key's audit log are removed and the name is free again.
 
 ## How a typical call is evaluated
 

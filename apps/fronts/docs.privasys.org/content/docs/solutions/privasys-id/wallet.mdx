@@ -116,6 +116,8 @@ The request reaches the phone through the platform, so the wallet checks what it
 
 - **What is on the card is what is signed.** The wallet recomputes the value the passkey signs from the details it displays. A request whose details do not produce that value is refused, so a label can never differ from the act it stands for.
 - **The vault build is a published release.** When a key is renewed, its shares go to vaults running a build the approval names. The wallet looks that build up among the public [Enclave Vaults releases](https://github.com/Privasys/enclave-vaults/releases), reading them itself and never from the platform, and shows it by name, for example "Enclave Vault v0.39.0". A build that is no published release cannot be approved: the card offers Decline only. Releases known when the wallet was built are included in it, so an approval does not depend on reaching GitHub.
+- **A rule change shows what it replaces.** A card that changes a key's rules shows the rules it replaces as well as the new ones, and the approval names both, so it applies only while the key still has the rules you saw.
+- **Each approval stays in its lane.** An approval is bound to its kind of act: a rule-change approval can never be used as an export approval.
 - **A fresh biometric check, every time.** An approval never rides an unlock from a minute ago.
 
 Several approvals that belong to one release of an app arrive as one card and take one tap; the card lists each of them.

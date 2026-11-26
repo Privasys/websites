@@ -10,7 +10,7 @@ A production deployment is a **constellation** of vault enclaves on independent 
 ```
                ┌──────────────────────────────────────────────────┐
                │            Vault directory                       │
-               │       (management-service, GET /api/v1/vaults)   │
+               │       (the control plane, GET /api/v1/vaults)    │
                │       returns endpoints + MRENCLAVE              │
                └──────────────────────────────────────────────────┘
                                          ▲
@@ -45,7 +45,7 @@ Each vault publishes its identity through an RA-TLS certificate whose X.509 exte
 
 ## Typed key objects
 
-A vault holds **typed key objects**. Each `KeyObject` has a stable handle, a `KeyType`, an explicit set of `KeyUsage` flags, a `KeyPolicy`, and sealed key material whose representation depends on the type.
+A vault holds **typed key objects**. Each `KeyObject` has a stable handle, a `KeyType`, an `exportable` flag fixed at creation, a `KeyPolicy`, and sealed key material whose representation depends on the type.
 
 | Type | Material | Default operations | Exportable by default |
 |---|---|---|---|
@@ -165,12 +165,17 @@ Each vault has its own KV store sealed with an MRENCLAVE-bound AES-256-GCM key, 
 
 | Key | Value | Purpose |
 |---|---|---|
-| `key:{handle}` | JSON `KeyRecord` | Type, usage, algorithm, policy, sealed material. |
-| `audit:{seq}` | JSON `AuditEntry` | Append-only log of every operation on a key, allowed or denied. |
-| `pending-profile:{handle}` | JSON `PendingProfile` | A caller-enclave attestation profile staged for future inclusion in the key's TEE principals. |
-| `config:bootstrap` | JSON `BootstrapConfig` | OIDC issuer, audience, attestation servers, registered modules. Sealed on first boot. |
+| `key:{handle}` | JSON `KeyRecord` | Type, `exportable` flag, policy and policy version, expiry, sealed material, and the key's pending profiles (caller-enclave attestation profiles staged for future inclusion in its TEE principals, up to 16). |
+| `audit:{handle}:{seq}` | JSON `AuditEntry` | Append-only log of every operation on a key, allowed or denied. |
+| `tomb:{handle}` | JSON `Tombstone` | What remains of a deleted key until its original expiry: never material, only enough to keep the name taken and answer its principals. |
+| `index:{owner}` | JSON list of handles | The keys each owner holds, for listing. |
+| `prev:{handle}` | JSON `KeyRecord` | A threshold key's previous share, kept during a renewal in place until the renewal is finalised. |
 
-The host OS, hypervisor, and cloud provider see only encrypted bytes.
+The bootstrap configuration (OIDC issuer, audience, attestation servers, registered modules) is sealed by Enclave OS Mini on first boot. The host OS, hypervisor, and cloud provider see only encrypted bytes.
+
+## Vault identity
+
+Each vault has a member identity: a signing key it generates and seals on first start, and a **member id**, the SHA-256 of that public key under a fixed domain. `GetVaultIdentity` returns the member id, the public key, the vault's MRENCLAVE, a billing id, an SGX quote whose report data binds the member id and billing id, and the **capabilities** the build supports (`generations-v1`, `update-policy-from-v1` and `tombstones-v1` today), so a client knows which protocol features it can use. Binding 2 approvals name the member ids of the constellation, and each vault checks that it is among them. A client trusts a member identity only when it reads it over an RA-TLS connection pinned to that attested vault.
 
 ## Mutual RA-TLS ingress
 
@@ -196,7 +201,7 @@ The `pending-profile` lifecycle implements that invariant.
 
 ```
    1. The platform builds v(N+1) of the customer app and records
-      its MRENCLAVE in management-service.
+      its MRENCLAVE in the control plane.
 
    2. The owner uses the SDK (or a portal that drives the SDK)
       to call StagePendingProfile(handle, profile_v_n_plus_1).
@@ -229,7 +234,7 @@ A separate `auto_migrate_to_next_attestation_profile` flag exists for owners who
 
 The pending-profile flow is about the *caller's* MRENCLAVE in a key's policy. Upgrading the **vault's own enclave** to a new MRENCLAVE is a separate concern and is handled by the deployment model, not by the per-key lifecycle.
 
-The vault directory models each vault version as a **constellation**: a set of vault instances that share one MRENCLAVE, attestation server, and OIDC configuration. A new vault build is a new constellation, which an operator activates; at most one is active per environment. To roll a new vault enclave version forward, we stand up the new constellation alongside the old one and make it the active one. New keys and new key versions are created on the active constellation. Existing keys stay on the constellation that created them, their **home**, which keeps serving them until they expire: the platform addresses each key at its home, and does not retire a constellation while it still holds an unexpired key. Sealed storage does not migrate across a vault version, and keys are never moved behind their owner's back. A key reaches the new constellation when it is renewed: the platform renews the storage keys of running apps, and an owner renews their own keys and secrets. See [Key lifecycle](/solutions/enclave-vaults/key-lifecycle).
+The vault directory models each vault version as a **constellation**: a set of vault instances that share one MRENCLAVE, attestation server, and OIDC configuration. A new vault build is a new constellation, which an operator activates; at most one is active per environment. To roll a new vault enclave version forward, we stand up the new constellation alongside the old one and make it the active one. New keys and new key versions are created on the active constellation. Existing keys stay on the constellation that created them, their **home**, which keeps serving them until they expire: the platform addresses each key at its home, and does not retire a constellation while it still holds an unexpired key. Sealed storage stays with its vault version. A key reaches the new constellation when it is renewed, carrying its policy byte for byte: the platform renews the storage keys of running apps, and an owner renews their own keys and secrets. The old generation is then deleted with the owner's approval naming its successor, or expires. See [Key lifecycle](/solutions/enclave-vaults/key-lifecycle).
 
 ## Bootstrap and configuration
 

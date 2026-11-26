@@ -15,7 +15,7 @@ This assumes the [CLI](/solutions/cli) is installed and you are signed in (`priv
 
 ## The problem: consent-gated data
 
-A Privasys app that stores data keeps it on an encrypted volume. The encryption key — the **DEK** (data-encryption key) — is generated *inside the enclave* at first boot, split with [Shamir's secret sharing](/solutions/enclave-vaults/overview) across the vault constellation, and reconstructed in-enclave on every load over attested RA-TLS. The platform never holds it, and neither do we.
+A Privasys app that stores data keeps it on an encrypted volume. The encryption key, the **DEK** (data-encryption key), is generated *inside the enclave* at first boot, split with [Shamir's secret sharing](/solutions/enclave-vaults/overview) across the vault constellation, and reconstructed in-enclave on every load over attested RA-TLS. The platform never holds it, and neither do we.
 
 The vault does not hand that key to just any caller. It releases it only to an enclave whose **measurement** matches a policy the app owner authored. A measurement is the cryptographic fingerprint of exactly what is running:
 
@@ -27,7 +27,7 @@ Change any of that and the fingerprint changes. And every upgrade changes it:
 - **you upgrade your app** → the container image digest (OID 3.2) changes;
 - **we upgrade the enclave** (a new Enclave OS build) → `RTMR1`/`RTMR2` change.
 
-When the measurement no longer matches the policy, the vault **refuses to release the DEK**. The new version boots, tries to reconstruct its key, and is denied. The encrypted volume stays sealed; the data is intact on disk but unreadable. This is not a bug — it is **the upgrade gate**, and it exists so that:
+When the measurement no longer matches the policy, the vault **refuses to release the DEK**. The new version boots, tries to reconstruct its key, and is denied. The encrypted volume stays sealed; the data is intact on disk but unreadable. This is **the upgrade gate** doing its job, and it exists so that:
 
 > New code cannot read old data until the data's owner has explicitly consented to that new code.
 
@@ -48,7 +48,7 @@ sequenceDiagram
 ```
 
 <Callout type="warn">
-**The platform cannot approve an upgrade for you.** The owner principal on the key is *your* identity (`Oidc{ issuer: https://privasys.id, sub }`), and it is immutable. management-service is only a proxy: it relays your authenticated request to the vaults and injects none of its own authority. A fully compromised platform can deploy new code and *stage* a candidate measurement, but it can never make the vault release your data key to a measurement you did not promote. The vault, not the platform, is the enforcement boundary.
+**The platform cannot approve an upgrade for you.** The owner principal on the key is *your* identity (`Oidc{ issuer: https://privasys.id, sub }`), and it is immutable. The control plane is only a proxy: it relays your authenticated request to the vaults and injects none of its own authority. A fully compromised platform can deploy new code and *stage* a candidate measurement, but it can never make the vault release your data key to a measurement you did not promote. The vault, not the platform, is the enforcement boundary.
 </Callout>
 
 This is the whole point of confidential computing applied to upgrades: you don't trust the operator to only run the code they claim, you *verify* which code gets access to your data, and you decide when that changes.
@@ -58,12 +58,12 @@ This is the whole point of confidential computing applied to upgrades: you don't
 Two envelopes make the upgrade flow cheap and safe:
 
 - The bytes on disk are encrypted under a **local data key** (the LUKS2 master key for containers; the per-app AES-256-GCM KV key for WASM). This key never changes on an upgrade or a rotation, so **data is never re-encrypted**.
-- The vault key is a **KEK** that only *wraps* that local key (it sits in a LUKS keyslot). Approving an upgrade, rotating the key, or moving constellations all operate on this thin wrapper — a re-wrap, not a re-encrypt.
+- The vault key is a **KEK** that only *wraps* that local key (it sits in a LUKS keyslot). Approving an upgrade, rotating the key, or moving constellations all operate on this thin wrapper: a re-wrap, not a re-encrypt.
 
 And two planes:
 
-- **Data plane** — enclave ↔ vault, direct over RA-TLS, no platform in the path. The enclave presents its live quote; the vault checks the measurement against the policy and returns its share, or denies.
-- **Control plane** — owner ↔ vault, proxied by management-service. You authorise measurement changes here with your own bearer token; the platform relays and adds nothing.
+- **Data plane**: enclave ↔ vault, direct over RA-TLS, no platform in the path. The enclave presents its live quote; the vault checks the measurement against the policy and returns its share, or denies.
+- **Control plane**: owner ↔ vault, relayed by the platform's control plane. You authorise measurement changes here with your own bearer token; the platform relays and adds nothing.
 
 <Cards>
   <Card title="Enclave Vaults" href="/solutions/enclave-vaults/overview">
@@ -98,7 +98,7 @@ container_image   registry.example.com/notes@sha256:<digest>
 status            ready
 ```
 
-At this point nothing is deployed yet — you have a new *version artifact*. List them any time with `privasys apps versions list notes`.
+At this point nothing is deployed yet: you have a new *version artifact*. List them any time with `privasys apps versions list notes`.
 
 ### 2. See the gate (what happens if you just deploy)
 
@@ -111,10 +111,10 @@ privasys apps deploy notes --watch
 ```text
 ⠹ pulling image → starting container → failed
 error: deployment failed
-hint: the data key may be locked pending approval — run `privasys apps upgrade notes`
+hint: the data key may be locked pending approval: run `privasys apps upgrade notes`
 ```
 
-The container started, tried to reconstruct its DEK, and the vaults denied it (`caller is not in policy.principals`). Your data is untouched — the volume simply never mounted. Nothing is lost; the new version just isn't authorised yet.
+The container started, tried to reconstruct its DEK, and the vaults denied it (`caller is not in policy.principals`). Your data is untouched: the volume simply never mounted. Nothing is lost; the new version just isn't authorised yet.
 
 ### 3. Approve the upgrade
 
@@ -141,9 +141,9 @@ Promote pending #0 for notes? This releases the data key to the new version. [y/
 ✓ promoted 2/2 vaults
 ```
 
-The verify-before-approve step matters. Because your build is **reproducible**, the container digest shown in the staged profile is something you can independently reproduce from source and compare — you are not taking the platform's word that the code is what you think it is. You approve a **specific, known measurement**, then the vault will release the key to it and nothing else.
+The verify-before-approve step matters. Because your build is **reproducible**, the container digest shown in the staged profile is something you can independently reproduce from source and compare: you are not taking the platform's word that the code is what you think it is. You approve a **specific, known measurement**, then the vault will release the key to it and nothing else.
 
-Now redeploy — the measurement is authorised, so the DEK reconstructs, the existing volume reattaches, and your data survives:
+Now redeploy: the measurement is authorised, so the DEK reconstructs, the existing volume reattaches, and your data survives:
 
 ```sh
 privasys apps deploy notes --watch
@@ -171,9 +171,9 @@ Promote pending #0 for notes? This authorises the data key for the new version. 
 ✓ active, routable (4s)
 ```
 
-The server gate verifies the measurement is promoted, then stops the old version before starting the new one — one app hostname maps to one running enclave, so there is never an overlap on the volume.
+The server gate verifies the measurement is promoted, then stops the old version before starting the new one: one app hostname maps to one running enclave, so there is never an overlap on the volume.
 
-Omit the source flags (`--image`/`--commit-url`) to approve-and-deploy the latest ready version. Add `--yes` to skip the interactive confirm (for CI — but see [step-up](#stronger-approval-operation-bound-webauthn) for high-value keys).
+Omit the source flags (`--image`/`--commit-url`) to approve-and-deploy the latest ready version. Add `--yes` to skip the interactive confirm (for CI; the [step-up](#stronger-approval-operation-bound-webauthn) approval still comes from your wallet).
 
 ### 5. Scripting: the discrete verbs
 
@@ -192,15 +192,15 @@ privasys apps versions revoke  notes v1.4.0     # discard a staged-but-unwanted 
 
 Here is the same flow, one layer down.
 
-**`stage` → `StagePendingProfile` on each vault.** management-service takes your bearer token of the audience your key's vaults accept (`privasys-platform` in production, `privasys-platform-test` on the test platform; no token exchange is needed) and, acting purely as a proxy, asks each vault to record a **pending profile**: the new measurement, as a *candidate* that is not yet allowed to unlock anything. The platform's own service token is used only to verify each vault's attestation quote during the RA-TLS dial — that is infrastructure, not key authority. The service account appears in **no principal slot** on your key.
+**`stage` → `StagePendingProfile` on each vault.** The control plane takes your bearer token of the audience your key's vaults accept (`privasys-platform` in production, `privasys-platform-test` on the test platform; no token exchange is needed) and, acting purely as a proxy, asks each vault to record a **pending profile**: the new measurement, as a *candidate* that is not yet allowed to unlock anything. The platform's own service token is used only to verify each vault's attestation quote during the RA-TLS dial; that is infrastructure, not key authority. The service account appears in **no principal slot** on your key.
 
-**`promote` → `PromotePendingProfile`.** The vault checks that the caller is the key's `Owner` (or a role-based approver — see below), then folds the pending profile into the live policy and bumps `policy_version` from N to N+1. From this instant, an enclave presenting the new measurement passes `tee_matches` and gets its share; the old measurement no longer does (unless it is still listed). This is a single, owner-authenticated state change on an attested vault — the platform cannot forge it.
+**`promote` → `PromotePendingProfile`.** The vault checks that the caller is the key's `Owner` (or a role-based approver, see below), then folds the pending profile into the live policy and bumps `policy_version` from N to N+1. From this instant, an enclave presenting the new measurement passes `tee_matches` and gets its share; the old measurement no longer does (unless it is still listed). This is a single, owner-authenticated state change on an attested vault, and the platform cannot forge it.
 
-**Redeploy → data-plane reconstruct.** On load, the enclave's resolver (`ResolveOrProvision`) dials every vault and calls `ExportKey`, presenting a fresh RA-TLS leaf that carries its live quote + the container digest at OID 3.2. Each vault runs `tee_matches` against the now-updated policy and returns its share. The resolver groups shares by a 16-byte **generation id** (so shares from different key generations can never be mixed — Shamir reconstruction over mixed generations would silently yield garbage), takes the largest quorum-meeting group, and reconstructs the DEK. That DEK is handed to `cryptsetup` as a keyslot passphrase; the existing LUKS volume **reattaches** (it is never reformatted), and the data is there.
+**Redeploy → data-plane reconstruct.** On load, the enclave's resolver (`ResolveOrProvision`) dials every vault and calls `ExportKey`, presenting a fresh RA-TLS leaf that carries its live quote + the container digest at OID 3.2. Each vault runs `tee_matches` against the now-updated policy and returns its share. The resolver groups shares by a 16-byte **generation id** (so shares from different key generations can never be mixed: Shamir reconstruction over mixed generations would silently yield garbage), takes the largest quorum-meeting group, and reconstructs the DEK. That DEK is handed to `cryptsetup` as a keyslot passphrase; the existing LUKS volume **reattaches** (it is never reformatted), and the data is there.
 
 **Fail-closed at the gate.** If any vault *denied* the export (the key exists but this measurement isn't authorised), the resolver returns a "promote this version first" error and **never** falls through to first-boot key creation. A denied export is the upgrade gate, not a missing key; treating it as "no key yet" and generating a fresh one would split the key's generations and corrupt the volume. First-boot creation happens only when **every** reachable vault reports the handle uniformly absent.
 
-**The deploy gate is a courtesy, not the control.** Before it even attempts the cutover, management-service probes the vault (`GetKeyInfo` over RA-TLS) to learn whether the key exists, and refuses an un-promoted upgrade early with the "approve first" hint you saw — so you get a clean message instead of a confusing denied-key crash. But this is just fail-fast UX. The real boundary is the vault's `tee_matches` + owner-gated promote; a compromised platform that skipped the gate would still be denied the key by the vaults.
+**The deploy gate is a courtesy, not the control.** Before it even attempts the cutover, the control plane probes the vault (`GetKeyInfo` over RA-TLS) to learn whether the key exists, and refuses an un-promoted upgrade early with the "approve first" hint you saw, so you get a clean message instead of a confusing denied-key crash. But this is just fail-fast UX. The real boundary is the vault's `tee_matches` + owner-gated promote; a compromised platform that skipped the gate would still be denied the key by the vaults.
 
 <Callout type="info">
 **Team upgrades without touching the policy.** Approvers are matched by *role*, not by individual identity: the policy carries one static Manager principal with `required_roles: ["<audience>:app:<id>:approver"]`, where the audience is the one the key's vaults accept (`privasys-platform:app:<id>:approver` in production). Adding or removing a teammate is an IdP role grant, never a vault policy edit, so the policy is stable across team changes and anyone with the approver role can stage and promote.
@@ -208,25 +208,25 @@ Here is the same flow, one layer down.
 
 ## Stronger approval: operation-bound WebAuthn
 
-For high-value keys, a promote can be gated on a **fresh, transaction-bound hardware approval** on top of the bearer token, so that a stolen CLI token alone cannot authorise a measurement. When the key's policy requires it, `promote` transparently requests an approval and surfaces it for you to complete on your wallet (a push with the measurement diff → biometric) or with a passkey in the browser.
+A promote is gated on a **fresh, operation-bound passkey approval** on top of the bearer token, so that a stolen CLI token alone cannot authorise a measurement. New keys ask for it by default, and an owner can add it to an older key's rules. When the key's policy requires it, `promote` transparently requests an approval and surfaces it for you to complete on your wallet (a push with the measurement diff → biometric) or with a passkey in the browser.
 
 The strength is in three properties, not the form factor:
 
 1. the approval key lives in an authenticator's secure element, never on the CLI host;
 2. it requires fresh user presence at approval time;
-3. the signature is over **this exact operation** — `H(handle ‖ new_measurement ‖ policy_version ‖ nonce ‖ exp)`.
+3. the signature is over **this exact operation**: the binding (binding 2) names the vaults of the constellation, the operation (`promote`), the key handle, the target (the digest of the measurement being promoted), the policy version, the approver, a nonce and an expiry.
 
-The vault recomputes that binding and checks the token's `amr:["webauthn"]` and `vault_op` before promoting, so a captured approval for one measurement cannot be replayed to promote a different one. A re-minted "you're still logged in" token would have none of these properties, so it is deliberately not accepted.
+Each vault rebuilds that binding from the request and its own state, checks that it is one of the vaults named, and checks the token's `amr:["webauthn"]` and `vault_op` before promoting. The approval must be fresh (within 300 seconds) and each vault accepts it once, so a captured approval for one measurement cannot be replayed to promote a different one, or the same one twice. Keys created before binding 2 keep their earlier binding over the handle, the measurement, the policy version, a nonce and an expiry. A re-minted "you're still logged in" token would have none of these properties, so it is deliberately not accepted.
 
 ## When *we* upgrade the enclave
 
-The exact same gate protects you when Privasys ships a new Enclave OS build. A platform image change moves `RTMR1`/`RTMR2`, so the running measurement no longer matches your key's policy and the vault denies the DEK — even though your app code is unchanged. Nothing about the platform being the one upgrading changes who consents: **you** still stage and promote the new measurement before your data unlocks on it. A compromised or malicious platform image cannot grant itself access to existing data, because it cannot produce your owner-authenticated promote.
+The exact same gate protects you when Privasys ships a new Enclave OS build. A platform image change moves `RTMR1`/`RTMR2`, so the running measurement no longer matches your key's policy and the vault denies the DEK, even though your app code is unchanged. Nothing about the platform being the one upgrading changes who consents: **you** still stage and promote the new measurement before your data unlocks on it. A compromised or malicious platform image cannot grant itself access to existing data, because it cannot produce your owner-authenticated promote.
 
 Operationally it is the same commands. After an enclave upgrade, if a redeploy reports a locked data key, run `privasys apps upgrade <app>` (or `apps update`) to review and approve the new platform measurement, exactly as for an app upgrade.
 
 ## Migrating a vault constellation
 
-Sometimes the **vaults themselves** are rotated — a new constellation with a new `MRENCLAVE` (for example, after a vault software upgrade). This needs care. If you did nothing, a vault-backed app resolving its key against the *new* (empty) constellation would find the handle absent, treat it as a first boot, generate a brand-new DEK, and then be unable to open the existing LUKS volume (which was formatted under the old DEK, and is never reformatted). The app would brick.
+Sometimes the **vaults themselves** are rotated: a new constellation with a new `MRENCLAVE` (for example, after a vault software upgrade). This needs care. If you did nothing, a vault-backed app resolving its key against the *new* (empty) constellation would find the handle absent, treat it as a first boot, generate a brand-new DEK, and then be unable to open the existing LUKS volume (which was formatted under the old DEK, and is never reformatted). The app would brick.
 
 Because the vault key is only a KEK over the local data key, migration is a **re-wrap**, done online while both constellations are reachable:
 
@@ -248,15 +248,15 @@ new_handle            vault:apps.privasys.org/<app-id>/storage-kek/v4
 Under the hood, with both constellations up:
 
 1. **Reconstruct** the current DEK from the **old** constellation.
-2. **Create** a new DEK held in the **new** constellation, authored owner-bound (your consent to the new constellation is exactly "approve the new key here"), and add it as a **second LUKS keyslot** (`luksAddKey`) — now *both* keys open the volume.
+2. **Create** a new DEK held in the **new** constellation, carrying the old key's policy byte for byte (the same owner, rules and approved measurements), and add it as a **second LUKS keyslot** (`luksAddKey`): now *both* keys open the volume.
 3. **Advance** the app's key-handle + constellation pointer to the new generation. The pointer moves only after the new keyslot exists, so a crash at any step leaves the volume openable by at least one key.
-4. **Kill** the old keyslot (`luksKillSlot`) and delete the old key on the old constellation.
+4. **Kill** the old keyslot (`luksKillSlot`). The old key on the old constellation is deleted under a `delete_after` approval that names its successor, or expires on its own.
 
 No re-encryption, no downtime, and the same generation-id guard prevents any partially-created key from ever being reconstructed. A fleet walk runs this for every active vault-backed app, so retiring a whole constellation is one operation per app.
 
 ## Related: routine key rotation
 
-Distinct from an upgrade (which changes *who may unwrap*), rotation changes *the wrapping key* — key hygiene you run on a schedule or after a suspected exposure of a vault share. It is the same online re-wrap, on the current constellation:
+Distinct from an upgrade (which changes *who may unwrap*), rotation changes *the wrapping key*: key hygiene you run on a schedule or after a suspected exposure of a vault share. It is the same online re-wrap, on the current constellation:
 
 ```sh
 privasys apps rotate-key notes
@@ -274,7 +274,7 @@ The platform provisions a new key generation, `luksAddKey`s the new DEK and `luk
 
 ## Verify what you approved
 
-Attestation is client-side, so confirm the running version is exactly what you authorised — challenge the enclave directly and check its quote:
+Attestation is client-side, so confirm the running version is exactly what you authorised: challenge the enclave directly and check its quote:
 
 ```sh
 privasys attest notes
@@ -288,7 +288,7 @@ quote status  OK
 ✓ VERIFIED    hardware attestation matches the source
 ```
 
-The `workload code` here is the same OID 3.2 digest you reviewed in the staged profile — the loop closes: you approved a measurement, the vault released the key only to it, and you can independently verify that is what is running.
+The `workload code` here is the same OID 3.2 digest you reviewed in the staged profile, and the loop closes: you approved a measurement, the vault released the key only to it, and you can independently verify that is what is running.
 
 ## Command reference
 
@@ -306,7 +306,7 @@ The `workload code` here is the same OID 3.2 digest you reviewed in the staged p
 
 Everything above holds a hard line:
 
-- The **DEK is never known to the platform** — generated in-enclave, Shamir-split, reconstructed only inside an attested enclave over RA-TLS.
+- The **DEK is never known to the platform**: generated in-enclave, Shamir-split, reconstructed only inside an attested enclave over RA-TLS.
 - **You are the sole authority.** The owner principal is immutable and is your privasys.id identity; the platform service account is in no principal slot and holds zero standing authority over any key.
 - **New code cannot read old data without your promote**, and a compromised platform cannot forge that promote.
 - Approvals and key material never touch a database, a log, or a platform API in the clear.

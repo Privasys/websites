@@ -15,7 +15,7 @@ Standard [RA-TLS](/solutions/enclave-os/attestation/ra-tls) is one-directional: 
 | TEE calling an [attested dependency](/solutions/enclave-os/attestation/dependencies) | Both | Mutual RA-TLS |
 | Enclave forwarding data to another enclave | Both | Mutual RA-TLS |
 
-The primary use cases are **Enclave Vaults** and app-to-app calls: when a TEE calls `GetSecret`, the vault needs to verify that the requesting workload matches the secret's access policy (correct MRENCLAVE, correct configuration OIDs), and a dependent app needs to know the peer is exactly the enclave it is pinned to. The only way to prove this over a network is for the client to present its own attested identity.
+The primary use cases are **Enclave Vaults** and app-to-app calls: when a TEE calls `ExportKey` (or any operation on a key), the vault needs to verify that the requesting workload matches the key's policy (correct MRENCLAVE, correct configuration OIDs), and a dependent app needs to know the peer is exactly the enclave it is pinned to. The only way to prove this over a network is for the client to present its own attested identity.
 
 ## How It Works
 
@@ -104,14 +104,14 @@ Because the binding uses the RFC 8446 exporter, upstream Go `crypto/tls` and rus
 
 ## Enclave Vaults Integration
 
-[Enclave Vaults](/solutions/enclave-vaults/overview) uses mutual RA-TLS for the `GetSecret` operation. The flow is:
+[Enclave Vaults](/solutions/enclave-vaults/overview) uses mutual RA-TLS when a TEE calls `ExportKey`, under the key's policy. The flow is:
 
 1. The requesting TEE connects to the vault, presenting its own RA-TLS certificate in the handshake.
 2. The client verifies the vault's identity (standard RA-TLS); the vault's attest response requires client evidence.
 3. The client presents its quote, bound to the vault's `client_context` and the connection.
 4. The vault reads the [OID extensions](/solutions/enclave-os/attestation/oids) from the client certificate and the measurements from the client's quote.
-5. The vault checks the client's measurements (MRENCLAVE / MRTD) and configuration OIDs against the secret's access policy.
-6. If the policy matches, the vault returns the secret share. Otherwise the request is rejected.
+5. The vault checks the client's measurements (MRENCLAVE / MRTD) and configuration OIDs against the key's policy.
+6. If the policy matches, the vault returns its share of the key. Otherwise the request is rejected.
 
 This ensures that secrets are only released to workloads that match the policy defined by the secret owner, verified end-to-end through hardware attestation, with no trusted intermediary.
 
