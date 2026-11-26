@@ -190,7 +190,27 @@ export async function verifyAgeCredential(sdJwt: string, expectedSub: string) {
 
 `jwtVerify` covers the signature, `iss`, `aud`, and `exp`. The four asserts cover the meaning. That is the complete mandatory check.
 
-Two optional checks raise the bar from *verified* to *independently audited*:
+Three optional checks raise the bar from *verified* to *independently audited*:
+
+- **Pin the issuer key to the enclave.** The issuer metadata is fetched over ordinary HTTPS, so on its own it tells you which key the server presented, not that the key lives in the enclave. The key is generated inside the enclave, never leaves it, and signs nothing until the enclave has attested it. Run `privasys attest privasys-identity-verifier.apps.privasys.org`, which verifies the hardware quote (the platform measurements), and check these three extensions **on that same certificate**:
+
+  | OID | Must equal | Where the expected value is published |
+  | --- | --- | --- |
+  | `1.3.6.1.4.1.65230.4.1` (app id) | `72d84c2d-5218-4705-9095-18688fd68cfb`, the Identity Verifier | Its public store listing: `id` in [api.developer.privasys.org/api/v1/store/apps/privasys-identity-verifier](https://api.developer.privasys.org/api/v1/store/apps/privasys-identity-verifier) |
+  | `1.3.6.1.4.1.65230.4.2` (code digest) | A release digest you accept | The **Measurements** table of each [identity verifier release](https://github.com/Privasys/container-app-identity-verifier/releases) |
+  | `1.3.6.1.4.1.65230.5.4.3` (signing key) | SHA-256 of the SubjectPublicKeyInfo of the key in `meta.jwks` | Compute it yourself (below). The token `kid` is the first 16 bytes of the same digest. |
+
+  All three are needed together. The `5.4.x` values are set by the app itself, so `5.4.3` on its own only says "the code running here says its key is this one". The app id and code digest are what tell you *which* code is saying it.
+
+  ```ts
+  import { createHash, createPublicKey } from 'node:crypto';
+
+  // The digest of the key you verified against, to compare with the attested OID value.
+  export function issuerKeyDigest(jwk: JsonWebKey): string {
+      const spki = createPublicKey({ key: jwk, format: 'jwk' }).export({ type: 'spki', format: 'der' });
+      return createHash('sha256').update(spki).digest('hex');
+  }
+  ```
 
 - **Pin the code.** Compare `evidence.measurement` against the published release digests of the [identity verifier](https://github.com/Privasys/container-app-identity-verifier). This is what makes the evidence *transparent* rather than trusted: the digest identifies the exact open-source build, and the build is reproducible.
 - **Verify the ID token too.** The OIDC ID token (against `privasys.id`'s JWKS) carries the same pairwise `sub` and the ceremony's `acr` / `auth_time`: the standard OIDC half of your record.
@@ -203,7 +223,7 @@ The regulator's question, years later, is: *prove you checked this customer's ag
 | --- | --- |
 | **The raw SD-JWT VC** (`disclosure.token`, verbatim) | The receipt. Self-contained, offline re-verifiable: signature, audience, subject, claim, evidence chain. This is the single most important artefact: store the token, not just "passed". |
 | **The ID token** for the same sign-in | Standard OIDC context: `sub` (matching the VC), `auth_time`, `acr`. |
-| **Your verification record** | Timestamp, the checks you ran and their outcomes, and a snapshot of the issuer JWKS you verified against (`/.well-known/jwt-vc-issuer` at that moment). The keys are long-lived, but snapshotting them makes your record self-contained even across key rotations. |
+| **Your verification record** | Timestamp, the checks you ran and their outcomes, a snapshot of the issuer JWKS you verified against (`/.well-known/jwt-vc-issuer` at that moment), and the certificate you checked it against (`privasys attest … --out` saves it), with its app id, code digest and key digest (OIDs `4.1`, `4.2`, `5.4.3`). The keys are long-lived, but snapshotting them makes your record self-contained even across key rotations. |
 | **The measurement reference** | `evidence.measurement` plus the published release it matched when you checked. Turns "Privasys said so" into "this exact public code said so, and here is its fingerprint". |
 | **Session linkage** | Your own account id ↔ the pairwise `sub`, and which session the check unlocked. |
 | Failure receipts (`value: false` tokens), if any | Evidence of checks that ran and failed, part of the same audit trail. |
@@ -228,11 +248,11 @@ Every link in the claim "this session's customer is 18+" is independently checka
 
 1. **A real passport**: the enclave verified the chip's Document Security Object against the issuing state's certificate chain, rooted in the ICAO master list in force (the trust-anchor set is itself attested by the enclave).
 2. **The right person**: the passport portrait was face-matched against a live selfie at verification time, and the resulting receipt is bound to the holder's hardware key (`cnf.jwk`); every later disclosure requires that device to sign.
-3. **Honest computation**: the yes/no was computed inside an attested enclave whose build fingerprint (`evidence.measurement`) matches a public, reproducible, open-source release.
+3. **Honest computation**: the yes/no was computed inside an attested enclave whose build fingerprint (`evidence.measurement`) matches a public, reproducible, open-source release, and signed with a key that the same enclave attests in its certificate.
 4. **Your ceremony, paid and consented**: audience-bound to your client, minted after the user's explicit consent, tied to a settled billing record (`evidence.voucher`) that carries no user identity.
 5. **Your verification**: your stored record shows you checked all of the above at session time.
 
-No step asks the auditor to trust Privasys: the passport chain roots in government PKI, the device binding in the phone's certified secure element, the code identity in the CPU vendor's attestation, and our part is open source and reproducible.
+With the issuer key pinned to the enclave (Step 5), no step asks the auditor to trust Privasys: the passport chain roots in government PKI, the device binding in the phone's certified secure element, the code identity and the signing key in the CPU vendor's attestation, and our part is open source and reproducible. Without that check, the signing key is taken on the word of whoever serves the issuer metadata.
 
 ## Honest boundaries
 
