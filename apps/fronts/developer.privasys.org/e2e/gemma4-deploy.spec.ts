@@ -9,7 +9,7 @@
  *
  * Run:
  *   cd websites
- *   E2E_USER_EMAIL=alice@privasys.org E2E_USER_PASSWORD='EnqMS75!;%P?vaY@' \
+ *   E2E_USER_EMAIL=alice@privasys.org E2E_USER_PASSWORD='<password>' \
  *     npx playwright test --config apps/fronts/developer.privasys.org/e2e/playwright.config.ts \
  *     gemma4-deploy.spec.ts --project=gemma4 --no-deps
  */
