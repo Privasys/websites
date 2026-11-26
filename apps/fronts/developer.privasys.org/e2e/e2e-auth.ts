@@ -37,15 +37,15 @@ const RP_ID = new URL(AUTH_ORIGIN).hostname;
 
 // The suite's token must be for the platform it runs against: a production
 // token (aud privasys-platform) must never reach the test control plane or a
-// test app. Like the test portal, a run against anything but the production
-// API signs in with the test client and asks for the test audience.
+// test app. A run against anything but the production API signs in with the
+// e2e test client (privasys-e2e-test) and asks for the test audience.
 const PROD_API_URL = 'https://api.developer.privasys.org';
 const TARGET_API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://api.developer.test.privasys.org';
 const PROD_AUDIENCE = 'privasys-platform';
 const TEST_AUDIENCE = 'privasys-platform-test';
 /** The audience every token this suite uses must carry, and nothing else. */
 export const TARGET_AUDIENCE = TARGET_API_URL === PROD_API_URL ? PROD_AUDIENCE : TEST_AUDIENCE;
-const CLIENT_ID = TARGET_AUDIENCE === TEST_AUDIENCE ? 'privasys-platform-test' : 'privasys-platform';
+const CLIENT_ID = TARGET_AUDIENCE === TEST_AUDIENCE ? 'privasys-e2e-test' : 'privasys-platform';
 // The IdP grants the test audience only to a page on the test platform, so a
 // test run's redirect is on the test portal's origin, and it must be one the
 // client registered (E2E_REDIRECT_URI names another). The flow reads the code
