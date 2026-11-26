@@ -107,11 +107,17 @@ export default function MarketingPage() {
                 </p>
                 <div className="mt-8">
                     <p className="text-sm font-medium tracking-wide uppercase text-black/50 dark:text-white/50 mb-2">Install</p>
+                    <p className="text-sm text-black/60 dark:text-white/60 mb-2">macOS and Linux</p>
                     <pre className="overflow-x-auto rounded-xl bg-[#0B0F17] text-[#C9D1D9] p-4 text-sm">
                         <code>curl -fsSL https://raw.githubusercontent.com/Privasys/cli/main/install.sh | sh</code>
                     </pre>
+                    <p className="mt-5 text-sm text-black/60 dark:text-white/60 mb-2">Windows, in PowerShell, no WSL needed</p>
+                    <pre className="overflow-x-auto rounded-xl bg-[#0B0F17] text-[#C9D1D9] p-4 text-sm">
+                        <code>{'scoop bucket add privasys https://github.com/Privasys/scoop-bucket\nscoop install privasys'}</code>
+                    </pre>
                     <p className="mt-3 text-sm text-black/60 dark:text-white/60">
-                        Also available via Homebrew, Scoop, and .deb/.rpm packages, with a built-in{' '}
+                        Native binaries for Windows, macOS and Linux, on x86-64 and Arm64. Scoop needs no admin rights.
+                        Also available via Homebrew and .deb/.rpm packages, with a built-in{' '}
                         <code className="bg-black/5 dark:bg-white/10 px-1 rounded">privasys update</code>. See the{' '}
                         <a href="https://docs.privasys.org/solutions/cli/install" className="underline hover:no-underline">
                             installation guide
