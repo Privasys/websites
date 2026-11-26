@@ -1,0 +1,73 @@
+{
+  "vct": "https://privasys.org/vct/attribute-disclosure",
+  "name": "Privasys attribute disclosure",
+  "description": "One attribute of a person (an email address, a billing country, an account at a provider), established by the Privasys Attribute Verifier enclave and shared with one relying party at the holder's request. The attribute is named by `claim` and carried in `value`. The issuer (`iss`) is the verifier's own origin; its signing key is listed at <iss>/.well-known/jwt-vc-issuer.",
+  "display": [
+    {
+      "locale": "en",
+      "name": "Attribute disclosure",
+      "description": "An attribute established inside an attested enclave."
+    }
+  ],
+  "claims": [
+    {
+      "path": ["claim"],
+      "mandatory": true,
+      "sd": "never",
+      "display": [{ "locale": "en", "label": "Attribute", "description": "Which attribute this credential states." }]
+    },
+    {
+      "path": ["value"],
+      "mandatory": true,
+      "sd": "never",
+      "display": [{ "locale": "en", "label": "Value", "description": "The attribute's value." }]
+    },
+    {
+      "path": ["method"],
+      "mandatory": true,
+      "sd": "never",
+      "display": [{ "locale": "en", "label": "Method", "description": "\"proven\": the verifier checked cryptographic or back-office evidence. \"observed\": the verifier saw the value itself, over TLS, from inside the enclave." }]
+    },
+    {
+      "path": ["source"],
+      "mandatory": true,
+      "sd": "never",
+      "display": [{ "locale": "en", "label": "Source", "description": "Where the value was established, for example an email provider or a card network." }]
+    },
+    {
+      "path": ["label"],
+      "sd": "never",
+      "display": [{ "locale": "en", "label": "Details", "description": "Optional details the source gave about the value." }]
+    },
+    {
+      "path": ["nonce"],
+      "mandatory": true,
+      "sd": "never",
+      "display": [{ "locale": "en", "label": "Nonce", "description": "The relying party's nonce for this request." }]
+    },
+    {
+      "path": ["evidence", "proof"],
+      "mandatory": true,
+      "sd": "never",
+      "display": [{ "locale": "en", "label": "Proof", "description": "Identifier of the proof the holder's wallet keeps for this value." }]
+    },
+    {
+      "path": ["evidence", "material_at"],
+      "mandatory": true,
+      "sd": "never",
+      "display": [{ "locale": "en", "label": "Evidence time", "description": "When the evidence was produced, in seconds since the Unix epoch." }]
+    },
+    {
+      "path": ["evidence", "attested_at"],
+      "mandatory": true,
+      "sd": "never",
+      "display": [{ "locale": "en", "label": "Attested at", "description": "When the verifier established the value, in seconds since the Unix epoch." }]
+    },
+    {
+      "path": ["evidence", "measurement"],
+      "mandatory": true,
+      "sd": "never",
+      "display": [{ "locale": "en", "label": "Enclave measurement", "description": "The measurement of the verifier build that established the value." }]
+    }
+  ]
+}

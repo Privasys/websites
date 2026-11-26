@@ -122,6 +122,15 @@ jobs:
           LLMS_TYPE=$(curl -sS -o /dev/null -w '%{content_type}' https://privasys.org/llms.txt)
           echo "llms content-type=$LLMS_TYPE"
           test "$LLMS_TYPE" = "text/plain; charset=utf-8"
+          # SD-JWT VC type metadata: every credential we issue names one of
+          # these as its vct, and the document's vct must equal its own URL.
+          for VCT in identity-disclosure attribute-disclosure; do
+            VCT_INFO=$(curl -sS -o /tmp/vct.json -w '%{http_code} %{content_type}' "https://privasys.org/vct/${VCT}")
+            echo "vct/${VCT}: ${VCT_INFO}"
+            test "${VCT_INFO%% *}" = "200"
+            case "${VCT_INFO#* }" in application/json*) ;; *) echo "vct/${VCT} is not served as JSON"; exit 1 ;; esac
+            grep -q "\"vct\": \"https://privasys.org/vct/${VCT}\"" /tmp/vct.json
+          done
 
       - name: Prune old staged builds on OVH (keep last 5)
         if: always()

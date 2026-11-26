@@ -1,0 +1,72 @@
+{
+  "vct": "https://privasys.org/vct/identity-disclosure",
+  "name": "Privasys identity disclosure",
+  "description": "One fact about a person, read from their passport or national ID card by the Privasys Identity Verifier enclave and shared with one relying party at the holder's request. The fact is named by `claim` and carried in `value`. The issuer (`iss`) is the verifier's own origin; its signing key is listed at <iss>/.well-known/jwt-vc-issuer.",
+  "display": [
+    {
+      "locale": "en",
+      "name": "Identity disclosure",
+      "description": "A fact from a government ID document, checked inside an attested enclave."
+    }
+  ],
+  "claims": [
+    {
+      "path": ["claim"],
+      "mandatory": true,
+      "sd": "never",
+      "display": [{ "locale": "en", "label": "Attribute", "description": "Which fact this credential states, for example age_over_18, birthdate or nationality." }]
+    },
+    {
+      "path": ["value"],
+      "mandatory": true,
+      "sd": "never",
+      "display": [{ "locale": "en", "label": "Value", "description": "The fact itself. False together with a failure member when a paid check did not pass." }]
+    },
+    {
+      "path": ["assurance"],
+      "mandatory": true,
+      "sd": "never",
+      "display": [{ "locale": "en", "label": "Assurance", "description": "Always \"gov\": the value comes from a government-issued document whose chip signature was verified." }]
+    },
+    {
+      "path": ["evidence", "ivr"],
+      "mandatory": true,
+      "sd": "never",
+      "display": [{ "locale": "en", "label": "Verification receipt", "description": "Identifier of the identity verification this value was taken from." }]
+    },
+    {
+      "path": ["evidence", "doc_type"],
+      "mandatory": true,
+      "sd": "never",
+      "display": [{ "locale": "en", "label": "Document type", "description": "The kind of document that was read." }]
+    },
+    {
+      "path": ["evidence", "issuing_state"],
+      "mandatory": true,
+      "sd": "never",
+      "display": [{ "locale": "en", "label": "Issuing state", "description": "The state that issued the document, as an ISO 3166-1 alpha-3 code." }]
+    },
+    {
+      "path": ["evidence", "verified_at"],
+      "mandatory": true,
+      "sd": "never",
+      "display": [{ "locale": "en", "label": "Verified at", "description": "When the document was verified, in seconds since the Unix epoch." }]
+    },
+    {
+      "path": ["evidence", "measurement"],
+      "mandatory": true,
+      "sd": "never",
+      "display": [{ "locale": "en", "label": "Enclave measurement", "description": "The measurement of the verifier build that performed the check." }]
+    },
+    {
+      "path": ["evidence", "voucher"],
+      "sd": "never",
+      "display": [{ "locale": "en", "label": "Voucher", "description": "Present on a paid disclosure: the voucher that settled it." }]
+    },
+    {
+      "path": ["failure", "retryable"],
+      "sd": "never",
+      "display": [{ "locale": "en", "label": "Retryable", "description": "Present only when a paid check did not pass: whether the holder may try again." }]
+    }
+  ]
+}
