@@ -36,9 +36,13 @@ export function SignInGate({
         const sessionRelayHost = instance.session_relay?.enabled
             ? instance.session_relay.app_host
             : undefined;
-        // The gate's pitch, logo and methods are the page's AuthFrame
-        // configuration (lib/auth-provider.tsx).
-        void connectInto(el, sessionRelayHost ? { appHost: sessionRelayHost } : undefined)
+        // The gate's pitch and logo are the page's AuthFrame configuration
+        // (lib/auth-provider.tsx). One tap signs in and approves the instance.
+        void connectInto(el, sessionRelayHost
+            // Chat's OWN transport constraint (not an SDK default): sealed
+            // instances are reachable only over the wallet-attested channel.
+            ? { appHost: sessionRelayHost, methods: ['wallet'] }
+            : undefined)
             .then(() => onSuccess())
             .catch((e: unknown) => {
                 startedRef.current = false;

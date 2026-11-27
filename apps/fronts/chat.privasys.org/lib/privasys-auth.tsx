@@ -63,12 +63,12 @@ interface AuthContextValue {
     token: (audience: string) => Promise<string>;
     /**
      * The gate (SDK `connect()`): silent restore, or the sign-in rendered by
-     * the SDK inside `container`. With `appHost`, then opens the channel to
-     * that instance (one tap in the wallet when it has no approval yet) and
-     * installs it as `sealedSession`. Rejects with the SDK's ConnectError
-     * (`code: 'cancelled' | 'timeout' | 'failed'`).
+     * the SDK inside `container`. With `appHost`, the sign-in's one tap
+     * also approves that instance, whose channel is then installed as
+     * `sealedSession`. `methods` limits the gate for this sign-in. Rejects
+     * with the SDK's ConnectError (`code: 'cancelled' | 'timeout' | 'failed'`).
      */
-    connectInto: (container: HTMLElement, opts?: { appHost?: string }) => Promise<void>;
+    connectInto: (container: HTMLElement, opts?: { appHost?: string; methods?: readonly ('wallet' | 'passkey' | 'social')[] }) => Promise<void>;
     /**
      * Re-establish the channel to the inference instance: at once when it is
      * live, from the stored approval, or after one tap in the wallet (then
@@ -81,11 +81,12 @@ interface AuthContextValue {
     sealedApprovalPending: boolean;
     /**
      * The channel to another enclave `appHost` (chat-service, Drive). The
-     * same host gives the same channel. When the wallet must approve it,
+     * same host gives the same channel. `silent` never asks the wallet (for
+     * background set-up); otherwise, when the wallet must approve it,
      * `onApproval` is called while it waits. Null when not signed in or
      * when it cannot be established: callers degrade gracefully.
      */
-    getSealedSession: (appHost: string, onApproval?: () => void) => Promise<AppChannel | null>;
+    getSealedSession: (appHost: string, opts?: { silent?: boolean; onApproval?: () => void }) => Promise<AppChannel | null>;
     signOut: () => Promise<void>;
 }
 
@@ -162,9 +163,10 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
     }, [sealedSession]);
 
     /** app(host) on the page's frame, reporting a wait for the wallet. */
-    const openChannel = useCallback(async (appHost: string, onApproval?: () => void): Promise<AppChannel> => {
+    const openChannel = useCallback(async (appHost: string, onApproval?: () => void, silent = false): Promise<AppChannel> => {
         try {
             return await getFrame().app(appHost, {
+                silent,
                 onApproval: (reason) => {
                     setSealedApprovalPending(true);
                     setStaleReason(parseStaleReason(reason ?? ''));
@@ -177,8 +179,12 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
     }, [getFrame]);
 
     const connectInto = useCallback(
-        async (container: HTMLElement, opts?: { appHost?: string }): Promise<void> => {
-            const s = await getFrame().connect({ container });
+        async (container: HTMLElement, opts?: { appHost?: string; methods?: readonly ('wallet' | 'passkey' | 'social')[] }): Promise<void> => {
+            const s = await getFrame().connect({
+                container,
+                ...(opts?.appHost ? { apps: [opts.appHost] } : {}),
+                ...(opts?.methods ? { methods: opts.methods } : {})
+            });
             signedIn.current = true;
             setSession({ accessToken: s.token });
             setExpired(false);
@@ -216,10 +222,10 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
     );
 
     const getSealedSession = useCallback(
-        async (appHost: string, onApproval?: () => void): Promise<AppChannel | null> => {
+        async (appHost: string, opts?: { silent?: boolean; onApproval?: () => void }): Promise<AppChannel | null> => {
             if (!session) return null;
             try {
-                return await openChannel(appHost, onApproval);
+                return await openChannel(appHost, opts?.onApproval, opts?.silent === true);
             } catch (err) {
                 console.log(`[chat-auth] channel to ${appHost} unavailable:`, (err as Error).message);
                 return null;

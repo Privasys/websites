@@ -131,7 +131,8 @@ export function ChatShell({
             return;
         }
         let cancelled = false;
-        void getSealedSession(host).then((s) => {
+        // Silent: a background set-up never asks the wallet.
+        void getSealedSession(host, { silent: true }).then((s) => {
             if (!cancelled) setChatSession(s);
         });
         return () => {
@@ -147,7 +148,7 @@ export function ChatShell({
         async (onNeedApproval?: () => void): Promise<AppChannel | null> => {
             const host = chatServiceHost();
             if (!host) return null;
-            const s = await getSealedSession(host, onNeedApproval);
+            const s = await getSealedSession(host, { onApproval: onNeedApproval });
             if (s) setChatSession(s);
             return s;
         },

@@ -91,7 +91,8 @@ export function useChatDrive(): ChatDrive {
         let cancelled = false;
         setStatus('connecting');
         setError(null);
-        void getSealedSession(host)
+        // Silent: a background set-up never asks the wallet.
+        void getSealedSession(host, { silent: true })
             .then(async (s) => {
                 if (cancelled) return;
                 if (!s) {
@@ -124,7 +125,7 @@ export function useChatDrive(): ChatDrive {
             try {
                 // One tap in the wallet when Drive has no approval yet;
                 // onNeedApproval shows "approve on your phone" meanwhile.
-                const s = await getSealedSession(host, onNeedApproval);
+                const s = await getSealedSession(host, { onApproval: onNeedApproval });
                 if (!s) {
                     setError('Could not connect to Drive. Approve it in the Privasys Wallet, then try again.');
                     return null;

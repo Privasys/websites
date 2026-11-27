@@ -57,10 +57,6 @@ function sdkConfig(): AuthFrameConfig {
             displayName: 'Privasys Chat',
             logoUrl: `${window.location.origin}/favicon/privasys-logo.mini.svg`
         },
-        // Chat's OWN transport constraint (not an SDK default): its instances
-        // are reachable only over the wallet-attested channel. A shared
-        // conversation's visitor may sign in any way.
-        ...(shared ? {} : { methods: ['wallet'] as const }),
         // One tap at sign-in also approves the back-ends every page uses, so
         // their channels open without asking again.
         apps: [chatServiceHost(), driveHost()].filter(Boolean)
