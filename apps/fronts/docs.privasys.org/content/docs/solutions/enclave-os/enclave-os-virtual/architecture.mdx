@@ -60,7 +60,7 @@ Three components run inside the Confidential VM:
 
 7. **Health and metrics.** The management API exposes `/healthz`, `/readyz`, `/api/v1/status`, and Prometheus `/metrics` over RA-TLS at `manager.<machine-name>.<hostname>`.
 
-8. **Trusted time.** The manager never reads the guest's host-steered clock for a security decision. Token and voucher windows, quote freshness, certificate validity and peer verdicts read a [trusted time](/solutions/enclave-os/trusted-time), confirmed against the platform monitor's signed polls and NTS servers. Caddy's RA-TLS module takes its issuing time from the manager over a root-only local socket.
+8. **Trusted time.** The manager never reads the guest's host-steered clock for a security decision. Token and app approval windows, quote freshness, certificate validity and peer verdicts read a [trusted time](/solutions/enclave-os/trusted-time), confirmed against the platform monitor's signed polls and NTS servers. Caddy's RA-TLS module takes its issuing time from the manager over a root-only local socket.
 
 ## RA-TLS via Caddy
 

@@ -40,7 +40,7 @@ A normal sign-in is a QR or push-to-wallet ceremony: the SDK shows a QR, the wal
          L    = 32)
    ```
 
-   This is an ECDH key agreement: each side combines its own private key with the other side's public key and arrives at the same shared secret, which HKDF stretches into the session key. The enclave stores `K` in an in-memory session table; the SDK iframe derives the same `K` after sign-in completes. The wallet, which brokered the exchange, cannot derive `K`: it never holds `sdk_priv`.
+   This is an ECDH key agreement: each side combines its own private key with the other side's public key and arrives at the same shared secret, which HKDF stretches into the session key. The enclave stores `K` in an in-memory session table. Every later session the SDK opens uses the same derivation with a fresh keypair of its own (see [silent reopening](#staying-signed-in-silent-reopening)). The wallet, which brokered the exchange, cannot derive `K`: it never holds `sdk_priv`.
 3. **WebAuthn challenge binding.** Instead of a random WebAuthn challenge, the wallet signs:
 
    ```
@@ -51,7 +51,7 @@ A normal sign-in is a QR or push-to-wallet ceremony: the SDK shows a QR, the wal
 
    where `quote_hash` is the wallet's deterministic digest over the attestation it just verified: the TEE type, the [MRENCLAVE/MRTD code measurements](/technology/attestation/remote-attestation), the workload code hash, the [configuration Merkle root](/solutions/enclave-os/attestation/merkle-tree), and the [attestation-server](/technology/attestation/attestation-server) set. The IdP recomputes this challenge on `/complete` from the submitted inputs, compares in constant time, and refuses to issue the token on any mismatch.
 
-The issued JWT then carries `att_verified`, `att_quote_hash`, `att_oids`, and `session.{id, enc_pub, expires_at, sdk_pub_bind}`. The SDK pins `att_quote_hash` and `att_oids` against an app-supplied [attestation policy](/solutions/privasys-id/auth-sdk), derives `K`, and starts sealing.
+The issued JWT then carries `att_verified`, `att_quote_hash`, `att_oids`, and `session.{id, enc_pub, expires_at, sdk_pub_bind}`. Within the same ceremony the wallet leaves an **app approval** for each enclave the page asked for ([below](#staying-signed-in-silent-reopening)). The SDK's frame opens the session the page uses from that approval, with a fresh ephemeral keypair, and pins the enclave's `enc_pub` to the one the wallet attested. The keypair in the QR only lets the wallet complete the bootstrap it attests.
 
 The whole ceremony in one picture:
 
@@ -71,7 +71,9 @@ sequenceDiagram
   W->>I: assertion (via the broker, opaque frames)
   I->>I: recompute challenge, constant-time compare
   I-->>P: JWT: att_verified, att_quote_hash, att_oids, session.*
-  P->>P: pin policy, derive K = HKDF(ECDH(sdk_priv, enc_pub))
+  W->>I: app approval for the enclave (EncAuth)
+  P->>E: bootstrap from the approval with a fresh sdk_pub, pin enc_pub
+  P->>P: derive K = HKDF(ECDH(sdk_priv, enc_pub))
   P->>E: sealed frames, AES-256-GCM under K
   E-->>P: sealed responses
   Note over W,E: the wallet brokered the exchange yet cannot derive K:<br/>it never held sdk_priv
@@ -117,17 +119,17 @@ The [platform gateway](/solutions/platform/gateway) terminates a public Let's En
 
 The clear leg is opt-in and visible. An app's public and static surfaces (its page shell, public reads, inbound webhooks) are declared in its measured manifest, so they are part of the attested image digest, and they are shown on the app's attestation tab and its store listing as the routes served in the clear. See [Surfaces: private, static and public](/solutions/platform/developer-platform/deploy-container#surfaces-private-static-and-public).
 
-## Staying Signed In: Silent Rebind
+## Staying Signed In: Silent Reopening
 
-A 15-minute transport key would be unusable if every expiry woke the user's phone. It does not, because of the **EncAuth voucher**, a one-time capability the wallet issues right after a successful sign-in:
+A 15-minute transport key would be unusable if every expiry woke the user's phone. It does not, because of the **app approval** (an EncAuth envelope), which the wallet issues for each enclave during the sign-in, or later with one tap when the page reaches a new enclave:
 
 - The wallet signs a compact CBOR payload binding `{ user, session id, workload digest, platform measurement digest, enc_pub, quote_hash, validity window }` under its hardware-bound key.
-- The IdP verifies that signature against the registered FIDO2 credential, co-signs the envelope, and stores it.
-- When the SDK later loses its session (idle expiry, page reload, enclave restart), it fetches the voucher and re-bootstraps against the enclave with a fresh ephemeral keypair. The enclave verifies both signatures and every binding, then re-establishes the session **with no wallet ceremony and no push notification**.
+- The IdP verifies that signature against the registered FIDO2 credential, co-signs the envelope, and stores it, one per enclave host for that sign-in.
+- Whenever the SDK needs the session (the first time, after an idle expiry, a page reload or an enclave restart), it fetches the approval and bootstraps against the enclave with a fresh ephemeral keypair. The enclave verifies both signatures and every binding, then establishes the session **with no wallet ceremony and no push notification**. The approval is reusable for its whole validity window.
 
-The SDK pins the resumed session to the voucher too: the `enc_pub` in the bootstrap response must byte-equal the wallet-attested `enc_pub` signed inside the voucher, so an intermediary answering the bootstrap with its own key gains nothing.
+The SDK pins every session it opens to the approval: the `enc_pub` in the bootstrap response must byte-equal the wallet-attested `enc_pub` signed inside the approval, so an intermediary answering the bootstrap with its own key gains nothing.
 
-The voucher says, in effect: "this user has already verified this exact app on this exact platform, and accepts future transport keys for it without being woken". Which raises the real question: what happens when the app or the platform *changes*?
+The approval says, in effect: "this user has already verified this exact app on this exact platform, and accepts future transport keys for it without being woken". Which raises the real question: what happens when the app or the platform *changes*?
 
 ## Stable Enclave Identity, and What Wakes the User
 
@@ -135,12 +137,12 @@ The enclave's identity key (`enc_pub`) is reconstructed at start-up from a key h
 
 | Event | What happens | User woken? |
 | --- | --- | --- |
-| Enclave restart, host reschedule, VM reset (same measurements) | The vault releases the same key, `enc_pub` is unchanged, vouchers keep working | No |
-| Platform upgrade (measurement changes) | The vault refuses the old key; the new platform provisions its own. `enc_pub` changes, vouchers fail the pin | Yes |
-| App code or configuration update | `enc_pub` is unchanged, but the [enclave manager](/solutions/enclave-os/enclave-os-virtual/architecture) checks the voucher's **workload digest** (a hash over the app's [code, configuration and image measurements](/solutions/enclave-os/attestation/oids)) against the running app and rejects the stale voucher | Yes |
-| Voucher expiry (up to 90 days) or session revocation | Voucher refused; nothing changed on the enclave side | Yes (fresh ceremony) |
+| Enclave restart, host reschedule, VM reset (same measurements) | The vault releases the same key, `enc_pub` is unchanged, approvals keep working | No |
+| Platform upgrade (measurement changes) | The vault refuses the old key; the new platform provisions its own. `enc_pub` changes, approvals fail the pin | Yes, one tap |
+| App code or configuration update | `enc_pub` is unchanged, but the [enclave manager](/solutions/enclave-os/enclave-os-virtual/architecture) checks the approval's **workload digest** (a hash over the app's [code, configuration and image measurements](/solutions/enclave-os/attestation/oids)) against the running app and rejects the stale approval | Yes, one tap |
+| Approval expiry (up to 90 days) or session revocation | Approval refused; nothing changed on the enclave side | Yes |
 
-When a voucher is refused, the enclave reports a stable reason (`enc-changed`, `workload-changed`, `voucher-expired`, `voucher-invalid`) that the SDK surfaces to the application, so the page can say "this app was updated since you verified it" instead of a generic sign-in wall. The re-verification itself runs through the [wallet](/solutions/privasys-id/wallet), which compares the new attestation against its trusted record and shows the user exactly **what changed**, field by field (application code, configuration, or hosting platform), before asking them to approve the new state.
+When an approval is refused, the enclave reports a stable reason (`enc-changed`, `workload-changed`, `voucher-expired`, `voucher-invalid`) that the SDK surfaces to the application, so the page can say "this app was updated since you verified it" instead of a generic sign-in wall. The re-verification itself runs through the [wallet](/solutions/privasys-id/wallet), which compares the new attestation against its trusted record and shows the user exactly **what changed**, field by field (application code, configuration, or hosting platform), before asking them to approve the new state.
 
 This is the trust model working as intended: benign operational events are invisible, and every meaningful change to what the user originally verified requires their explicit, informed re-approval.
 
@@ -154,8 +156,8 @@ You are not extending the trust model. You are extending the *reach* of the exis
 
 Everything on this page is open source (AGPL-3.0):
 
-- Wallet: binding computation and voucher issuance in `auth/wallet/src/services/` ([identity-platform](https://github.com/Privasys/identity-platform))
-- IdP: binding enforcement and voucher co-signing in `auth/idp/internal/fido2/` and `auth/idp/internal/sessions/`, with known-answer vectors in the tests
-- SDK: `PrivasysSession` and the iframe RPC in `auth/sdk/src/`
+- Wallet: binding computation and app approval issuance in `wallet/src/services/` ([identity-platform](https://github.com/Privasys/identity-platform))
+- IdP: binding enforcement and approval co-signing in `idp/internal/fido2/` and `idp/internal/sessions/`, with known-answer vectors in the tests
+- SDK: the sealed session client and the frame that holds it in `sdk/src/`
 - Enclave middleware: `enclave-os/enclave-os-virtual/internal/sessionrelay` (Go, [TDX VMs](/solutions/enclave-os/enclave-os-virtual/architecture)) and `enclave-os/enclave-os-mini/enclave/src/sessionrelay.rs` (Rust, [SGX enclaves](/solutions/enclave-os/enclave-os-mini/architecture)) ([enclave-os-mini](https://github.com/Privasys/enclave-os-mini))
 - Gateway termination: `platform/gateway/internal/terminate` (see the [gateway page](/solutions/platform/gateway))

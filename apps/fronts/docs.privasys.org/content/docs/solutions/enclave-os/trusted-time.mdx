@@ -3,7 +3,7 @@ title: Trusted Time
 description: How the Enclave OS runtimes keep a time they can rely on for verification decisions, checked against a platform monitor and Network Time Security servers instead of taken on trust from the host.
 ---
 
-Every "is this still valid" decision an enclave makes rests on the current time: the freshness of an attestation quote, the validity dates of a certificate, the `exp` and `nbf` of a token, the window of an EncAuth voucher, the lifetime of a verified peer. An enclave has no clock of its own. On Intel SGX the time comes from the host through an ocall, and a TDX guest reads a clock the hypervisor steers. A host that can set that time back could get an expired credential accepted.
+Every "is this still valid" decision an enclave makes rests on the current time: the freshness of an attestation quote, the validity dates of a certificate, the `exp` and `nbf` of a token, the window of an app approval (EncAuth), the lifetime of a verified peer. An enclave has no clock of its own. On Intel SGX the time comes from the host through an ocall, and a TDX guest reads a clock the hypervisor steers. A host that can set that time back could get an expired credential accepted.
 
 Both Enclave OS runtimes (the Mini enclave core and the Virtual manager) therefore keep a **trusted time**: the host's time, used only while an independent source confirms it, and replaced by a verified internet time when it cannot be confirmed. Applications keep calling their usual clocks; the checks live in the runtimes.
 
@@ -63,11 +63,11 @@ The monitor also quarantines an enclave whose host clock is more than 10 seconds
 
 ## Verification fails closed, serving carries on
 
-When a runtime has no trusted time (at boot before the first NTS answer, or when NTS cannot be reached while one is needed), the trusted-time call returns an error, never a zero time. Every **verification decision** that depends on it refuses: quote freshness, token and voucher windows, the certificates the runtime checks, peer verdicts.
+When a runtime has no trusted time (at boot before the first NTS answer, or when NTS cannot be reached while one is needed), the trusted-time call returns an error, never a zero time. Every **verification decision** that depends on it refuses: quote freshness, token and app approval windows, the certificates the runtime checks, peer verdicts.
 
 **Serving never waits on time.** Presenting the enclave's own certificate, completing a TLS handshake and answering the evidence exchange carry on, stamped with the floor. That keeps the enclave reachable, above all for the signed poll that lets it recover: a poll whose signature verifies retries NTS first.
 
-WASM applications on Enclave OS Mini read trusted time through the WASI `wall-clock` and `monotonic-clock` interfaces. When there is no trusted time, the call traps instead of returning a wrong value. Containers on Enclave OS Virtual keep reading the guest's clock; the manager's own checks on their behalf (tokens, vouchers, attested peers) use trusted time.
+WASM applications on Enclave OS Mini read trusted time through the WASI `wall-clock` and `monotonic-clock` interfaces. When there is no trusted time, the call traps instead of returning a wrong value. Containers on Enclave OS Virtual keep reading the guest's clock; the manager's own checks on their behalf (tokens, app approvals, attested peers) use trusted time.
 
 ## The floor
 

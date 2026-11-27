@@ -115,14 +115,14 @@ To serve your private routes directly on your domain, to users who signed in wit
 }
 ```
 
-The page then sends an access token for **your app** with each request. With the [auth SDK](/solutions/privasys-id/auth-sdk):
+The page then sends an access token for **your app** with each request. With the [auth SDK](/solutions/privasys-id/auth-sdk), `app()` does it for you:
 
 ```ts
-const token = await authFrame.getTokenForAudience('app:<app id hex>');
-fetch('/api/v1/me', { headers: { Authorization: `Bearer ${token}` } });
+const api = await auth.app('app.example.com', { audience: 'app:<app id hex>' });   // your direct name
+const res = await api.request('GET', '/api/v1/me');
 ```
 
-An app that serves wallet users over a sealed session as well can leave the choice to the SDK: with `direct` set, [`frame.request()`](/solutions/privasys-id/auth-sdk#one-call-for-both-ways-to-reach-your-app) uses the sealed session or the token, whichever fits the person.
+`app()` reaches a wallet user over a sealed channel and everyone else over HTTPS to your domain with a token for the audience. To reach your app directly for every person, wallet users included, add `transport: 'direct'`. A page that makes its own requests gets the token from `auth.token('app:<app id hex>')`. See [Passkeys and external identity providers](/tutorials/passkeys-and-external-providers).
 
 The runtime verifies the token and gives your app:
 
