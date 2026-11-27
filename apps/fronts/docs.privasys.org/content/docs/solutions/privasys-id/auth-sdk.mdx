@@ -149,7 +149,7 @@ const t = await auth.token();                    // the session's token
 const a = await auth.token('app:<app id>');      // a token for another audience
 ```
 
-Without an argument, the session's token. With one, a token for that audience, without replacing the session's own. When the session's token already has that audience and is valid, it is returned as is (it is the one that carries the person's name and email); otherwise a new one is minted from the refresh token. A token for another platform's audience is refused.
+Without an argument, the session's token. With one, a token for that audience, without replacing the session's own. When the session's token already has that audience and is valid, it is returned as is (it is the one that carries the person's name and email); otherwise one is minted from the refresh token and reused until shortly before it expires (renew() mints afresh, with the current roles). A token for another platform's audience is refused.
 
 ### `renew()`
 
