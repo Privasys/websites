@@ -7,7 +7,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { AttestationConnect, AttestationResultView, useAttestation } from '@privasys/attestation-view';
 import type { ConnectionConfig } from '~/lib/config';
-import { mintAudienceToken, mintAudienceTokenSilent } from '~/lib/privasys-sdk';
+import { mintAudienceToken, mintAudienceTokenSilent } from '~/lib/explorer-auth';
 
 export function AttestationTab({ connection }: { connection: ConnectionConfig }) {
     const attestUrl = `${connection.baseUrl}/api/v1/apps/${encodeURIComponent(connection.appName)}/attest`;
@@ -26,10 +26,10 @@ export function AttestationTab({ connection }: { connection: ConnectionConfig })
     // instead of silently skipping verification.
     const verifyQuoteToken = useCallback(async () => {
         if (tokenRef.current) return tokenRef.current;
-        const t = await mintAudienceTokenSilent(connection.env, 'attestation-server').catch(() => '');
+        const t = await mintAudienceTokenSilent('attestation-server');
         if (t) tokenRef.current = t;
         return tokenRef.current;
-    }, [connection.env]);
+    }, []);
 
     const [state, actions] = useAttestation({
         attestUrl,
@@ -44,7 +44,7 @@ export function AttestationTab({ connection }: { connection: ConnectionConfig })
     const getTokenAndVerify = async () => {
         setMinting(true);
         try {
-            const t = await mintAudienceToken(connection.env, 'attestation-server');
+            const t = await mintAudienceToken('attestation-server', connection.brokerUrl);
             if (t) {
                 tokenRef.current = t;
                 await actions.verifyQuoteSignature();

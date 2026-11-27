@@ -15,7 +15,7 @@ import {
     type ConnectionConfig,
     type EnvKey
 } from '~/lib/config';
-import { getPrivasys, mintAudienceToken } from '~/lib/privasys-sdk';
+import { mintAudienceToken } from '~/lib/explorer-auth';
 
 const INITIAL_FORM: ConnectFormValues = {
     appName: '',
@@ -93,10 +93,7 @@ export function ConnectScreen({ onConnect }: { onConnect: (_c: ConnectionConfig)
         setTokenBusy(true);
         setTokenBtnLabel('Signing in…');
         try {
-            if (!getPrivasys()) {
-                throw new Error('Auth SDK not loaded. The hosted privasys-auth-client.iife.js bundle on privasys.id may be unavailable.');
-            }
-            const token = await mintAudienceToken(form.env, 'attestation-server');
+            const token = await mintAudienceToken('attestation-server', form.brokerUrl.trim() || undefined);
             if (!token) throw new Error('No token returned');
             set('attestationServerToken', token);
             setTokenBtnLabel('✓ Token set');

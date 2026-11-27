@@ -11,7 +11,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ConnectionConfig } from '~/lib/config';
 import type { Fido2Actions, Fido2State } from '~/components/use-fido2-auth';
 import { appFetch } from '~/lib/app-api';
-import { getAppSealedSession, dropAppSealedSession, appHostFor } from '~/lib/app-session';
+import { appChannel } from '~/lib/explorer-auth';
 import { getAllFunctions, witTypeLabel, defaultValueForType, type AppSchema, type FunctionSchema, type WitType } from '~/lib/wit';
 
 interface HistoryEntry {
@@ -120,6 +120,8 @@ export function ApiTestingTab({ connection, fido2, fido2Actions }: { connection:
     const [error, setError] = useState<string | null>(null);
     const [elapsed, setElapsed] = useState<number | null>(null);
     const [copied, setCopied] = useState(false);
+    // Set while the wallet is asked to approve the connection to the app.
+    const [walletWait, setWalletWait] = useState<string | null>(null);
 
     const [history, setHistory] = useState<HistoryEntry[]>([]);
     const historyCounter = useRef(0);
@@ -195,25 +197,30 @@ export function ApiTestingTab({ connection, fido2, fido2Actions }: { connection:
                 ...(extraHeaders ? Object.entries(extraHeaders) : [])
             ]);
             setRespMeta(null);
-            // The call goes over a wallet-attested sealed session DIRECT to
-            // the enclave (first call per app triggers the wallet ceremony —
-            // calling an API is the part of the explorer that requires the
-            // wallet; viewing attestation stays public). The mgmt /call relay
-            // is DELETED, so the schema must declare the runtime (app_type,
-            // served by every current platform).
+            // The call goes over the app's channel, sealed and wallet-attested
+            // DIRECT to the enclave (the first call per app asks the wallet to
+            // approve it; calling an API is the part of the explorer that
+            // needs a sign-in, viewing attestation stays public). The mgmt
+            // /call relay is DELETED, so the schema must declare the runtime
+            // (app_type, served by every current platform).
             let data: Record<string, unknown> | null = null;
             const appType = (schema as { app_type?: string } | null)?.app_type;
             if (!appType) {
                 throw new Error('schema does not declare the app runtime (app_type) — the platform is too old for direct calls');
             }
+            if (fido2.status !== 'complete') {
+                setAuthNeeded(true);
+                throw new Error('Sign in to call this app, then send again.');
+            }
             try {
-                const { session } = await getAppSealedSession(connection);
-                // The explorer sends no app auth until app-scoped tokens
-                // exist. Every token it can mint today (the sealed ceremony's
-                // and the Authenticate tab's) is a platform token, and
-                // platform tokens never reach an app, which runs code we do
-                // not control. An @auth function answers 401 as it would for
-                // any anonymous caller.
+                const channel = await appChannel(connection, (reason) => setWalletWait(reason === null
+                    ? 'Approve the connection to this app on your phone, in the Privasys Wallet.'
+                    : 'The app or the platform changed since your last approval: approve the connection again in the Privasys Wallet.'));
+                setWalletWait(null);
+                // No app auth: the only token the explorer holds is its own
+                // session's, a platform token, and platform tokens never reach
+                // an app, which runs code we do not control. An @auth
+                // function answers 401 as it would for any anonymous caller.
                 // (No app_auth in the body, no X-App-Auth header.)
                 const innerPath = appType === 'wasm'
                     ? `/rpc/${encodeURIComponent(appName)}/${encodeURIComponent(fn.name)}`
@@ -229,20 +236,20 @@ export function ApiTestingTab({ connection, fido2, fido2Actions }: { connection:
                     : paramValues;
                 const hdrs: Record<string, string> = {};
                 if (approvedCredits > 0) hdrs['X-Billing-Approved'] = `${approvedCredits} credits`;
-                const res = await session.request('POST', innerPath, body, { headers: hdrs });
-                if (typeof res.status !== 'number') throw new Error('sealed channel not ready');
+                const res = await channel.request('POST', innerPath, body, { headers: hdrs });
+                if (typeof res.status !== 'number') throw new Error('channel not ready');
                 const text = res.body && res.body.byteLength ? new TextDecoder().decode(res.body) : '';
                 try {
                     data = text ? JSON.parse(text) as Record<string, unknown> : {};
                 } catch {
                     data = { status: res.status < 300 ? 'ok' : 'error', message: text };
                 }
-                setRespMeta({ status: res.status, headers: [['Transport', 'sealed · attested RA-TLS']] });
+                setRespMeta({ status: res.status, headers: [['Transport', res.transport === 'sealed' ? 'sealed · attested RA-TLS' : 'direct']] });
             } catch (err) {
-                // Tear the dead frame down so the next attempt rebuilds it;
-                // there is no relay to fall back to.
-                dropAppSealedSession(appHostFor(connection));
-                throw err instanceof Error ? err : new Error('sealed session to the app could not be established');
+                // The next send asks for the channel again, which
+                // re-establishes it; there is no relay to fall back to.
+                setWalletWait(null);
+                throw err instanceof Error ? err : new Error('the channel to the app could not be established');
             }
             const ms = Math.round(performance.now() - start);
             // Detect a dead app session in a 200 response. Three shapes:
@@ -291,7 +298,7 @@ export function ApiTestingTab({ connection, fido2, fido2Actions }: { connection:
         } finally {
             setSending(false);
         }
-    }, [getSelectedFunction, sending, token, appName, base, paramValues, fido2Actions]);
+    }, [getSelectedFunction, sending, token, appName, base, paramValues, fido2Actions, fido2.status, connection]);
 
     // Ctrl/Cmd+Enter to send.
     useEffect(() => {
@@ -550,6 +557,10 @@ export function ApiTestingTab({ connection, fido2, fido2Actions }: { connection:
                     </span>
                 </div>
             </section>
+
+            {walletWait && (
+                <div className='rounded-xl border border-amber-500/30 bg-amber-500/5 dark:bg-amber-400/10 p-4 text-sm text-amber-800 dark:text-amber-300'>{walletWait}</div>
+            )}
 
             {/* Response */}
             {(response || error) && (

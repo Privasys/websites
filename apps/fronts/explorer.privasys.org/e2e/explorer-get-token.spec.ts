@@ -19,6 +19,10 @@ import { test, expect, type Page } from '@playwright/test';
 //     no session exists, so getTokenForAudience() then threw "no active
 //     session iframe; call getSession() first". Fixed by routing through a
 //     `mintAudienceToken()` helper that does signIn() when no session exists.
+// (3) 2026-11-27: the explorer now bundles the SDK (one AuthFrame from the npm
+//     package) instead of loading the hosted client bundle, so the page no
+//     longer probes window.Privasys; mintAudienceToken() runs connect(),
+//     which restores a session or opens the gate.
 //
 // Test strategy
 // -------------
@@ -28,8 +32,8 @@ import { test, expect, type Page } from '@playwright/test';
 // VISIBLE consequences of clicking the button:
 //
 //   * The SDK appends a full-screen iframe whose `src` starts with
-//     https://privasys.id/auth/ — i.e. the actual Privasys.id OIDC
-//     overlay opens for the user.
+//     https://privasys.id/auth/ (the actual Privasys.id OIDC overlay opens
+//     for the user), beside its hidden 0x0 session frame at the same URL.
 //   * That iframe stays attached and visible for several seconds
 //     (the user is in the middle of the ceremony). Both prior bugs
 //     would fail here: bug 1 throws TypeError before any iframe is
@@ -54,11 +58,6 @@ async function gotoConnect(page: Page) {
     page.on('pageerror', (e) => pageErrors.push(e.message));
     await page.goto('/');
     await expect(page.locator('#connect-screen')).toBeVisible();
-    // The hosted SDK must finish loading before we can probe Privasys.AuthFrame.
-    await page.waitForFunction(() => {
-        const w = window as unknown as { Privasys?: { AuthFrame?: unknown } };
-        return typeof w.Privasys?.AuthFrame === 'function';
-    }, undefined, { timeout: 15_000 });
     return pageErrors;
 }
 
@@ -88,25 +87,9 @@ test.describe('Explorer — Quote Verification "Get Token"', () => {
         await expect(btn).toBeEnabled();
     });
 
-    test('hosted Privasys.AuthFrame exposes getTokenForAudience', async ({ page }) => {
-        // Catches bug (1): hosted client.iife.js stub missing the method.
-        await gotoConnect(page);
-        const probe = await page.evaluate(() => {
-            const P = (window as unknown as { Privasys?: { AuthFrame?: unknown } }).Privasys;
-            const AF = P?.AuthFrame as (new (...a: unknown[]) => unknown) | undefined;
-            if (typeof AF !== 'function') return { ok: false, reason: 'Privasys.AuthFrame missing' as const };
-            const proto = AF.prototype as Record<string, unknown>;
-            return {
-                ok: typeof proto.getTokenForAudience === 'function',
-                onProto: typeof proto.getTokenForAudience
-            };
-        });
-        expect(probe.ok, JSON.stringify(probe)).toBe(true);
-    });
-
     test('clicking "Get Token" opens the privasys.id sign-in overlay', async ({ page }) => {
         // Catches bug (2): wrong flow / wrong AuthFrame. If the button does
-        // the *correct* thing (call signIn() when no session exists), a
+        // the *correct* thing (connect() when no session exists), a
         // full-screen iframe pointing at privasys.id/auth/ must appear and
         // STAY mounted for several seconds (the user is signing in).
         //
@@ -123,15 +106,16 @@ test.describe('Explorer — Quote Verification "Get Token"', () => {
         await expect(btn).toBeEnabled();
         await btn.click();
 
-        // A visible (non-zero) auth iframe pointing at privasys.id must appear.
-        const overlay = page.locator(`iframe[src^="${IDP_AUTH_URL_PREFIX}"]`).first();
+        // A visible (non-zero) auth iframe pointing at privasys.id must appear;
+        // the hidden session frame at the same URL is not visible.
+        const overlay = page.locator(`iframe[src^="${IDP_AUTH_URL_PREFIX}"]`).filter({ visible: true }).first();
         await expect(overlay).toBeAttached({ timeout: 10_000 });
         await expect(overlay).toBeVisible({ timeout: 10_000 });
 
-        // And it must have real dimensions (>0×0). signIn()'s overlay is
-        // position:fixed inset:0 — full viewport. The getSession() probe
-        // iframe is `position:fixed;width:0;height:0;opacity:0;` and would
-        // not pass this check.
+        // And it must have real dimensions (>0×0). The gate is
+        // position:fixed inset:0, full viewport. The session frame is
+        // `position:fixed;width:0;height:0;opacity:0;` and would not pass
+        // this check.
         const box = await overlay.boundingBox();
         expect(box, 'auth iframe has no bounding box').not.toBeNull();
         expect(box!.width, 'auth iframe must be visibly sized').toBeGreaterThan(100);

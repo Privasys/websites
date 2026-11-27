@@ -1,6 +1,5 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
-import Script from 'next/script';
 import { Navbar, Footer } from '@privasys/ui';
 import { ExplorerAuthProvider, NavAuth } from '~/components/explorer-auth-context';
 import '~/styles/globals.css';
@@ -36,9 +35,6 @@ export default function RootLayout({ children }: { children: ReactNode }) {
                 <script defer data-domain='explorer.privasys.org' src='https://plausible.privasys.org/js/script.js' />
             </head>
             <body className='min-h-screen flex flex-col overflow-x-hidden bg-white text-[#1d1d1f] dark:bg-[#0a0a0a] dark:text-[#f5f5f7]'>
-                {/* Hosted Privasys auth SDK: powers the Authenticate tab and the
-                    connect screen's "Get Token" button (window.Privasys). */}
-                <Script src='https://privasys.id/auth/privasys-auth-client.iife.js' strategy='afterInteractive' />
                 <ExplorerAuthProvider>
                     <Navbar brandSuffix='Explorer' faviconPath={`${FAVICON}/favicon.svg`} items={NAV_ITEMS} fullWidth trailing={<NavAuth />} />
                     {/* pt-20 clears the fixed 3.5rem Navbar. */}

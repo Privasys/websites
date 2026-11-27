@@ -1,32 +1,22 @@
-// Authenticate tab — signs the user into the app-specific RP via the hosted
-// Privasys auth SDK (passkey or Privasys wallet), embedding the SDK's auth
-// iframe. The resulting session token is lifted into the shared FIDO2 state so
-// the header badge and the API Testing tab can use it. Ported from the legacy
-// explorer.js renderAuth().
+// Authenticate tab: signs the person in to the explorer (passkey or Privasys
+// wallet), with the SDK's gate embedded in the tab. The session is lifted into
+// the shared state so the header badge and the API Testing tab can use it.
 
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import type { ConnectionConfig } from '~/lib/config';
 import type { Fido2Actions, Fido2State } from '~/components/use-fido2-auth';
 
 export function AuthenticateTab({ connection, fido2, actions }: { connection: ConnectionConfig; fido2: Fido2State; actions: Fido2Actions }) {
     const containerRef = useRef<HTMLDivElement>(null);
     const [copied, setCopied] = useState(false);
-    const rpId = `${connection.appName}.${connection.gatewayDomain}`;
-
-    // On first entry (no session checked yet), restore the privasys.id session
-    // or fall straight into sign-in, driven into the embedded iframe container.
-    useEffect(() => {
-        if (fido2.status === 'idle' && !fido2.sessionChecked && containerRef.current) {
-            actions.restoreInto(containerRef.current);
-        }
-    }, [fido2.status, fido2.sessionChecked, actions]);
+    const appHost = `${connection.appName}.${connection.gatewayDomain}`;
 
     if (fido2.status === 'complete' && fido2.token) {
         const masked = '●'.repeat(8) + fido2.token.slice(-6);
-        const method = fido2.sessionId ? 'Privasys Wallet' : 'Passkey';
-        const methodDetail = fido2.sessionId ? 'Attestation verified' : 'This device';
+        const method = fido2.method === 'wallet' ? 'Privasys Wallet' : fido2.method === 'social' ? 'External account' : 'Passkey';
+        const methodDetail = fido2.method === 'wallet' ? 'Attestation verified' : fido2.method === 'social' ? 'Identity provider' : 'This device';
         return (
             <div className='space-y-4'>
                 <section className='rounded-xl border border-emerald-500/30 bg-emerald-500/5 dark:bg-emerald-400/10 p-5'>
@@ -53,29 +43,14 @@ export function AuthenticateTab({ connection, fido2, actions }: { connection: Co
                         </div>
                         <div className='flex items-center gap-3'>
                             <span className='w-14 shrink-0 text-xs text-black/45 dark:text-white/45'>App</span>
-                            <span className='font-mono text-xs break-all'>{rpId}</span>
+                            <span className='font-mono text-xs break-all'>{appHost}</span>
                         </div>
                     </div>
                     <p className='mt-3 text-xs text-black/45 dark:text-white/45'>App sign-in from the explorer is paused while it moves to app-scoped tokens: this sign-in proves the wallet flow, but its token is not sent to the app, so functions that require a signed-in caller answer 401 here.</p>
                     <div className='mt-4 flex gap-2'>
                         <button type='button' onClick={actions.signOut} className='rounded-lg border border-black/10 dark:border-white/15 px-3 py-1.5 text-xs hover:bg-black/5 dark:hover:bg-white/5'>Sign out</button>
-                        <button type='button' onClick={actions.reauthenticate} className='rounded-lg border border-black/10 dark:border-white/15 px-3 py-1.5 text-xs hover:bg-black/5 dark:hover:bg-white/5'>Re-authenticate</button>
                     </div>
                 </section>
-
-                {fido2.attestation && Object.keys(fido2.attestation).length > 0 && (
-                    <section className='rounded-xl border border-black/10 dark:border-white/10 p-5'>
-                        <h3 className='text-sm font-semibold'>Wallet attestation</h3>
-                        <div className='mt-3 space-y-1.5'>
-                            {Object.entries(fido2.attestation).map(([key, value]) => (
-                                <div key={key} className='flex items-baseline gap-3 text-xs'>
-                                    <span className='w-40 shrink-0 text-black/45 dark:text-white/45'>{key}</span>
-                                    <span className='font-mono break-all'>{String(value)}</span>
-                                </div>
-                            ))}
-                        </div>
-                    </section>
-                )}
             </div>
         );
     }
