@@ -212,12 +212,11 @@ The `pending-profile` lifecycle implements that invariant.
 
    3. The owner reviews the change (commit range, build inputs,
       measurement) and approves it with a fresh wallet or passkey
-      step-up bound to this promotion. If the policy requires
-      manager approval, a manager's approval token is collected too.
+      step-up bound to this promotion.
 
    4. The owner calls PromotePendingProfile(handle, profile_id).
 
-      Each vault checks the step-up and approvals against the key's
+      Each vault checks the step-up against the key's
       policy and atomically adds the pending profile to the key's
       TEE principals. v(N+1) is now authorised.
 

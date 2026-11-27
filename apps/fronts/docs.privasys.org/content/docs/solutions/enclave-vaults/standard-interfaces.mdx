@@ -65,7 +65,7 @@ The gateway is itself a Privasys confidential container-app, so it runs inside a
 The same limit applies to every interface on this page. A PKCS#11 or KMIP client authenticates with a certificate or a credential, not with an OIDC grant, and it has no way to present a fresh wallet approval or to reason about a caller enclave's measurement. So:
 
 - Operations a key allows unconditionally, or under conditions a standard client can satisfy, work over the standard interface.
-- Operations a key gates on an attested measurement, a manager approval, or a wallet step-up are unavailable over the standard interface, and the vault refuses them.
+- Operations a key gates on an attested measurement or a wallet step-up are unavailable over the standard interface, and the vault refuses them.
 - Policy authoring stays in the native REST API and CLI.
 
 This is deliberate. A buyer who needs those interfaces gets interoperability for the baseline; the properties that make the vault worth using are still enforced by the enclave underneath, and a standard client can never turn them off.

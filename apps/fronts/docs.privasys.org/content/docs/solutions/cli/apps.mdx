@@ -119,7 +119,6 @@ The rest of the key lifecycle:
 ```sh
 privasys apps rotate-key my-app          # online re-key; data is never re-encrypted, the app keeps running
 privasys apps export-key my-app --out f  # take YOUR data key out (local file only, never printed)
-privasys apps cosign my-app --enable     # require a second team approver on promote
 privasys apps migrate-constellation my-app   # move the key onto a new vault constellation, gracefully
 privasys apps retire-measurement my-app <workload-digest>   # stop releasing the key to an older version
 ```

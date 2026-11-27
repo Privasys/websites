@@ -1,6 +1,6 @@
 ---
 title: Access Control
-description: KeyPolicy, principals, attestation profiles, step-up and manager approvals for Enclave Vaults.
+description: KeyPolicy, principals, attestation profiles and step-up approvals for Enclave Vaults.
 ---
 
 Every key in Enclave Vaults carries a `KeyPolicy` that controls **who** can do **what**, **under which attestation conditions**, and **with which approvals**. The policy is part of the sealed state of the vault and is enforced inside the enclave on every call. There is no admin override.
@@ -31,17 +31,16 @@ Live human approval does not need a principal of its own: it comes through the i
 
 ## Operations
 
-These operations are governed by the policy: `Sign`, `Wrap`, `Unwrap`, `Mac`, `ExportKey`, `DeleteKey`, `UpdatePolicy` and `PromoteProfile`. Creating a key needs a creation grant from the platform; listing keys, reading the audit log, staging and revoking a pending profile, and issuing approval tokens follow fixed rules described below.
+These operations are governed by the policy: `Sign`, `Wrap`, `Unwrap`, `Mac`, `ExportKey`, `DeleteKey`, `UpdatePolicy` and `PromoteProfile`. Creating a key needs a creation grant from the platform; listing keys, reading the audit log, and staging and revoking a pending profile follow fixed rules described below.
 
 Each rule has the form "these operations are allowed for these principals when these conditions hold":
 
 ```json
 {
-  "ops": ["Sign"],
-  "principals": [{ "Tee": 0 }],
+  "ops": ["PromoteProfile", "UpdatePolicy", "DeleteKey"],
+  "principals": ["Owner"],
   "requires": [
-    { "ManagerApproval": { "manager": 0, "fresh_for_seconds": 300 } },
-    { "TimeWindow": { "not_before": 0, "not_after": 1798761600 } }
+    { "OidcStepUp": { "required_amr": ["webauthn"], "operation_bound": true, "fresh_for_seconds": 300, "binding": 2 } }
   ]
 }
 ```
@@ -50,9 +49,6 @@ An operation is allowed when **any** rule lists the operation and the caller, an
 
 | Condition | Meaning |
 |---|---|
-| `AttestationMatches(profile)` | The caller's RA-TLS certificate satisfies `profile`, in addition to the principal match. |
-| `ManagerApproval { manager, fresh_for_seconds }` | The request carries a valid [approval token](#approval-tokens) from manager number `manager`, no older than `fresh_for_seconds`. |
-| `TimeWindow { not_before, not_after }` | The vault's trusted time is inside the window, in Unix seconds; `0` leaves that side open. |
 | `OidcStepUp { required_amr, operation_bound, fresh_for_seconds, binding }` | The caller's token proves a fresh step-up, bound to this operation; see below. |
 
 ### Step-up
@@ -99,16 +95,6 @@ When the app that uses a key is rebuilt, its measurement changes, and the new bu
 
 A key can opt in to `auto_migrate_to_next_attestation_profile`. Only then, and only for a profile the platform staged whose change is to the runtime alone (same required OIDs, attestation servers, TCB policy and TEE family), is the promotion automatic. Only the owner can turn this on or off. Retiring an old measurement once the new one runs is a separate step.
 
-## Approval tokens
-
-For a `ManagerApproval` condition, a manager of the key asks the vault for an approval token naming a key handle and an operation. The vault issues it as a JWT it signs itself, after checking that the caller is that manager.
-
-- A token lives 5 minutes by default, and at most 1 hour.
-- It is bound to the key handle, the operation, the manager's index, the approver's subject and the **policy version** when it was given. Any change to the policy invalidates every outstanding token, so an approval given before a change is never accepted after it.
-- When a manager slot is matched by role rather than by a named subject, the approver must be a different person from the one making the request (co-signing).
-
-A manager compromised on their own cannot use a token outside its lifetime or for another operation. A caller compromised on its own cannot mint one.
-
 ## Mutability
 
 `mutability` says which parts of the policy may change after creation, and by whom. It lists fields under `owner_can`, `manager_can` and `immutable`, from `Owner`, `Managers`, `Auditors`, `Tees`, `Operations`, `Lifecycle`, `Mutability` and `PendingProfiles`.
@@ -130,7 +116,7 @@ For a sensitive `Sign` call by an application enclave:
 
 1. The enclave opens a mutual RA-TLS channel to the vault holding the key. The vault verifies its quote and matches it against the key's TEE principals.
 2. The vault finds a rule that allows `Sign` for that principal.
-3. It checks each of the rule's conditions: for example a manager approval token (signature, lifetime, handle, operation, policy version) and a time window.
+3. It checks the rule's conditions, if it has any. An enclave's own rules usually have none: the attested channel already proved who is calling.
 4. It signs inside the enclave and returns the signature. The private key never leaves.
 5. The call, allowed or denied, is appended to the key's audit log.
 
