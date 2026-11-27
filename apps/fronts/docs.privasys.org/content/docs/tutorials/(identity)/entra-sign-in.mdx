@@ -114,16 +114,6 @@ Everything Entra applies to an application applies here, since the sign-in is yo
 - **Conditional Access and MFA**: target the application by name.
 - **Who may sign in**: under **Enterprise applications**, set **Assignment required** and assign the users and groups allowed to reach the app.
 
-## Renewing the certificate
-
-The certificate lasts two years. Before it expires, run the `set` command from step 2 again. It generates a new key pair and prints the new certificate, and **the old key keeps signing every sign-in in the meantime**. Upload the new certificate alongside the old one, then:
-
-```bash
-privasys oauth-clients federation confirm-rotation <sign-in-client-id> microsoft
-```
-
-The new key starts signing and the old one is destroyed. You can then remove the old certificate from the registration.
-
 ## Your users stay the same people
 
 A Microsoft account is identified by its directory object id, the `id` Microsoft Graph returns. That id belongs to the person in their directory, whichever app registration signed them in. So someone who used the Privasys registration before you brought your own keeps their account, and the app keeps seeing the same subject.
