@@ -1,0 +1,234 @@
+---
+title: Talk to several enclaves
+description: One page, several enclave apps. One AuthFrame and one session for the whole site, app(host) for each app, the wallet's approvals shown to the person, and channels set up in the background without a prompt.
+---
+
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+Many front ends talk to more than one enclave app: a records app and a reports app, an app and the search service beside it, a dashboard over several back ends. This tutorial builds such a page. The whole pattern fits in one sentence: **one `AuthFrame` for the page, one session for the site, and `app(host)` for every app.**
+
+<Callout type="info">
+Read [Integrating the auth SDK](/tutorials/integrate-auth-sdk) first: it covers registration, loading the SDK and a single app. The rules this page relies on are on [Sign-in concepts](/solutions/privasys-id/sign-in-concepts).
+</Callout>
+
+## The rule, and the mistakes it prevents
+
+A person signs in to your **site** once. Every app the page talks to is reached under that session:
+
+| Instead of | Do |
+| --- | --- |
+| A sign-in per app | `app(host)` on the frame you have. A wallet user approves a new app with one tap; nobody signs in twice. |
+| An `AuthFrame` per app | One frame per page. Each frame would run its own renewal and its own gate. |
+| A client per app, or per purpose | One client per website. A second client is a second session the person must sign in to. |
+| An rpId per app | Nothing: the rpId is always `privasys.id`. Another rpId would make the wallet see a different person. |
+
+The example below is a dashboard at `dashboard.example.com` that reaches three apps:
+
+| App | Host | When the page reaches it |
+| --- | --- | --- |
+| Records | `records.apps.privasys.org` | On every page: the sign-in approves it in the same tap |
+| Reports | `reports.apps.privasys.org` | When the person opens the Reports tab |
+| Status | `status.apps.privasys.org` | In the background, for a health badge, never with a prompt |
+
+## Step 1: The page's one frame
+
+Put the frame in a module of its own, created on first use, so every part of the page shares it.
+
+```ts
+// site-auth.ts
+import { AuthFrame } from '@privasys/auth';
+
+export const RECORDS_HOST = 'records.apps.privasys.org';
+export const REPORTS_HOST = 'reports.apps.privasys.org';
+export const STATUS_HOST = 'status.apps.privasys.org';
+
+let auth: AuthFrame | null = null;
+
+/** The page's AuthFrame: the session, and the channel to every app. */
+export function siteAuth(): AuthFrame {
+  if (typeof window === 'undefined') throw new Error('siteAuth() runs in the browser only');
+  auth ??= new AuthFrame({
+    clientId: 'dashboard',                      // the website's client, the same for every app
+    appName: 'Dashboard',                       // on the gate, in the wallet's approvals and its session list
+    apps: [RECORDS_HOST],                       // approved in the sign-in's own tap
+    scope: ['openid', 'email', 'profile', 'offline_access'],
+  });
+  return auth;
+}
+```
+
+`apps` lists the apps every visit needs. The wallet attests each and approves it within the sign-in, so their channels open without asking again. Leave out apps that only some visits reach: approving one later costs a single tap, and an approval the person never needed is a longer consent screen for nothing.
+
+## Step 2: The session, for the whole page
+
+A React provider follows the session with `onSessionChange`, which reports the stored session first and then every sign-in, renewal, sign-out and expiry, from any tab of the site.
+
+```tsx
+// auth-provider.tsx
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [session, setSession] = useState<Session | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [expired, setExpired] = useState(false);
+  const signedIn = useRef(false);
+  const signingOut = useRef(false);
+
+  useEffect(() => siteAuth().onSessionChange((s) => {
+    if (s) {
+      signedIn.current = true;
+      setExpired(false);
+    } else {
+      // Ended without a sign-out here: expired, or signed out in another tab.
+      if (signedIn.current && !signingOut.current) setExpired(true);
+      signedIn.current = false;
+    }
+    setSession(s);
+    setLoading(false);
+  }), []);
+
+  const signIn = useCallback(async () => { await siteAuth().connect(); }, []);
+  const signOut = useCallback(async () => {
+    signingOut.current = true;
+    try { await siteAuth().signOut(); } finally { signingOut.current = false; }
+  }, []);
+  // A role granted since the sign-in counts once the session is renewed.
+  const renew = useCallback(async () => { await siteAuth().renew(); }, []);
+
+  return (
+    <AuthContext.Provider value={{ session, loading, expired, signIn, signOut, renew }}>
+      {children}
+    </AuthContext.Provider>
+  );
+}
+```
+
+`signOut()` ends the site's session in every tab, and every tab's listener receives `null`. `renew()` is for a page that knows what the person may do has changed, such as a role granted by an administrator: the new token reaches every tab.
+
+## Step 3: A channel per app, and the approvals
+
+Every app is reached through one helper. It calls `app(host)` each time: the same host gives the same channel, so this is cheap, and a channel that stopped working is brought back by the same call.
+
+```ts
+// enclave-channel.ts
+import type { AppChannel } from '@privasys/auth';
+import { siteAuth } from './site-auth';
+
+/** A host waiting for the person's approval in the wallet, and why. */
+export interface PendingApproval {
+  host: string;
+  /** null for a first approval; 'workload-changed' when the app was updated,
+   *  'enc-changed' when the platform was upgraded, 'voucher-expired' when the approval expired. */
+  reason: string | null;
+}
+
+let pending: PendingApproval | null = null;
+const watchers = new Set<(p: PendingApproval | null) => void>();
+
+function setPending(p: PendingApproval | null): void {
+  pending = p;
+  for (const cb of watchers) cb(p);
+}
+
+/** Be told when a channel waits for the wallet, and when it stops waiting. */
+export function watchApproval(cb: (p: PendingApproval | null) => void): () => void {
+  watchers.add(cb);
+  cb(pending);
+  return () => watchers.delete(cb);
+}
+
+/** The channel to the app at `host`: at once when the wallet already approved
+ *  it, otherwise after one tap on the phone. */
+export async function enclaveChannel(host: string): Promise<AppChannel> {
+  try {
+    return await siteAuth().app(host, {
+      onApproval: (reason) => setPending({ host, reason }),
+    });
+  } catch (err) {
+    throw explain(err);
+  } finally {
+    if (pending?.host === host) setPending(null);
+  }
+}
+
+/** Readable text for what app() reports. */
+function explain(err: unknown): Error {
+  const msg = err instanceof Error ? err.message : String(err);
+  if (msg.includes('not signed in')) return new Error('Your sign-in has ended. Sign in again, then retry.');
+  if (msg.includes('no-push')) return new Error('Your phone cannot be reached from this browser. Sign in again, then retry.');
+  if (msg.includes('timeout')) return new Error('The request was not approved in time. Retry, then approve it in your Privasys Wallet.');
+  return err instanceof Error ? err : new Error(msg);
+}
+```
+
+A banner shows the approval while it waits, with the reason when something changed:
+
+```tsx
+export function ApprovalBanner() {
+  const [p, setP] = useState<PendingApproval | null>(null);
+  useEffect(() => watchApproval(setP), []);
+  if (!p) return null;
+  const why = p.reason === 'workload-changed' ? 'This app was updated since you approved it.'
+    : p.reason === 'enc-changed' ? 'The platform under this app was upgraded.'
+    : null;
+  return <div role="status">Approve {p.host} in your Privasys Wallet. {why}</div>;
+}
+```
+
+Every call to any app goes through the helper:
+
+```ts
+const records = await enclaveChannel(RECORDS_HOST);
+const res = await records.request('GET', '/api/v1/records?page=1');
+
+// Opening the Reports tab: the first time, one tap in the wallet.
+const reports = await enclaveChannel(REPORTS_HOST);
+const stream = await reports.stream('POST', '/api/v1/reports/run', { range: 'month' });
+```
+
+## Step 4: Background channels never prompt
+
+The status badge is set up when the page loads, before the person has asked for anything. A wallet notification they did not cause would be confusing, so the badge uses `silent: true`: without an approval for the host, `app()` rejects with `approval-required` instead of asking.
+
+```ts
+async function loadStatusBadge(): Promise<void> {
+  try {
+    const status = await siteAuth().app(STATUS_HOST, { silent: true });
+    const res = await status.request('GET', '/api/v1/health');
+    showBadge(res.status === 200 ? 'ok' : 'degraded');
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : '';
+    if (msg.startsWith('approval-required')) {
+      showBadge('connect');   // a "Connect" button that calls enclaveChannel(STATUS_HOST) on click
+      return;
+    }
+    showBadge('unknown');
+  }
+}
+```
+
+When the person presses "Connect", the ordinary `enclaveChannel()` asks the wallet, and the approval banner shows it.
+
+## Step 5: Apps the page learns later
+
+Some pages learn their apps only after the frame exists: an app the person picks from a list, a tool they add. Two cases:
+
+- **The person is signed in already.** Call `enclaveChannel(host)`: one tap approves the new app. There is no need to sign in again.
+- **The gate is about to run.** Pass the hosts to that sign-in, so its one tap approves them too: `siteAuth().connect({ apps: [host] })`. `apps` applies only when the gate runs; a session restored silently is not asked again, and `app(host)` covers it.
+
+## Step 6: Recovery
+
+Each channel recovers on its own, and the others are unaffected:
+
+- **An idle timeout or a restart** of one enclave: its channel is `reconnecting` for a moment while the frame opens it again from the approval. Nothing for the page to do.
+- **An app updated, or its platform upgraded:** its channel moves to `signed-out`. The next `enclaveChannel(host)` asks the wallet for one tap, with the reason, and the same channel comes back working. The other apps' channels keep working.
+- **The session ended** (signed out in another tab, or expired): every channel moves to `signed-out` and `onSessionChange` reports `null`. After the next sign-in, `enclaveChannel(host)` brings each channel back as the page needs it.
+
+Never build another `AuthFrame` to recover. The frame is the session; a second one is a second gate and a second renewal on the same storage.
+
+## People who sign in without the wallet
+
+The pattern is the same for a passkey or an external identity provider, with one difference: their channels are direct, so each `app()` needs the app's audience, `app(host, { audience: 'app:<app id>' })`, and `host` is the app's own domain in direct mode, where direct calls are taken. Keep a map of each app's domain and id. [Passkeys and external identity providers](/tutorials/passkeys-and-external-providers) covers that path.
+
+<Cards>
+  <Card title="Auth SDK reference" href="/solutions/privasys-id/auth-sdk" description="app(), its options, AppChannel states and errors." />
+  <Card title="Passkeys and external identity providers" href="/tutorials/passkeys-and-external-providers" description="Direct channels, providers and a headless gate." />
+</Cards>

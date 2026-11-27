@@ -55,36 +55,42 @@ Request the *derived* claim, not the raw data. `age_over_18` gives you a boolean
 
 ## Step 2: Add the gate to the site
 
-Install the SDK (`@privasys/auth`, [source](https://github.com/Privasys/identity-platform)) and configure the auth frame with the `identity` scope:
+Install the SDK (`@privasys/auth`, [source](https://github.com/Privasys/identity-platform)) and create one `AuthFrame` for the page, with the `identity` scope:
 
 ```ts
-import { AuthFrame, InsufficientCreditsError } from '@privasys/auth';
+import { AuthFrame, InsufficientCreditsError, type Session } from '@privasys/auth';
 
-const frame = new AuthFrame({
-    apiBase: 'https://api.developer.privasys.org',
-    appName: 'harbour-bets',
+const auth = new AuthFrame({
     clientId: 'harbour-bets',
+    appName: 'Harbour Bets',
     scope: ['openid', 'identity', 'offline_access'],
+    methods: ['wallet'],   // only the wallet can share a government-verified answer
     privacyPolicyUrl: 'https://harbourbets.example/privacy',
     app: { displayName: 'Harbour Bets', logoUrl: 'https://harbourbets.example/logo.svg' },
 });
 
-async function verifyAge() {
+async function verifyAge(): Promise<Session> {
     try {
-        const result = await frame.signIn();
-        // → send result.accessToken + result.disclosures to your backend (Step 4)
-        return result;
+        let session = await auth.connect();
+        if (!session.disclosures?.length) {
+            // A session restored from an earlier visit carries no fresh answer:
+            // end it and run a new check.
+            await auth.signOut();
+            session = await auth.connect();
+        }
+        // → send session.token and session.disclosures to your backend (Step 4)
+        return session;
     } catch (e) {
         if (e instanceof InsufficientCreditsError) {
             // Your billing account cannot cover the disclosure.
-            // The user was never prompted; top up and retry.
+            // The customer was never prompted; top up and retry.
         }
         throw e;
     }
 }
 ```
 
-That is the whole client-side integration. The SDK renders the Privasys ID gate (QR code or a push to a paired wallet), the ceremony runs on `privasys.id` and in the user's wallet, and your page gets the result. Nothing about passports, enclaves, or vouchers appears in your code.
+That is the whole client-side integration. The SDK renders the Privasys ID gate (a QR code, or a notification to a phone this browser knows), the ceremony runs on `privasys.id` and in the customer's wallet, and your page gets the session. Nothing about passports, enclaves, or vouchers appears in your code. The rpId and the platform are not settings: the SDK always uses `privasys.id` and places the page by its address (see [Sign-in concepts](/solutions/privasys-id/sign-in-concepts)).
 
 ## Step 3: What the customer experiences
 
@@ -96,7 +102,7 @@ Consent is genuinely per-attribute and per-site, and repeat visits with standing
 
 ## Step 4: What comes back
 
-`result.disclosures` carries one entry per gov-verified claim:
+`session.disclosures` carries one entry per gov-verified claim:
 
 ```ts
 interface AttributeDisclosure {
@@ -234,7 +240,7 @@ Retention: whatever your licence dictates (gambling regulators typically require
 
 ## Step 7: The next visit
 
-Your obligation is per-session, so repeat the ceremony: call `frame.signIn()` again on the next visit. The customer's standing consent makes it a single wallet tap; a fresh voucher is reserved, a fresh credential is minted and settled, and you store the new receipt alongside the old. Each stored token is one provable check: your audit trail is a sequence of independently verifiable receipts, one per unlocked session.
+Your obligation is per-session, so repeat the ceremony on the next visit: `verifyAge()` above ends a session restored from an earlier visit and runs a new check, and calling `auth.signOut()` when a betting session ends makes the next visit start from one. The customer's standing consent makes it a single wallet tap; a fresh voucher is reserved, a fresh credential is minted and settled, and you store the new receipt alongside the old. Each stored token is one provable check: your audit trail is a sequence of independently verifiable receipts, one per unlocked session.
 
 Because each disclosure is individually priced, your compliance cost is exactly proportional to verified sessions; see [pricing](https://developer.privasys.org/pricing) for the current per-attribute rates. Three properties of the platform's fee system are worth knowing as the payer:
 
@@ -264,7 +270,7 @@ With the issuer key pinned to the enclave (Step 5), no step asks the auditor to 
     How paid disclosures, vouchers, and per-attribute pricing work.
   </Card>
   <Card title="Auth SDK" href="/solutions/privasys-id/auth-sdk">
-    The full SDK surface: sign-in, SSO, sealed sessions.
+    The full SDK surface: sessions, attributes, and channels to enclave apps.
   </Card>
   <Card title="Attestation" href="/technology/attestation">
     How a code measurement ends up in a certificate you can pin.

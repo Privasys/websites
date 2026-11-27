@@ -1,0 +1,197 @@
+---
+title: Passkeys and external identity providers
+description: Serve people who sign in with a passkey, Microsoft, Google or an organisation's own registration, beside Privasys ID wallet users. Direct channels with an audience token, a themed or headless gate, and apps on a name that only takes direct calls.
+---
+
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+Not everyone who uses your app has the Privasys ID wallet. A public service is used by members of the public with a passkey, by an organisation's staff through their workplace Microsoft account, and by wallet users. This tutorial builds the front end of such a service: a **public register** where anyone can look up an entry, people sign in to file or update their own entries, and staff of the registering body sign in to review them.
+
+All three groups use the same page, the same `AuthFrame` and the same session model. Only the channel to the app differs.
+
+<Callout type="info">
+Read [Integrating the auth SDK](/tutorials/integrate-auth-sdk) first for registration and loading the SDK. The ideas are on [Sign-in concepts](/solutions/privasys-id/sign-in-concepts).
+</Callout>
+
+## How each person reaches the app
+
+A person who signed in without the wallet reaches the app **directly**: over HTTPS, with an access token whose audience is the app. Direct calls are taken on a name where TLS ends in the enclave, the app's own domain in [direct mode](/solutions/platform/developer-platform/custom-domains); the platform hostname takes sealed calls. So the register serves its page on its own domain, `register.example.org`, and the page calls the app on that same name.
+
+| Signed in with | Channel | What the app receives |
+| --- | --- | --- |
+| The Privasys ID wallet | Sealed, from the wallet's app approval (or direct, with [`transport: 'direct'`](#apps-that-take-only-direct-calls)) | `X-Privasys-Sub`, `X-Privasys-Transport: sealed` |
+| A passkey | Direct: HTTPS with an audience token | `X-Privasys-Sub`, `X-Privasys-Transport: direct`, `X-Privasys-Attestation-Level: unverified` |
+| Microsoft, Google, GitHub, LinkedIn, or the organisation's own registration | Direct: HTTPS with an audience token | `X-Privasys-Sub`, `X-Privasys-Transport: direct`, `X-Privasys-Attestation-Level: unverified` |
+
+A wallet user's token on a direct call carries `X-Privasys-Attestation-Level: verified`. Your app reads the same `X-Privasys-Sub` header whichever way a request came, and never handles a token: the enclave verifies it and removes it.
+
+## Step 1: Let the app take direct calls
+
+Set up the app's own domain in direct mode ([custom domains](/solutions/platform/developer-platform/custom-domains)), and declare in the app's measured manifest that its private routes answer direct calls:
+
+```json
+{
+  "surfaces": {
+    "static": ["/", "/assets/"],
+    "public": [{ "method": "GET", "path": "/api/v1/entries" }],
+    "direct": "private"
+  }
+}
+```
+
+Then register your client for the app, so the identity provider will mint tokens whose audience is the app, `app:<app id>` (32 hex characters), and register `https://register.example.org` as one of the client's page origins. Registration is operator-assisted today: [contact us](mailto:contact@privasys.org). See [Private routes for signed-in users](/solutions/platform/developer-platform/custom-domains#private-routes-for-signed-in-users) for what the runtime checks.
+
+## Step 2: The frame
+
+```ts
+import { AuthFrame } from '@privasys/auth';
+
+export const APP_HOST = 'register.example.org';     // the app's own domain, where the page is served
+export const APP_AUDIENCE = 'app:3f2a…';            // your app's id
+
+let auth: AuthFrame | null = null;
+
+export function siteAuth(): AuthFrame {
+  auth ??= new AuthFrame({
+    clientId: 'register',
+    appName: 'Public Register',
+    audience: APP_AUDIENCE,                         // the sign-in's own token is the app's token
+    scope: ['openid', 'email', 'profile', 'offline_access'],
+    methods: ['social', 'passkey', 'wallet'],       // in this order on the gate
+    providers: ['microsoft'],                       // staff sign in with their workplace account
+    apps: [APP_HOST],                               // a wallet sign-in approves the app in the same tap
+  });
+  return auth;
+}
+```
+
+- **`audience`** makes the token of the sign-in itself a token for your app. That first token is the only one that carries the person's name and email (the identity provider keeps no profile), so the app receives them as `X-Privasys-Name` and `X-Privasys-Email` on the first requests. Store them the first time you see them, keyed by the subject.
+- **`methods`** and **`providers`** set what the gate offers, in your order. The gate shows them as given.
+- **The organisation's own registration.** When the registering body has [connected its Entra tenant](/tutorials/entra-sign-in) to your client, its staff get a button of its own ("Sign in with" the organisation's name), under their own tenant's policies. Nothing changes in this code.
+
+## Step 3: One call for every person
+
+```ts
+const session = await siteAuth().connect({ container: gateElement });
+const api = await siteAuth().app(APP_HOST, { audience: APP_AUDIENCE });
+
+const res = await api.request('POST', '/api/v1/my/entries', { title: 'New entry' });
+console.log(api.transport);   // 'sealed' for a wallet user, 'direct' for everyone else
+```
+
+`app()` chooses by how the person signed in. A wallet session gets a sealed channel; any other session gets a direct one, which sends each request to `https://<host>` with a token for `audience`. The `AppChannel` is the same either way: `request`, `stream`, `openWebSocket`, `state`. Because the page and the app share a name, the direct requests are same-origin.
+
+A direct WebSocket carries its token in the handshake, which the enclave verifies and removes before your app sees the request. Open a new socket when one closes.
+
+## Step 4: In the app
+
+```go
+func myEntries(w http.ResponseWriter, r *http.Request) {
+    sub := r.Header.Get("X-Privasys-Sub")
+    if sub == "" { http.Error(w, "sign in required", 401); return }
+
+    // A first token carries the profile: keep it.
+    if name := r.Header.Get("X-Privasys-Name"); name != "" {
+        decoded, _ := url.PathUnescape(name)
+        rememberName(sub, decoded, r.Header.Get("X-Privasys-Email"))
+    }
+    // ...
+}
+```
+
+To keep a route for wallet users only (a review step that must be approved on a phone, say), accept a request that came sealed or carries `X-Privasys-Attestation-Level: verified`.
+
+## Step 5: Your own look
+
+### A themed gate
+
+The gate takes your font, colours and corner radius, used as given in every presentation:
+
+```ts
+new AuthFrame({
+  // ...as above
+  presentation: 'inline',
+  container: document.getElementById('sign-in'),
+  theme: {
+    font: '"Helvetica Neue", Arial, sans-serif',
+    colours: { text: '#0b0c0c', primary: '#00703c', primaryText: '#ffffff', focus: '#ffdd00', focusText: '#0b0c0c', link: '#1d70b8' },
+    radius: 0,
+  },
+  legal: false,   // your page shows its own terms
+});
+```
+
+A value outside its rule (hex colours only, a radius from 0 to 24) is dropped, and the "Secured by Privasys ID" seal stays in every theme.
+
+### A headless gate
+
+A service on a strict design system can draw the buttons itself. With `headless`, the frame stays invisible and runs every flow; your page draws the options it is given and starts the one the person picks.
+
+```ts
+new AuthFrame({
+  clientId: 'register',
+  appName: 'Public Register',
+  audience: APP_AUDIENCE,
+  methods: ['social', 'wallet'],
+  providers: ['microsoft'],
+  theme: { /* as above: still used by what the frame draws itself */ },
+  headless: {
+    onOptions: (options, gate) => {
+      clearButtons();
+      // The organisation's own registration first, under its own name.
+      for (const own of options.own) {
+        addButton(`Sign in with ${own.displayName}`, () => gate.start({ method: 'social', provider: own.provider, own: true }));
+      }
+      for (const p of options.providers) {
+        addButton(`Sign in with ${p.name}`, () => gate.start({ method: 'social', provider: p.id }));
+      }
+      if (options.wallet) addButton('Sign in with Privasys ID', () => gate.start({ method: 'wallet' }));
+    },
+    onState: (s) => {
+      if (s.state === 'qr-scanning') showQrImage(s.qrSvg);    // as an image, never as markup
+      if (s.state === 'push-waiting') showText('Check your phone.');
+      if (s.state === 'error') showText(s.error ?? 'Something went wrong.');
+    },
+  },
+});
+```
+
+Set every label as text. A social sign-in opens its popup on `privasys.id` from the click on your button; the SDK does this for you.
+
+Passkeys need a click inside the frame, so a headless gate offers the wallet and external providers only. A service whose public signs in with passkeys keeps the visible gate, with a theme, for them. A complete headless page in the style of the GOV.UK Design System is in [`sdk/examples/headless`](https://github.com/Privasys/identity-platform/tree/main/sdk/examples/headless).
+
+## Apps that take only direct calls
+
+An app can be built to take only direct calls on its own domain, so that every person, wallet users included, reaches it the same way. Ask for the direct channel whatever the sign-in method:
+
+```ts
+const api = await siteAuth().app(APP_HOST, {
+  audience: APP_AUDIENCE,
+  transport: 'direct',
+});
+```
+
+A wallet user then reaches the app over HTTPS with an audience token too, and the app sees `X-Privasys-Attestation-Level: verified` for them. Leave `apps` out of the configuration in that case: no app approval is needed.
+
+## Staff who want approvals on their phone
+
+A member of staff signed in with their workplace account can add their Privasys ID to it, so your app can ask them to approve a review on their phone. From a click:
+
+```ts
+const idToken = await siteAuth().linkIdentity(nonceFromYourServer);
+```
+
+The modal is limited to the wallet, uses your `theme` (also on a page with a headless gate), and leaves the person's session untouched. Your server verifies the ID token and stores its subject; see [linking a Privasys ID](/solutions/privasys-id/auth-sdk#linking-a-privasys-id-to-another-sign-in) for the checks.
+
+## What to remember
+
+- One `AuthFrame` per page, one client for the site, whatever the sign-in method.
+- `app(host, { audience })` for every app: the SDK picks sealed or direct by how the person signed in.
+- `transport: 'direct'` when the app's name only takes direct calls.
+- Store the name and email from the first token; renewed tokens carry the subject alone.
+
+<Cards>
+  <Card title="Auth SDK reference" href="/solutions/privasys-id/auth-sdk" description="Configuration, app() options, the headless gate and errors." />
+  <Card title="Sign in with your Microsoft Entra tenant" href="/tutorials/entra-sign-in" description="An organisation's own registration behind the Microsoft button." />
+  <Card title="Custom domains" href="/solutions/platform/developer-platform/custom-domains" description="Direct names and what the runtime checks on them." />
+</Cards>

@@ -11,7 +11,13 @@ Practical, end-to-end guides for building on Privasys. Each tutorial walks a com
 
 <Cards>
   <Card title="Integrating the auth SDK" href="/tutorials/integrate-auth-sdk">
-    Add Privasys ID sign-in and a sealed channel to your enclave app from a web page: one frame, one call, a session that keeps itself alive, and what an integration must not do.
+    Add Privasys ID sign-in and a sealed channel to your enclave app from a web page: one frame per page, one connect(), app(host) for the channel, and what an integration must not do.
+  </Card>
+  <Card title="Talk to several enclaves" href="/tutorials/several-enclaves">
+    One frame and one session for the site, a channel per app, the wallet's approvals shown to the person, and background channels that never prompt.
+  </Card>
+  <Card title="Passkeys and external identity providers" href="/tutorials/passkeys-and-external-providers">
+    Serve people who sign in with a passkey or a workplace account beside wallet users: direct channels, a themed or headless gate, and apps on a direct-only name.
   </Card>
   <Card title="Sign in with your Microsoft Entra tenant" href="/tutorials/entra-sign-in">
     For Entra administrators: register an application in your tenant, give the platform a certificate credential, and have your staff sign in through your own registration under your own policies.

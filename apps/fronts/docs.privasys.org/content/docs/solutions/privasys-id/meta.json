@@ -3,6 +3,7 @@
     "defaultOpen": false,
     "pages": [
         "overview",
+        "sign-in-concepts",
         "wallet",
         "verifiers",
         "idp",

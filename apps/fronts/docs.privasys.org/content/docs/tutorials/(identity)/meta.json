@@ -3,6 +3,8 @@
     "defaultOpen": false,
     "pages": [
         "integrate-auth-sdk",
+        "several-enclaves",
+        "passkeys-and-external-providers",
         "entra-sign-in",
         "age-verification"
     ]

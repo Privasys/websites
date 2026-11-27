@@ -1,0 +1,86 @@
+---
+title: Sign-in concepts
+description: "The five ideas behind a browser sign-in with Privasys ID: the client, the rpId, the platform, the session and app access. Read this before you write a line of integration code."
+---
+
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+A web page that signs people in with Privasys ID and talks to enclave apps works with five ideas. Each has one rule. An integration that follows them needs one `AuthFrame` per page and nothing else; the [Auth SDK](/solutions/privasys-id/auth-sdk) is built around them.
+
+| Idea | The rule |
+| --- | --- |
+| [Client](#the-client) | One per website. It is the only thing that separates one site's sessions from another's. |
+| [rpId](#the-rpid) | Always `privasys.id`. It is not an option. |
+| [Platform](#the-platform) | Taken from the page's address. Never configured. |
+| [Session](#the-session) | One per person, client and site, the same in every tab and window of the site. |
+| [App access](#app-access) | Per enclave app, under that one session: an app approval (sealed) or an audience token (direct). Never a second sign-in. |
+
+## The client
+
+Your website is one client at the identity provider, named by its `clientId`. The client decides which attributes the site may ask for, which pages may sign in as it (its registered origins), and which apps it may get tokens for.
+
+One website, one client. A site that talks to five enclave apps still has one client: the apps are reached under its session (see [app access](#app-access)), not by signing in to each.
+
+## The rpId
+
+The rpId is the name the wallet keys a person's credential by. The SDK always uses `privasys.id`, and there is no setting for it.
+
+This is what makes a person the same person everywhere. The wallet derives a separate identity for each rpId, so a page that used a different rpId (an app's host name, say) would meet a stranger: a different account, with none of the person's approvals. Your app still gets its own subject for each person, because subjects are made per client (see [subjects: one per application](/solutions/privasys-id/idp#subjects-one-per-application)), not per rpId.
+
+## The platform
+
+A page belongs to a platform (production, or a test platform) by its address. The identity provider publishes which domains belong to which platform, and the SDK places the page from the origin the browser reports for it. Nothing your page says can change it.
+
+The platform decides which audience the page's tokens are for, and keeps sessions apart: a production page and a test page under one domain never share a session, and the SDK never mints a token for another platform's audience.
+
+## The session
+
+A session belongs to one person, one client and one site. It lives in the frame's storage on `privasys.id`, which the browser keeps per site, so:
+
+- **Every tab and window of your site shares it.** A sign-in in one tab signs in every tab. A renewal in one tab reaches every tab. A sign-out in one tab signs out every tab. Pages on subdomains of one registered domain count as one site.
+- **Another site never shares it.** Browsers partition the frame's storage by the site that embeds it, so a session on one site is invisible to every other site, by design. The person signs in to each site once. On a browser that remembers their phone, that sign-in is a notification rather than a QR code.
+- **Two clients on one site have two sessions.** A page is only given the session of a client that registered its origin.
+
+The session's token is short-lived. The frame renews it in the background with a refresh token, coordinated so that only one tab renews at a time and each refresh token is spent once. Your page is told of every change (sign-in, renewal, sign-out, expiry), whichever tab caused it.
+
+## App access
+
+Once the person is signed in, the page reaches each enclave app under that one session. How depends on how they signed in:
+
+| The person signed in with | The page reaches an app | What proves who they are |
+| --- | --- | --- |
+| The Privasys ID wallet | **Sealed**: end to end from the browser to the attested enclave, through a gateway that sees only ciphertext | An **app approval**: the wallet attested the app and approved it for this sign-in |
+| A passkey, or an external identity provider (Google, Microsoft, GitHub, LinkedIn, an organisation's own registration) | **Direct**: over HTTPS to the app's host | An **audience token**: an access token minted for that app (`app:<app id>`) |
+
+Either way the enclave tells the app who the person is with the same `X-Privasys-Sub` header, and the app never handles a credential.
+
+### App approvals
+
+An app approval is the wallet's signed statement that this person verified this app on this platform, for this sign-in. The wallet gives one in two ways:
+
+- **During the sign-in**, for every app the page lists: one tap signs the person in and approves those apps.
+- **Later, with one tap**, for an app the page reaches for the first time: the wallet is notified, attests the app and shows the person what they are approving.
+
+The frame then opens the sealed channel from the approval, and opens it again silently whenever the enclave forgets it (an idle timeout, a restart). The person is asked again only when what they approved has changed: the app was updated (`workload-changed`), the platform under it was upgraded (`enc-changed`), or the approval expired (`voucher-expired`, after up to 90 days). The protocol is on [Sealed Session](/technology/sealed-session).
+
+An approval belongs to the sign-in it was given under. Renewal keeps it; a new sign-in starts without approvals.
+
+### Audience tokens
+
+An audience token is an access token whose audience is one app, `app:<app id>`. The frame mints it from the session's refresh token, and only for a client registered for that app. The app's enclave verifies it, removes it and asserts the person's subject. The app must serve its private routes on a [direct name](/solutions/platform/developer-platform/custom-domains#private-routes-for-signed-in-users).
+
+## Putting it together
+
+```ts
+const auth = new AuthFrame({ clientId: 'my-site', appName: 'My Site' }); // one client, one frame per page
+await auth.connect();                                                     // one session, shared by every tab
+const orders = await auth.app('orders.apps.privasys.org');                // app access, under that session
+const invoices = await auth.app('invoices.apps.privasys.org');            // another app, same session
+```
+
+<Cards>
+  <Card title="Auth SDK" href="/solutions/privasys-id/auth-sdk" description="Choose your integration, then the full reference." />
+  <Card title="Integrating the auth SDK" href="/tutorials/integrate-auth-sdk" description="From nothing to a signed-in page talking to its enclave." />
+  <Card title="Talk to several enclaves" href="/tutorials/several-enclaves" description="One frame, one session, a channel per app." />
+  <Card title="Passkeys and external identity providers" href="/tutorials/passkeys-and-external-providers" description="Serve people who sign in without the wallet." />
+</Cards>

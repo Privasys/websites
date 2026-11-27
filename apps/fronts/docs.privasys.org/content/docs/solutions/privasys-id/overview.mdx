@@ -19,7 +19,7 @@ The identity provider at `https://privasys.id`. Standard OIDC issuer with a JWKS
 
 ### [Auth SDK](/solutions/privasys-id/auth-sdk)
 
-The browser SDK published as `@privasys/auth`, hosted as an iframe under `privasys.id/auth/`. Embedding apps drop in a small script and get FIDO2 sign-in via a QR or push-to-wallet flow, cross-site SSO via iframe storage on `privasys.id`, attribute consent, and a fallback federated sign-in. The SDK also exports `PrivasysSession`, the sealed-transport client used in session-relay mode.
+The browser SDK published as `@privasys/auth`, with its frame hosted under `privasys.id/auth/`. A page creates one `AuthFrame` and gets sign-in with the wallet (QR code or notification), passkeys or external identity providers, a session shared by every tab of the site, attribute consent, and `app(host)`: a sealed channel to each enclave app for wallet users, a direct one for everyone else. The ideas behind it are on [Sign-in concepts](/solutions/privasys-id/sign-in-concepts).
 
 ### [Sealed Sessions](/technology/sealed-session)
 
@@ -44,7 +44,7 @@ A typical browser sign-in to a confidential workload:
 3. The wallet scans the QR, opens an RA-TLS connection to the target enclave, verifies the attestation OIDs, shows the user what they are authenticating against, and prompts for biometric.
 4. Behind the biometric ceremony, the wallet calls a session-bootstrap on the enclave to establish a sealed session key, and binds the FIDO2 challenge to the attestation result + session.
 5. The IdP receives the assertion, recomputes the binding, mints a JWT carrying both the user identity and the attestation/session claims.
-6. The SDK receives the JWT, derives the session key from its own ephemeral keypair + the enclave's public key in the JWT, and exposes a sealed-transport `request()` API to the parent page.
+6. The wallet also leaves an app approval for the enclave. The SDK frame opens the sealed session from it with a fresh ephemeral keypair, and gives the parent page a channel with `request()`, `stream()` and `openWebSocket()`.
 7. The parent page makes ordinary-looking HTTP calls; bodies are sealed in the iframe and unsealed in the enclave. The gateway terminates public TLS in between but sees only ciphertext.
 
 For Enclave Vaults approvals, the same wallet ceremony produces an operation-bound step-up token from privasys.id instead of an ordinary session: the same hardware-bound key and the same biometric check, with a token whose `vault_op` claim names the exact vault operation it approves.
@@ -71,7 +71,7 @@ The session-relay middleware lives outside this repo, in the enclave runtimes:
 
 ## Where to go next
 
-- **You're a developer adding sign-in to your app.** Start at the [Auth SDK page](/solutions/privasys-id/auth-sdk).
+- **You're a developer adding sign-in to your app.** Read [Sign-in concepts](/solutions/privasys-id/sign-in-concepts), then the [Auth SDK page](/solutions/privasys-id/auth-sdk).
 - **You're integrating with Enclave Vaults manager approvals.** Read the [Wallet page](/solutions/privasys-id/wallet) and [vault access control](/solutions/enclave-vaults/access-control).
 - **You're shipping a browser-based UI on top of a confidential workload.** Read [Technology > Sealed Session](/technology/sealed-session).
 - **You want to self-host the IdP or wire BYO OIDC.** Read the [IdP page](/solutions/privasys-id/idp).
