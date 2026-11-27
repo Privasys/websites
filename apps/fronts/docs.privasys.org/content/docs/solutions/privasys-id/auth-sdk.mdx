@@ -252,7 +252,7 @@ The window opens from the person's click, so start sign-in from a click. A headl
 ### Several phones, several accounts
 
 - **Several phones.** A browser can remember more than one Privasys ID. The gate then lists them by the name the wallet gives the phone, with "Forget" beside each and "Use another Privasys ID" for a new one. Signing out keeps the list.
-- **Several provider accounts.** Google, Microsoft and GitHub sign a person straight in when one account is active in the browser. "Use another account" on the gate has the provider show its own account picker. The gate keeps no list of accounts.
+- **Several provider accounts.** Google, Microsoft and GitHub show their own account chooser on every sign-in, so the person picks the account rather than the browser. The gate keeps no list of accounts.
 
 ## Your own design: a headless gate
 
@@ -274,7 +274,7 @@ const session = await auth.connect();
 
 | Callback | What it receives |
 | --- | --- |
-| `onOptions(options, gate)` | What the client offers: `own` (the client's [own registrations](/tutorials/entra-sign-in), such as an organisation's staff sign-in, each with its `displayName`, `provider` and an `icon` or `iconUrl`), `providers` (the platform's, each with `id`, `name` and a brand `icon`), `wallet` (Privasys ID is offered), `push` (this device can be notified) and, when the browser remembers several phones, `wallets` (each with an `id` and a `label`, the most recently used first: draw one button each). Called again for every new attempt. `gate.start(choice)` starts `{ method: 'social', provider, own?, chooseAccount? }` or `{ method: 'wallet', qr?, wallet? }`, where `own: true` picks the client's own registration for that provider, `wallet` is the `id` of the phone to notify, and `chooseAccount: true` has the provider show its own account picker. The frame starts only a choice it offered. `gate.cancel()` stops the attempt. |
+| `onOptions(options, gate)` | What the client offers: `own` (the client's [own registrations](/tutorials/entra-sign-in), such as an organisation's staff sign-in, each with its `displayName`, `provider` and an `icon` or `iconUrl`), `providers` (the platform's, each with `id`, `name` and a brand `icon`), `wallet` (Privasys ID is offered), `push` (this device can be notified) and, when the browser remembers several phones, `wallets` (each with an `id` and a `label`, the most recently used first: draw one button each). Called again for every new attempt. `gate.start(choice)` starts `{ method: 'social', provider, own? }` or `{ method: 'wallet', qr?, wallet? }`, where `own: true` picks the client's own registration for that provider, `wallet` is the `id` of the phone to notify. The frame starts only a choice it offered. `gate.cancel()` stops the attempt. |
 | `onState(state)` | Where the attempt is: `authenticating`, `push-waiting` (while a push waits, `start({ method: 'wallet', qr: true })` switches to the QR code), `qr-scanning` with the code as `qrSvg`, `wallet-connected`, `approve-waiting`, `success`, and `error` with `error`. |
 
 A social sign-in opens its popup on `privasys.id`, at the address the frame names, from the click on your page; the SDK does this for you. Set every label as text and show `qrSvg` as an image, never as markup. Passkeys are not offered headless, because a passkey ceremony needs the click inside the frame: use the visible gate where passkeys matter. `theme` and `legal` still style what the frame draws itself, such as the `linkIdentity()` modal.
