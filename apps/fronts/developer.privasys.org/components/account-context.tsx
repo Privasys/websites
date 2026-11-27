@@ -41,7 +41,7 @@ export function useCurrentAccount(): AccountWithRole | null {
 }
 
 export function AccountProvider({ children }: { children: ReactNode }) {
-    const { session } = useAuth();
+    const { session, renew } = useAuth();
     const router = useRouter();
     const pathname = usePathname();
     const canManage = hasManagerRole(session?.roles);
@@ -82,8 +82,10 @@ export function AccountProvider({ children }: { children: ReactNode }) {
         if (id === current) return;
         setCurrentAccountId(id);
         setCurrent(id);
+        // Roles granted in the other account since the sign-in count at once.
+        renew().catch(() => undefined);
         router.push(id === MANAGEMENT ? '/dashboard/admin' : '/dashboard');
-    }, [current, router]);
+    }, [current, router, renew]);
 
     const value = useMemo<AccountContextValue | null>(() => {
         if (!accounts) return null;

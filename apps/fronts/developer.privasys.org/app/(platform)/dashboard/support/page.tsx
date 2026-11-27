@@ -10,6 +10,7 @@ import { listTickets, MonitorError } from '~/lib/monitor';
 import type { TicketRow } from '~/lib/monitor';
 import { AppSupportTab, AccountSupportSettings } from '~/components/app-support-tab';
 import { useCurrentAccount } from '~/components/account-context';
+import { MonitorWait } from '~/components/monitor-wait';
 import { SupportTeamSection } from '~/components/app-support-team';
 import { AccountAppPicker, appFromAddress, useAccountApps } from '~/components/account-app-picker';
 
@@ -41,7 +42,7 @@ export default function SupportPage() {
         setAppId((cur) => cur || (apps.some((a) => a.id === wanted) ? wanted : apps[0].id));
     }, [apps]);
 
-    // Every app's requests, one app at a time over the same sealed session
+    // Every app's requests, one app at a time over the same channel
     // to the monitor. An app without monitoring has no desk and is skipped.
     const loadInbox = useCallback(async () => {
         if (!token || apps.length === 0) return;
@@ -86,9 +87,7 @@ export default function SupportPage() {
                         </div>
                         <div className="mt-3 rounded-xl border border-black/10 dark:border-white/10 divide-y divide-black/5 dark:divide-white/10">
                             {inbox === null && (
-                                <div className="p-4 text-sm text-black/40 dark:text-white/40">
-                                    Asking the monitor… The first time, your wallet may ask you to approve a secure connection to it.
-                                </div>
+                                <MonitorWait className="p-4 text-sm text-black/40 dark:text-white/40" />
                             )}
                             {inbox !== null && shown.length === 0 && (
                                 <div className="p-4 text-sm text-black/50 dark:text-white/50">No open requests.</div>

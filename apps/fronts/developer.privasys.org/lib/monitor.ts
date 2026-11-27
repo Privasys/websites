@@ -1,12 +1,12 @@
 // The platform monitor, as the portal's Status tab uses it.
 //
 // The monitor is an app on the platform like any other, so the portal
-// talks to it over a sealed session opened to its host, with the
+// talks to it over its channel (app(host) on the portal's AuthFrame), with the
 // signed-in person's platform token. The monitor reads the person's role
 // on the app from that token (owner, admin, support tiers), so the portal
 // decides nothing about who may see or change what.
 
-import { getEnclaveSealedSession, dropEnclaveAuthFrame } from './enclave-session';
+import { enclaveChannel } from './enclave-session';
 
 const PROD_PORTAL_HOST = 'developer.privasys.org';
 const PROD_MONITOR_HOST = 'platform-monitoring.apps.privasys.org';
@@ -50,20 +50,19 @@ const decoder = new TextDecoder();
 
 async function monitorCall<T>(token: string, method: string, path: string, body?: unknown): Promise<T> {
     const host = getMonitorHost();
-    let session;
+    let channel;
     try {
-        session = await getEnclaveSealedSession({ appHost: host });
+        channel = await enclaveChannel(host);
     } catch (e) {
         throw new MonitorError(0, e instanceof Error ? e.message : 'The monitor could not be reached.');
     }
     let res;
     try {
-        res = await session.request(method, path, body, {
+        res = await channel.request(method, path, body, {
             headers: { 'Authorization': `Bearer ${token}`, 'X-App-Auth': token }
         });
     } catch (e) {
-        // A broken or expired session is rebuilt on the next call.
-        dropEnclaveAuthFrame(host);
+        // The next call asks app() again, which re-establishes a dead channel.
         throw new MonitorError(0, e instanceof Error ? e.message : 'The monitor did not answer.');
     }
     const text = res.body && res.body.byteLength ? decoder.decode(res.body) : '';

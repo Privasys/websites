@@ -19,7 +19,7 @@ const ROLE: Record<AccountRole, string> = {
 type Phase = 'loading' | 'invalid' | 'ready' | 'joining' | 'joined' | 'error';
 
 export default function InvitePage() {
-    const { session, signIn, signOut, loading: authLoading } = useAuth();
+    const { session, signIn, signOut, renew, loading: authLoading } = useAuth();
     const [secret, setSecret] = useState('');
     const [invite, setInvite] = useState<InvitePreview | null>(null);
     const [phase, setPhase] = useState<Phase>('loading');
@@ -56,6 +56,8 @@ export default function InvitePage() {
         try {
             const { account } = await acceptInvite(session.accessToken, secret);
             setCurrentAccountId(account.kind === 'org' ? account.id : null);
+            // The session's token carries the new account's role from now on.
+            await renew().catch(() => undefined);
             setPhase('joined');
             window.location.href = '/dashboard/';
         } catch (e) {

@@ -88,8 +88,8 @@ async function goToDashboard(page: Page): Promise<FrameLocator> {
     await page.goto('/dashboard/');
 
     // Wait for the full-viewport auth iframe to be added to the DOM.
-    // The portal hydrates, detects no session (~5 s getSession timeout),
-    // then calls signIn() which injects the iframe.
+    // The portal hydrates, the frame reports no session,
+    // then the portal calls connect(), which injects the gate frame.
     await page.locator(AUTH_IFRAME_SEL).waitFor({ state: 'attached', timeout: 30_000 });
     console.log('Auth iframe attached.');
 

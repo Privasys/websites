@@ -18,6 +18,8 @@ import {
 import type { MonitorStatus, MonitorService, MonitorIncident, Indicator } from '~/lib/monitor';
 import { useConfirm } from '~/components/confirm-dialog';
 import { useCurrentAccount } from '~/components/account-switcher';
+import { MonitorWait } from '~/components/monitor-wait';
+import { useRetryWithRenewal } from '~/lib/privasys-auth';
 
 const INDICATOR: Record<Indicator, { label: string; cls: string }> = {
     none: { label: 'Operational', cls: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300' },
@@ -38,6 +40,7 @@ export function AppStatusTab({ appId, appName, token }: { appId: string; appName
     // The app lives in the account the portal is working in; its page is
     // under that account's short name when it has one.
     const accountSlug = useCurrentAccount()?.slug || undefined;
+    const { attempt, retry } = useRetryWithRenewal();
     const [phase, setPhase] = useState<Phase>('loading');
     const [status, setStatus] = useState<MonitorStatus | null>(null);
     const [services, setServices] = useState<MonitorService[]>([]);
@@ -70,7 +73,7 @@ export function AppStatusTab({ appId, appName, token }: { appId: string; appName
         }
     }, [token, appId]);
 
-    useEffect(() => { load(); }, [load]);
+    useEffect(() => { load(); }, [load, attempt]);
 
     async function handleEnable() {
         setBusy(true);
@@ -119,7 +122,7 @@ export function AppStatusTab({ appId, appName, token }: { appId: string; appName
     );
 
     if (phase === 'loading') {
-        return <div className="text-sm text-black/50 dark:text-white/50">Asking the monitor… The first time, your wallet may ask you to approve a secure connection to it.</div>;
+        return <MonitorWait className="text-sm text-black/50 dark:text-white/50" />;
     }
 
     if (phase === 'off') {
@@ -144,11 +147,11 @@ export function AppStatusTab({ appId, appName, token }: { appId: string; appName
                 <h2 className="text-sm font-semibold">{phase === 'denied' ? 'The monitor did not let you in' : 'The monitor could not be reached'}</h2>
                 <p className="mt-1 text-xs text-black/50 dark:text-white/50">
                     {phase === 'denied'
-                        ? 'Your role on this app rides your sign-in. If you were added to the team recently, sign out and back in so your sign-in carries it.'
+                        ? 'Your role on this app rides your sign-in. If you were added to the team recently, try again: the portal renews your sign-in first, so it carries your role.'
                         : 'It may be restarting. Try again in a minute.'}
                 </p>
                 {errorBox}
-                <button type="button" onClick={load} className="mt-4 text-xs px-3 py-1.5 rounded-lg border border-black/15 dark:border-white/15">Try again</button>
+                <button type="button" onClick={retry} className="mt-4 text-xs px-3 py-1.5 rounded-lg border border-black/15 dark:border-white/15">Try again</button>
             </section>
         );
     }

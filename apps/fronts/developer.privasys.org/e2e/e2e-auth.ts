@@ -246,8 +246,8 @@ export async function injectAuthCookies(context: BrowserContext): Promise<void> 
 }
 
 /**
- * Mock the AuthFrame iframe at privasys.id/auth/ so frame-client receives
- * a fake session via postMessage. The injected cookie above is what the
+ * Mock the AuthFrame's frame at privasys.id/auth/ so the SDK receives a
+ * fake session via postMessage. The injected cookie above is what the
  * portal's API routes actually verify against the IdP JWKS.
  */
 export async function mockAuthFrame(page: Page): Promise<void> {
@@ -268,50 +268,28 @@ export async function mockAuthFrame(page: Page): Promise<void> {
 window.addEventListener('message', function(e) {
     var d = e.data;
     if (!d || typeof d.type !== 'string') return;
-    if (d.type === 'privasys:init') {
-        e.source.postMessage({
-            type: 'privasys:result',
-            result: {
-                sessionToken: ${JSON.stringify(token)},
-                accessToken: ${JSON.stringify(token)},
-                method: 'passkey',
-                sessionId: 'e2e-mock-session',
-            }
-        }, '*');
-        // Stage B portal-direct deploy: ack sealed session immediately.
-        if (d.config && d.config.sessionRelay) {
-            e.source.postMessage({
-                type: 'privasys:session:ready',
-                sessionId: 'e2e-mock-session',
-                appHost: d.config.sessionRelay.appHost || 'mock.local',
-                expiresAt: Date.now() + 60 * 60 * 1000,
-            }, '*');
-        }
-    } else if (d.type === 'privasys:check-session') {
-        e.source.postMessage({
-            type: 'privasys:session',
-            session: {
-                token: ${JSON.stringify(token)},
-                rpId: ${JSON.stringify(RP_ID)},
-                authenticatedAt: Date.now(),
-            }
-        }, '*');
+    // The stored session: a wallet one, so app(host) opens a sealed channel.
+    var session = { token: ${JSON.stringify(token)}, method: 'wallet' };
+    if (d.type === 'privasys:check-session') {
+        e.source.postMessage({ type: 'privasys:session', id: d.id, session: session }, '*');
+    } else if (d.type === 'privasys:renew-session') {
+        e.source.postMessage({ type: 'privasys:renew-session:response', id: d.id, session: session }, '*');
     } else if (d.type === 'privasys:clear-session') {
-        e.source.postMessage({ type: 'privasys:session-cleared' }, '*');
+        e.source.postMessage({ type: 'privasys:session-cleared', id: d.id }, '*');
     }
-    // Sealed session-relay (Stage B portal-direct deploy).
-    // The real iframe derives an X25519 shared key with the enclave and
-    // forwards sealed CBOR. For the mock we stub-respond to every sealed
-    // request so portal-side UI tests can drive the deploy button without
-    // a live enclave.
-    else if (d.type === 'privasys:session:request') {
+    // Sealed channels. The real frame derives an X25519 shared key with the
+    // enclave and forwards sealed CBOR. For the mock every host resumes at
+    // once and every sealed request gets a stub answer, so portal-side UI
+    // tests can drive the deploy button without a live enclave.
+    else if (d.type === 'privasys:session:resume') {
+        e.source.postMessage({ type: 'privasys:session:resume:response', id: d.id }, '*');
+    } else if (d.type === 'privasys:session:request') {
         e.source.postMessage({
             type: 'privasys:session:response',
             id: d.id,
             status: 200,
             headers: { 'content-type': 'application/json' },
             body: new TextEncoder().encode(JSON.stringify({ status: 'ok', mock: true })),
-            sealed: true,
         }, '*');
     } else if (d.type === 'privasys:session:stream-request') {
         e.source.postMessage({
@@ -319,7 +297,6 @@ window.addEventListener('message', function(e) {
             id: d.id,
             status: 200,
             headers: { 'content-type': 'text/event-stream' },
-            sealed: true,
         }, '*');
         e.source.postMessage({
             type: 'privasys:session:stream-end',

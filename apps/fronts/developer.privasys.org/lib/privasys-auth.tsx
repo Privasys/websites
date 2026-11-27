@@ -1,8 +1,9 @@
 'use client';
 
 import { createContext, useContext, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { AuthFrame, type AuthFrameConfig } from '@privasys/auth';
+import type { Session } from '@privasys/auth';
 import { isTestPortal } from './api-base-url';
+import { portalAuth } from './portal-auth';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -11,14 +12,10 @@ import { isTestPortal } from './api-base-url';
 interface AuthSession {
     /** JWT access token from the IdP (used for management service API calls). */
     accessToken: string;
-    /** RP ID this session is authenticated for. */
-    rpId: string;
     /** Roles from the JWT claims (e.g. 'privasys-platform:admin'). */
     roles?: string[];
     /** The signed-in person's subject on the platform. */
     sub?: string;
-    /** When the session was established (epoch ms). */
-    authenticatedAt: number;
 }
 
 interface AuthContextValue {
@@ -26,12 +23,14 @@ interface AuthContextValue {
     session: AuthSession | null;
     /** Whether the initial session check is still in progress. */
     loading: boolean;
-    /** Whether the session expired mid-use (API returned 401). */
+    /** Whether the session ended while in use (expired, or an API returned 401). */
     expired: boolean;
-    /** Trigger the SDK sign-in modal (OIDC PKCE via privasys.id iframe). */
+    /** Restore the session, or run the sign-in gate. */
     signIn: () => Promise<void>;
-    /** Clear the session (both local and privasys.id iframe). */
+    /** End the portal's session, in every tab. */
     signOut: () => Promise<void>;
+    /** Renew the session now, so its token carries roles granted since. */
+    renew: () => Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
@@ -43,11 +42,25 @@ const AuthContext = createContext<AuthContextValue>({
     loading: true,
     expired: false,
     signIn: async () => {},
-    signOut: async () => {}
+    signOut: async () => {},
+    renew: async () => {}
 });
 
 export function useAuth(): AuthContextValue {
     return useContext(AuthContext);
+}
+
+/**
+ * A "Try again" that first renews the session, so a role granted since the
+ * sign-in counts. `attempt` changes on every retry: make the load depend on it.
+ */
+export function useRetryWithRenewal(): { attempt: number; retry: () => void } {
+    const { renew } = useAuth();
+    const [attempt, setAttempt] = useState(0);
+    const retry = useCallback(() => {
+        renew().catch(() => undefined).then(() => setAttempt((n) => n + 1));
+    }, [renew]);
+    return { attempt, retry };
 }
 
 // ---------------------------------------------------------------------------
@@ -84,7 +97,7 @@ export function hasManagerRole(roles: string[] | undefined | null): boolean {
 
 const AUTH_COOKIE = 'privasys_session';
 
-/** Decode the payload of a JWT (no verification — the IdP already signed it). */
+/** Decode the payload of a JWT (no verification: the IdP already signed it). */
 function decodeJwtPayload(jwt: string): Record<string, unknown> {
     try {
         const parts = jwt.split('.');
@@ -96,19 +109,12 @@ function decodeJwtPayload(jwt: string): Record<string, unknown> {
     }
 }
 
-/** Cheap structural check that a string looks like a signed JWT (3 dot-separated segments). */
-function isJwt(token: string): boolean {
-    return typeof token === 'string' && token.split('.').length === 3;
-}
-
-function sessionFromToken(token: string, rpId: string, authenticatedAt?: number): AuthSession {
+function sessionFromToken(token: string): AuthSession {
     const claims = decodeJwtPayload(token);
     return {
         accessToken: token,
-        rpId,
         roles: Array.isArray(claims.roles) ? (claims.roles as string[]) : undefined,
-        sub: typeof claims.sub === 'string' ? claims.sub : undefined,
-        authenticatedAt: authenticatedAt ?? Date.now()
+        sub: typeof claims.sub === 'string' ? claims.sub : undefined
     };
 }
 
@@ -122,89 +128,58 @@ function clearSessionCookie(): void {
     document.cookie = `${AUTH_COOKIE}=; path=/; max-age=0`;
 }
 
-interface PrivasysAuthProviderProps {
-    children: ReactNode;
-    config: AuthFrameConfig;
-}
-
-export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderProps) {
+export function PrivasysAuthProvider({ children }: { children: ReactNode }) {
     const [session, setSession] = useState<AuthSession | null>(null);
     const [loading, setLoading] = useState(true);
     const [expired, setExpired] = useState(false);
-    const frameRef = useRef<AuthFrame | null>(null);
+    // Whether this page holds a session, and whether it is signing out on
+    // purpose: a session that ends otherwise (expiry, another tab) shows the
+    // "session expired" banner rather than a fresh gate.
+    const signedIn = useRef(false);
+    const signingOut = useRef(false);
 
-    // Lazy-init the AuthFrame instance.
-    const getFrame = useCallback(() => {
-        if (!frameRef.current) {
-            frameRef.current = new AuthFrame(config);
-            frameRef.current.onSessionExpired = () => {
-                setSession(null);
-                setExpired(true);
-                clearSessionCookie();
-            };
-            frameRef.current.onSessionRenewed = (_rpId, accessToken) => {
-                // Use the freshly-renewed token the SDK hands us directly.
-                // (Do NOT round-trip through getSession() — that can return
-                // a cached, already-expired token, which then 401s on the
-                // next API call and surfaces a false "session expired" that
-                // only a reload clears.)
-                if (accessToken) {
-                    setSession(sessionFromToken(accessToken, config.rpId ?? config.appName));
-                    setSessionCookie(accessToken);
-                    setExpired(false);
-                }
-            };
-        }
-        return frameRef.current;
-    }, [config]);
-
-    // Check for existing session on mount (cross-site SSO).
+    // The frame reports the stored session first, then every renewal,
+    // sign-in, sign-out and expiry, from any tab of the portal.
     useEffect(() => {
-        const frame = getFrame();
-        // The SDK filters expired tokens - if the stored token is JWT-expired,
-        // getSession() returns null and fires onSessionExpired automatically.
-        frame.getSession().then((s) => {
+        const auth = portalAuth();
+        return auth.onSessionChange((s: Session | null) => {
             if (s) {
-                // Management-service strictly requires a JWT bearer token. Stale
-                // pre-OIDC opaque session tokens (no dots) cause every API and
-                // SSE request to fail with "invalid number of segments". Clear
-                // them so the next interaction triggers a fresh OIDC sign-in.
-                if (!isJwt(s.token)) {
-                    frame.clearSession().catch(() => undefined);
-                    clearSessionCookie();
-                    setLoading(false);
-                    return;
-                }
-                setSession(sessionFromToken(s.token, s.rpId, s.authenticatedAt));
+                signedIn.current = true;
+                setSession(sessionFromToken(s.token));
                 setSessionCookie(s.token);
+                setExpired(false);
+            } else {
+                if (signedIn.current && !signingOut.current) setExpired(true);
+                signedIn.current = false;
+                setSession(null);
+                clearSessionCookie();
             }
             setLoading(false);
-        }).catch(() => {
-            setLoading(false);
         });
-    }, [getFrame]);
+    }, []);
 
     const signIn = useCallback(async () => {
-        const frame = getFrame();
-        const result = await frame.signIn();
-        // Prefer the OIDC JWT access_token. Fall back to the opaque sessionToken
-        // only if no JWT is available (the management-service will reject the
-        // opaque variant - this is purely defensive).
-        const token = result.accessToken ?? result.sessionToken;
-        setSession(sessionFromToken(token, config.rpId ?? config.appName));
-        setSessionCookie(token);
+        const s = await portalAuth().connect();
+        signedIn.current = true;
+        setSession(sessionFromToken(s.token));
+        setSessionCookie(s.token);
         setExpired(false);
-        // Bootstrap the hidden renewal iframe so the frame-host can
-        // silently renew the session before the 5-minute TTL expires.
-        frame.getSession();
-    }, [getFrame, config]);
+    }, []);
 
     const signOut = useCallback(async () => {
-        const frame = getFrame();
-        await frame.clearSession();
+        signingOut.current = true;
+        try {
+            await portalAuth().signOut();
+        } finally {
+            signingOut.current = false;
+        }
         setSession(null);
         clearSessionCookie();
-    }, [getFrame]);
+    }, []);
+
+    const renew = useCallback(async () => {
+        await portalAuth().renew();
+    }, []);
 
     // Listen for auth:expired from api.ts (401 responses).
     useEffect(() => {
@@ -218,7 +193,7 @@ export function PrivasysAuthProvider({ children, config }: PrivasysAuthProviderP
     }, []);
 
     return (
-        <AuthContext.Provider value={{ session, loading, expired, signIn, signOut }}>
+        <AuthContext.Provider value={{ session, loading, expired, signIn, signOut, renew }}>
             {children}
         </AuthContext.Provider>
     );

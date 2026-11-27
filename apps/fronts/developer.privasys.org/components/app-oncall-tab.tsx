@@ -17,6 +17,8 @@ import {
 } from '~/lib/monitor';
 import type { OnCallOverview, AlertPreference, OnCallPlan, OnCallPage } from '~/lib/monitor';
 import { useConfirm } from '~/components/confirm-dialog';
+import { MonitorWait } from '~/components/monitor-wait';
+import { useRetryWithRenewal } from '~/lib/privasys-auth';
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -105,6 +107,7 @@ function OnCallPanel({ api, reloadKey }: { api: OnCallApi; reloadKey: string }) 
     const [error, setError] = useState<string | null>(null);
     const [off, setOff] = useState(false);
     const [formKey, setFormKey] = useState(0);
+    const { attempt, retry } = useRetryWithRenewal();
 
     const load = useCallback(async () => {
         try {
@@ -115,8 +118,9 @@ function OnCallPanel({ api, reloadKey }: { api: OnCallApi; reloadKey: string }) 
             if (e instanceof MonitorError && e.status === 404) setOff(true);
             else setError(e instanceof Error ? e.message : 'The monitor could not be reached.');
         }
-        // api is rebuilt each render; reloadKey names what it points at.
-    }, [reloadKey]);
+        // api is rebuilt each render; reloadKey names what it points at, and a
+        // retry (after renewing the sign-in) takes the api of that render.
+    }, [reloadKey, attempt]);
 
     useEffect(() => { load(); }, [load]);
 
@@ -137,12 +141,12 @@ function OnCallPanel({ api, reloadKey }: { api: OnCallApi; reloadKey: string }) 
             <section className={card}>
                 <h2 className="text-sm font-semibold">The monitor could not be reached</h2>
                 <div className="mt-3 p-2.5 rounded-lg bg-red-50 dark:bg-red-900/20 text-sm text-red-700 dark:text-red-300">{error}</div>
-                <button type="button" onClick={load} className={`mt-4 ${secondary}`}>Try again</button>
+                <button type="button" onClick={retry} className={`mt-4 ${secondary}`}>Try again</button>
             </section>
         );
     }
     if (!data) {
-        return <div className="text-sm text-black/50 dark:text-white/50">Asking the monitor…</div>;
+        return <MonitorWait className="text-sm text-black/50 dark:text-white/50" />;
     }
 
     const nameOf = (sub: string) => data.team?.find(m => m.sub === sub)?.name || sub;

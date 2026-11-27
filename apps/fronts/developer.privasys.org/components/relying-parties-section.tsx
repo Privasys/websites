@@ -7,10 +7,12 @@
 // The client secret is shown exactly once, at creation.
 
 import { useCallback, useEffect, useState } from 'react';
-import { fetchAttributeReferential, type CanonicalAttribute } from '@privasys/auth';
+import { fetchAttributeReferential } from '@privasys/auth';
 import { PrivasysAttributePicker } from '@privasys/auth/react';
 import { useAuth } from '~/lib/privasys-auth';
 import { listOAuthClients, createOAuthClient, updateOAuthClientBilling, type OAuthClient, type CreatedOAuthClient } from '~/lib/api';
+
+type CanonicalAttribute = Awaited<ReturnType<typeof fetchAttributeReferential>>[number];
 
 export function RelyingPartiesSection() {
     const { session } = useAuth();

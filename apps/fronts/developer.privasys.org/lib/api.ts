@@ -2,7 +2,7 @@ import type { App, CreateAppRequest, ReviewRequest, DeploymentLog, BuildJob, Enc
 import { getApiBaseUrl } from './api-base-url';
 import { ACCOUNT_HEADER, accountHeaders } from './current-account';
 import { callApp, AppCallError, type AppManifest } from '@privasys/app-call';
-import { getEnclaveSealedSession, dropEnclaveAuthFrame } from './enclave-session';
+import { enclaveChannel } from './enclave-session';
 
 const API_URL = getApiBaseUrl();
 
@@ -431,10 +431,10 @@ export async function rpcCall(token: string, appId: string, func: string, params
         throw new ApiError('the app has no live hostname yet (not deployed, or mid-redeploy) — retry once it is running', 409);
     }
     try {
-        const session = await getEnclaveSealedSession({ appHost: meta.host });
+        const channel = await enclaveChannel(meta.host);
         let hdrRec: Record<string, string> = {};
         const data = await callApp({
-            session,
+            channel,
             appType: meta.type,
             appName: meta.name,
             tool: func,
@@ -464,10 +464,8 @@ export async function rpcCall(token: string, appId: string, func: string, params
             onResponse?.(e.status, hdrs);
             throw new ApiError(e.message, e.status);
         }
-        // Sealed channel unavailable (sign-in declined, relay down, timeout):
-        // drop the dead frame so the next attempt rebuilds it, and tell the
-        // caller what happened.
-        dropEnclaveAuthFrame(meta.host);
+        // Sealed channel unavailable (approval declined, relay down,
+        // timeout): the next call asks app() again, which re-establishes it.
         const msg = e instanceof Error ? e.message : String(e);
         throw new ApiError(`sealed session to the app could not be established: ${msg}`, 0);
     }

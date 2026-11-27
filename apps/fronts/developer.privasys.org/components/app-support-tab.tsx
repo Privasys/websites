@@ -15,6 +15,8 @@ import {
 } from '~/lib/monitor';
 import type { TicketRow, TicketDetail, SupportSettings, TicketChange } from '~/lib/monitor';
 import { useConfirm } from '~/components/confirm-dialog';
+import { MonitorWait } from '~/components/monitor-wait';
+import { useRetryWithRenewal } from '~/lib/privasys-auth';
 
 const STATUS: Record<string, { label: string; cls: string }> = {
     new: { label: 'New', cls: 'bg-sky-100 text-sky-800 dark:bg-sky-900/30 dark:text-sky-300' },
@@ -62,6 +64,7 @@ export function AppSupportTab({ appId, token }: { appId: string; token: string }
     const [error, setError] = useState<string | null>(null);
     const [off, setOff] = useState(false);
     const [loaded, setLoaded] = useState(false);
+    const { attempt, retry } = useRetryWithRenewal();
 
     const load = useCallback(async () => {
         try {
@@ -82,7 +85,7 @@ export function AppSupportTab({ appId, token }: { appId: string; token: string }
         }
     }, [token, appId]);
 
-    useEffect(() => { load(); }, [load]);
+    useEffect(() => { load(); }, [load, attempt]);
     useEffect(() => {
         getOnCall(token, appId).then(o => setPeople(o.team ?? [])).catch(() => setPeople([]));
     }, [token, appId]);
@@ -95,13 +98,13 @@ export function AppSupportTab({ appId, token }: { appId: string; token: string }
             </section>
         );
     }
-    if (!loaded) return <div className="text-sm text-black/50 dark:text-white/50">Asking the monitor…</div>;
+    if (!loaded) return <MonitorWait className="text-sm text-black/50 dark:text-white/50" />;
     if (!settings) {
         return (
             <section className={card}>
                 <h2 className="text-sm font-semibold">The support desk could not be loaded</h2>
                 {error && <div className={errorBox}>{error}</div>}
-                <button type="button" onClick={load} className={`mt-4 ${secondary}`}>Try again</button>
+                <button type="button" onClick={retry} className={`mt-4 ${secondary}`}>Try again</button>
             </section>
         );
     }
@@ -336,7 +339,7 @@ export function AccountSupportSettings({ accountId, token }: { accountId: string
     if (!data) {
         return error
             ? <section className={card}><h2 className="text-sm font-semibold">Account settings</h2><div className={errorBox}>{error}</div></section>
-            : <div className="text-sm text-black/50 dark:text-white/50">Asking the monitor…</div>;
+            : <MonitorWait className="text-sm text-black/50 dark:text-white/50" />;
     }
     return (
         <Settings key={String(data.set)} scope="account" settings={data.settings} canManage={data.can_manage}
