@@ -4345,14 +4345,14 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@privasys/drive-client@npm:0.1.0":
-  version: 0.1.0
-  resolution: "@privasys/drive-client@npm:0.1.0::__archiveUrl=https%3A%2F%2Fnpm.pkg.github.com%2Fdownload%2F%40privasys%2Fdrive-client%2F0.1.0%2Fb9a7d0ffcd50842c68f356a4534f4d4d389444c7"
+"@privasys/drive-client@npm:0.2.0":
+  version: 0.2.0
+  resolution: "@privasys/drive-client@npm:0.2.0::__archiveUrl=https%3A%2F%2Fnpm.pkg.github.com%2Fdownload%2F%40privasys%2Fdrive-client%2F0.2.0%2Fa913d0dbbdb6ab32463493e8cf35f7b884061798"
   peerDependencies:
-    "@privasys/auth": ">=0.13.0"
+    "@privasys/auth": ">=1.0.0"
     react: ">=19"
     react-dom: ">=19"
-  checksum: 10c0/a6ea98ffe98e3d18e2947df45eb4597f30327b04107c22240c84ed4e99043335df307e6845ac50e2733b0917f6b3dd12838c86a3129f15ecfadbb4be755d67f1
+  checksum: 10c0/6b5421d2436a14c6c938517d1a94448cbbb862021d380d2221624ad00a196701af8ff4e68ffe9fb2bd98d86d0939edb5a2c953513591bfa072cac4f5c004af12
   languageName: node
   linkType: hard
 
@@ -4385,7 +4385,7 @@ __metadata:
     "@nx/workspace": "npm:21.4.1"
     "@playwright/test": "npm:^1.58.2"
     "@privasys/auth": "npm:^1.0.0"
-    "@privasys/drive-client": "npm:0.1.0"
+    "@privasys/drive-client": "npm:0.2.0"
     "@stylistic/eslint-plugin": "npm:^5.3.1"
     "@swc/core": "npm:1.13.5"
     "@swc/jest": "npm:0.2.39"
