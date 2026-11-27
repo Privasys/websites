@@ -8,7 +8,7 @@
 // attestation, not from a secret bearer.
 
 import type { SamplingParams } from './sampling';
-import type { SealedSession } from '@privasys/auth';
+import type { AppChannel } from '@privasys/auth';
 
 export interface ChatMessage {
     role: 'system' | 'user' | 'assistant';
@@ -157,11 +157,11 @@ export interface StreamChatArgs {
     onToolResult?: (ev: ToolResultEvent) => void;
     /**
      * Optional sealed session-relay handle. When provided, the request
-     * is tunnelled through PrivasysSession.stream() so the chat traffic
+     * is tunnelled through the channel's stream() so the chat traffic
      * is encrypted end-to-end (browser ↔ enclave) and never visible to
      * the gateway.
      */
-    sealedSession?: SealedSession;
+    sealedSession?: AppChannel;
     /**
      * True when the instance supports sealed transport
      * (`instance.session_relay.enabled`). In that case a missing

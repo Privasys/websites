@@ -14,7 +14,7 @@
 // (`driveEnabled()`), mirroring how drive.privasys.org gates on its host.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { SealedSession } from '@privasys/auth';
+import type { AppChannel } from '@privasys/auth';
 import { useAuth } from './privasys-auth';
 import { driveEnabled, driveHost, ensurePersonalTenant, getMe, type Tenant } from './drive-chat-api';
 
@@ -29,7 +29,7 @@ export interface ChatDrive {
     enabled: boolean;
     status: ChatDriveStatus;
     error: string | null;
-    session: SealedSession | null;
+    session: AppChannel | null;
     /** The caller's personal-drive tenant id (null until ready). */
     tenantId: string | null;
     /**
@@ -42,21 +42,21 @@ export interface ChatDrive {
      */
     ensureSession: (
         onNeedApproval?: () => void
-    ) => Promise<{ session: SealedSession; tenantId: string } | null>;
+    ) => Promise<{ session: AppChannel; tenantId: string } | null>;
 }
 
 export function useChatDrive(): ChatDrive {
-    const { session: authSession, getSealedSession, requestAppVoucher } = useAuth();
+    const { session: authSession, getSealedSession } = useAuth();
     const enabled = driveEnabled();
     const host = driveHost();
 
     const [status, setStatus] = useState<ChatDriveStatus>(enabled ? 'connecting' : 'disabled');
     const [error, setError] = useState<string | null>(null);
-    const [session, setSession] = useState<SealedSession | null>(null);
+    const [session, setSession] = useState<AppChannel | null>(null);
     const [tenantId, setTenantId] = useState<string | null>(null);
     const bootstrapping = useRef(false);
 
-    const bootstrap = useCallback(async (s: SealedSession): Promise<string> => {
+    const bootstrap = useCallback(async (s: AppChannel): Promise<string> => {
         // Right after a fresh ceremony the sealed channel can need a beat
         // before the first request lands; retry briefly instead of erroring.
         let tenant: Tenant | null = null;
@@ -95,8 +95,9 @@ export function useChatDrive(): ChatDrive {
             .then(async (s) => {
                 if (cancelled) return;
                 if (!s) {
-                    // Signed in, but no live sealed voucher for Drive yet.
-                    // ensureSession() requests one on the first Drive action.
+                    // Signed in, but the Drive channel could not be opened
+                    // (not approved in the wallet). ensureSession() asks again
+                    // on the first Drive action.
                     setStatus('signed-out');
                     return;
                 }
@@ -115,19 +116,19 @@ export function useChatDrive(): ChatDrive {
     const ensureSession = useCallback(
         async (
             onNeedApproval?: () => void
-        ): Promise<{ session: SealedSession; tenantId: string } | null> => {
+        ): Promise<{ session: AppChannel; tenantId: string } | null> => {
             if (!enabled || !host || !authSession) return null;
             if (session && tenantId) return { session, tenantId };
             if (bootstrapping.current) return null;
             bootstrapping.current = true;
             try {
-                let s = await getSealedSession(host);
+                // One tap in the wallet when Drive has no approval yet;
+                // onNeedApproval shows "approve on your phone" meanwhile.
+                const s = await getSealedSession(host, onNeedApproval);
                 if (!s) {
-                    onNeedApproval?.();
-                    await requestAppVoucher(host); // throws no-push / timeout / no-session
-                    s = await getSealedSession(host);
+                    setError('Could not connect to Drive. Approve it in the Privasys Wallet, then try again.');
+                    return null;
                 }
-                if (!s) return null;
                 const tid = await bootstrap(s);
                 return tid ? { session: s, tenantId: tid } : null;
             } catch (e) {
@@ -137,7 +138,7 @@ export function useChatDrive(): ChatDrive {
                 bootstrapping.current = false;
             }
         },
-        [enabled, host, authSession, session, tenantId, getSealedSession, requestAppVoucher, bootstrap]
+        [enabled, host, authSession, session, tenantId, getSealedSession, bootstrap]
     );
 
     return { enabled, status, error, session, tenantId, ensureSession };

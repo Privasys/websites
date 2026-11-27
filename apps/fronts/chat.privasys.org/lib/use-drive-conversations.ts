@@ -24,7 +24,7 @@
 // yet and are local-only (see TODOs).
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { SealedSession } from '@privasys/auth';
+import type { AppChannel } from '@privasys/auth';
 import {
     Conversation,
     PersistedMessage,
@@ -79,7 +79,7 @@ export interface DriveConversations {
      * waiting for React state to settle.
      */
     ensureDriveConversationId: (
-        session: SealedSession,
+        session: AppChannel,
         tenantId: string,
         titleHint?: string
     ) => Promise<{ localId: string; driveId: string } | null>;
@@ -89,7 +89,7 @@ export function useDriveConversations(args: {
     instanceId: string;
     sub: string | null;
     modelLabel?: string;
-    session: SealedSession | null;
+    session: AppChannel | null;
     tenantId: string | null;
 }): DriveConversations {
     const { instanceId, sub, modelLabel, session, tenantId } = args;
@@ -440,7 +440,7 @@ export function useDriveConversations(args: {
 
     const ensureDriveConversationId = useCallback(
         async (
-            s: SealedSession,
+            s: AppChannel,
             tid: string,
             titleHint?: string
         ): Promise<{ localId: string; driveId: string } | null> => {

@@ -1,25 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { chatServiceHost } from '~/lib/chat-service-api';
 import { useAuth } from '~/lib/privasys-auth';
 import type { Instance } from '~/lib/types';
-
-// Chat's pitch for the SDK gate's left panel (page presentation). The SDK
-// styles it; strings only.
-const CHAT_PITCH = {
-    title: 'Your conversations, sealed.',
-    description:
-        'Privasys Chat runs its AI model inside a hardware-protected enclave. ' +
-        'The operator can never read your prompts or replies, and you can ' +
-        'verify it yourself by remote attestation.',
-    bullets: [
-        'Sealed browser-to-enclave transport. The gateway only sees ciphertext.',
-        'Chat history stays on this device. The platform stores none of it.',
-        'No passwords. Sign in with the Privasys Wallet on your phone.',
-        'Attestation-verified confidential computing. Verify it yourself, no need to trust the operator.'
-    ]
-};
 
 // Full-page sign-in gate. The auth SDK renders the ENTIRE surface (page
 // presentation, Option C): a templated header with Chat's logo and name,
@@ -53,24 +36,9 @@ export function SignInGate({
         const sessionRelayHost = instance.session_relay?.enabled
             ? instance.session_relay.app_host
             : undefined;
-        void connectInto(el, {
-            pitch: CHAT_PITCH,
-            app: {
-                displayName: 'Privasys Chat',
-                ...(typeof window !== 'undefined'
-                    ? { logoUrl: `${window.location.origin}/favicon/privasys-logo.mini.svg` }
-                    : {})
-            },
-            ...(sessionRelayHost
-                ? {
-                    appHost: sessionRelayHost,
-                    extraAppHosts: [chatServiceHost()],
-                    // Chat's OWN transport constraint (not an SDK default): sealed
-                    // instances are reachable only over the wallet-attested channel.
-                    methods: ['wallet'] as const
-                }
-                : {})
-        })
+        // The gate's pitch, logo and methods are the page's AuthFrame
+        // configuration (lib/auth-provider.tsx).
+        void connectInto(el, sessionRelayHost ? { appHost: sessionRelayHost } : undefined)
             .then(() => onSuccess())
             .catch((e: unknown) => {
                 startedRef.current = false;

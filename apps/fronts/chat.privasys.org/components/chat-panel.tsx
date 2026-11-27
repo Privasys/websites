@@ -14,7 +14,7 @@ import { DEFAULT_SAMPLING, type SamplingParams } from '~/lib/sampling';
 import { modelLabel } from '~/lib/model-label';
 import type { PersistedMessage, Rating, ToolInvocation } from '~/lib/conversations';
 import type { UserTool } from '~/lib/chat-service-api';
-import type { SealedSession } from '@privasys/auth';
+import type { AppChannel } from '@privasys/auth';
 import type { SealedStaleReason } from '~/lib/privasys-auth';
 import { useAuth } from '~/lib/privasys-auth';
 import { clearFeedback, recordFeedback } from '~/lib/pending-feedback';
@@ -111,7 +111,7 @@ export function ChatPanel({
     model: AvailableModel | null;
     onModelChange: (m: AvailableModel) => void;
     token?: string;
-    sealedSession?: SealedSession;
+    sealedSession?: AppChannel;
     disabledReason?: string;
     userGreeting?: string;
     /** When set, the empty-state shows a prominent Connect button
@@ -153,7 +153,7 @@ export function ChatPanel({
     onManageTools?: () => void;
     onRemoveUserTool?: (id: string) => void | Promise<void>;
     /** Dedicated sealed session to chat-service, for minting tool-grants. */
-    chatSession?: SealedSession | null;
+    chatSession?: AppChannel | null;
     /** Enclave transport health, owned by the shell. Drives the reconnect
      *  banner so an outage/redeploy is visible without sending a prompt. */
     transport?: 'ok' | 'reconnecting' | 'stale';
@@ -213,7 +213,7 @@ export function ChatPanel({
     const localConvIdRef = useRef<string | null>(conversationId);
     // Live mirrors of props the long-running send() closure must read at
     // RETRY time, not at call time: after the shell re-establishes the sealed
-    // session it hands us a NEW SealedSession (the old proxy's frame is gone),
+    // session it hands us a NEW AppChannel (the old proxy's frame is gone),
     // so a retry must use the current one, and the reconnect wait must observe
     // the current transport state.
     const transportRef = useRef(transport);
@@ -1430,7 +1430,9 @@ function TransportBanner({
                 </svg>
                 <span>
                     {approvalPending
-                        ? 'The secure enclave was upgraded. Approve it in your Privasys Wallet to continue — check your phone.'
+                        ? (staleReason
+                            ? 'The secure enclave was updated. Approve it in your Privasys Wallet to continue: check your phone.'
+                            : 'Approve the secure connection in your Privasys Wallet to continue: check your phone.')
                         : 'Connecting to the secure enclave… if it was just restarted, the model can take a few minutes to load.'}
                 </span>
             </div>

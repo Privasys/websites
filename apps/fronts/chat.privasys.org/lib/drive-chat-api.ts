@@ -2,15 +2,15 @@
 //
 // This is the §8.7 integration: conversations live in Drive, files attach
 // from/to Drive, and the agent uses Drive as its RAG memory. The browser
-// reaches Drive over a DEDICATED SEALED SESSION (PrivasysSession from
-// @privasys/auth) - never plain fetch. Bytes and metadata are sealed
+// reaches Drive over a DEDICATED SEALED CHANNEL (app(host) on the page's
+// AuthFrame) - never plain fetch. Bytes and metadata are sealed
 // browser->enclave (CBOR-AES-GCM); the gateway only ever sees ciphertext,
 // and Drive authenticates the sealed session itself (the enclave relay
 // asserts the wallet-vouched sub toward the app). Mirrors the request
 // conventions in drive.privasys.org/lib/drive-api.ts and this app's own
 // lib/chat-service-api.ts.
 
-import type { SealedSession } from '@privasys/auth';
+import type { AppChannel } from '@privasys/auth';
 import {
     DriveError,
     bytesToBase64,
@@ -147,12 +147,12 @@ export interface SemanticHit {
 
 // ---- Identity + workspace ---------------------------------------------
 
-export function getMe(session: SealedSession): Promise<Me> {
+export function getMe(session: AppChannel): Promise<Me> {
     return json<Me>(session, 'GET', '/v1/me');
 }
 
 /** Get-or-create the caller's personal drive (User tenant). Idempotent. */
-export function ensurePersonalTenant(session: SealedSession): Promise<Tenant> {
+export function ensurePersonalTenant(session: AppChannel): Promise<Tenant> {
     return json<Tenant>(session, 'POST', '/v1/me/tenant');
 }
 
@@ -160,7 +160,7 @@ export function ensurePersonalTenant(session: SealedSession): Promise<Tenant> {
 
 /** Create a conversation. `date` is a plain YYYY-MM-DD (today by default). */
 export function createConversation(
-    session: SealedSession,
+    session: AppChannel,
     tenantID: string,
     title: string,
     date: string
@@ -177,7 +177,7 @@ export function createConversation(
  * exact on-disk JSONL shape is under our control.
  */
 export async function appendTurn(
-    session: SealedSession,
+    session: AppChannel,
     tenantID: string,
     conversationID: string,
     turn: string
@@ -193,7 +193,7 @@ export async function appendTurn(
 }
 
 export async function listConversations(
-    session: SealedSession,
+    session: AppChannel,
     tenantID: string
 ): Promise<DriveConversationSummary[]> {
     const data = await json<{ conversations: DriveConversationSummary[] }>(
@@ -205,7 +205,7 @@ export async function listConversations(
 }
 
 export function getConversation(
-    session: SealedSession,
+    session: AppChannel,
     tenantID: string,
     conversationID: string
 ): Promise<DriveConversationDetail> {
@@ -218,7 +218,7 @@ export function getConversation(
 
 /** Attach a freshly uploaded file to a conversation with an intent. */
 export function attachToConversation(
-    session: SealedSession,
+    session: AppChannel,
     tenantID: string,
     conversationID: string,
     input: {
@@ -246,7 +246,7 @@ export function attachToConversation(
 
 /** Finalise a conversation into a digest, citing the accumulated provenance. */
 export function finalizeConversation(
-    session: SealedSession,
+    session: AppChannel,
     tenantID: string,
     conversationID: string,
     provenance: ProvenanceRef[]
@@ -276,7 +276,7 @@ export interface AIScopeView {
     all_scoped: boolean;
 }
 
-export async function listAIScope(session: SealedSession, tenantID: string): Promise<AIScopeView> {
+export async function listAIScope(session: AppChannel, tenantID: string): Promise<AIScopeView> {
     const data = await json<Partial<AIScopeView>>(session, 'GET', `/v1/tenants/${tenantID}/ai-scope`);
     return {
         scoped: data.scoped ?? [],
@@ -287,7 +287,7 @@ export async function listAIScope(session: SealedSession, tenantID: string): Pro
 
 /** Grant the assistant read access to a directory subtree ("Enable for AI"). */
 export function enableAIScope(
-    session: SealedSession,
+    session: AppChannel,
     tenantID: string,
     nodeID: string
 ): Promise<{ grant_id: string; already?: boolean }> {
@@ -296,7 +296,7 @@ export function enableAIScope(
 
 /** Revoke the assistant's access to a directory subtree. */
 export function disableAIScope(
-    session: SealedSession,
+    session: AppChannel,
     tenantID: string,
     nodeID: string
 ): Promise<{ disabled: boolean }> {
@@ -306,7 +306,7 @@ export function disableAIScope(
 /** Enable/disable whole-Drive assistant scope (every directory, including
  *  ones added later — the scope is recomputed per search). */
 export function setEntireDriveAIScope(
-    session: SealedSession,
+    session: AppChannel,
     tenantID: string,
     on: boolean
 ): Promise<unknown> {
@@ -315,7 +315,7 @@ export function setEntireDriveAIScope(
 
 // ---- Memory + agent RAG tools -----------------------------------------
 
-export function getMemory(session: SealedSession, tenantID: string): Promise<MemoryView> {
+export function getMemory(session: AppChannel, tenantID: string): Promise<MemoryView> {
     return json<MemoryView>(session, 'GET', `/v1/tenants/${tenantID}/memory`);
 }
 
@@ -325,7 +325,7 @@ export function getMemory(session: SealedSession, tenantID: string): Promise<Mem
  * material the assistant is allowed to draw on.
  */
 export async function searchSemantic(
-    session: SealedSession,
+    session: AppChannel,
     tenantID: string,
     query: string,
     topK = 6
@@ -353,7 +353,7 @@ export interface FolderTreeNode {
  * a subtree when given.
  */
 export async function getFolderTree(
-    session: SealedSession,
+    session: AppChannel,
     tenantID: string,
     root?: string
 ): Promise<FolderTreeNode[]> {
@@ -368,7 +368,7 @@ export async function getFolderTree(
 
 /** Read a single section of a file by its stable section anchor. */
 export async function readSection(
-    session: SealedSession,
+    session: AppChannel,
     tenantID: string,
     fileID: string,
     sectionID: string
@@ -383,7 +383,7 @@ export async function readSection(
 
 /** Read a whole file's plaintext (decrypted inside the enclave). */
 export async function readFile(
-    session: SealedSession,
+    session: AppChannel,
     tenantID: string,
     fileID: string
 ): Promise<string> {
@@ -405,7 +405,7 @@ export async function readFile(
  * are always knowledge (§8.7, decided 2026-07-19). Returns the created node.
  */
 export function attachLargeFileToConversation(
-    session: SealedSession,
+    session: AppChannel,
     tenantID: string,
     filesFolderID: string,
     file: File,
@@ -461,7 +461,7 @@ export interface ShareRequest {
  * recipient (they fork it to make it their own).
  */
 export function shareConversation(
-    session: SealedSession,
+    session: AppChannel,
     tenantID: string,
     conversationID: string,
     opts: { mode: ShareMode; requiredAttributes?: string[]; expiresUnix?: number; label?: string }
@@ -482,7 +482,7 @@ export function shareConversation(
 
 /** Owner: list restricted-link access requests (default pending only). */
 export async function listShareRequests(
-    session: SealedSession,
+    session: AppChannel,
     tenantID: string,
     status = 'pending'
 ): Promise<ShareRequest[]> {
@@ -497,7 +497,7 @@ export async function listShareRequests(
 /** Owner: approve or deny a pending restricted-link request. Approval cuts the
  *  requester's read grant; either decision notifies their wallet. */
 export function decideShareRequest(
-    session: SealedSession,
+    session: AppChannel,
     tenantID: string,
     requestID: string,
     decision: 'approve' | 'deny'
@@ -559,7 +559,7 @@ export interface RedeemResult {
 
 /** Recipient: fetch a link's target metadata (requires the secret). */
 export function resolveLink(
-    session: SealedSession,
+    session: AppChannel,
     linkID: string,
     secret: string
 ): Promise<ResolvedLink> {
@@ -569,7 +569,7 @@ export function resolveLink(
 /** Recipient: redeem a link. Open grants read immediately; restricted opens a
  *  pending request (attributes presented here) for the owner to approve. */
 export function redeemLink(
-    session: SealedSession,
+    session: AppChannel,
     linkID: string,
     secret: string,
     attributes?: Record<string, string>
@@ -586,7 +586,7 @@ export function redeemLink(
  * Returns the new conversation id in the caller's own drive.
  */
 export async function forkConversation(
-    session: SealedSession,
+    session: AppChannel,
     sourceTenantID: string,
     sourceConversationID: string,
     myTenantID: string,

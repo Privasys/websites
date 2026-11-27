@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import type { SealedSession } from '@privasys/auth';
+import type { AppChannel } from '@privasys/auth';
 import {
     shareConversation,
     shareLinkURL,
@@ -29,7 +29,7 @@ export function ShareConversationDialog({
     instanceId,
     onClose
 }: {
-    session: SealedSession;
+    session: AppChannel;
     tenantId: string;
     conversationId: string;
     title: string;

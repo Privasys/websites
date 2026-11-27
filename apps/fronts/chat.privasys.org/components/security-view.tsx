@@ -26,10 +26,10 @@ export function SecurityView({
     instance: Instance;
     onStatus?: (_status: AggregateAttestationStatus) => void;
 }) {
-    const { getTokenForAudience } = useAuth();
+    const { token } = useAuth();
     const verifyQuoteAuth = React.useCallback(
-        () => getTokenForAudience('attestation-server'),
-        [getTokenForAudience]
+        () => token('attestation-server'),
+        [token]
     );
     const attestUrl = instance.attest_url
         ? new URL(instance.attest_url, API_BASE_URL).toString()

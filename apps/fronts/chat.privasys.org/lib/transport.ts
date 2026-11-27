@@ -29,7 +29,7 @@ export function isTransportError(message: string): boolean {
     // session is dead): route into the reconnect flow, which re-establishes
     // the sealed transport or, failing that, prompts a fresh sign-in — never
     // a dead-end "sign in" string the user can't act on inline.
-    if (/secure session required|sign in to establish/i.test(message)) {
+    if (/secure session required|sign in to establish|call app\(\) again/i.test(message)) {
         return true;
     }
     // APP-LEVEL auth rejections are not transport failures. The enclave's

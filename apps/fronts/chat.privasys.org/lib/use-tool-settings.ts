@@ -8,7 +8,7 @@
 // every device, on both retrieval paths.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { SealedSession } from '@privasys/auth';
+import type { AppChannel } from '@privasys/auth';
 import {
     fetchToolServers,
     fetchToolSettings,
@@ -17,7 +17,7 @@ import {
     type ToolSettingsDoc
 } from './tool-settings';
 
-export function useToolServers(session: SealedSession | null | undefined): {
+export function useToolServers(session: AppChannel | null | undefined): {
     servers: ToolServerInfo[];
     loading: boolean;
 } {
@@ -64,7 +64,7 @@ export interface ToolSettingsState {
 }
 
 export function useToolSettings(
-    session: SealedSession | null | undefined,
+    session: AppChannel | null | undefined,
     server: string | null
 ): ToolSettingsState {
     const [doc, setDoc] = useState<ToolSettingsDoc | null>(null);

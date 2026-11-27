@@ -7,7 +7,7 @@
 // available to the conversation at all) lives here too, mirroring the
 // composer pill.
 
-import type { SealedSession } from '@privasys/auth';
+import type { AppChannel } from '@privasys/auth';
 import type { ToolSettingsDisplay } from '~/lib/tool-settings';
 import { useToolSettings, type ToolSettingsState } from '~/lib/use-tool-settings';
 import { ToolSettingsFields, Toggle } from './tool-settings-fields';
@@ -22,7 +22,7 @@ export function ToolSettingsView({
     settings: sharedSettings
 }: {
     /** The enclave sealed session (the settings ride the attested proxy). */
-    session: SealedSession | null | undefined;
+    session: AppChannel | null | undefined;
     server: string;
     display: ToolSettingsDisplay;
     /** Master switch: this server's tools on/off for conversations. */

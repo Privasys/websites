@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import type { SealedSession } from '@privasys/auth';
+import type { AppChannel } from '@privasys/auth';
 import {
     addUserTool,
     deleteUserTool,
@@ -29,7 +29,7 @@ export interface UserToolsState {
 }
 
 export function useUserTools(
-    session: SealedSession | null,
+    session: AppChannel | null,
     token: string | undefined,
     /** Optional last-chance establisher: when a mutation is attempted with no
      *  sealed session in hand, this (re-)establishes it — a silent voucher
@@ -37,7 +37,7 @@ export function useUserTools(
      *  `onNeedApproval` callback fires when we fall through to the push so the
      *  UI can show "Approve on your phone…". Rejects with `no-push` / `timeout`
      *  / `no-session` so add() can map them to a precise message. */
-    ensureSession?: (onNeedApproval?: () => void) => Promise<SealedSession | null>
+    ensureSession?: (onNeedApproval?: () => void) => Promise<AppChannel | null>
 ): UserToolsState {
     const [tools, setTools] = useState<UserTool[]>([]);
     const [loading, setLoading] = useState(false);

@@ -4,11 +4,11 @@
 // tool-grant the chat forwards to the confidential-ai enclave. It is a
 // separate enclave from the inference instance and sits behind the gateway's
 // terminate marker, so the browser reaches its authenticated API over a
-// DEDICATED sealed session (PrivasysSession) — never plain fetch — and carries
+// DEDICATED sealed channel (app(host) on the page's AuthFrame), never plain fetch, and carries
 // the user's bearer INSIDE the sealed envelope so the gateway never sees it.
 // See chat-stream.ts for the equivalent sealed transport to confidential-ai.
 
-import type { SealedResponse, SealedSession } from '@privasys/auth';
+import type { AppResponse, AppChannel } from '@privasys/auth';
 
 // Empty unless explicitly configured for this deployment. BYO-MCP stays fully
 // dormant (no sealed-session bootstrap, no calls) until a chat-service host is
@@ -68,7 +68,7 @@ const decoder = new TextDecoder();
 // call issues a sealed request to chat-service with the user's bearer inside
 // the encrypted envelope, and decodes the JSON body. Throws on non-2xx.
 async function call<T>(
-    session: SealedSession,
+    session: AppChannel,
     token: string,
     method: string,
     path: string,
@@ -80,7 +80,7 @@ async function call<T>(
     // here is overwritten by the sealed transport's session scheme anyway;
     // `token` is kept in the signature as the caller-side "signed in" gate.
     void token;
-    const res: SealedResponse = await session.request(method, path, body);
+    const res: AppResponse = await session.request(method, path, body);
     // A missing/odd status must never read as success (a `status` of
     // undefined passes both range checks vacuously and would surface
     // phantom empty objects as created resources).
@@ -100,14 +100,14 @@ async function call<T>(
 }
 
 /** List the caller's persistent tools. */
-export async function fetchUserTools(session: SealedSession, token: string): Promise<UserTool[]> {
+export async function fetchUserTools(session: AppChannel, token: string): Promise<UserTool[]> {
     const data = await call<{ tools: UserTool[] }>(session, token, 'GET', '/api/v1/me/tools');
     return data.tools ?? [];
 }
 
 /** Add a tool (enclave or external). */
 export async function addUserTool(
-    session: SealedSession,
+    session: AppChannel,
     token: string,
     input: AddUserToolInput
 ): Promise<UserTool> {
@@ -122,7 +122,7 @@ export async function addUserTool(
 
 /** Enable/disable a tool. */
 export async function setUserToolEnabled(
-    session: SealedSession,
+    session: AppChannel,
     token: string,
     id: string,
     enabled: boolean
@@ -133,7 +133,7 @@ export async function setUserToolEnabled(
 }
 
 /** Remove a tool. */
-export async function deleteUserTool(session: SealedSession, token: string, id: string): Promise<void> {
+export async function deleteUserTool(session: AppChannel, token: string, id: string): Promise<void> {
     await call<unknown>(session, token, 'DELETE', `/api/v1/me/tools/${encodeURIComponent(id)}`);
 }
 
@@ -144,7 +144,7 @@ export async function deleteUserTool(session: SealedSession, token: string, id: 
  * fleet's admin tools.
  */
 export async function fetchToolGrant(
-    session: SealedSession,
+    session: AppChannel,
     token: string,
     instanceId: string
 ): Promise<string | null> {

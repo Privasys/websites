@@ -1,4 +1,4 @@
-import type { SealedSession, SealedResponse } from '@privasys/auth';
+import type { AppChannel, AppResponse } from '@privasys/auth';
 
 // Generic MCP tool-settings contract (v1).
 //
@@ -58,12 +58,12 @@ export interface ToolSettingsDoc {
 const decoder = new TextDecoder();
 
 async function call<T>(
-    session: SealedSession,
+    session: AppChannel,
     method: string,
     path: string,
     body?: unknown
 ): Promise<T> {
-    const res: SealedResponse = await session.request(method, path, body);
+    const res: AppResponse = await session.request(method, path, body);
     if (typeof res.status !== 'number' || res.status < 200 || res.status >= 300) {
         const text = res.body && res.body.byteLength ? decoder.decode(res.body) : '';
         let msg = `${res.status}`;
@@ -80,19 +80,19 @@ async function call<T>(
 }
 
 /** The enclave's configured MCP servers with their settings descriptors. */
-export async function fetchToolServers(session: SealedSession): Promise<ToolServerInfo[]> {
+export async function fetchToolServers(session: AppChannel): Promise<ToolServerInfo[]> {
     const data = await call<{ servers: ToolServerInfo[] }>(session, 'GET', '/v1/tools');
     return data.servers ?? [];
 }
 
 /** The per-user settings document, served by the attested tool itself. */
-export function fetchToolSettings(session: SealedSession, server: string): Promise<ToolSettingsDoc> {
+export function fetchToolSettings(session: AppChannel, server: string): Promise<ToolSettingsDoc> {
     return call<ToolSettingsDoc>(session, 'GET', `/v1/tools/${encodeURIComponent(server)}/settings`);
 }
 
 /** Partial update; the response is the fresh full document. */
 export function putToolSettings(
-    session: SealedSession,
+    session: AppChannel,
     server: string,
     values: Record<string, unknown>
 ): Promise<ToolSettingsDoc> {

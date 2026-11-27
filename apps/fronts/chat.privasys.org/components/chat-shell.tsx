@@ -35,7 +35,7 @@ import { ToolsView } from './tools-view';
 import { chatServiceHost } from '~/lib/chat-service-api';
 import { probeInstanceHealth } from '~/lib/instance-api';
 import { isTransportError } from '~/lib/transport';
-import type { SealedSession } from '@privasys/auth';
+import type { AppChannel } from '@privasys/auth';
 import { AppSidebar } from './app-sidebar';
 import { ShareConversationDialog } from './share-conversation-dialog';
 import { ChatPanel, type PendingReplay } from './chat-panel';
@@ -95,7 +95,7 @@ export function ChatShell({
     disabledReason?: string;
     userGreeting?: string;
 }) {
-    const { session, sealedSession, reestablishSealed, staleReason, getSealedSession, requestAppVoucher } = useAuth();
+    const { session, sealedSession, reestablishSealed, staleReason, sealedApprovalPending, getSealedSession } = useAuth();
     const [model, setModel] = useState<AvailableModel | null>(initialModel);
 
     // Health of the end-to-end enclave transport, independent of the OIDC
@@ -120,10 +120,10 @@ export function ChatShell({
     useEffect(() => { sealedSessionRef.current = sealedSession; }, [sealedSession]);
 
     // chat-service is a separate enclave from the inference instance, so it
-    // needs its own sealed session (the user's bearer + tool data never cross
-    // the gateway's terminate path). Establish it once signed in; null until a
-    // chat-service voucher exists, in which case BYO-MCP degrades gracefully.
-    const [chatSession, setChatSession] = useState<SealedSession | null>(null);
+    // has its own channel (the user's bearer + tool data never cross the
+    // gateway's terminate path). Open it once signed in; null when it cannot
+    // be opened, in which case BYO-MCP degrades gracefully.
+    const [chatSession, setChatSession] = useState<AppChannel | null>(null);
     useEffect(() => {
         const host = chatServiceHost();
         if (!session || !host) {
@@ -139,36 +139,24 @@ export function ChatShell({
         };
     }, [session, getSealedSession]);
 
-    // Establish the chat-service sealed session on demand for a user-tool
-    // mutation. First a silent voucher resume (covers the just-signed-in
-    // race); if there's no voucher yet, ask the wallet to issue one via a
-    // push approval (incremental multi-app attestation — one tap on the
-    // phone, no sign-out), then resume. `onNeedApproval` lets the caller
-    // show "Approve on your phone…" while we wait. Rejects propagate so the
-    // add form can show a precise message.
+    // Open the chat-service channel on demand for a user-tool mutation: at
+    // once when the wallet already approved it, otherwise after one tap on
+    // the phone (no sign-out). `onNeedApproval` lets the caller show
+    // "Approve on your phone…" while it waits.
     const ensureChatSession = useCallback(
-        async (onNeedApproval?: () => void): Promise<SealedSession | null> => {
+        async (onNeedApproval?: () => void): Promise<AppChannel | null> => {
             const host = chatServiceHost();
             if (!host) return null;
-            let s = await getSealedSession(host);
-            if (s) {
-                setChatSession(s);
-                return s;
-            }
-            // No voucher for chat-service yet — request one from the wallet.
-            onNeedApproval?.();
-            await requestAppVoucher(host); // throws no-push / timeout / no-session
-            s = await getSealedSession(host);
+            const s = await getSealedSession(host, onNeedApproval);
             if (s) setChatSession(s);
             return s;
         },
-        [getSealedSession, requestAppVoucher]
+        [getSealedSession]
     );
 
     // Sealed transport must survive page reloads without a wallet
-    // ceremony: the OIDC session restores via cross-site SSO, and the
-    // sealed session re-bootstraps from the EncAuth voucher stored at
-    // the IdP. Without this, a reload would silently leave the chat
+    // ceremony: the session restores from the frame, and the channel
+    // re-establishes from the wallet's approval for the instance. Without this, a reload would silently leave the chat
     // without a transport (the plaintext-through-the-gateway fallback
     // no longer exists — the gateway must never see message bodies).
     useEffect(() => {
@@ -200,6 +188,13 @@ export function ChatShell({
             cancelled = true;
         };
     }, [session, sealedSession, instance.session_relay, reestablishSealed, transport]);
+
+    // While the instance's channel waits for an approval in the wallet (a
+    // cold reload after the enclave changed), show the reconnecting banner,
+    // which says to check the phone.
+    useEffect(() => {
+        if (sealedApprovalPending && !sealedSession) setTransport((t) => (t === 'ok' ? 'reconnecting' : t));
+    }, [sealedApprovalPending, sealedSession]);
 
     // A fresh sealed session (from a re-sign-in after a stale-back-end
     // prompt) clears the reconnect banner.
@@ -853,10 +848,8 @@ export function ChatShell({
                     // background so the sidebar pill is accurate even
                     // before the user opens the Security view.
                     // Gated on `session` so we don't fire verify-quote
-                    // before the Privasys ID auth iframe has minted a
-                    // session — `getTokenForAudience()` otherwise
-                    // rejects with "no active session iframe; call
-                    // getSession() first".
+                    // before the sign-in: `token(audience)` otherwise
+                    // rejects with "not signed in".
                     <div className="hidden" aria-hidden="true">
                         <SecurityView instance={instance} onStatus={setAttestationStatus} />
                     </div>

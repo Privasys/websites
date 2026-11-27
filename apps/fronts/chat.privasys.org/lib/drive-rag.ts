@@ -26,7 +26,7 @@
 // when the enclave does NOT advertise Drive tools. So this is now the
 // FALLBACK path for deployments whose inference enclave has no Drive grant.
 
-import type { SealedSession } from '@privasys/auth';
+import type { AppChannel } from '@privasys/auth';
 import type { ChatMessage } from './chat-stream';
 import {
     getFolderTree,
@@ -53,7 +53,7 @@ function collectNodeIds(nodes: FolderTreeNode[], into: Set<string>): void {
  * an empty set means hits are all treated as knowledge.
  */
 export async function fetchConversationNodeIds(
-    session: SealedSession,
+    session: AppChannel,
     tenantId: string
 ): Promise<Set<string>> {
     const set = new Set<string>();
@@ -94,7 +94,7 @@ function citation(hit: SemanticHit): string {
 /** Fetch the caller's inlined Memory as a single system message. Best effort:
  *  returns an empty augmentation on any failure (Drive is a nicety here). */
 export async function fetchMemoryContext(
-    session: SealedSession,
+    session: AppChannel,
     tenantId: string
 ): Promise<Augmentation> {
     try {
@@ -134,7 +134,7 @@ export interface RetrievalSources {
  *  prompt, limited to the sources enabled for this conversation. Best effort:
  *  returns an empty augmentation on any failure. */
 export async function retrieveContext(
-    session: SealedSession,
+    session: AppChannel,
     tenantId: string,
     query: string,
     sources: RetrievalSources

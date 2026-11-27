@@ -56,10 +56,10 @@ export function ToolsView({
     // Attestation plumbing so each enclave tool can verify itself, inline.
     // The verify-quote leg (challenge mode) needs an aud=attestation-server
     // token, minted lazily per call.
-    const { getTokenForAudience } = useAuth();
+    const { token: tokenFor } = useAuth();
     const verifyQuoteAuth = useCallback(
-        () => getTokenForAudience('attestation-server'),
-        [getTokenForAudience]
+        () => tokenFor('attestation-server'),
+        [tokenFor]
     );
     const verifyQuoteUrl = instance.attestation_server
         ? `${instance.attestation_server.replace(/\/$/, '')}/verify-quote`

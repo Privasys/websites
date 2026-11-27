@@ -8,7 +8,7 @@
 // implementing the contract gets the same treatment for free.
 
 import { useState } from 'react';
-import type { SealedSession } from '@privasys/auth';
+import type { AppChannel } from '@privasys/auth';
 import { settingsSummary, type ToolSettingsDisplay } from '~/lib/tool-settings';
 import { useToolSettings, type ToolSettingsState } from '~/lib/use-tool-settings';
 import { ToolSettingsFields, Toggle } from './tool-settings-fields';
@@ -23,7 +23,7 @@ export function FeaturedToolPill({
     onManage,
     settings: sharedSettings
 }: {
-    session: SealedSession | null | undefined;
+    session: AppChannel | null | undefined;
     server: string;
     display: ToolSettingsDisplay;
     /** Master switch: whether this server's tools are enabled for the

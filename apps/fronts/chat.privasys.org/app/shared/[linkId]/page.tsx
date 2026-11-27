@@ -6,7 +6,6 @@ import { useAuth } from '~/lib/privasys-auth';
 import { useChatDrive } from '~/lib/use-chat-drive';
 import {
     driveEnabled,
-    driveHost,
     forkConversation,
     getConversation,
     redeemLink,
@@ -25,19 +24,6 @@ import { Markdown } from '~/components/markdown';
 // the owner approves), then render the conversation read-only. A fork copies
 // the transcript into the visitor's own drive so they can carry it on. `?i=`
 // carries the source inference instance so the fork lands them there.
-
-const SHARE_PITCH = {
-    title: 'A conversation was shared with you.',
-    description:
-        'Sign in with your Privasys Wallet to read it. Shared conversations are ' +
-        'read-only; you can fork one into your own drive to carry it on. The link ' +
-        'secret stays in your browser and is never sent to a server.',
-    bullets: [
-        'Sealed browser-to-enclave transport. The gateway only sees ciphertext.',
-        'Read-only: the owner’s copy is never changed.',
-        'Fork any shared conversation into your own private drive.'
-    ]
-};
 
 type Phase =
     | 'auth' // signing in
@@ -86,18 +72,10 @@ export default function SharedConversationPage({
         if (!el || gateStarted.current) return;
         gateStarted.current = true;
         setError(null);
-        void connectInto(el, {
-            pitch: SHARE_PITCH,
-            app: {
-                displayName: 'Privasys Chat',
-                ...(typeof window !== 'undefined'
-                    ? { logoUrl: `${window.location.origin}/favicon/privasys-logo.mini.svg` }
-                    : {})
-            },
-            // Voucher the Drive enclave up front so useChatDrive resumes its
-            // sealed session silently (no second phone tap after sign-in).
-            extraAppHosts: [driveHost()]
-        }).catch((e: unknown) => {
+        // The page's AuthFrame shows the share pitch here and approves the
+        // Drive enclave at sign-in, so useChatDrive opens its channel without
+        // a second phone tap (lib/auth-provider.tsx).
+        void connectInto(el).catch((e: unknown) => {
             gateStarted.current = false;
             if ((e as { code?: string }).code === 'cancelled') return;
             setError(e instanceof Error ? e.message : 'Sign-in failed.');
