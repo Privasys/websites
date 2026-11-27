@@ -1,4 +1,4 @@
-// One sealed call to an app function, for either runtime.
+// One call to an app function over its AppChannel, for either runtime.
 //
 // Container apps speak their own HTTP: the manifest maps a tool to a path and
 // the body is the tool's JSON. WASM apps are Connect-style RPC, and the mini
@@ -8,7 +8,7 @@
 // unwrapped, so the enclave's own gates see the real method, path, headers and
 // body — which is exactly why the mgmt proxy adds nothing but a middleman.
 
-import type { SealedResponse, SealedSession } from '@privasys/auth';
+import type { AppChannel, AppResponse } from '@privasys/auth';
 import { applyDefaults, endpointFor, schemaFor, type AppManifest } from './manifest';
 
 const decoder = new TextDecoder();
@@ -27,7 +27,8 @@ export class AppCallError extends Error {
 }
 
 export interface AppCallOptions {
-    session: SealedSession;
+    /** The app's channel, from `auth.app(host)`. */
+    channel: AppChannel;
     /** 'container' | 'wasm' — decides the inner request shape. */
     appType: string;
     /** App name, needed for the wasm /rpc/<app>/<fn> path. */
@@ -61,24 +62,24 @@ export interface AppCallOptions {
     onResponse?: (_status: number, _headers: Record<string, string>) => void;
 }
 
-/** A sealed request can otherwise hang forever: the iframe RPC has no deadline. */
+/** A request can otherwise hang forever: the channel sets no deadline. */
 export const DEFAULT_TIMEOUT_MS = 60_000;
 
-/** Sealed request with a hard deadline. */
+/** A request with a hard deadline. */
 async function timed(
-    session: SealedSession,
+    channel: AppChannel,
     method: string,
     path: string,
     body: unknown,
     headers: Record<string, string>,
     ms: number
-): Promise<SealedResponse> {
-    return new Promise<SealedResponse>((resolve, reject) => {
+): Promise<AppResponse> {
+    return new Promise<AppResponse>((resolve, reject) => {
         const t = setTimeout(
             () => reject(new AppCallError(0, 'The enclave is not responding. It may be restarting or unreachable.')),
             ms
         );
-        session.request(method, path, body, { headers }).then(
+        channel.request(method, path, body, { headers }).then(
             r => { clearTimeout(t); resolve(r); },
             (e: unknown) => { clearTimeout(t); reject(e instanceof Error ? e : new Error(String(e))); }
         );
@@ -88,12 +89,12 @@ async function timed(
 /** "…charges 5000 credits…" — anchored so a caller's wrong figure is not read back. */
 const PRICE_RE = /charges (\d+) credits/;
 
-function textOf(res: SealedResponse): string {
+function textOf(res: AppResponse): string {
     return res.body && res.body.byteLength ? decoder.decode(res.body) : '';
 }
 
 /**
- * Call one app function over the sealed session and return its parsed JSON.
+ * Call one app function over its channel and return its parsed JSON.
  *
  * Throws {@link AppCallError} on a non-2xx or on a runtime-level error
  * envelope, so a WASM error surfaces like an HTTP one instead of resolving as
@@ -119,7 +120,7 @@ function refusePlatformToken(bearer: string): void {
 
 export async function callApp(opts: AppCallOptions): Promise<unknown> {
     const {
-        session, appType, appName, tool, manifest, bearer, billingApproved, allowPlatformToken,
+        channel, appType, appName, tool, manifest, bearer, billingApproved, allowPlatformToken,
         timeoutMs = DEFAULT_TIMEOUT_MS, onResponse
     } = opts;
 
@@ -155,22 +156,19 @@ export async function callApp(opts: AppCallOptions): Promise<unknown> {
         payload = body;
     }
 
-    let res = await timed(session, 'POST', path, payload, headers, timeoutMs);
+    let res = await timed(channel, 'POST', path, payload, headers, timeoutMs);
     // Some container endpoints only answer GET (e.g. a status probe). The proxy
     // fell back the same way; keep the behaviour so migrated callers see no
     // change.
     if (res.status === 405) {
-        res = await timed(session, 'GET', path, undefined, headers, timeoutMs);
+        res = await timed(channel, 'GET', path, undefined, headers, timeoutMs);
     }
 
-    const hdrs: Record<string, string> = {};
-    const raw = (res as unknown as { headers?: Record<string, string> }).headers;
-    if (raw) Object.assign(hdrs, raw);
-    onResponse?.(typeof res.status === 'number' ? res.status : 0, hdrs);
+    onResponse?.(typeof res.status === 'number' ? res.status : 0, { ...res.headers });
 
     const text = textOf(res);
     if (typeof res.status !== 'number') {
-        throw new AppCallError(0, 'The sealed channel is not ready yet. Retrying usually fixes this.');
+        throw new AppCallError(0, 'The channel is not ready yet. Retrying usually fixes this.');
     }
     let parsed: unknown = null;
     if (text) {

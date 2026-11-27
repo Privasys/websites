@@ -7,9 +7,9 @@
 // control-plane body cap (1 MiB) applies to app data, which already truncates
 // payloads like the ICAO CSCA master list.
 //
-// The sealed session replaced it. The SDK opens a wallet-attested channel to
-// the app's own host; bytes are sealed browser->enclave, the gateway sees only
-// ciphertext, and the enclave's own gates (freeze, configure authorisation,
+// The SDK's app channel replaced it (`auth.app(host)`). For a wallet session it
+// is a wallet-attested sealed channel to the app's own host; bytes are sealed
+// browser->enclave, the gateway sees only ciphertext, and the enclave's own gates (freeze, configure authorisation,
 // function auth policy, price consent) see the real inner request. This module
 // is the shared plumbing so the portal and the explorer agree on tool
 // resolution, defaults, and error shape.
