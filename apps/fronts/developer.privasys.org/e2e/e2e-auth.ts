@@ -254,8 +254,10 @@ export async function mockAuthFrame(page: Page): Promise<void> {
     const token = await fetchToken();
 
     await page.route(`${AUTH_ORIGIN}/auth/**`, async (route) => {
-        const url = route.request().url();
-        if (!url.endsWith('/auth/') && !url.endsWith('/auth')) {
+        // The frame page of any SDK version: /auth/ or a versioned /auth/vN/.
+        // Everything else under /auth/ (the hosted bundles) is not needed.
+        const { pathname } = new URL(route.request().url());
+        if (!/^\/auth\/(v\d+\/)?$/.test(pathname)) {
             await route.abort();
             return;
         }
@@ -274,6 +276,8 @@ window.addEventListener('message', function(e) {
         e.source.postMessage({ type: 'privasys:session', id: d.id, session: session }, '*');
     } else if (d.type === 'privasys:renew-session') {
         e.source.postMessage({ type: 'privasys:renew-session:response', id: d.id, session: session }, '*');
+    } else if (d.type === 'privasys:get-token-for-audience') {
+        e.source.postMessage({ type: 'privasys:token-for-audience:response', id: d.id, accessToken: session.token }, '*');
     } else if (d.type === 'privasys:clear-session') {
         e.source.postMessage({ type: 'privasys:session-cleared', id: d.id }, '*');
     }
