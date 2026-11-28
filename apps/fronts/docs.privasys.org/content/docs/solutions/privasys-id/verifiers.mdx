@@ -21,7 +21,7 @@ Every Attribute Verifier proof is one signed statement per attribute:
 | Field | Meaning |
 | --- | --- |
 | `attr`, `value` | the canonical attribute and its value |
-| `method` | `proven`: the verifier checked cryptographic or back-office evidence. `observed`: the verifier read it itself, over TLS, from inside the enclave (GitHub, which issues no signed token) |
+| `method` | `proven`: the verifier checked cryptographic or back-office evidence, or read the provider's own verified verdict from its API (the primary email GitHub marks verified, read with a token GitHub confirms was issued to privasys.id). `observed`: the verifier read it itself, over TLS, from inside the enclave, and nobody vouches for it (a GitHub name or picture) |
 | `source` | who vouches: `google`, `microsoft`, `linkedin`, `oidc:<issuer>`, `github`, `privasys_mail`, `card_bank` |
 | `material_at` | when the source asserted the value, never the time of a later re-check |
 | `evidence` | what lets anyone check the proof later, such as the digest of the provider's token and the provider's key as the verifier recorded it |
